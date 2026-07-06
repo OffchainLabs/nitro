@@ -10,7 +10,7 @@ mod common;
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::{Address, U256};
 use arb_precompiles::create_arbfunctiontable_precompile;
-use common::{calldata, word_address, word_u256, PrecompileTest};
+use common::{PrecompileTest, calldata, word_address, word_u256};
 
 const SLOAD_GAS: u64 = 800;
 const COPY_GAS: u64 = 3;

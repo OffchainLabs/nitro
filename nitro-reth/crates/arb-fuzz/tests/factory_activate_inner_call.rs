@@ -24,19 +24,19 @@
 //!     -- --ignored --nocapture
 
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
     OnceLock,
+    atomic::{AtomicU64, Ordering},
 };
 
-use alloy_primitives::{b256, keccak256, Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256, b256, keccak256};
 use arb_fuzz::{
     arbitrary_impls::message_step,
-    shared_nodes::{fuzz_arbos_version, shared_dual_exec, FUZZ_L2_CHAIN_ID},
+    shared_nodes::{FUZZ_L2_CHAIN_ID, fuzz_arbos_version, shared_dual_exec},
 };
 use arb_test_harness::{
     messaging::{
-        signed_tx::{derive_address, L2TxKind, SignedL2TxBuilder},
         DepositBuilder, MessageBuilder,
+        signed_tx::{L2TxKind, SignedL2TxBuilder, derive_address},
     },
     scenario::{Scenario, ScenarioSetup, ScenarioStep},
 };

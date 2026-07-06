@@ -1,7 +1,7 @@
 use alloy_primitives::B256;
 use arb_test_utils::ArbosHarness;
 use arbos::merkle_accumulator::{
-    calc_num_partials, open_merkle_accumulator, InMemoryMerkleAccumulator,
+    InMemoryMerkleAccumulator, calc_num_partials, open_merkle_accumulator,
 };
 
 fn item(n: u64) -> B256 {

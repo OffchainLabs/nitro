@@ -1,8 +1,8 @@
 use alloy_primitives::{B256, U256};
-use arb_primitives::multigas::{MultiGas, ResourceKind, NUM_RESOURCE_KIND};
+use arb_primitives::multigas::{MultiGas, NUM_RESOURCE_KIND, ResourceKind};
 use arb_storage::{
-    storage_key_map, StorageBackedUint32, StorageBackedUint64, StorageBackend, SystemStateBackend,
-    ARBOS_STATE_ADDRESS,
+    ARBOS_STATE_ADDRESS, StorageBackedUint32, StorageBackedUint64, StorageBackend,
+    SystemStateBackend, storage_key_map,
 };
 
 use super::L2PricingError;

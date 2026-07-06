@@ -2,7 +2,7 @@ mod common;
 
 use alloy_primitives::B256;
 use arb_precompiles::create_arbosacts_precompile;
-use common::{calldata, PrecompileTest};
+use common::{PrecompileTest, calldata};
 
 #[test]
 fn valid_calls_revert_with_caller_not_arbos() {

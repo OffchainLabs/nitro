@@ -1,6 +1,6 @@
 //! ArbOS storage layout primitives — subspace keys and slot derivation.
 
-use alloy_primitives::{keccak256, B256, U256};
+use alloy_primitives::{B256, U256, keccak256};
 
 // Root subspace IDs partitioning the ArbOS state trie.
 pub const L1_PRICING_SUBSPACE: &[u8] = &[0];

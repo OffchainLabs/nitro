@@ -16,9 +16,9 @@ pub use delayed::DelayedTxBuilder;
 pub use deposit::DepositBuilder;
 pub use heartbeat::{HeartbeatBody, HeartbeatBuilder};
 pub use internal::{InternalTxBuilder, InternalTxKind};
-pub use retryable::{apply_l1_to_l2_alias, RetryableSubmitBuilder, L1_TO_L2_ALIAS_OFFSET};
+pub use retryable::{L1_TO_L2_ALIAS_OFFSET, RetryableSubmitBuilder, apply_l1_to_l2_alias};
 use serde::{Deserialize, Serialize};
-pub use signed_tx::{derive_address as l2_signing_key_to_address, L2TxKind, SignedL2TxBuilder};
+pub use signed_tx::{L2TxKind, SignedL2TxBuilder, derive_address as l2_signing_key_to_address};
 pub use unsigned::UnsignedUserTxBuilder;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

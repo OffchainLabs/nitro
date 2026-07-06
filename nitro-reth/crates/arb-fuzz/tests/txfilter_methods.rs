@@ -1,8 +1,8 @@
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use arb_fuzz::{
     arbitrary_impls::message_step,
     guards::GuardedRun,
-    scaffolding::{baseline_stylus_plus_helper, selector4, signed, INVOKE_GAS_CAP},
+    scaffolding::{INVOKE_GAS_CAP, baseline_stylus_plus_helper, selector4, signed},
     shared_nodes::next_msg_idx,
 };
 use arb_test_harness::messaging::MessageBuilder;

@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{Address, Log, B256, U256};
+use alloy_primitives::{Address, B256, Log, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
-use arbos::programs::{hours_since_arbitrum, hours_to_age, params::StylusParams, Program};
+use arbos::programs::{Program, hours_since_arbitrum, hours_to_age, params::StylusParams};
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::{interfaces::IArbWasm, ArbPrecompileError};
+use crate::{ArbPrecompileError, interfaces::IArbWasm};
 
 /// ArbWasm precompile address (0x71).
 pub const ARBWASM_ADDRESS: Address = Address::new([

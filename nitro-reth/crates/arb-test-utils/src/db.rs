@@ -3,11 +3,11 @@
 //! Returns zero/default for every read so the cache layer above can serve
 //! everything that gets written during a test.
 
-use alloy_primitives::{keccak256, Address, B256, U256};
+use alloy_primitives::{Address, B256, U256, keccak256};
 use revm::{
-    database::{states::account_status::AccountStatus, PlainAccount, State},
-    state::{AccountInfo, Bytecode},
     Database,
+    database::{PlainAccount, State, states::account_status::AccountStatus},
+    state::{AccountInfo, Bytecode},
 };
 
 /// Database that returns empty/zero for all reads.

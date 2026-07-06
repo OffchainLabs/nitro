@@ -1,20 +1,20 @@
 use std::sync::Arc;
 
 use alloy_consensus::{
-    crypto::secp256k1::sign_message, transaction::Recovered, EthereumTxEnvelope,
-    SignableTransaction, TxEip7702,
+    EthereumTxEnvelope, SignableTransaction, TxEip7702, crypto::secp256k1::sign_message,
+    transaction::Recovered,
 };
 use alloy_eips::eip7702::Authorization;
 use alloy_evm::{
+    EvmFactory,
     block::{BlockExecutor, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
-    EvmFactory,
 };
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use arb_evm::config::ArbEvmConfig;
 use arb_executor_tests::helpers::{
-    alice, alice_key, bob, bob_key, deploy_contract, derive_address, fund_account, ONE_ETH,
-    ONE_GWEI,
+    ONE_ETH, ONE_GWEI, alice, alice_key, bob, bob_key, deploy_contract, derive_address,
+    fund_account,
 };
 use arb_primitives::ArbTransactionSigned;
 use arb_test_utils::ArbosHarness;

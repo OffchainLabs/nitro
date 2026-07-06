@@ -1,16 +1,16 @@
 use std::{collections::BTreeMap, time::Duration};
 
-use alloy_primitives::{Address, Bytes, B256, U256};
-use serde_json::{json, Value};
+use alloy_primitives::{Address, B256, Bytes, U256};
+use serde_json::{Value, json};
 
 use crate::{
+    Result,
     error::HarnessError,
     messaging::L1Message,
     node::{
         ArbReceiptFields, Block, BlockId, EvmLog, ExecutionNode, NodeKind, TxReceipt, TxRequest,
     },
     rpc::JsonRpcClient,
-    Result,
 };
 
 #[derive(Debug, Clone)]

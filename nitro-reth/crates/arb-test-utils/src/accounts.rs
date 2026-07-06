@@ -1,6 +1,6 @@
 //! Canonical test account addresses (mirror `testing/synthetic_suite.py`).
 
-use alloy_primitives::{address, Address};
+use alloy_primitives::{Address, address};
 
 pub fn alice() -> Address {
     address!("00000000000000000000000000000000000A11CE")

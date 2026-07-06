@@ -9,12 +9,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use arb_test_harness::{
     capture::capture_from_node,
     dual_exec::DualExec,
     mock_l1::MockL1,
-    node::{nitro_docker::NitroDocker, remote::RemoteNode, NodeStartCtx},
+    node::{NodeStartCtx, nitro_docker::NitroDocker, remote::RemoteNode},
     scenario::{Scenario, ScenarioSetup, ScenarioStep},
 };
 use serde::{Deserialize, Serialize};
@@ -546,7 +546,7 @@ fn verify_eth_call(client: &RpcClient, exp: &ExpectedEthCall) -> Result<(), Spec
             return Err(SpecError::Assertion(format!(
                 "eth_call {}: exactly one of `result` / `result_block_hash_of` must be set",
                 exp.to
-            )))
+            )));
         }
     };
 

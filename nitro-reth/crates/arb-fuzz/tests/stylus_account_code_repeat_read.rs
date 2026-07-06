@@ -12,18 +12,18 @@
 
 use std::path::PathBuf;
 
-use alloy_primitives::{address, Address, Bytes, U256};
+use alloy_primitives::{Address, Bytes, U256, address};
 use arb_fuzz::{
     arbitrary_impls::{interop::interop_eoa, message_step},
     scaffolding::{activate_program, signed},
-    shared_nodes::{fuzz_arbos_version, next_msg_idx, FUZZ_L1_CHAIN_ID, FUZZ_L2_CHAIN_ID},
+    shared_nodes::{FUZZ_L1_CHAIN_ID, FUZZ_L2_CHAIN_ID, fuzz_arbos_version, next_msg_idx},
 };
 use arb_test_harness::{
     dual_exec::DualExec,
     genesis::GenesisBuilder,
     messaging::MessageBuilder,
     mock_l1::MockL1,
-    node::{arbreth::ArbrethProcess, nitro_docker::NitroDocker, NodeStartCtx},
+    node::{NodeStartCtx, arbreth::ArbrethProcess, nitro_docker::NitroDocker},
     scenario::{Scenario, ScenarioSetup, ScenarioStep},
 };
 use serde_json::json;

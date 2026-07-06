@@ -1,4 +1,4 @@
-use alloy_primitives::{address, Address};
+use alloy_primitives::{Address, address};
 use arb_test_utils::ArbosHarness;
 use arbos::address_table::open_address_table;
 

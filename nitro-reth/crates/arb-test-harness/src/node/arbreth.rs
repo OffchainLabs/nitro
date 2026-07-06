@@ -7,14 +7,15 @@ use std::{
     time::{Duration, Instant},
 };
 
-use alloy_primitives::{Address, Bytes, B256, U256};
-use serde_json::{json, Value};
+use alloy_primitives::{Address, B256, Bytes, U256};
+use serde_json::{Value, json};
 
 use super::common::{
-    arb_receipt_fields, block_from_json, free_tcp_port, json_to_b256, json_to_bytes, json_to_u256,
-    json_to_u64, parse_b256, receipt_from_json, tail, tx_request_to_json,
+    arb_receipt_fields, block_from_json, free_tcp_port, json_to_b256, json_to_bytes, json_to_u64,
+    json_to_u256, parse_b256, receipt_from_json, tail, tx_request_to_json,
 };
 use crate::{
+    Result,
     error::HarnessError,
     messaging::L1Message,
     node::{
@@ -22,7 +23,6 @@ use crate::{
         TxRequest,
     },
     rpc::JsonRpcClient,
-    Result,
 };
 
 const ARB_BINARY_ENV: &str = "ARB_SPEC_BINARY";

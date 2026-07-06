@@ -6,19 +6,19 @@
 //!     cargo test -p arb-fuzz --test arb_tx_types_create --release \
 //!     -- --ignored --nocapture
 
-use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256, keccak256};
 use arb_fuzz::{
     arbitrary_impls::{
-        interop::{create_address, interop_eoa, interop_signing_key, wrap_init_code, WhichProgram},
+        interop::{WhichProgram, create_address, interop_eoa, interop_signing_key, wrap_init_code},
         message_step,
     },
-    shared_nodes::{fuzz_arbos_version, next_msg_idx, shared_dual_exec, FUZZ_L2_CHAIN_ID},
+    shared_nodes::{FUZZ_L2_CHAIN_ID, fuzz_arbos_version, next_msg_idx, shared_dual_exec},
 };
 use arb_test_harness::{
     messaging::{
+        ContractTxBuilder, DepositBuilder, MessageBuilder, RetryableSubmitBuilder,
         apply_l1_to_l2_alias,
         signed_tx::{L2TxKind, SignedL2TxBuilder},
-        ContractTxBuilder, DepositBuilder, MessageBuilder, RetryableSubmitBuilder,
     },
     scenario::{Scenario, ScenarioSetup, ScenarioStep},
 };

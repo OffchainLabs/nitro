@@ -20,7 +20,7 @@
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
-use alloy_primitives::{address, Address, B256, U256};
+use alloy_primitives::{Address, B256, U256, address};
 use arb_stylus::{
     config::{CompileConfig, StylusConfig},
     evm_api::{CreateResponse, EvmApi, UserOutcomeKind},

@@ -1,16 +1,16 @@
 use std::{
     net::SocketAddr,
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
 };
 
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
-use serde_json::{json, Value};
+use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::post};
+use serde_json::{Value, json};
 use tokio::sync::oneshot;
 
-use crate::{error::HarnessError, Result};
+use crate::{Result, error::HarnessError};
 
 struct Inner {
     runtime: tokio::runtime::Runtime,

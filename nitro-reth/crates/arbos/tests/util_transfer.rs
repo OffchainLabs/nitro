@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
-use alloy_primitives::{address, Address, U256};
-use arbos::util::{burn_balance, mint_balance, transfer_balance, BalanceError};
+use alloy_primitives::{Address, U256, address};
+use arbos::util::{BalanceError, burn_balance, mint_balance, transfer_balance};
 
 const fn assert_send_sync_static<T: Send + Sync + 'static>() {}
 const _: () = assert_send_sync_static::<BalanceError>();

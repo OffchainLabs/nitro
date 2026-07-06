@@ -11,16 +11,16 @@ pub unsafe extern "C" fn __rust_probestack() {}
 
 use std::{collections::BTreeMap, sync::Arc};
 
-use alloy_consensus::{transaction::Recovered, EthereumTxEnvelope, SignableTransaction, TxEip1559};
+use alloy_consensus::{EthereumTxEnvelope, SignableTransaction, TxEip1559, transaction::Recovered};
 use alloy_evm::{
+    EvmFactory,
     block::{BlockExecutor, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
-    EvmFactory,
 };
-use alloy_primitives::{address, b256, hex, Address, Bytes, Signature, TxKind, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, Signature, TxKind, U256, address, b256, hex};
 use arb_alloy_consensus::tx::ArbInternalTx;
 use arb_evm::config::ArbEvmConfig;
-use arb_primitives::{signed_tx::ArbTypedTransaction, ArbTransactionSigned};
+use arb_primitives::{ArbTransactionSigned, signed_tx::ArbTypedTransaction};
 use arb_storage::{set_account_code, set_account_nonce, write_storage_at};
 use arb_test_utils::{ArbosHarness, EmptyDb};
 use arbos::internal_tx::encode_start_block;

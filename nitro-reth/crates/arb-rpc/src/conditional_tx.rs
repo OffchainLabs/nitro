@@ -9,11 +9,11 @@
 
 use std::collections::HashMap;
 
-use alloy_primitives::{Address, Bytes, B256};
+use alloy_primitives::{Address, B256, Bytes};
 use jsonrpsee::{
     core::RpcResult,
     proc_macros::rpc,
-    types::{error::INVALID_PARAMS_CODE, ErrorObject},
+    types::{ErrorObject, error::INVALID_PARAMS_CODE},
 };
 use serde::{Deserialize, Serialize};
 

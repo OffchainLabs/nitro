@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
 use alloy_evm::{
+    EvmFactory,
     block::{BlockExecutor, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
-    EvmFactory,
 };
-use alloy_primitives::{Bytes, TxKind, B256, U256};
+use alloy_primitives::{B256, Bytes, TxKind, U256};
 use arb_evm::config::ArbEvmConfig;
 use arb_executor_tests::helpers::{
-    alice, alice_key, balance_of, fund_account, nonce_of, recover, sign_legacy, ExecutorScaffold,
-    ONE_ETH, ONE_GWEI, RECIPIENT,
+    ExecutorScaffold, ONE_ETH, ONE_GWEI, RECIPIENT, alice, alice_key, balance_of, fund_account,
+    nonce_of, recover, sign_legacy,
 };
 use arb_test_utils::ArbosHarness;
 use reth_chainspec::ChainSpec;
@@ -90,15 +90,17 @@ fn two_blocks_increment_nonce_and_accumulate_recipient_balance() {
         Bytes::new(),
         alice_key(),
     );
-    assert!(execute_block_with_tx(
-        &mut s.harness,
-        s.base_fee,
-        s.chain_id,
-        1,
-        1_700_000_000,
-        tx_b1
-    )
-    .expect("block 1"));
+    assert!(
+        execute_block_with_tx(
+            &mut s.harness,
+            s.base_fee,
+            s.chain_id,
+            1,
+            1_700_000_000,
+            tx_b1
+        )
+        .expect("block 1")
+    );
     assert_eq!(nonce_of(s.harness.state(), alice()), 1);
     assert_eq!(balance_of(s.harness.state(), RECIPIENT), send);
 
@@ -112,15 +114,17 @@ fn two_blocks_increment_nonce_and_accumulate_recipient_balance() {
         Bytes::new(),
         alice_key(),
     );
-    assert!(execute_block_with_tx(
-        &mut s.harness,
-        s.base_fee,
-        s.chain_id,
-        2,
-        1_700_000_012,
-        tx_b2
-    )
-    .expect("block 2"));
+    assert!(
+        execute_block_with_tx(
+            &mut s.harness,
+            s.base_fee,
+            s.chain_id,
+            2,
+            1_700_000_012,
+            tx_b2
+        )
+        .expect("block 2")
+    );
     assert_eq!(nonce_of(s.harness.state(), alice()), 2);
     assert_eq!(
         balance_of(s.harness.state(), RECIPIENT),
@@ -256,15 +260,17 @@ fn three_blocks_run_sequentially_without_state_corruption() {
             Bytes::new(),
             alice_key(),
         );
-        assert!(execute_block_with_tx(
-            &mut s.harness,
-            s.base_fee,
-            s.chain_id,
-            block,
-            1_700_000_000 + block * 12,
-            tx
-        )
-        .expect("block"));
+        assert!(
+            execute_block_with_tx(
+                &mut s.harness,
+                s.base_fee,
+                s.chain_id,
+                block,
+                1_700_000_000 + block * 12,
+                tx
+            )
+            .expect("block")
+        );
     }
 
     assert_eq!(nonce_of(s.harness.state(), alice()), 3);

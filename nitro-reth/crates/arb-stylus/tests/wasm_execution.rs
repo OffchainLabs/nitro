@@ -17,9 +17,8 @@ use std::sync::Arc;
 
 use arb_stylus::config::CompileConfig;
 use wasmer::{
-    imports,
+    Imports, Instance, Module, Store, Value, imports,
     sys::{Cranelift, CraneliftOptLevel, EngineBuilder},
-    Imports, Instance, Module, Store, Value,
 };
 use wasmer_compiler::CompilerConfig;
 

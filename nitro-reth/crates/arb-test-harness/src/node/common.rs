@@ -1,12 +1,12 @@
 use std::sync::atomic::AtomicU16;
 
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use serde_json::Value;
 
 use crate::{
+    Result,
     error::HarnessError,
     node::{ArbReceiptFields, Block, EvmLog, TxReceipt, TxRequest},
-    Result,
 };
 
 pub(crate) fn tx_request_to_json(tx: &TxRequest) -> Value {

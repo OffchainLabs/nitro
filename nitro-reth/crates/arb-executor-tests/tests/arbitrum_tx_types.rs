@@ -2,19 +2,19 @@ use std::sync::Arc;
 
 use alloy_consensus::transaction::Recovered;
 use alloy_evm::{
+    EvmFactory,
     block::{BlockExecutor, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
-    EvmFactory,
 };
-use alloy_primitives::{address, Address, Bytes, Signature, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, Signature, U256, address};
 use arb_alloy_consensus::tx::{
     ArbContractTx, ArbDepositTx, ArbInternalTx, ArbSubmitRetryableTx, ArbUnsignedTx,
 };
 use arb_evm::config::ArbEvmConfig;
 use arb_executor_tests::helpers::{
-    balance_of, fund_account, nonce_of, ExecutorScaffold, ONE_ETH, ONE_GWEI, RECIPIENT,
+    ExecutorScaffold, ONE_ETH, ONE_GWEI, RECIPIENT, balance_of, fund_account, nonce_of,
 };
-use arb_primitives::{signed_tx::ArbTypedTransaction, ArbTransactionSigned};
+use arb_primitives::{ArbTransactionSigned, signed_tx::ArbTypedTransaction};
 use arb_test_utils::ArbosHarness;
 use arbos::internal_tx::encode_start_block;
 use reth_chainspec::ChainSpec;

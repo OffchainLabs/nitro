@@ -9,7 +9,7 @@ mod common;
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::U256;
 use arb_precompiles::create_arbnativetokenmanager_precompile;
-use common::{calldata, word_u256, PrecompileTest};
+use common::{PrecompileTest, calldata, word_u256};
 
 fn arbntm(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
     create_arbnativetokenmanager_precompile(ctx)

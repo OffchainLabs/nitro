@@ -9,7 +9,7 @@ use crate::{
     error::StylusError,
     evm_api::EvmApi,
     ink::Ink,
-    meter::{GasMeteredMachine, MachineMeter, MeteredMachine, HOSTIO_INK},
+    meter::{GasMeteredMachine, HOSTIO_INK, MachineMeter, MeteredMachine},
 };
 
 /// Consensus open-page cap (ArbOS >= 59): a non-zero `page_limit` that

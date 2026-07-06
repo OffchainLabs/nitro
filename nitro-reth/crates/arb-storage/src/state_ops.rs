@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use alloy_primitives::{address, keccak256, Address, Bytes, U256};
+use alloy_primitives::{Address, Bytes, U256, address, keccak256};
 use arb_storage_errors::{DatabaseError, DatabaseErrorInfo, StorageError};
 use revm::Database;
 
@@ -275,7 +275,7 @@ pub fn set_account_code<D: Database>(
 
 #[cfg(test)]
 mod tests {
-    use revm_database::{states::bundle_state::BundleRetention, StateBuilder};
+    use revm_database::{StateBuilder, states::bundle_state::BundleRetention};
 
     use super::*;
 

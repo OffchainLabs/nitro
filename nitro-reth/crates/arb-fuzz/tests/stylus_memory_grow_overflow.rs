@@ -11,18 +11,17 @@
 
 use std::sync::Mutex;
 
-use alloy_primitives::{address, keccak256, Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256, address, keccak256};
 use arb_test_harness::{
     dual_exec::DualExec,
     genesis::GenesisBuilder,
     messaging::{
-        signed_l2_tx_hash,
-        signed_tx::{derive_address, L2TxKind, SignedL2TxBuilder},
-        DepositBuilder, MessageBuilder,
+        DepositBuilder, MessageBuilder, signed_l2_tx_hash,
+        signed_tx::{L2TxKind, SignedL2TxBuilder, derive_address},
     },
     mock_l1::MockL1,
     node::{
-        arbreth::ArbrethProcess, nitro_docker::NitroDocker, BlockId, ExecutionNode, NodeStartCtx,
+        BlockId, ExecutionNode, NodeStartCtx, arbreth::ArbrethProcess, nitro_docker::NitroDocker,
     },
     scenario::{Scenario, ScenarioSetup, ScenarioStep},
 };

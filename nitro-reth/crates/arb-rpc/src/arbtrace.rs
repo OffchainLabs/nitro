@@ -4,13 +4,13 @@
 use std::{sync::Arc, time::Duration};
 
 use jsonrpsee::{
-    core::{client::ClientT, RpcResult},
+    core::{RpcResult, client::ClientT},
     proc_macros::rpc,
-    types::{error::INTERNAL_ERROR_CODE, ErrorObject},
+    types::{ErrorObject, error::INTERNAL_ERROR_CODE},
 };
 use jsonrpsee_http_client::{HttpClient, HttpClientBuilder};
 use parking_lot::Mutex;
-use serde_json::{self as json, value::RawValue, Value as JsonValue};
+use serde_json::{self as json, Value as JsonValue, value::RawValue};
 
 fn forwarding_not_configured() -> ErrorObject<'static> {
     ErrorObject::owned(

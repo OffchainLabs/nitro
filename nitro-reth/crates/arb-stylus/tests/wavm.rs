@@ -24,11 +24,10 @@ use std::{collections::HashMap, sync::Arc};
 
 use arb_stylus::{config::CompileConfig, middleware::opcode_ink_cost};
 use wasmer::{
-    imports,
+    Function, Imports, Instance, Module, Store, Value, imports,
     sys::{Cranelift, CraneliftOptLevel, EngineBuilder},
-    Function, Imports, Instance, Module, Store, Value,
 };
-use wasmer_compiler::{wasmparser::Operator, CompilerConfig};
+use wasmer_compiler::{CompilerConfig, wasmparser::Operator};
 
 // ── Test fixtures (verbatim from Nitro's crates/stylus/tests/) ─────
 

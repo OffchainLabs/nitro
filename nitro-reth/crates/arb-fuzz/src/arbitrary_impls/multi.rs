@@ -4,7 +4,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 
 /// Per-process counter for `request_seq` on Arbitrum-internal txs
 /// (UnsignedUserTx / ContractTx) so each submission's derived tx hash is
@@ -17,9 +17,9 @@ fn next_request_seq() -> u64 {
 }
 use arb_test_harness::{
     messaging::{
-        retryable::{apply_l1_to_l2_alias, RetryableSubmitBuilder},
-        signed_tx::{derive_address, AuthorizationItem, L2TxKind, SignedL2TxBuilder},
         ContractTxBuilder, DepositBuilder, MessageBuilder, UnsignedUserTxBuilder,
+        retryable::{RetryableSubmitBuilder, apply_l1_to_l2_alias},
+        signed_tx::{AuthorizationItem, L2TxKind, SignedL2TxBuilder, derive_address},
     },
     scenario::{Scenario, ScenarioSetup},
 };
@@ -28,9 +28,9 @@ use serde::Serialize;
 
 use crate::{
     arbitrary_impls::{
-        build_or_skip, message_step, ArbosVersion, BoundedBytes, FUZZ_GAS_CAP, FUZZ_L1_BASE_FEE,
+        ArbosVersion, BoundedBytes, FUZZ_GAS_CAP, FUZZ_L1_BASE_FEE, build_or_skip, message_step,
     },
-    shared_nodes::{next_msg_idx, FUZZ_L2_CHAIN_ID},
+    shared_nodes::{FUZZ_L2_CHAIN_ID, next_msg_idx},
 };
 
 const SEQUENCER_ALIAS: Address = Address::new([

@@ -4,22 +4,22 @@ use std::{
     time::{Duration, Instant},
 };
 
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use arb_node::genesis::INITIAL_ARBOS_VERSION;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::{
+    Result,
     error::HarnessError,
     messaging::L1Message,
     node::{
+        ArbReceiptFields, Block, BlockId, ExecutionNode, NodeKind, NodeStartCtx, TxReceipt,
+        TxRequest,
         common::{
             arb_receipt_fields, block_from_json, receipt_from_json, tail, tx_request_to_json,
         },
-        ArbReceiptFields, Block, BlockId, ExecutionNode, NodeKind, NodeStartCtx, TxReceipt,
-        TxRequest,
     },
     rpc::JsonRpcClient,
-    Result,
 };
 
 const DEFAULT_IMAGE: &str = "offchainlabs/nitro-node:v3.10.1-d7f07be";

@@ -3,7 +3,7 @@ pub mod initialize;
 
 use std::sync::OnceLock;
 
-use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256, keccak256};
 use arb_primitives::arbos_versions::{
     HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE_ARBITRUM, PRECOMPILE_MIN_ARBOS_VERSIONS,
 };
@@ -22,9 +22,9 @@ pub use arb_storage::layout::{
     UPGRADE_VERSION_OFFSET, VERSION_OFFSET,
 };
 use arb_storage::{
-    get_account_balance, set_account_code, set_account_nonce, storage_key_map, Detached, Storage,
-    StorageBackedAddress, StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64,
-    StorageBackend, SystemStateBackend, ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
+    ARBOS_STATE_ADDRESS, Detached, FILTERED_TX_STATE_ADDRESS, Storage, StorageBackedAddress,
+    StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64, StorageBackend,
+    SystemStateBackend, get_account_balance, set_account_code, set_account_nonce, storage_key_map,
 };
 pub use error::ArbosStateError;
 use revm::Database;

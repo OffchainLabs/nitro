@@ -1,18 +1,18 @@
 use alloy_consensus::{Transaction, TransactionEnvelope, TxReceipt};
 use alloy_eips::eip2718::{Encodable2718, Typed2718};
 use alloy_evm::{
+    Database, Evm, EvmFactory, RecoveredTx,
     block::{
         BlockExecutionError, BlockExecutionResult, BlockExecutor, BlockExecutorFactory,
         BlockExecutorFor, ExecutableTx, OnStateHook,
     },
     eth::{
-        receipt_builder::ReceiptBuilder, spec::EthExecutorSpec, EthBlockExecutionCtx,
-        EthBlockExecutor, EthTxResult,
+        EthBlockExecutionCtx, EthBlockExecutor, EthTxResult, receipt_builder::ReceiptBuilder,
+        spec::EthExecutorSpec,
     },
     tx::{FromRecoveredTx, FromTxWithEncoded},
-    Database, Evm, EvmFactory, RecoveredTx,
 };
-use alloy_primitives::{keccak256, Address, Log, TxKind, B256, U256};
+use alloy_primitives::{Address, B256, Log, TxKind, U256, keccak256};
 use arb_chainspec;
 use arb_primitives::{
     multigas::{MultiGas, NUM_RESOURCE_KIND},
@@ -25,14 +25,14 @@ use arbos::{
     internal_tx::{self, InternalTxContext},
     l1_pricing, retryables,
     tx_processor::{
-        compute_poster_gas, compute_submit_retryable_fees, EndTxFeeDistribution,
-        EndTxRetryableParams, SubmitRetryableParams,
+        EndTxFeeDistribution, EndTxRetryableParams, SubmitRetryableParams, compute_poster_gas,
+        compute_submit_retryable_fees,
     },
-    util::{self as arb_util, tx_type_has_poster_costs, BalanceError},
+    util::{self as arb_util, BalanceError, tx_type_has_poster_costs},
 };
 use reth_evm::TransactionEnv;
 use revm::{
-    context::{result::ExecutionResult, TxEnv},
+    context::{TxEnv, result::ExecutionResult},
     database::State,
     inspector::Inspector,
 };
@@ -519,14 +519,16 @@ impl<'db, DB, E, Spec, R> ArbBlockExecutor<'_, E, Spec, R>
 where
     DB: Database + 'db,
     E: Evm<
-        DB = &'db mut State<DB>,
-        Tx: FromRecoveredTx<R::Transaction> + FromTxWithEncoded<R::Transaction> + ArbTransactionEnv,
-    >,
+            DB = &'db mut State<DB>,
+            Tx: FromRecoveredTx<R::Transaction>
+                    + FromTxWithEncoded<R::Transaction>
+                    + ArbTransactionEnv,
+        >,
     Spec: EthExecutorSpec,
     R: ReceiptBuilder<
-        Transaction: Transaction + Encodable2718 + ArbTransactionExt,
-        Receipt: TxReceipt<Log = Log>,
-    >,
+            Transaction: Transaction + Encodable2718 + ArbTransactionExt,
+            Receipt: TxReceipt<Log = Log>,
+        >,
     R::Transaction: TransactionEnvelope,
 {
     /// Re-read the per-tx ArbOS state parameters from committed state into the
@@ -1043,14 +1045,16 @@ impl<'db, DB, E, Spec, R> BlockExecutor for ArbBlockExecutor<'_, E, Spec, R>
 where
     DB: Database + 'db,
     E: Evm<
-        DB = &'db mut State<DB>,
-        Tx: FromRecoveredTx<R::Transaction> + FromTxWithEncoded<R::Transaction> + ArbTransactionEnv,
-    >,
+            DB = &'db mut State<DB>,
+            Tx: FromRecoveredTx<R::Transaction>
+                    + FromTxWithEncoded<R::Transaction>
+                    + ArbTransactionEnv,
+        >,
     Spec: EthExecutorSpec,
     R: ReceiptBuilder<
-        Transaction: Transaction + Encodable2718 + ArbTransactionExt,
-        Receipt: TxReceipt<Log = Log> + arb_primitives::SetArbReceiptFields,
-    >,
+            Transaction: Transaction + Encodable2718 + ArbTransactionExt,
+            Receipt: TxReceipt<Log = Log> + arb_primitives::SetArbReceiptFields,
+        >,
     R::Transaction: TransactionEnvelope,
 {
     type Transaction = R::Transaction;
@@ -3008,11 +3012,7 @@ where
                 TX_GAS
             } else {
                 let compute = adjusted_gas_used - data_gas;
-                if compute < TX_GAS {
-                    TX_GAS
-                } else {
-                    compute
-                }
+                if compute < TX_GAS { TX_GAS } else { compute }
             };
             self.block_gas_left = self.block_gas_left.saturating_sub(compute_used);
 

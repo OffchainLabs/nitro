@@ -1,7 +1,7 @@
 use alloy_primitives::B256;
 use arb_storage::{
-    queue::{initialize_queue, open_queue},
     StorageError,
+    queue::{initialize_queue, open_queue},
 };
 use arb_test_utils::ArbosHarness;
 

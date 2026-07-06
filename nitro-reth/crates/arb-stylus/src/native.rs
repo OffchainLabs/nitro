@@ -2,7 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use arbos::programs::types::EvmData;
 use wasmer::{
-    imports, Function, FunctionEnv, Instance, Memory, Module, Store, TypedFunction, Value,
+    Function, FunctionEnv, Instance, Memory, Module, Store, TypedFunction, Value, imports,
 };
 
 use crate::{

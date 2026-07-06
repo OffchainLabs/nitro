@@ -2,7 +2,7 @@ mod common;
 
 use alloy_primitives::U256;
 use arb_precompiles::create_arbsys_precompile;
-use common::{calldata, decode_u256, PrecompileTest};
+use common::{PrecompileTest, calldata, decode_u256};
 
 #[test]
 fn arbsys_arb_block_number_returns_configured_block() {

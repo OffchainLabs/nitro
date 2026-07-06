@@ -1,8 +1,8 @@
 use std::{
     path::PathBuf,
     sync::{
-        atomic::{AtomicU64, Ordering},
         Mutex, OnceLock,
+        atomic::{AtomicU64, Ordering},
     },
 };
 
@@ -10,7 +10,7 @@ use arb_test_harness::{
     dual_exec::DualExec,
     genesis::GenesisBuilder,
     mock_l1::MockL1,
-    node::{arbreth::ArbrethProcess, nitro_docker::NitroDocker, NodeStartCtx},
+    node::{NodeStartCtx, arbreth::ArbrethProcess, nitro_docker::NitroDocker},
 };
 
 /// L2 chain id used for all fuzz scenarios.

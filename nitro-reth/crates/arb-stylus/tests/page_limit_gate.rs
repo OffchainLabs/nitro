@@ -12,7 +12,7 @@ pub unsafe extern "C" fn __rust_probestack() {}
 use alloy_primitives::{Address, B256, U256};
 use arb_stylus::{
     config::{CompileConfig, StylusConfig},
-    env::{page_limit_exceeded, WasmEnv},
+    env::{WasmEnv, page_limit_exceeded},
     evm_api::{CreateResponse, EvmApi, UserOutcomeKind},
     ink::{Gas, Ink},
 };

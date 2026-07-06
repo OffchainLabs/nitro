@@ -1,39 +1,39 @@
 use core::fmt::Debug;
 
 use alloy_evm::{
-    eth::EthEvmContext, precompiles::PrecompilesMap, Database, Evm, EvmEnv, EvmFactory,
+    Database, Evm, EvmEnv, EvmFactory, eth::EthEvmContext, precompiles::PrecompilesMap,
 };
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use arb_precompiles::register_arb_precompiles;
 use arb_stylus::{
-    config::StylusConfig, ink::Gas as StylusGas, meter::MeteredMachine, run::RunProgram,
-    StylusEvmApi,
+    StylusEvmApi, config::StylusConfig, ink::Gas as StylusGas, meter::MeteredMachine,
+    run::RunProgram,
 };
 use arbos::programs::types::EvmData;
 use revm::{
+    ExecuteEvm, InspectEvm, Inspector, SystemCallEvm,
     context::{
-        result::{EVMError, ExecutionResult, InvalidTransaction},
         ContextSetters, Evm as RevmEvm, FrameStack,
+        result::{EVMError, ExecutionResult, InvalidTransaction},
     },
     context_interface::{
+        ContextTr, JournalTr,
         host::LoadError,
         result::{HaltReason, ResultAndState},
-        ContextTr, JournalTr,
     },
     handler::{
-        instructions::EthInstructions, EthFrame, EvmTr, FrameResult, Handler, ItemOrResult,
-        MainnetHandler, PrecompileProvider,
+        EthFrame, EvmTr, FrameResult, Handler, ItemOrResult, MainnetHandler, PrecompileProvider,
+        instructions::EthInstructions,
     },
     inspector::{InspectorHandler, NoOpInspector},
     interpreter::{
+        CallInput, CallInputs, CallOutcome, CallScheme, FrameInput, Gas as EvmGas, Host,
+        InstructionContext, InstructionResult, InterpreterResult, InterpreterTypes,
         interpreter::EthInterpreter,
         interpreter_action::FrameInit,
         interpreter_types::{InputsTr, ReturnData, RuntimeFlag, StackTr},
-        CallInput, CallInputs, CallOutcome, CallScheme, FrameInput, Gas as EvmGas, Host,
-        InstructionContext, InstructionResult, InterpreterResult, InterpreterTypes,
     },
     primitives::hardfork::SpecId,
-    ExecuteEvm, InspectEvm, Inspector, SystemCallEvm,
 };
 
 use crate::transaction::ArbTransaction;
@@ -323,15 +323,14 @@ pub fn reset_stylus_pages(ctx: &arb_context::ArbPrecompileCtx) {
 // ── Stylus storage helpers ───────────────────────────────────────────
 
 use arb_storage::{
+    ARBOS_STATE_ADDRESS, DatabaseError, DatabaseErrorInfo, Detached, Storage, StorageBackend,
+    StorageError, SystemStateBackend,
     layout::{
-        derive_subspace_key, map_slot_b256,
+        PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY, derive_subspace_key, map_slot_b256,
         programs::{MODULE_HASHES_KEY, PARAMS_KEY, PROGRAM_DATA_KEY},
-        PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
     },
-    DatabaseError, DatabaseErrorInfo, Detached, Storage, StorageBackend, StorageError,
-    SystemStateBackend, ARBOS_STATE_ADDRESS,
 };
-use arbos::programs::{memory::MemoryModel, params::StylusParams, Program};
+use arbos::programs::{Program, memory::MemoryModel, params::StylusParams};
 
 /// Read a storage slot from ArbOS state via the journal.
 fn sload_arbos<DB: Database>(journal: &mut revm::Journal<DB>, slot: U256) -> Option<U256> {
@@ -1059,8 +1058,8 @@ where
     use revm::{
         bytecode::Bytecode,
         interpreter::{
-            interpreter::{ExtBytecode, InputsImpl},
             FrameInput, InterpreterAction, SharedMemory,
+            interpreter::{ExtBytecode, InputsImpl},
         },
     };
 

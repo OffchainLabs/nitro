@@ -4,17 +4,17 @@
 
 use std::sync::Arc;
 
-use alloy_primitives::{Address, BlockNumber, Bytes, StorageKey, StorageValue, B256, U256};
+use alloy_primitives::{Address, B256, BlockNumber, Bytes, StorageKey, StorageValue, U256};
 use reth_chain_state::BlockState;
 use reth_primitives_traits::{Account, Bytecode, NodePrimitives};
 use reth_storage_api::{
-    errors::provider::ProviderResult, AccountReader, BlockHashReader, BytecodeReader,
-    HashedPostStateProvider, StateProofProvider, StateProvider, StateProviderBox,
-    StateRootProvider, StorageRootProvider,
+    AccountReader, BlockHashReader, BytecodeReader, HashedPostStateProvider, StateProofProvider,
+    StateProvider, StateProviderBox, StateRootProvider, StorageRootProvider,
+    errors::provider::ProviderResult,
 };
 use reth_trie::{
-    updates::TrieUpdates, AccountProof, HashedPostState, HashedStorage, MultiProof,
-    MultiProofTargets, StorageMultiProof, TrieInput,
+    AccountProof, HashedPostState, HashedStorage, MultiProof, MultiProofTargets, StorageMultiProof,
+    TrieInput, updates::TrieUpdates,
 };
 use revm_database::BundleState;
 use rustc_hash::{FxHashMap, FxHashSet};

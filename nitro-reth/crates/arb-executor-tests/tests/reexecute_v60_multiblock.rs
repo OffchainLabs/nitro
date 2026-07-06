@@ -16,19 +16,19 @@ pub unsafe extern "C" fn __rust_probestack() {}
 use std::sync::Arc;
 
 use alloy_consensus::{Block, BlockBody, Header};
-use alloy_primitives::{address, Address, Bytes, Signature, B256, B64, U256};
+use alloy_primitives::{Address, B64, B256, Bytes, Signature, U256, address};
 use arb_alloy_consensus::tx::ArbInternalTx;
 use arb_evm::config::ArbEvmConfig;
 use arb_primitives::{
+    ArbTransactionSigned,
     arbos_versions::{HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE_ARBITRUM},
     signed_tx::ArbTypedTransaction,
-    ArbTransactionSigned,
 };
-use arb_storage::{set_account_code, set_account_nonce, write_storage_at, ARBOS_STATE_ADDRESS};
+use arb_storage::{ARBOS_STATE_ADDRESS, set_account_code, set_account_nonce, write_storage_at};
 use arb_test_utils::ArbosHarness;
 use arbos::{header::compute_arbos_mixhash, internal_tx::encode_start_block};
 use reth_chainspec::ChainSpec;
-use reth_evm::{block::BlockExecutor, ConfigureEvm};
+use reth_evm::{ConfigureEvm, block::BlockExecutor};
 use reth_primitives_traits::{RecoveredBlock, SealedBlock};
 use revm::database::states::bundle_state::BundleRetention;
 

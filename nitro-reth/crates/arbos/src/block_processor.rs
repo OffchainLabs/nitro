@@ -414,11 +414,7 @@ impl BlockProductionState {
                 // Compute used compute gas for block rate limiting.
                 let compute_used = if tx_gas_used >= data_gas {
                     let c = tx_gas_used - data_gas;
-                    if c < TX_GAS {
-                        TX_GAS
-                    } else {
-                        c
-                    }
+                    if c < TX_GAS { TX_GAS } else { c }
                 } else {
                     tracing::error!(tx_gas_used, data_gas, "tx used less gas than expected");
                     TX_GAS

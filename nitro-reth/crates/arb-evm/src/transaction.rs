@@ -2,7 +2,7 @@ use alloy_consensus::Transaction;
 use alloy_eips::eip2930::AccessList;
 use alloy_evm::tx::{FromRecoveredTx, FromTxWithEncoded, IntoTxEnv};
 use alloy_primitives::{Address, Bytes, U256};
-use arb_primitives::{tx_types::ArbTxType, ArbTransactionSigned};
+use arb_primitives::{ArbTransactionSigned, tx_types::ArbTxType};
 use reth_ethereum_primitives::TransactionSigned;
 use revm::context::TxEnv;
 

@@ -12,14 +12,14 @@ use alloy_primitives::{Address, B256, U256};
 use arb_primitives::multigas::MultiGas;
 use parking_lot::Mutex;
 use revm::{
+    Context, Inspector, Journal,
     bytecode::opcode,
     context::{JournalEntry, JournalInner},
     interpreter::{
+        CallInputs, CallOutcome, CallValue, CreateInputs, CreateOutcome, Interpreter,
         interpreter::EthInterpreter,
         interpreter_types::{InputsTr, Jumps},
-        CallInputs, CallOutcome, CallValue, CreateInputs, CreateOutcome, Interpreter,
     },
-    Context, Inspector, Journal,
 };
 
 /// EVM context the inspector observes, generic over the block/tx/cfg/chain
@@ -28,7 +28,7 @@ use revm::{
 type Ctx<B, T, C, DB, Ch> = Context<B, T, C, DB, Journal<DB>, Ch>;
 use std::sync::Arc;
 
-use crate::multi_gas::classify::{classify, OpKind};
+use crate::multi_gas::classify::{OpKind, classify};
 
 /// Shared slot a [`MultiGasInspector`] writes each transaction's multi-gas to,
 /// read by the block executor after execution.

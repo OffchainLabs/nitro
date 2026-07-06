@@ -4,42 +4,41 @@
 //! executing them against the current state, and persisting the results.
 
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 use alloy_consensus::{
-    proofs,
+    Block, BlockBody, BlockHeader, EMPTY_OMMER_ROOT_HASH, Header, TxReceipt, proofs,
     transaction::{SignerRecoverable, TxHashRef},
-    Block, BlockBody, BlockHeader, Header, TxReceipt, EMPTY_OMMER_ROOT_HASH,
 };
 use alloy_eips::eip2718::Decodable2718;
 use alloy_evm::{
-    block::{BlockExecutor, BlockExecutorFactory},
     EvmFactory,
+    block::{BlockExecutor, BlockExecutorFactory},
 };
-use alloy_primitives::{Address, Bytes, B256, B64, U256};
+use alloy_primitives::{Address, B64, B256, Bytes, U256};
 use alloy_rpc_types_eth::BlockNumberOrTag;
-use arb_evm::config::{arbos_version_from_mix_hash, l1_block_number_from_mix_hash, ArbEvmConfig};
-use arb_primitives::{signed_tx::ArbTransactionSigned, tx_types::ArbInternalTx, ArbPrimitives};
+use arb_evm::config::{ArbEvmConfig, arbos_version_from_mix_hash, l1_block_number_from_mix_hash};
+use arb_primitives::{ArbPrimitives, signed_tx::ArbTransactionSigned, tx_types::ArbInternalTx};
 use arb_rpc::block_producer::{
     BlockProducer, BlockProducerError, BlockProductionInput, ProducedBlock,
 };
 use arbos::{
     arbos_types::parse_init_message,
-    header::{derive_arb_header_info, ArbHeaderInfo},
+    header::{ArbHeaderInfo, derive_arb_header_info},
     internal_tx,
-    parse_l2::{parse_l2_transactions, parsed_tx_to_signed, ParsedTransaction},
+    parse_l2::{ParsedTransaction, parse_l2_transactions, parsed_tx_to_signed},
 };
 use parking_lot::Mutex;
 use reth_chain_state::{CanonicalInMemoryState, ExecutedBlock, NewCanonicalChain};
 use reth_chainspec::ChainSpec;
 use reth_evm::ConfigureEvm;
 use reth_metrics::{
-    metrics::{self, Counter, Gauge, Histogram},
     Metrics,
+    metrics::{self, Counter, Gauge, Histogram},
 };
-use reth_primitives_traits::{logs_bloom, NodePrimitives, SealedHeader};
+use reth_primitives_traits::{NodePrimitives, SealedHeader, logs_bloom};
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider, StateProviderFactory};
 use reth_revm::database::StateProviderDatabase;
 use reth_storage_api::{StateProvider, StateProviderBox};

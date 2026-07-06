@@ -5,7 +5,7 @@ use arb_test_harness::{
     scenario::{Scenario, ScenarioSetup, ScenarioStep, StateCheck},
 };
 
-use crate::shared_nodes::{fuzz_arbos_version, shared_dual_exec, FUZZ_L2_CHAIN_ID};
+use crate::shared_nodes::{FUZZ_L2_CHAIN_ID, fuzz_arbos_version, shared_dual_exec};
 
 #[derive(Default)]
 struct LastTxExpect {

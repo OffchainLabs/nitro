@@ -5,8 +5,8 @@ use std::{
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -14,15 +14,15 @@ use std::{
 
 use alloy_eips::eip2718::Encodable2718;
 use alloy_primitives::Address;
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use serde::{Deserialize, Serialize};
 
 use super::{BlockInput, RunnerConfig, Workload};
 use crate::metrics::{
-    clock::Stopwatch, memory::RssMonitor, rolling::build_windows, BlockMetric, HostInfo, RunResult,
-    SummaryMetrics,
+    BlockMetric, HostInfo, RunResult, SummaryMetrics, clock::Stopwatch, memory::RssMonitor,
+    rolling::build_windows,
 };
 
 const L1_KIND_L2_MESSAGE: u8 = 3;
@@ -489,7 +489,7 @@ impl Drop for NodeProcess {
 #[cfg(test)]
 mod tests {
     use alloy_primitives::{Bytes, TxKind, U256};
-    use arb_executor_tests::helpers::{alice_key, sign_legacy, ONE_GWEI};
+    use arb_executor_tests::helpers::{ONE_GWEI, alice_key, sign_legacy};
 
     use super::*;
 

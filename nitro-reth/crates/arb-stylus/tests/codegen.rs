@@ -26,9 +26,8 @@ use std::sync::Arc;
 
 use arb_stylus::config::CompileConfig;
 use wasmer::{
-    imports,
+    Imports, Instance, Module, Store, Value, imports,
     sys::{Cranelift, CraneliftOptLevel, EngineBuilder},
-    Imports, Instance, Module, Store, Value,
 };
 use wasmer_compiler::CompilerConfig;
 
@@ -178,9 +177,11 @@ fn call_indirect_dispatches_to_correct_function() {
     }
 
     // Out-of-table index must trap.
-    assert!(dispatch
-        .call(&mut store, &[Value::I32(99), Value::I32(1)])
-        .is_err());
+    assert!(
+        dispatch
+            .call(&mut store, &[Value::I32(99), Value::I32(1)])
+            .is_err()
+    );
 }
 
 // ── Test 5: round-trip serialize / deserialize ─────────────────────

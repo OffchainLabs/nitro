@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use alloy_primitives::{Address, Log, B256, U256};
+use alloy_primitives::{Address, B256, Log, U256};
 use arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_LAST_CODE_CACHE_FIX;
 use arb_primitives::multigas::MultiGas;
 use revm::Database;
@@ -1097,7 +1097,7 @@ fn sstore_gas_cost(info: &SStoreInfo) -> u64 {
 mod sstore_parity_tests {
     use alloy_primitives::U256;
 
-    use super::{sstore_gas_cost, sstore_refund, SStoreInfo};
+    use super::{SStoreInfo, sstore_gas_cost, sstore_refund};
 
     fn info(original: u64, present: u64, new: u64, is_cold: bool) -> SStoreInfo {
         SStoreInfo {

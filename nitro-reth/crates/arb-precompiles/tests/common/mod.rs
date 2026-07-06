@@ -3,21 +3,21 @@
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use alloy_evm::{
+    EvmInternals,
     eth::EthEvmContext,
     precompiles::{DynPrecompile, Precompile, PrecompileInput},
-    EvmInternals,
 };
-use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256, keccak256};
 use arb_storage::{
-    layout::{root_slot, VERSION_OFFSET},
     ARBOS_STATE_ADDRESS,
+    layout::{VERSION_OFFSET, root_slot},
 };
 use revm::{
+    Database,
     database::{CacheDB, EmptyDB},
     precompile::{PrecompileError, PrecompileOutput, PrecompileResult},
     primitives::hardfork::SpecId,
     state::{AccountInfo, EvmState},
-    Database,
 };
 use tiny_keccak::{Hasher, Keccak};
 

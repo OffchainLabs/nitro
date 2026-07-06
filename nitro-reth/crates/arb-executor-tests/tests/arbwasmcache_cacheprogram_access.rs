@@ -13,21 +13,22 @@ mod common;
 use std::sync::Arc;
 
 use alloy_evm::{
+    EvmFactory,
     block::{BlockExecutor, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
-    EvmFactory,
 };
-use alloy_primitives::{address, keccak256, Address, Bytes, TxKind, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, TxKind, U256, address, keccak256};
 use arb_evm::config::ArbEvmConfig;
 use arb_executor_tests::helpers::{
     alice, alice_key, deploy_contract, fund_account, recover, sign_1559,
 };
 use arb_storage::{
+    ARBOS_STATE_ADDRESS,
     layout::{
-        derive_subspace_key, map_slot_b256, programs::CACHE_MANAGERS_KEY, PROGRAMS_SUBSPACE,
-        ROOT_STORAGE_KEY,
+        PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY, derive_subspace_key, map_slot_b256,
+        programs::CACHE_MANAGERS_KEY,
     },
-    write_storage_at, ARBOS_STATE_ADDRESS,
+    write_storage_at,
 };
 use arb_test_utils::ArbosHarness;
 use arbos::programs::Program;

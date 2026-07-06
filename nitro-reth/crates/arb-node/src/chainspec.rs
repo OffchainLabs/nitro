@@ -5,7 +5,7 @@
 use std::{path::Path, str::FromStr, sync::Arc};
 
 use alloy_genesis::GenesisAccount;
-use alloy_primitives::{hex, Address, B256, U256};
+use alloy_primitives::{Address, B256, U256, hex};
 use arbos::arbos_types::ParsedInitMessage;
 use eyre::eyre;
 use reth_chainspec::ChainSpec;

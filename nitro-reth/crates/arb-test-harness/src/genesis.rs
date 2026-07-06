@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use arbos::header::ARBOS_STATE_ADDRESS;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::Result;
 

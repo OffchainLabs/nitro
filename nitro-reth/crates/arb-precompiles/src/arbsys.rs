@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{keccak256, Address, Log, B256, U256};
+use alloy_primitives::{Address, B256, Log, U256, keccak256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
 use arbos::merkle_accumulator::calc_num_partials;
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::{interfaces::IArbSys, ArbPrecompileError};
+use crate::{ArbPrecompileError, interfaces::IArbSys};
 
 /// ArbSys precompile address (0x64).
 pub const ARBSYS_ADDRESS: Address = Address::new([
@@ -204,7 +204,7 @@ fn handle_arb_block_hash(
     let hash = match ctx.block.cached_l2_block_hash(requested) {
         Some(hash) => hash,
         None => {
-            return Err(ArbPrecompileError::fatal(MissingL2BlockHash { requested, current }).into())
+            return Err(ArbPrecompileError::fatal(MissingL2BlockHash { requested, current }).into());
         }
     };
 

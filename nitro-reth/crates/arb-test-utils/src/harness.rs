@@ -1,9 +1,9 @@
 //! In-memory ArbOS state for unit tests.
 
 use alloy_primitives::{Address, B256, U256};
-use arb_storage::{Storage, ARBOS_STATE_ADDRESS};
+use arb_storage::{ARBOS_STATE_ADDRESS, Storage};
 use arbos::{
-    arbos_state::{initialize::bootstrap, ArbosState},
+    arbos_state::{ArbosState, initialize::bootstrap},
     burn::SystemBurner,
     l1_pricing::L1PricingState,
     l2_pricing::L2PricingState,
@@ -11,7 +11,7 @@ use arbos::{
 };
 use revm::database::{State, StateBuilder};
 
-use crate::db::{ensure_cache_account, EmptyDb};
+use crate::db::{EmptyDb, ensure_cache_account};
 
 /// Builder + handle for an in-memory ArbOS state.
 pub struct ArbosHarness {
