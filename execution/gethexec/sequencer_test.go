@@ -8,6 +8,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/offchainlabs/nitro/execution"
 )
 
 func TestSequencerConfigValidatePGA(t *testing.T) {
@@ -115,6 +117,39 @@ func TestEndSequencingDelayedCommitOutcome(t *testing.T) {
 			t.Error("delayed message should be popped after a successful commit")
 		}
 	})
+}
+
+// EndSequencing must consume the staged queue-item results on every path;
+// a leftover struct would be re-processed by a later no-op turn's
+// EndSequencing(nil).
+func TestEndSequencingClearsPendingQueueItemsResults(t *testing.T) {
+	tests := []struct {
+		name        string
+		forwarder   *TxForwarder
+		errWhileSeq error
+	}{
+		{"retry with forwarder", &TxForwarder{}, execution.ErrRetrySequencer},
+		{"retry without forwarder", nil, execution.ErrRetrySequencer},
+		{"success", nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			engine := &ExecutionEngine{}
+			configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
+			seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			seq.forwarder = tt.forwarder
+			seq.pendingQueueItemsResults = &pendingQueueItemsResults{hooks: &FullSequencingHooks{}}
+
+			seq.EndSequencing(context.Background(), tt.errWhileSeq)
+
+			if seq.pendingQueueItemsResults != nil {
+				t.Error("pendingQueueItemsResults should be cleared by EndSequencing")
+			}
+		})
+	}
 }
 
 func TestSequencerDoesntBlockWithoutTransactions(t *testing.T) {

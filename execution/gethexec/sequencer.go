@@ -1525,6 +1525,10 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 	s.createBlockMutex.Lock()
 	defer s.createBlockMutex.Unlock()
 
+	// The staged results are consumed on every path below; clearing them in one
+	// place keeps a no-op turn's EndSequencing from re-processing stale results.
+	defer func() { s.pendingQueueItemsResults = nil }()
+
 	if s.pendingDelayedMsgCommit {
 		s.pendingDelayedMsgCommit = false
 		if errWhileSequencing == nil {
@@ -1551,8 +1555,6 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 		for _, item := range s.pendingQueueItemsResults.queueItems {
 			s.txRetryQueue.Push(item)
 		}
-
-		s.pendingQueueItemsResults = nil
 		return
 	}
 
@@ -1609,8 +1611,6 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 			}
 		}
 	}
-
-	s.pendingQueueItemsResults = nil
 }
 
 func (s *Sequencer) updateLatestParentChainBlock(header *types.Header) {
