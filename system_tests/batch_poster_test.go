@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -726,6 +727,9 @@ func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
 		}
 	}
 	// Drain any extra batch poster transactions that may arrive within a short window.
+	// While the filter is enabled the data poster never sees its transactions confirm,
+	// so it may re-send fee-bumped replacements of already-captured nonces; extras here
+	// are expected.
 	drainTimeout := time.After(2 * time.Second)
 drain:
 	for {
@@ -737,9 +741,23 @@ drain:
 		}
 	}
 
-	if uint64(len(batchPosterTxs)) > numBatches {
-		t.Logf("WARNING: captured %d batch poster txs during drain, expected %d", len(batchPosterTxs), numBatches)
+	// Deduplicate the captured transactions by nonce, keeping the last-seen (highest-fee)
+	// variant of each: an earlier variant of a replaced nonce can never mine, so replaying
+	// it and waiting on its hash would time out.
+	txByNonce := make(map[uint64]*types.Transaction)
+	for _, bptx := range batchPosterTxs {
+		txByNonce[bptx.Nonce()] = bptx
 	}
+	if uint64(len(txByNonce)) != numBatches {
+		t.Fatalf("expected %d distinct batch poster nonces, got %d (%d txs captured)",
+			numBatches, len(txByNonce), len(batchPosterTxs))
+	}
+	nonces := make([]uint64, 0, len(txByNonce))
+	for nonce := range txByNonce {
+		nonces = append(nonces, nonce)
+	}
+	slices.Sort(nonces)
+	t.Logf("Replaying %d batch poster txs (%d captured)", len(txByNonce), len(batchPosterTxs))
 
 	// Verify the filter actually blocked batches from landing on L1.
 	batchCountBeforeReplay := GetBatchCount(t, builder)
@@ -747,33 +765,19 @@ drain:
 		t.Fatalf("expected filter to block all batches, but %d landed on L1", batchCountBeforeReplay-initialBatchCount)
 	}
 
-	// Disable the filter and send the captured batch poster transactions.
+	// Disable the filter and replay the deduplicated transactions in nonce order. The
+	// batch poster is still running and may concurrently re-send its own copies now that
+	// the filter is off, so tolerate send errors and wait on the outcome (the batch count
+	// advancing) rather than on individual transaction hashes.
 	builder.L1.ClientWrapper.DisableRawTransactionFilter()
-	var sentTxs []*types.Transaction
-	var skipped int
-	for _, bptx := range batchPosterTxs {
-		err := builder.L1.Client.SendTransaction(ctx, bptx)
-		if err != nil {
-			if strings.Contains(err.Error(), "nonce too low") || strings.Contains(err.Error(), "already known") {
-				skipped++
-				t.Logf("Skipping batch poster tx: %v", err)
-				continue
-			}
-			Require(t, err)
+	for _, nonce := range nonces {
+		if err := builder.L1.Client.SendTransaction(ctx, txByNonce[nonce]); err != nil {
+			t.Logf("Replay of batch poster tx with nonce %d not accepted (batch poster likely re-sent it): %v", nonce, err)
 		}
-		sentTxs = append(sentTxs, bptx)
 	}
-	t.Logf("Replayed %d batch poster txs (%d captured, %d skipped due to stale nonce)", len(sentTxs), len(batchPosterTxs), skipped)
-	for _, tx := range sentTxs {
-		_, err := EnsureTxSucceeded(ctx, builder.L1.Client, tx)
-		Require(t, err)
-	}
-	// If any batches were skipped due to stale nonces, the test's assumptions are violated.
-	if uint64(len(sentTxs)) != numBatches {
-		t.Fatalf("expected %d replayed batches, got %d (skipped %d due to stale nonce out of %d captured)",
-			numBatches, len(sentTxs), skipped, len(batchPosterTxs))
-	}
-	CheckBatchCount(t, builder, initialBatchCount+numBatches)
+	pollUntil(t, ctx, time.Minute, 100*time.Millisecond, "batches to land on L1", func() bool {
+		return GetBatchCount(t, builder) == initialBatchCount+numBatches
+	})
 }
 
 func TestBatchPosterL1SurplusMatchesBatchGasFlaky(t *testing.T) {
