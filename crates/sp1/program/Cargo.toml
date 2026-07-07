@@ -10,7 +10,7 @@ caller-env = { workspace = true, features = ["brotli", "wasmer_traits", "integri
 prover = { workspace = true, features = ["native"] }
 sp1-zkvm = { workspace = true, features = ["may_dump_elf", "untrusted_programs"] }
 validation = { workspace = true, features = ["rkyv"] }
-wasmer = { workspace = true, features = ["sys", "compiler", "singlepass", "wasmparser", "baremetal"] }
+wasmer = { workspace = true, features = ["compiler", "singlepass", "wasmparser", "baremetal", "unsafe-cothread"] }
 wasmer-types = { workspace = true }
 wasmer-vm = { workspace = true, features = ["baremetal"] }
 
