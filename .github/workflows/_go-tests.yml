@@ -306,7 +306,7 @@ jobs:
       - name: run execution spec tests
         if: inputs.run-execution-spec-tests
         env:
-          PRIVATE_REPO_TOKEN: ${{ steps.submods.outputs.token }}
+          PRIVATE_REPO_TOKEN: ${{ github.repository == 'OffchainLabs/nitro-private' && steps.submods.outputs.token || '' }}
         run: ${{ github.workspace }}/.github/workflows/runExecutionSpecTests.sh
 
       # --------------------- PEBBLE MODE ---------------------
@@ -336,8 +336,8 @@ jobs:
           path: test-results/junit*.xml
 
       - name: Upload coverage to Codecov
-        if: github.event_name != 'merge_group'
-        uses: codecov/codecov-action@v5
+        if: github.event_name != 'merge_group' && github.repository == 'OffchainLabs/nitro-private'
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
         with:
           fail_ci_if_error: false
           files: ./coverage.txt,./coverage-a.txt,./coverage-b.txt,./coverage-redis.txt

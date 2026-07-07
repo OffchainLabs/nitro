@@ -117,6 +117,9 @@ var nativeStackBaseline atomic.Uint64
 // Storing a non-zero baseline re-enables doubleNativeStackSize.
 func SetInitialNativeStackSize(size uint64) {
 	SetNativeStackSize(size)
+	// Stacks pooled before the size change keep their old size, so drop them
+	// the same way doubleNativeStackSize does.
+	DrainStackPool()
 	// Always capture the true Wasmer stack size (whether newly set or the
 	// existing default when size == 0) so doubleNativeStackSize can
 	// double from a real baseline.

@@ -23,7 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	dataposterconfig "github.com/offchainlabs/nitro/arbnode/dataposter/config"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -102,7 +102,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
 	builder.nodeConfig.BatchPoster.RedisLock.Enable = useRedisLock
-	signerCfg, err := dataposter.ExternalSignerTestCfg(srv.Address, srv.URL())
+	signerCfg, err := dataposterconfig.ExternalSignerTestConfig(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting external signer config: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
 	builder.nodeConfig.BatchPoster.RedisLock.LockoutDuration = 100 * time.Millisecond
 	builder.nodeConfig.BatchPoster.RedisLock.RefreshDuration = 50 * time.Millisecond
-	signerCfg, err := dataposter.ExternalSignerTestCfg(srv.Address, srv.URL())
+	signerCfg, err := dataposterconfig.ExternalSignerTestConfig(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting external signer config: %v", err)
 	}
@@ -698,6 +698,15 @@ func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
 		WithDelayBuffer(threshold).
 		WithL1ClientWrapper(t).
 		WithTakeOwnership(false)
+	// While the L1 transaction filter below is enabled, the data poster never sees its
+	// batch transactions confirm, and the aggressive test replacement schedule (1s, 2s,
+	// 5s, ...) would make it re-send fee-bumped replacements of the same nonces within
+	// the capture window. That makes the captured set nondeterministic, and the earlier
+	// variant of a replaced nonce can never mine, so replaying it would time out.
+	// Disable replace-by-fee within the test window so exactly numBatches transactions
+	// are captured. The fees are always sufficient here; replacement is purely
+	// time-triggered.
+	builder.nodeConfig.BatchPoster.DataPoster.ReplacementTimes = []time.Duration{time.Hour}
 	cleanup := builder.Build(t)
 	defer cleanup()
 

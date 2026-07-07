@@ -77,6 +77,8 @@ var (
 	dataLimitedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/datalimited", nil)
 	// number of blocks ended because of exhausting the transactions to sequence
 	txExhaustedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/txexhausted", nil)
+	// forwarder/pause wait + validation before sequencing an express lane submission
+	expressLanePreSequenceWaitHistogram = metrics.NewRegisteredHistogram("arb/sequencer/timeboost/expresslane/presequencewait", nil, metrics.NewBoundedHistogramSample())
 )
 
 type SequencerConfig struct {
@@ -536,7 +538,7 @@ func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.H
 	if err != nil {
 		// MarshalBinary should essentially never fail for a well-formed transaction already
 		// in memory. We log instead of returning an error so that the caller can return a
-		// plain ErrArbTxFilter, avoiding exposure of internal operation errors (e.g.
+		// plain ErrSeqFilter, avoiding exposure of internal operation errors (e.g.
 		// marshalling failures) to end users.
 		log.Error("failed to marshal transaction for filtered tx report", "err", err, "txHash", tx.Hash())
 		return
@@ -683,6 +685,7 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 		return errors.New("timeboost not enabled")
 	}
 
+	preSequenceWaitStart := time.Now()
 	forwarder, err := s.getForwarder(ctx)
 	if err != nil {
 		return err
@@ -705,6 +708,7 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 	if forwarder != nil {
 		return forwarder.PublishExpressLaneTransaction(ctx, msg)
 	}
+	expressLanePreSequenceWaitHistogram.Update(time.Since(preSequenceWaitStart).Microseconds())
 
 	return s.expressLaneService.SequenceExpressLaneSubmission(msg)
 }
@@ -796,13 +800,13 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 
 	touchAddresses(statedb, tx, sender)
 	if statedb.IsTxFiltered() {
-		return state.ErrArbTxFilter
+		return state.ErrSeqFilter
 	}
 
 	addressFiltered, filteredAddresses := statedb.IsAddressFiltered()
 	if addressFiltered {
 		s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock)
-		return state.ErrArbTxFilter
+		return state.ErrSeqFilter
 	}
 	return nil
 }
@@ -817,11 +821,11 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 		}
 	}
 	if statedb.IsTxFiltered() {
-		return state.ErrArbTxFilter
+		return state.ErrSeqFilter
 	}
 	if addressFiltered, filteredAddresses := statedb.IsAddressFiltered(); addressFiltered {
 		s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock)
-		return state.ErrArbTxFilter
+		return state.ErrSeqFilter
 	}
 
 	// For redeems, skip nonce/revert-gas checks since those
