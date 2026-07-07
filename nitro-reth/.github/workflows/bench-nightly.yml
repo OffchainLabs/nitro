@@ -41,7 +41,7 @@ jobs:
           done
           echo "Submodule init failed after 3 attempts"
           exit 1
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: bench-nightly-binaries
           path: target/release
@@ -68,7 +68,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: nightly-arbos-*
           path: target/bench/nightly
