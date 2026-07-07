@@ -149,7 +149,7 @@ mod tests {
     /// Builds a single-entry preimages map for assertions.
     fn preimages() -> Preimages {
         let hash = B256::repeat_byte(0x22);
-        Preimages::from([(PreimageType(0), HashMap::from([(hash, vec![1, 2, 3])]))])
+        Preimages::from([(PreimageType::Keccak256, HashMap::from([(hash, vec![1, 2, 3])]))])
     }
 
     #[tokio::test]

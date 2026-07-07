@@ -121,11 +121,12 @@ fn decode_payload(payload: Option<&str>) -> Result<Payload> {
 fn decode_preimages(preimages: Option<RpcPreimages>) -> Result<Preimages> {
     let mut out = Preimages::new();
     for (ty, inner) in preimages.unwrap_or_default() {
+        let ty = PreimageType::try_from(ty)?;
         let mut decoded = HashMap::with_capacity(inner.len());
         for (hash, value) in inner {
             decoded.insert(hash, base64_engine().decode(value)?);
         }
-        out.insert(PreimageType(ty), decoded);
+        out.insert(ty, decoded);
     }
     Ok(out)
 }
@@ -213,8 +214,8 @@ mod tests {
 
         let result = decode_preimages(Some(wire)).unwrap();
         assert_eq!(result.len(), 2);
-        assert_eq!(result[&PreimageType(0)][&hash_a], BYTES);
-        assert_eq!(result[&PreimageType(1)][&hash_b], BYTES);
+        assert_eq!(result[&PreimageType::Keccak256][&hash_a], BYTES);
+        assert_eq!(result[&PreimageType::Sha2_256][&hash_b], BYTES);
     }
 
     #[test]
@@ -222,7 +223,7 @@ mod tests {
         let wire: RpcPreimages = HashMap::from([(0u8, HashMap::new())]);
 
         let result = decode_preimages(Some(wire)).unwrap();
-        assert!(result[&PreimageType(0)].is_empty());
+        assert!(result[&PreimageType::Keccak256].is_empty());
     }
 
     #[test]
@@ -234,6 +235,17 @@ mod tests {
 
         let err = decode_preimages(Some(wire)).unwrap_err();
         assert!(matches!(err, DaError::Base64(_)));
+    }
+
+    #[test]
+    fn decode_preimages_unknown_type_errors() {
+        let wire: RpcPreimages = HashMap::from([(
+            99u8,
+            HashMap::from([(B256::repeat_byte(0x11), B64.to_string())]),
+        )]);
+
+        let err = decode_preimages(Some(wire)).unwrap_err();
+        assert!(matches!(err, DaError::UnknownPreimageType(99)));
     }
 
     #[tokio::test]
@@ -272,7 +284,7 @@ mod tests {
             .collect_preimages(1, B256::repeat_byte(1), &[])
             .await
             .unwrap();
-        assert_eq!(result[&PreimageType(0)][&hash], BYTES);
+        assert_eq!(result[&PreimageType::Keccak256][&hash], BYTES);
     }
 
     #[tokio::test]
@@ -301,7 +313,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(payload, BYTES);
-        assert_eq!(preimages[&PreimageType(0)][&hash], BYTES);
+        assert_eq!(preimages[&PreimageType::Keccak256][&hash], BYTES);
     }
 
     #[tokio::test]
