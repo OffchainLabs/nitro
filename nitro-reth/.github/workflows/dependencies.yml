@@ -12,21 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          submodules: false
-      - name: Init submodules with retry
-        shell: bash
-        run: |
-          for i in 1 2 3; do
-            if git submodule update --init --recursive --depth 1; then
-              echo "Submodules initialized"
-              exit 0
-            fi
-            echo "Submodule init attempt $i failed; sleeping $((i*5))s before retry"
-            sleep $((i*5))
-          done
-          echo "Submodule init failed after 3 attempts"
-          exit 1
       # Advisories are checked separately below via rustsec/audit-check, so
       # this only runs the categories cargo-deny uniquely covers.
       - uses: EmbarkStudios/cargo-deny-action@v2
