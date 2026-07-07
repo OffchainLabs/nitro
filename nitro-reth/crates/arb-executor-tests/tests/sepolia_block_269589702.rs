@@ -5,7 +5,7 @@
 //! at the floor (20,000,000) — the difference is the v60 multi-gas refund.
 
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn __rust_probestack() {}
 

@@ -10,7 +10,7 @@
 ///
 /// Defined for the linker only; never called from Rust.
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
 use std::sync::Arc;

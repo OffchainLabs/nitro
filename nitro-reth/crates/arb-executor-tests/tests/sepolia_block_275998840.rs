@@ -5,7 +5,7 @@
 //! pins the deferred per-slot refund emitted past the out-of-gas check.
 
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
