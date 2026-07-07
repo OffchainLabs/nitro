@@ -952,9 +952,11 @@ impl EvmApi for StylusEvmApi {
         address: Address,
         gas_left: Gas,
     ) -> eyre::Result<(Vec<u8>, Gas)> {
-        if let Some((stored, data)) = self.last_code.as_ref() && *stored == address {
-                return Ok((data.clone(), Gas(0)));
-            }
+        if let Some((stored, data)) = self.last_code.as_ref()
+            && *stored == address
+        {
+            return Ok((data.clone(), Gas(0)));
+        }
         let (code, is_cold) = self.journal().account_code(address)?;
         // WasmAccountTouchCost(withCode=true): extCodeCost + cold/warm access cost
         let access_cost = if is_cold {

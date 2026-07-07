@@ -913,9 +913,11 @@ impl ModuleMiddleware for HeapBound {
             .ok_or_else(|| mw_err("scratch global not found"))?;
 
         let pay_func = info.imports.iter().find_map(|(key, idx)| {
-            if key.field == "pay_for_memory_grow" && let ImportIndex::Function(f) = idx {
-                    return Some(*f);
-                }
+            if key.field == "pay_for_memory_grow"
+                && let ImportIndex::Function(f) = idx
+            {
+                return Some(*f);
+            }
             None
         });
 

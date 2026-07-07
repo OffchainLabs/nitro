@@ -186,9 +186,10 @@ fn resolve_published_port(container_name: &str) -> Result<u16> {
     let mapping = String::from_utf8_lossy(&out.stdout);
     for line in mapping.lines() {
         if let Some((_, port)) = line.rsplit_once(':')
-            && let Ok(p) = port.trim().parse::<u16>() {
-                return Ok(p);
-            }
+            && let Ok(p) = port.trim().parse::<u16>()
+        {
+            return Ok(p);
+        }
     }
     Err(HarnessError::Rpc(format!(
         "could not resolve published port from: {mapping}"

@@ -245,9 +245,10 @@ fn extract_tx_hashes(v: &Value) -> Vec<B256> {
             _ => None,
         };
         if let Some(s) = hash_str
-            && let Ok(h) = s.parse::<B256>() {
-                out.push(h);
-            }
+            && let Ok(h) = s.parse::<B256>()
+        {
+            out.push(h);
+        }
     }
     out
 }

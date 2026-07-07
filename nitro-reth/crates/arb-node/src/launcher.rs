@@ -117,9 +117,10 @@ pub fn engine_handle() -> Option<&'static ConsensusEngineHandle<ArbEngineTypes>>
 /// Send blocks to the background persistence thread (non-blocking).
 pub fn start_flush(request: FlushRequest) {
     if let Some(handle) = FLUSH_HANDLE.get()
-        && let Err(e) = handle.sender.send(PersistenceRequest::Flush(request)) {
-            error!(target: "reth::cli", "Failed to send flush request: {e}");
-        }
+        && let Err(e) = handle.sender.send(PersistenceRequest::Flush(request))
+    {
+        error!(target: "reth::cli", "Failed to send flush request: {e}");
+    }
 }
 
 /// Send an unwind request to the background persistence thread and return a

@@ -8,10 +8,11 @@ pub fn run(args: PromoteArgs) -> Result<()> {
         .with_context(|| format!("validate {}", args.captured.display()))?;
 
     if let Some(parent) = args.committed.parent()
-        && !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("create parent dir {}", parent.display()))?;
-        }
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("create parent dir {}", parent.display()))?;
+    }
 
     if let Err(e) = std::fs::rename(&args.captured, &args.committed) {
         // Cross-device rename: fall back to copy + remove.

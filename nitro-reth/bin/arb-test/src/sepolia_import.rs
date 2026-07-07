@@ -191,9 +191,10 @@ fn candidates_for(addr: &str, prestate: &Value) -> Vec<String> {
         for (key, val) in map {
             if !addr_eq(key, addr)
                 && let Some(code) = val.get("code").and_then(Value::as_str)
-                    && code != "0x" {
-                        continue;
-                    }
+                && code != "0x"
+            {
+                continue;
+            }
             if let Some(storage) = val.get("storage").and_then(Value::as_object) {
                 for slot in storage.keys() {
                     out.push(slot.clone());

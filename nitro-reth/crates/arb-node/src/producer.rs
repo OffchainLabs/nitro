@@ -232,9 +232,10 @@ where
     ) -> Arc<crate::coalesced_state::CoalescedOverlay> {
         let mut cache = self.cached_overlay.lock();
         if let Some(c) = cache.as_ref()
-            && c.parent_hash == parent_hash {
-                return c.overlay.clone();
-            }
+            && c.parent_hash == parent_hash
+        {
+            return c.overlay.clone();
+        }
         let overlay = Arc::new(crate::coalesced_state::CoalescedOverlay::from_chain(
             head_state,
         ));
@@ -272,9 +273,10 @@ where
     ) -> Arc<alloy_primitives::map::HashMap<B256, revm::bytecode::Bytecode>> {
         let mut cache = self.cached_prestate.lock();
         if let Some(c) = cache.as_ref()
-            && c.parent_hash == parent_hash {
-                return c.contracts.clone();
-            }
+            && c.parent_hash == parent_hash
+        {
+            return c.contracts.clone();
+        }
         let mut contracts: alloy_primitives::map::HashMap<B256, revm::bytecode::Bytecode> =
             Default::default();
         if let Some(head_state) = head_state {
@@ -629,28 +631,29 @@ where
                     .l1_pricing_state
                     .set_price_per_unit(unsafe { &mut *state_ptr }, init_msg.initial_l1_base_fee);
                 if let Ok(target) = std::env::var("ARB_INITIAL_ARBOS_VERSION")
-                    && let Ok(target_version) = target.parse::<u64>() {
-                        let current = arb_state.arbos_version();
-                        if target_version > current {
-                            match arb_state.upgrade_arbos_version(
-                                unsafe { &mut *state_ptr },
-                                target_version,
-                                true,
-                            ) {
-                                Err(e) => {
-                                    info!(target: "block_producer", err = ?e, target_version, "ArbOS upgrade via env var failed");
-                                }
-                                _ => {
-                                    info!(
-                                        target: "block_producer",
-                                        from = current,
-                                        to = target_version,
-                                        "ArbOS upgraded via ARB_INITIAL_ARBOS_VERSION"
-                                    );
-                                }
+                    && let Ok(target_version) = target.parse::<u64>()
+                {
+                    let current = arb_state.arbos_version();
+                    if target_version > current {
+                        match arb_state.upgrade_arbos_version(
+                            unsafe { &mut *state_ptr },
+                            target_version,
+                            true,
+                        ) {
+                            Err(e) => {
+                                info!(target: "block_producer", err = ?e, target_version, "ArbOS upgrade via env var failed");
+                            }
+                            _ => {
+                                info!(
+                                    target: "block_producer",
+                                    from = current,
+                                    to = target_version,
+                                    "ArbOS upgraded via ARB_INITIAL_ARBOS_VERSION"
+                                );
                             }
                         }
                     }
+                }
             }
         }
 
@@ -970,10 +973,9 @@ where
                                 && info.balance.is_zero()
                                 && info.code_hash == keccak_empty_hash
                         });
-                    if still_empty
-                        && let Some(bundle_acct) = bundle.state.get_mut(addr) {
-                            bundle_acct.info = None;
-                        }
+                    if still_empty && let Some(bundle_acct) = bundle.state.get_mut(addr) {
+                        bundle_acct.info = None;
+                    }
                 } else {
                     let still_empty = bundle
                         .state
@@ -1349,12 +1351,13 @@ where
 
         // Drain any in-flight flush before unwinding so disk state is consistent.
         if self.pending_flush.load(Ordering::SeqCst)
-            && let Some(result) = crate::launcher::try_flush_result() {
-                self.in_memory_state
-                    .remove_persisted_blocks(result.last_num_hash);
-                *self.flushing_trie_input.lock() = None;
-                self.pending_flush.store(false, Ordering::SeqCst);
-            }
+            && let Some(result) = crate::launcher::try_flush_result()
+        {
+            self.in_memory_state
+                .remove_persisted_blocks(result.last_num_hash);
+            *self.flushing_trie_input.lock() = None;
+            self.pending_flush.store(false, Ordering::SeqCst);
+        }
 
         // Walk blocks above target in the in-memory state and gather
         // them as "old" for a reorg. Without them, the canonical head
@@ -1441,20 +1444,23 @@ where
         // eth_getBlockByNumber("safe" | "finalized") returns the
         // correct header.
         if let Some(h) = safe
-            && let Ok(Some(sealed)) = self.provider.sealed_header_by_hash(h) {
-                self.in_memory_state.set_safe(sealed);
-            }
+            && let Ok(Some(sealed)) = self.provider.sealed_header_by_hash(h)
+        {
+            self.in_memory_state.set_safe(sealed);
+        }
         if let Some(h) = finalized
-            && let Ok(Some(sealed)) = self.provider.sealed_header_by_hash(h) {
-                self.in_memory_state.set_finalized(sealed);
-            }
+            && let Ok(Some(sealed)) = self.provider.sealed_header_by_hash(h)
+        {
+            self.in_memory_state.set_finalized(sealed);
+        }
         // `validated` is Arbitrum-specific — reth's canonical state
         // exposes only safe/finalized. Push to the external watcher
         // so `arb_getValidatedBlock` RPC returns the latest value.
         if let Some(h) = validated
-            && let Some(w) = self.validated_watcher.lock().as_ref() {
-                *w.write() = h;
-            }
+            && let Some(w) = self.validated_watcher.lock().as_ref()
+        {
+            *w.write() = h;
+        }
         Ok(())
     }
 

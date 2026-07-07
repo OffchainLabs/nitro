@@ -242,12 +242,16 @@ impl<E: EvmApi> NativeInstance<E> {
         {
             let store = &mut self.store;
             let exports = &self.instance.exports;
-            if let Ok(ink_left) = exports.get_global(STYLUS_INK_LEFT) && let Value::I64(v) = ink_left.get(store) {
-                    ink_val = v as u64;
-                }
-            if let Ok(ink_status) = exports.get_global(STYLUS_INK_STATUS) && let Value::I32(v) = ink_status.get(store) {
-                    status_val = v as u32;
-                }
+            if let Ok(ink_left) = exports.get_global(STYLUS_INK_LEFT)
+                && let Value::I64(v) = ink_left.get(store)
+            {
+                ink_val = v as u64;
+            }
+            if let Ok(ink_status) = exports.get_global(STYLUS_INK_STATUS)
+                && let Value::I32(v) = ink_status.get(store)
+            {
+                status_val = v as u32;
+            }
         }
         if let Some(meter) = self.env_mut().meter.as_mut() {
             meter.set_ink(Ink(ink_val));

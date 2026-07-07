@@ -99,9 +99,10 @@ pub fn run_execution_dir(dir: &Path) {
             continue;
         }
         if let Some(f) = &filter
-            && !path.to_string_lossy().contains(f) {
-                continue;
-            }
+            && !path.to_string_lossy().contains(f)
+        {
+            continue;
+        }
         count += 1;
         if let Err(e) = run_execution_fixture(path, rpc_url.as_deref()) {
             failures.push(format!("{}: {e}", path.display()));

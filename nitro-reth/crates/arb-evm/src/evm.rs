@@ -1702,12 +1702,13 @@ fn is_stylus_call(frame_init: &FrameInit, arbos_version: u64) -> Option<Bytes> {
         return None;
     }
     if let FrameInput::Call(ref inputs) = frame_init.frame_input
-        && let Some((_, ref code)) = inputs.known_bytecode {
-            let raw = code.original_bytes();
-            if arb_stylus::is_stylus_runnable(&raw) {
-                return Some(raw);
-            }
+        && let Some((_, ref code)) = inputs.known_bytecode
+    {
+        let raw = code.original_bytes();
+        if arb_stylus::is_stylus_runnable(&raw) {
+            return Some(raw);
         }
+    }
     None
 }
 
@@ -1725,16 +1726,16 @@ fn execute_stylus_call_concrete<DB: Database>(
         && let Some(i) =
             ctx.journal_mut()
                 .transfer_loaded(inputs.caller, inputs.target_address, value)
-        {
-            let gas = EvmGas::new(inputs.gas_limit);
-            ctx.journaled_state.inner.checkpoint_revert(checkpoint);
-            return FrameResult::Call(CallOutcome {
-                result: InterpreterResult::new(i.into(), Bytes::new(), gas),
-                memory_offset: inputs.return_memory_offset.clone(),
-                was_precompile_called: false,
-                precompile_call_logs: Vec::new(),
-            });
-        }
+    {
+        let gas = EvmGas::new(inputs.gas_limit);
+        ctx.journaled_state.inner.checkpoint_revert(checkpoint);
+        return FrameResult::Call(CallOutcome {
+            result: InterpreterResult::new(i.into(), Bytes::new(), gas),
+            memory_offset: inputs.return_memory_offset.clone(),
+            was_precompile_called: false,
+            precompile_call_logs: Vec::new(),
+        });
+    }
 
     let result = execute_stylus_program(ctx, inputs, bytecode, pre_ctx);
 
@@ -1823,11 +1824,12 @@ where
                 });
 
             if let Some(bytecode) = bytecode
-                && arb_stylus::is_stylus_runnable(&bytecode) {
-                    return Ok(Some(execute_stylus_program(
-                        context, inputs, &bytecode, &self.ctx,
-                    )));
-                }
+                && arb_stylus::is_stylus_runnable(&bytecode)
+            {
+                return Ok(Some(execute_stylus_program(
+                    context, inputs, &bytecode, &self.ctx,
+                )));
+            }
         }
 
         Ok(None)
@@ -2013,36 +2015,38 @@ where
             });
         }
 
-        if let Some(bytecode) = is_stylus_call(&frame_input, pre_ctx.block.arbos_version) && let FrameInput::Call(ref inputs) = frame_input.frame_input {
-                if frame_input.depth > revm::primitives::constants::CALL_STACK_LIMIT as usize {
-                    let gas = EvmGas::new(inputs.gas_limit);
-                    if pushed_caller {
-                        pre_ctx.pop_caller();
-                    }
-                    return Ok(ItemOrResult::Result(FrameResult::Call(CallOutcome {
-                        result: InterpreterResult::new(
-                            InstructionResult::CallTooDeep,
-                            Bytes::new(),
-                            gas,
-                        ),
-                        memory_offset: inputs.return_memory_offset.clone(),
-                        was_precompile_called: false,
-                        precompile_call_logs: Vec::new(),
-                    })));
-                }
-                let checkpoint = self.inner.ctx.journal_mut().checkpoint();
-                let result = execute_stylus_call_concrete(
-                    &mut self.inner.ctx,
-                    inputs,
-                    &bytecode,
-                    checkpoint,
-                    &pre_ctx,
-                );
+        if let Some(bytecode) = is_stylus_call(&frame_input, pre_ctx.block.arbos_version)
+            && let FrameInput::Call(ref inputs) = frame_input.frame_input
+        {
+            if frame_input.depth > revm::primitives::constants::CALL_STACK_LIMIT as usize {
+                let gas = EvmGas::new(inputs.gas_limit);
                 if pushed_caller {
                     pre_ctx.pop_caller();
                 }
-                return Ok(ItemOrResult::Result(result));
+                return Ok(ItemOrResult::Result(FrameResult::Call(CallOutcome {
+                    result: InterpreterResult::new(
+                        InstructionResult::CallTooDeep,
+                        Bytes::new(),
+                        gas,
+                    ),
+                    memory_offset: inputs.return_memory_offset.clone(),
+                    was_precompile_called: false,
+                    precompile_call_logs: Vec::new(),
+                })));
             }
+            let checkpoint = self.inner.ctx.journal_mut().checkpoint();
+            let result = execute_stylus_call_concrete(
+                &mut self.inner.ctx,
+                inputs,
+                &bytecode,
+                checkpoint,
+                &pre_ctx,
+            );
+            if pushed_caller {
+                pre_ctx.pop_caller();
+            }
+            return Ok(ItemOrResult::Result(result));
+        }
 
         self.inner.frame_init(frame_input)
     }
@@ -2074,38 +2078,40 @@ where
         // can deploy; we re-apply it here with the Stylus exception.
         if let FrameResult::Create(ref mut outcome) = result {
             let create_ctx = self.create_ctx_stack.pop();
-            if outcome.instruction_result().is_ok() && let Some(addr) = outcome.address {
-                    let code_bytes: Vec<u8> = self
-                        .inner
-                        .ctx
-                        .journal_mut()
-                        .code(addr)
-                        .map(|c| c.data.to_vec())
-                        .unwrap_or_default();
-                    let starts_with_ef = code_bytes.first() == Some(&0xEF);
-                    let is_stylus =
-                        arb_stylus::is_stylus_component(&code_bytes, pre_ctx.block.arbos_version);
-                    if starts_with_ef && !is_stylus {
-                        if let Some(create_ctx) = create_ctx {
-                            self.inner
-                                .ctx
-                                .journal_mut()
-                                .checkpoint_revert(create_ctx.checkpoint);
-                            use revm::context_interface::journaled_state::account::JournaledAccountTr;
-                            if let Ok(mut caller_acc) = self
-                                .inner
-                                .ctx
-                                .journal_mut()
-                                .load_account_mut(create_ctx.caller)
-                            {
-                                let _ = caller_acc.data.bump_nonce();
-                            }
+            if outcome.instruction_result().is_ok()
+                && let Some(addr) = outcome.address
+            {
+                let code_bytes: Vec<u8> = self
+                    .inner
+                    .ctx
+                    .journal_mut()
+                    .code(addr)
+                    .map(|c| c.data.to_vec())
+                    .unwrap_or_default();
+                let starts_with_ef = code_bytes.first() == Some(&0xEF);
+                let is_stylus =
+                    arb_stylus::is_stylus_component(&code_bytes, pre_ctx.block.arbos_version);
+                if starts_with_ef && !is_stylus {
+                    if let Some(create_ctx) = create_ctx {
+                        self.inner
+                            .ctx
+                            .journal_mut()
+                            .checkpoint_revert(create_ctx.checkpoint);
+                        use revm::context_interface::journaled_state::account::JournaledAccountTr;
+                        if let Ok(mut caller_acc) = self
+                            .inner
+                            .ctx
+                            .journal_mut()
+                            .load_account_mut(create_ctx.caller)
+                        {
+                            let _ = caller_acc.data.bump_nonce();
                         }
-                        outcome.address = None;
-                        outcome.result.result = InstructionResult::CreateContractStartingWithEF;
-                        outcome.result.output = Bytes::new();
-                        outcome.result.gas.spend_all();
                     }
+                    outcome.address = None;
+                    outcome.result.result = InstructionResult::CreateContractStartingWithEF;
+                    outcome.result.output = Bytes::new();
+                    outcome.result.gas.spend_all();
+                }
             }
         }
         self.inner.frame_return_result(result)

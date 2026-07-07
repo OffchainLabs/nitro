@@ -132,9 +132,11 @@ pub fn record_with_steps(
     });
     if let Some(rec) = leftover {
         ACTIVE.with(|slot| {
-            if let Some(buf) = slot.borrow().as_ref() &&let Ok(mut v) = buf.lock() {
-                    v.push(rec);
-                }
+            if let Some(buf) = slot.borrow().as_ref()
+                && let Ok(mut v) = buf.lock()
+            {
+                v.push(rec);
+            }
         });
     }
 }

@@ -60,11 +60,12 @@ impl StylusDebugServer for StylusDebugHandler {
     ) -> RpcResult<GethTrace> {
         if let Some(ref o) = opts
             && let Some(GethDebugTracerType::JsTracer(name)) = &o.tracer
-                && name == STYLUS_TRACER_NAME {
-                    let records = take_cached_trace(tx_hash);
-                    let value = serde_json::to_value(&records).unwrap_or_default();
-                    return Ok(GethTrace::JS(value));
-                }
+            && name == STYLUS_TRACER_NAME
+        {
+            let records = take_cached_trace(tx_hash);
+            let value = serde_json::to_value(&records).unwrap_or_default();
+            return Ok(GethTrace::JS(value));
+        }
         (self.forwarder)(tx_hash, opts).await
     }
 }

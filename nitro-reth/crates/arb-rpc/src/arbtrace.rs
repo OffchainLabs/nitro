@@ -148,13 +148,14 @@ impl ArbTraceHandler {
         let parsed: JsonValue = json::from_str(block_num_or_hash.get()).unwrap_or(JsonValue::Null);
         if let Some(s) = parsed.as_str()
             && let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X"))
-                && let Ok(n) = i64::from_str_radix(hex, 16)
-                    && (n < 0 || (n as u64) > self.config.genesis_block_num) {
-                        return Err(block_unsupported_by_classic(
-                            n,
-                            self.config.genesis_block_num,
-                        ));
-                    }
+            && let Ok(n) = i64::from_str_radix(hex, 16)
+            && (n < 0 || (n as u64) > self.config.genesis_block_num)
+        {
+            return Err(block_unsupported_by_classic(
+                n,
+                self.config.genesis_block_num,
+            ));
+        }
         Ok(())
     }
 

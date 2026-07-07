@@ -229,12 +229,13 @@ fn build_custom_genesis(base_genesis: &Path, dest: &Path, workload: &Workload) -
     let mut json: serde_json::Value = serde_json::from_slice(&bytes)?;
 
     if let Some(config) = json.get_mut("config")
-        && let Some(obj) = config.as_object_mut() {
-            obj.insert(
-                "chainId".into(),
-                serde_json::Value::Number(workload.chain_id.into()),
-            );
-        }
+        && let Some(obj) = config.as_object_mut()
+    {
+        obj.insert(
+            "chainId".into(),
+            serde_json::Value::Number(workload.chain_id.into()),
+        );
+    }
 
     let alloc = json
         .get_mut("alloc")
@@ -371,10 +372,11 @@ fn wait_for_ready(
     while start.elapsed() < timeout {
         if let Ok(resp) = client.post(url).json(&body).send()
             && resp.status().is_success()
-                && let Ok(json) = resp.json::<serde_json::Value>()
-                    && json.get("result").is_some() {
-                        return Ok(());
-                    }
+            && let Ok(json) = resp.json::<serde_json::Value>()
+            && json.get("result").is_some()
+        {
+            return Ok(());
+        }
         thread::sleep(Duration::from_millis(250));
     }
     Err(eyre::eyre!(
@@ -440,9 +442,10 @@ impl NodeProcess {
                         return;
                     }
                     if let Ok(l) = line
-                        && echo {
-                            eprintln!("[arb-reth] {l}");
-                        }
+                        && echo
+                    {
+                        eprintln!("[arb-reth] {l}");
+                    }
                 }
             });
             let reader = BufReader::new(stdout);
@@ -451,9 +454,10 @@ impl NodeProcess {
                     break;
                 }
                 if let Ok(l) = line
-                    && echo {
-                        eprintln!("[arb-reth] {l}");
-                    }
+                    && echo
+                {
+                    eprintln!("[arb-reth] {l}");
+                }
             }
             let _ = stderr_jh.join();
         }));
