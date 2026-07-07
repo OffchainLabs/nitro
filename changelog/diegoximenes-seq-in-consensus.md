@@ -5,9 +5,10 @@
   `--execution.transaction-filtering.filtered-tx-full-retry-interval` (default 30s,
   now validated to be positive). The dead field on `DelayedSequencerConfig` was
   removed.
-- New `--execution.sequencer.poll-interval` (default 50ms, hot-reloadable): the
-  interval an idle sequencer waits before re-checking for pending work, instead of
-  busy-looping. Capped at `MaxBlockSpeed`.
+- New `--execution.sequencer.poll-interval` (default 10ms, hot-reloadable,
+  validated to be positive): the interval an idle sequencer waits before
+  re-checking for pending work, instead of busy-looping. Capped at
+  `MaxBlockSpeed`.
 
 ### Changed
 - Block production is now driven by consensus (`TransactionStreamer`) and gated on
@@ -18,7 +19,18 @@
   activation-readiness window.
 - Delayed messages are now enqueued by consensus (`EnqueueDelayedMessages`, sent in
   batches) and sequenced by execution, replacing the previous one-at-a-time
-  `SequenceDelayedMessage` path.
+  `SequenceDelayedMessage` path. Batches misaligned with the expected next delayed
+  index (e.g. from a concurrent enqueue during sequencer handoff) are trimmed or
+  dropped instead of poisoning the queue.
+- `arb_checkPublisherHealth` still reports "not chosen" for an active node whose
+  lockout expired, without the exec→consensus query: the coordinator mirrors its
+  lockout deadline into the execution sequencer (`SetActiveUntil`), and
+  `CheckHealth` reports unhealthy past that deadline.
+- If a sequenced message is durably written by consensus but the exec-chain append
+  fails, its txs are reported successful (they are part of the canonical message)
+  and the execution chain heals by re-digesting the message; sequencing pauses
+  while the execution head lags the consensus head, and commit failures retry with
+  a backoff instead of immediately.
 - Regular transactions and delayed messages now alternate sequencing turns so
   neither starves the other; a delayed message halted on a filtered tx is retried
   at most once per `MaxBlockSpeed` instead of busy-looping.
@@ -31,6 +43,6 @@
 - Sequencing orchestration moved out of the execution-side `SequencerTriggerer`
   into `TransactionStreamer`; the `ExecutionSequencer` interface now exposes
   `StartSequencing`/`EndSequencing`/`AppendLastSequencedBlock`/
-  `ResequenceReorgedMessage` and a `SequencedMsg` result type. Numerous supporting
-  refactors (sequencer pause/forwarder simplification, queue helpers, test helpers
-  replacing `SequenceTransactionsForTest`).
+  `ResequenceReorgedMessage`/`SetActiveUntil` and a `SequencedMsg` result type.
+  Numerous supporting refactors (sequencer pause/forwarder simplification, queue
+  helpers, test helpers replacing `SequenceTransactionsForTest`).
