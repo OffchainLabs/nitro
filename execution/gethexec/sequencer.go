@@ -470,6 +470,11 @@ type Sequencer struct {
 	isActive       bool
 	forwarder      *TxForwarder
 
+	// activeUntil is the consensus chosen-sequencer deadline pushed via
+	// SetActiveUntil. Nil means no coordinator signal was ever received
+	// (coordinator-less setups), which CheckHealth treats as healthy.
+	activeUntil atomic.Pointer[time.Time]
+
 	expectedSurplusMutex              sync.RWMutex
 	expectedSurplus                   int64
 	expectedSurplusUpdated            bool
@@ -861,7 +866,17 @@ func (s *Sequencer) CheckHealth(ctx context.Context) error {
 	if forwarder != nil {
 		return forwarder.CheckHealth(ctx)
 	}
+	if !s.IsActive() {
+		return nil
+	}
+	if activeUntil := s.activeUntil.Load(); activeUntil != nil && time.Now().After(*activeUntil) {
+		return ErrNotChosenSequencer
+	}
 	return nil
+}
+
+func (s *Sequencer) SetActiveUntil(deadline time.Time) {
+	s.activeUntil.Store(&deadline)
 }
 
 func (s *Sequencer) ForwardTarget() string {
@@ -922,6 +937,11 @@ func (s *Sequencer) Pause() {
 }
 
 var ErrNoSequencer = errors.New("sequencer temporarily not available")
+
+// ErrNotChosenSequencer reports an active sequencer whose consensus lockout
+// deadline has passed: it is no longer the chosen sequencer and commits would
+// be rejected until the coordinator pauses it or it reacquires the lockout.
+var ErrNotChosenSequencer = errors.New("sequencer is not the chosen sequencer")
 
 func (s *Sequencer) getForwarder() *TxForwarder {
 	s.forwarderMutex.Lock()

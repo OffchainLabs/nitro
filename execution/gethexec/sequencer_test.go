@@ -160,6 +160,46 @@ func TestEndSequencingClearsPendingQueueItemsResults(t *testing.T) {
 	}
 }
 
+func TestCheckHealthChosenSequencerDeadline(t *testing.T) {
+	past := time.Now().Add(-time.Second)
+	future := time.Now().Add(time.Hour)
+	tests := []struct {
+		name        string
+		forwarder   *TxForwarder
+		isActive    bool
+		activeUntil *time.Time
+		wantErr     error
+	}{
+		// Zero-value TxForwarder has enabled=false, so its CheckHealth returns
+		// ErrNoSequencer.
+		{"forwarding delegates to forwarder", &TxForwarder{}, false, &past, ErrNoSequencer},
+		{"paused is healthy even past deadline", nil, false, &past, nil},
+		{"active without coordinator signal is healthy", nil, true, nil, nil},
+		{"active within deadline is healthy", nil, true, &future, nil},
+		{"active past deadline is not chosen", nil, true, &past, ErrNotChosenSequencer},
+		{"active after release is not chosen", nil, true, &time.Time{}, ErrNotChosenSequencer},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			engine := &ExecutionEngine{}
+			configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
+			seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			seq.forwarder = tt.forwarder
+			seq.isActive = tt.isActive
+			if tt.activeUntil != nil {
+				seq.SetActiveUntil(*tt.activeUntil)
+			}
+
+			if got := seq.CheckHealth(context.Background()); !errors.Is(got, tt.wantErr) {
+				t.Errorf("CheckHealth() = %v, want %v", got, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestBackgroundForwarderExpiresNonceFailuresWhileInactive(t *testing.T) {
 	engine := &ExecutionEngine{}
 	configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }

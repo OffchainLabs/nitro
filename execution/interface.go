@@ -129,6 +129,12 @@ type ExecutionSequencer interface {
 	// It returns an error if the forwarder cannot be initialized (leaving no
 	// forwarder set); forwarding to the current target is a no-op.
 	ForwardTo(url string) error
+	// SetActiveUntil mirrors the consensus node's chosen-sequencer lockout
+	// deadline. It is called on every lockout acquisition and extension, and
+	// with the zero time on release; it is never called when no coordinator is
+	// configured. An active node past its deadline reports unhealthy from
+	// CheckHealth.
+	SetActiveUntil(deadline time.Time)
 
 	// StartSequencing runs one sequencing turn and stages, but does not commit,
 	// its result. It produces at most one block per call: either from pending

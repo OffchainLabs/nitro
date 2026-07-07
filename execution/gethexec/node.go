@@ -796,6 +796,12 @@ func (n *ExecutionNode) IsActive() bool {
 	return false
 }
 
+func (n *ExecutionNode) SetActiveUntil(deadline time.Time) {
+	if n.Sequencer != nil {
+		n.Sequencer.SetActiveUntil(deadline)
+	}
+}
+
 func (n *ExecutionNode) ForwardTo(url string) error {
 	if n.Sequencer != nil {
 		return n.Sequencer.ForwardTo(url)
