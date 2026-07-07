@@ -111,11 +111,10 @@ fn seed_prestate(state: &mut State<EmptyDb>, snapshot: &BTreeMap<String, Account
                 set_account_code(state, addr, Bytes::from(bytes));
             }
         }
-        if let Some(nonce) = acct.nonce {
-            if nonce > 0 {
+        if let Some(nonce) = acct.nonce
+            && nonce > 0 {
                 set_account_nonce(state, addr, nonce);
             }
-        }
         for (slot, value) in &acct.storage {
             write_storage_at(state, addr, parse_hex_u256(slot), parse_hex_u256(value))
                 .expect("seed storage");

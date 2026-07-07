@@ -579,8 +579,8 @@ mod tests {
         use revm::database::{PlainAccount, states::account_status::AccountStatus};
 
         let _ = state.load_cache_account(addr);
-        if let Some(cached) = state.cache.accounts.get_mut(&addr) {
-            if cached.account.is_none() {
+        if let Some(cached) = state.cache.accounts.get_mut(&addr)
+            && cached.account.is_none() {
                 cached.account = Some(PlainAccount {
                     info: revm::state::AccountInfo {
                         balance: U256::ZERO,
@@ -593,7 +593,6 @@ mod tests {
                 });
                 cached.status = AccountStatus::InMemoryChange;
             }
-        }
     }
 
     #[test]
@@ -1445,8 +1444,8 @@ mod tests {
 
             // Inline augment_bundle_from_cache for ArbOS account
             if let Some(bundle_acct) = bundle.state.get_mut(&arbos) {
-                if let Some(cached_acc) = state.cache.accounts.get(&arbos) {
-                    if let Some(ref plain) = cached_acc.account {
+                if let Some(cached_acc) = state.cache.accounts.get(&arbos)
+                    && let Some(ref plain) = cached_acc.account {
                         for (key, value) in &plain.storage {
                             if let Some(slot) = bundle_acct.storage.get_mut(key) {
                                 slot.present_value = *value;
@@ -1465,11 +1464,10 @@ mod tests {
                             }
                         }
                     }
-                }
             } else {
                 // ArbOS not in bundle — add it from cache
-                if let Some(cached_acc) = state.cache.accounts.get(&arbos) {
-                    if let Some(ref plain) = cached_acc.account {
+                if let Some(cached_acc) = state.cache.accounts.get(&arbos)
+                    && let Some(ref plain) = cached_acc.account {
                         let mut storage_changes: HashMap<U256, StorageSlot> = HashMap::default();
                         for (key, value) in &plain.storage {
                             let original =
@@ -1496,7 +1494,6 @@ mod tests {
                             );
                         }
                     }
-                }
             }
         }
 
