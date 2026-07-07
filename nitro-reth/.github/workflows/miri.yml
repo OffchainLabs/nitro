@@ -1,11 +1,7 @@
 name: miri
 
 on:
-  push:
-    branches: [master]
   pull_request:
-  schedule:
-    - cron: "0 4 * * *" # nightly at 04:00 UTC
 
 env:
   CARGO_TERM_COLOR: always

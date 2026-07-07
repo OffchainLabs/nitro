@@ -6,7 +6,7 @@ on:
       ref:
         description: "Tag or branch to evaluate"
         required: true
-        default: "master"
+        default: "main"
 
 env:
   CARGO_TERM_COLOR: always

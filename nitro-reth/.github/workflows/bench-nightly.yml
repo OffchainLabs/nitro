@@ -52,9 +52,9 @@ jobs:
           retention-days: 90
 
   publish-baseline:
-    name: commit baseline to bench/baselines/master
+    name: commit baseline to bench/baselines/main
     needs: nightly
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -67,7 +67,7 @@ jobs:
           set -euo pipefail
           DATE=$(date -u +%Y-%m-%d)
           SHA=$(git rev-parse --short=12 HEAD)
-          DEST="bench/baselines/master/${DATE}-${SHA}"
+          DEST="bench/baselines/main/${DATE}-${SHA}"
           mkdir -p "${DEST}"
           find target/bench/nightly -name '*.json' -exec cp {} "${DEST}/" \;
       - name: Commit baseline
