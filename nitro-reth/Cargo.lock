@@ -1286,6 +1286,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-parent-chain-client"
+version = "0.1.5"
+dependencies = [
+ "alloy-consensus",
+ "alloy-eips",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-rpc-client",
+ "alloy-rpc-types-eth",
+ "alloy-transport",
+ "async-trait",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "arb-payload"
 version = "0.1.5"
 dependencies = [

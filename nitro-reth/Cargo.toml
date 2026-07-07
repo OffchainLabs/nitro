@@ -4,6 +4,7 @@ members = [
     "crates/arb-chainspec",
     "crates/arb-context",
     "crates/arb-math",
+    "crates/arb-parent-chain-client",
     "crates/arb-storage",
     "crates/arb-storage-errors",
     "crates/arb-errors",
@@ -39,6 +40,7 @@ arb-primitives = { path = "crates/arb-primitives" }
 arb-chainspec = { path = "crates/arb-chainspec" }
 arb-context = { path = "crates/arb-context" }
 arb-math = { path = "crates/arb-math" }
+arb-parent-chain-client = { path = "crates/arb-parent-chain-client" }
 arb-storage = { path = "crates/arb-storage" }
 arb-storage-errors = { path = "crates/arb-storage-errors" }
 arb-errors = { path = "crates/arb-errors" }
@@ -129,12 +131,15 @@ alloy-evm = { version = "0.27", features = ["rpc"] }
 alloy-rpc-types-eth = { version = "1.7" }
 alloy-genesis = { version = "1.7" }
 alloy-network = { version = "1.7" }
+alloy-provider = { version = "1.7", default-features = false, features = ["reqwest"] }
 alloy-rlp = { version = "0.3", features = ["derive"] }
+alloy-rpc-client = { version = "1.7" }
 alloy-rpc-types = { version = "1.7" }
 alloy-rpc-types-engine = { version = "1.7" }
 alloy-rpc-types-trace = { version = "1.7" }
 alloy-serde = { version = "1.7" }
 alloy-sol-types = { version = "1.5" }
+alloy-transport = { version = "1.7" }
 alloy-trie = { version = "0.9" }
 alloy-hardforks = { version = "0.4" }
 
