@@ -1203,6 +1203,20 @@ name = "arb-math"
 version = "0.1.5"
 
 [[package]]
+name = "arb-mel"
+version = "0.1.5"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rlp",
+ "alloy-rpc-types-eth",
+ "alloy-sol-types",
+ "arb-storage-errors",
+ "arbos",
+ "brotli 8.0.2",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arb-node"
 version = "0.1.5"
 dependencies = [
