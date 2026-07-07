@@ -1094,6 +1094,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-da-provider-client"
+version = "0.1.5"
+dependencies = [
+ "alloy-primitives",
+ "alloy-transport",
+ "async-trait",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arb-errors"
 version = "0.1.5"
 dependencies = [

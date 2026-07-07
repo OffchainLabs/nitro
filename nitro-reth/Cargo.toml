@@ -23,7 +23,7 @@ members = [
     "crates/arb-bench",
     "crates/arbos",
     "bin/arb-reth",
-    "bin/arb-test",
+    "bin/arb-test", "crates/arb-da-provider-client",
 ]
 exclude = ["brotli"]
 resolver = "2"
