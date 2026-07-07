@@ -1578,16 +1578,16 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 		return
 	}
 
-	if s.pendingQueueItemsResults.block != nil {
-		successfulBlocksCounter.Inc(1)
-		s.nonceCache.Finalize(s.pendingQueueItemsResults.block)
-	}
-
 	if errWhileSequencing != nil {
 		for _, queueItem := range s.pendingQueueItemsResults.queueItems {
 			queueItem.returnResult(errWhileSequencing)
 		}
 	} else {
+		if s.pendingQueueItemsResults.block != nil {
+			successfulBlocksCounter.Inc(1)
+			s.nonceCache.Finalize(s.pendingQueueItemsResults.block)
+		}
+
 		madeBlock := false
 		var blockTxSize int64
 		blockGasLimitReached := false
