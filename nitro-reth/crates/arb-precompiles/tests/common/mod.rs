@@ -355,9 +355,10 @@ impl PrecompileRun {
     }
     pub fn storage(&self, addr: Address, slot: U256) -> U256 {
         if let Some(account) = self.journal_state.get(&addr)
-            && let Some(s) = account.storage.get(&slot) {
-                return s.present_value;
-            }
+            && let Some(s) = account.storage.get(&slot)
+        {
+            return s.present_value;
+        }
         self.db
             .cache
             .accounts

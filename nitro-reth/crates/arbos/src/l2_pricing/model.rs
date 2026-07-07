@@ -580,19 +580,20 @@ mod tests {
 
         let _ = state.load_cache_account(addr);
         if let Some(cached) = state.cache.accounts.get_mut(&addr)
-            && cached.account.is_none() {
-                cached.account = Some(PlainAccount {
-                    info: revm::state::AccountInfo {
-                        balance: U256::ZERO,
-                        nonce: 0,
-                        code_hash: keccak256([]),
-                        code: None,
-                        account_id: None,
-                    },
-                    storage: Default::default(),
-                });
-                cached.status = AccountStatus::InMemoryChange;
-            }
+            && cached.account.is_none()
+        {
+            cached.account = Some(PlainAccount {
+                info: revm::state::AccountInfo {
+                    balance: U256::ZERO,
+                    nonce: 0,
+                    code_hash: keccak256([]),
+                    code: None,
+                    account_id: None,
+                },
+                storage: Default::default(),
+            });
+            cached.status = AccountStatus::InMemoryChange;
+        }
     }
 
     #[test]
@@ -1445,35 +1446,16 @@ mod tests {
             // Inline augment_bundle_from_cache for ArbOS account
             if let Some(bundle_acct) = bundle.state.get_mut(&arbos) {
                 if let Some(cached_acc) = state.cache.accounts.get(&arbos)
-                    && let Some(ref plain) = cached_acc.account {
-                        for (key, value) in &plain.storage {
-                            if let Some(slot) = bundle_acct.storage.get_mut(key) {
-                                slot.present_value = *value;
-                            } else {
-                                let original =
-                                    state.database.storage(arbos, *key).unwrap_or(U256::ZERO);
-                                if *value != original {
-                                    bundle_acct.storage.insert(
-                                        *key,
-                                        StorageSlot {
-                                            previous_or_original_value: original,
-                                            present_value: *value,
-                                        },
-                                    );
-                                }
-                            }
-                        }
-                    }
-            } else {
-                // ArbOS not in bundle — add it from cache
-                if let Some(cached_acc) = state.cache.accounts.get(&arbos)
-                    && let Some(ref plain) = cached_acc.account {
-                        let mut storage_changes: HashMap<U256, StorageSlot> = HashMap::default();
-                        for (key, value) in &plain.storage {
+                    && let Some(ref plain) = cached_acc.account
+                {
+                    for (key, value) in &plain.storage {
+                        if let Some(slot) = bundle_acct.storage.get_mut(key) {
+                            slot.present_value = *value;
+                        } else {
                             let original =
                                 state.database.storage(arbos, *key).unwrap_or(U256::ZERO);
                             if *value != original {
-                                storage_changes.insert(
+                                bundle_acct.storage.insert(
                                     *key,
                                     StorageSlot {
                                         previous_or_original_value: original,
@@ -1482,18 +1464,38 @@ mod tests {
                                 );
                             }
                         }
-                        if !storage_changes.is_empty() {
-                            bundle.state.insert(
-                                arbos,
-                                revm::database::BundleAccount {
-                                    info: Some(plain.info.clone()),
-                                    original_info: None,
-                                    storage: storage_changes,
-                                    status: revm::database::AccountStatus::Changed,
+                    }
+                }
+            } else {
+                // ArbOS not in bundle — add it from cache
+                if let Some(cached_acc) = state.cache.accounts.get(&arbos)
+                    && let Some(ref plain) = cached_acc.account
+                {
+                    let mut storage_changes: HashMap<U256, StorageSlot> = HashMap::default();
+                    for (key, value) in &plain.storage {
+                        let original = state.database.storage(arbos, *key).unwrap_or(U256::ZERO);
+                        if *value != original {
+                            storage_changes.insert(
+                                *key,
+                                StorageSlot {
+                                    previous_or_original_value: original,
+                                    present_value: *value,
                                 },
                             );
                         }
                     }
+                    if !storage_changes.is_empty() {
+                        bundle.state.insert(
+                            arbos,
+                            revm::database::BundleAccount {
+                                info: Some(plain.info.clone()),
+                                original_info: None,
+                                storage: storage_changes,
+                                status: revm::database::AccountStatus::Changed,
+                            },
+                        );
+                    }
+                }
             }
         }
 

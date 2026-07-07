@@ -127,9 +127,10 @@ fn seed_prestate(state: &mut State<EmptyDb>, snapshot: &BTreeMap<String, Account
             }
         }
         if let Some(nonce) = acct.nonce
-            && nonce > 0 {
-                set_account_nonce(state, addr, nonce);
-            }
+            && nonce > 0
+        {
+            set_account_nonce(state, addr, nonce);
+        }
         for (slot, value) in &acct.storage {
             let slot_u = parse_hex_u256(slot);
             let value_u = parse_hex_u256(value);

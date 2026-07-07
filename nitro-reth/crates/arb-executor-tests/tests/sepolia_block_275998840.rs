@@ -118,9 +118,10 @@ fn seed_prestate(state: &mut State<EmptyDb>, snap: &BTreeMap<String, AccountSnap
             }
         }
         if let Some(n) = acct.nonce
-            && n > 0 {
-                set_account_nonce(state, ad, n);
-            }
+            && n > 0
+        {
+            set_account_nonce(state, ad, n);
+        }
         for (slot, val) in &acct.storage {
             write_storage_at(state, ad, hu(slot), hu(val)).unwrap();
         }

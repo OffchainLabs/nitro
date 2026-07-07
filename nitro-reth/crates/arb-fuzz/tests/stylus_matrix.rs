@@ -604,9 +604,10 @@ fn stylus_diff_matrix() {
 
     for primitive in primitives() {
         if let Some(ref f) = primitive_filter
-            && primitive.name != f {
-                continue;
-            }
+            && primitive.name != f
+        {
+            continue;
+        }
         eprintln!("[stylus_matrix] === primitive '{}' ===", primitive.name);
 
         let wasm = match wat::parse_bytes(primitive.wat.as_bytes()) {
