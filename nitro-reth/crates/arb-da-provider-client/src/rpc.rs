@@ -1,8 +1,8 @@
 use std::{collections::HashMap, sync::OnceLock};
 
-use alloy_primitives::{Bytes, B256, U64};
+use alloy_primitives::{B256, Bytes, U64};
 use alloy_rpc_client::RpcClient;
-use base64::{engine::GeneralPurpose, Engine as _};
+use base64::{Engine as _, engine::GeneralPurpose};
 use serde::Deserialize;
 
 use super::{DaReader, Payload, PreimageType, Preimages, Result};
@@ -149,9 +149,10 @@ fn base64_engine() -> &'static GeneralPurpose {
 
 #[cfg(test)]
 mod tests {
+    use alloy_provider::mock::Asserter;
+
     use super::*;
     use crate::{DaError, DaReader};
-    use alloy_provider::mock::Asserter;
 
     /// The 4 raw bytes used across the fixtures below.
     const BYTES: [u8; 4] = [0xde, 0xad, 0xbe, 0xef];

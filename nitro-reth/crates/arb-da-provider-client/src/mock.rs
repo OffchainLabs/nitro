@@ -149,7 +149,10 @@ mod tests {
     /// Builds a single-entry preimages map for assertions.
     fn preimages() -> Preimages {
         let hash = B256::repeat_byte(0x22);
-        Preimages::from([(PreimageType::Keccak256, HashMap::from([(hash, vec![1, 2, 3])]))])
+        Preimages::from([(
+            PreimageType::Keccak256,
+            HashMap::from([(hash, vec![1, 2, 3])]),
+        )])
     }
 
     #[tokio::test]
@@ -257,16 +260,18 @@ mod tests {
     async fn unregistered_batch_reads_back_empty() {
         let mock = MockDaReader::new();
 
-        assert!(mock
-            .recover_payload(BATCH_NUM, block_hash(), SEQ_MSG)
-            .await
-            .unwrap()
-            .is_empty());
-        assert!(mock
-            .collect_preimages(BATCH_NUM, block_hash(), SEQ_MSG)
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(
+            mock.recover_payload(BATCH_NUM, block_hash(), SEQ_MSG)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            mock.collect_preimages(BATCH_NUM, block_hash(), SEQ_MSG)
+                .await
+                .unwrap()
+                .is_empty()
+        );
         let (payload, images) = mock
             .recover_payload_and_preimages(BATCH_NUM, block_hash(), SEQ_MSG)
             .await
@@ -287,23 +292,26 @@ mod tests {
         );
 
         // Wrong block hash
-        assert!(mock
-            .recover_payload(BATCH_NUM, B256::repeat_byte(0xff), SEQ_MSG)
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(
+            mock.recover_payload(BATCH_NUM, B256::repeat_byte(0xff), SEQ_MSG)
+                .await
+                .unwrap()
+                .is_empty()
+        );
         // Wrong sequencer message
-        assert!(mock
-            .recover_payload(BATCH_NUM, block_hash(), &[0x00])
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(
+            mock.recover_payload(BATCH_NUM, block_hash(), &[0x00])
+                .await
+                .unwrap()
+                .is_empty()
+        );
         // Wrong batch number
-        assert!(mock
-            .recover_payload(BATCH_NUM + 1, block_hash(), SEQ_MSG)
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(
+            mock.recover_payload(BATCH_NUM + 1, block_hash(), SEQ_MSG)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]
