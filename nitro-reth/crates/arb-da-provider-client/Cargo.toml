@@ -7,9 +7,12 @@ license.workspace = true
 
 [dependencies]
 async-trait.workspace = true
+base64.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 
 alloy-primitives.workspace = true
+alloy-rpc-client.workspace = true
 alloy-transport.workspace = true
 
 [lints]

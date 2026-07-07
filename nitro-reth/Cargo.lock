@@ -1098,8 +1098,11 @@ name = "arb-da-provider-client"
 version = "0.1.5"
 dependencies = [
  "alloy-primitives",
+ "alloy-rpc-client",
  "alloy-transport",
  "async-trait",
+ "base64 0.22.1",
+ "serde",
  "thiserror 2.0.18",
 ]
 
