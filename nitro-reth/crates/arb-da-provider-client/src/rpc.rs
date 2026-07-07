@@ -145,3 +145,187 @@ fn base64_engine() -> &'static GeneralPurpose {
         GeneralPurpose::new(&alphabet::STANDARD, cfg)
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{DaError, DaReader};
+    use alloy_provider::mock::Asserter;
+
+    /// The 4 raw bytes used across the fixtures below.
+    const BYTES: [u8; 4] = [0xde, 0xad, 0xbe, 0xef];
+    /// Standard base64 of [`BYTES`], with padding.
+    const B64: &str = "3q2+7w==";
+    /// Standard base64 of [`BYTES`], without the trailing `==` padding.
+    const B64_UNPADDED: &str = "3q2+7w";
+
+    /// A reader backed by a mock transport that replays the queued responses.
+    fn reader(asserter: Asserter) -> RpcDaReader {
+        RpcClient::mocked(asserter).into()
+    }
+
+    #[test]
+    fn decode_payload_decodes_base64() {
+        assert_eq!(decode_payload(Some(B64)).unwrap(), BYTES);
+    }
+
+    #[test]
+    fn decode_payload_none_is_empty() {
+        assert!(decode_payload(None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn decode_payload_empty_string_is_empty() {
+        assert!(decode_payload(Some("")).unwrap().is_empty());
+    }
+
+    #[test]
+    fn decode_payload_invalid_base64_errors() {
+        let err = decode_payload(Some("invalid payload!")).unwrap_err();
+        assert!(matches!(err, DaError::Base64(_)));
+    }
+
+    #[test]
+    fn decode_payload_tolerates_missing_padding() {
+        assert_eq!(decode_payload(Some(B64_UNPADDED)).unwrap(), BYTES);
+    }
+
+    #[test]
+    fn decode_payload_tolerates_trailing_bits() {
+        // "3q2+7x" differs from B64_UNPADDED only in the final char, which
+        // carries a stray low bit that a strict engine would reject.
+        assert_eq!(decode_payload(Some("3q2+7x")).unwrap(), BYTES);
+    }
+
+    #[test]
+    fn decode_preimages_none_is_empty() {
+        assert!(decode_preimages(None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn decode_preimages_decodes_values_across_types() {
+        let hash_a = B256::repeat_byte(0x11);
+        let hash_b = B256::repeat_byte(0x22);
+        let wire: RpcPreimages = HashMap::from([
+            (0u8, HashMap::from([(hash_a, B64.to_string())])),
+            (1u8, HashMap::from([(hash_b, B64.to_string())])),
+        ]);
+
+        let result = decode_preimages(Some(wire)).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[&PreimageType(0)][&hash_a], BYTES);
+        assert_eq!(result[&PreimageType(1)][&hash_b], BYTES);
+    }
+
+    #[test]
+    fn decode_preimages_keeps_empty_inner_map() {
+        let wire: RpcPreimages = HashMap::from([(0u8, HashMap::new())]);
+
+        let result = decode_preimages(Some(wire)).unwrap();
+        assert!(result[&PreimageType(0)].is_empty());
+    }
+
+    #[test]
+    fn decode_preimages_invalid_base64_errors() {
+        let wire: RpcPreimages = HashMap::from([(
+            0u8,
+            HashMap::from([(B256::repeat_byte(0x11), "invalid preimage!".to_string())]),
+        )]);
+
+        let err = decode_preimages(Some(wire)).unwrap_err();
+        assert!(matches!(err, DaError::Base64(_)));
+    }
+
+    #[tokio::test]
+    async fn recover_payload_decodes_response() {
+        let asserter = Asserter::new();
+        asserter.push_success(&serde_json::json!({ "Payload": B64 }));
+
+        let result = reader(asserter)
+            .recover_payload(1, B256::repeat_byte(1), &[])
+            .await
+            .unwrap();
+        assert_eq!(result, BYTES);
+    }
+
+    #[tokio::test]
+    async fn recover_payload_missing_field_is_empty() {
+        let asserter = Asserter::new();
+        asserter.push_success(&serde_json::json!({}));
+
+        let result = reader(asserter)
+            .recover_payload(1, B256::repeat_byte(1), &[])
+            .await
+            .unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn collect_preimages_decodes_response() {
+        let hash = B256::repeat_byte(0x11);
+        let asserter = Asserter::new();
+        asserter.push_success(&serde_json::json!({
+            "Preimages": { "0": { hash.to_string(): B64 } }
+        }));
+
+        let result = reader(asserter)
+            .collect_preimages(1, B256::repeat_byte(1), &[])
+            .await
+            .unwrap();
+        assert_eq!(result[&PreimageType(0)][&hash], BYTES);
+    }
+
+    #[tokio::test]
+    async fn collect_preimages_missing_field_is_empty() {
+        let asserter = Asserter::new();
+        asserter.push_success(&serde_json::json!({}));
+
+        let result = reader(asserter)
+            .collect_preimages(1, B256::repeat_byte(1), &[])
+            .await
+            .unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn recover_payload_and_preimages_decodes_both() {
+        let hash = B256::repeat_byte(0x11);
+        let asserter = Asserter::new();
+        asserter.push_success(&serde_json::json!({
+            "Payload": B64,
+            "Preimages": { "0": { hash.to_string(): B64 } },
+        }));
+
+        let (payload, preimages) = reader(asserter)
+            .recover_payload_and_preimages(1, B256::repeat_byte(1), &[])
+            .await
+            .unwrap();
+        assert_eq!(payload, BYTES);
+        assert_eq!(preimages[&PreimageType(0)][&hash], BYTES);
+    }
+
+    #[tokio::test]
+    async fn recover_payload_and_preimages_missing_fields_are_empty() {
+        let asserter = Asserter::new();
+        asserter.push_success(&serde_json::json!({}));
+
+        let (payload, preimages) = reader(asserter)
+            .recover_payload_and_preimages(1, B256::repeat_byte(1), &[])
+            .await
+            .unwrap();
+        assert!(payload.is_empty());
+        assert!(preimages.is_empty());
+    }
+
+    #[tokio::test]
+    async fn transport_error_is_propagated() {
+        let asserter = Asserter::new();
+        asserter.push_failure_msg("internal server error");
+
+        let err = reader(asserter)
+            .recover_payload(1, B256::repeat_byte(1), &[])
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DaError::Transport(_)));
+    }
+}

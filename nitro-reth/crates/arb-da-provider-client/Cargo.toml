@@ -15,5 +15,11 @@ alloy-primitives.workspace = true
 alloy-rpc-client.workspace = true
 alloy-transport.workspace = true
 
+[dev-dependencies]
+serde_json.workspace = true
+tokio.workspace = true
+
+alloy-provider.workspace = true
+
 [lints]
 workspace = true

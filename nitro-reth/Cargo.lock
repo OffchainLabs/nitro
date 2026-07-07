@@ -1098,12 +1098,15 @@ name = "arb-da-provider-client"
 version = "0.1.5"
 dependencies = [
  "alloy-primitives",
+ "alloy-provider",
  "alloy-rpc-client",
  "alloy-transport",
  "async-trait",
  "base64 0.22.1",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]
