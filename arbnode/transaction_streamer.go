@@ -1660,14 +1660,23 @@ func (s *TransactionStreamer) triggerSequencing(ctx context.Context) time.Durati
 	}
 
 	sequencedMsg, throttleWait := execSequencer.StartSequencing(ctx)
+
+	// EndSequencing must be called exactly once after each StartSequencing,
+	// whether or not a block was produced. A guarded defer guarantees that even a
+	// panic in WriteSequencedMsg or AppendLastSequencedBlock still releases the
+	// staged sequencing state and unblocks submitters waiting on their result
+	// channels. endSequencingErr carries the WriteSequencedMsg failure (the only
+	// error the sequencer acts on); all other paths leave it nil.
+	var endSequencingErr error
+	defer func() { execSequencer.EndSequencing(ctx, endSequencingErr) }()
+
 	if sequencedMsg == nil {
-		execSequencer.EndSequencing(ctx, nil)
 		return time.Until(startSequencingTime.Add(throttleWait))
 	}
 
 	if err := s.WriteSequencedMsg(sequencedMsg); err != nil {
 		log.Error("Error writing sequenced message", "err", err)
-		execSequencer.EndSequencing(ctx, err)
+		endSequencingErr = err
 		// A floor against hot-spinning on a persistent error, sized to give
 		// executeMessages a full poll cycle with blockProductionMutex free to
 		// catch exec up if the heads diverged.
@@ -1685,10 +1694,8 @@ func (s *TransactionStreamer) triggerSequencing(ctx context.Context) time.Durati
 	// entry and resets the delayed queue.
 	if err := execSequencer.AppendLastSequencedBlock(); err != nil {
 		log.Error("Error appending last sequenced block", "err", err)
-		execSequencer.EndSequencing(ctx, nil)
 		return s.config().ExecuteMessageLoopDelay
 	}
-	execSequencer.EndSequencing(ctx, nil)
 
 	return time.Until(startSequencingTime.Add(throttleWait))
 }
