@@ -3,6 +3,7 @@ members = [
     "crates/arb-primitives",
     "crates/arb-chainspec",
     "crates/arb-context",
+    "crates/arb-da-provider-client",
     "crates/arb-math",
     "crates/arb-parent-chain-client",
     "crates/arb-storage",
@@ -23,7 +24,7 @@ members = [
     "crates/arb-bench",
     "crates/arbos",
     "bin/arb-reth",
-    "bin/arb-test", "crates/arb-da-provider-client",
+    "bin/arb-test",
 ]
 exclude = ["brotli"]
 resolver = "2"
@@ -39,6 +40,7 @@ license = "BUSL-1.1"
 arb-primitives = { path = "crates/arb-primitives" }
 arb-chainspec = { path = "crates/arb-chainspec" }
 arb-context = { path = "crates/arb-context" }
+arb-da-provider-client = { path = "crates/arb-da-provider-client" }
 arb-math = { path = "crates/arb-math" }
 arb-parent-chain-client = { path = "crates/arb-parent-chain-client" }
 arb-storage = { path = "crates/arb-storage" }
