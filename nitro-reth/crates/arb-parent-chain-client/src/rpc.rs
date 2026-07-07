@@ -66,15 +66,16 @@ impl ParentChainReader for RpcParentChainReader {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        test_utils::{block, header, log_at, receipt, tx},
-        ParentChainError,
-    };
     use alloy_primitives::Address;
     use alloy_provider::mock::Asserter;
     use alloy_rpc_client::RpcClient;
     use alloy_rpc_types_eth::BlockTransactions;
+
+    use super::*;
+    use crate::{
+        ParentChainError,
+        test_utils::{block, header, log_at, receipt, tx},
+    };
 
     /// A reader backed by a mock transport that replays the queued responses.
     fn reader(asserter: Asserter) -> RpcParentChainReader {

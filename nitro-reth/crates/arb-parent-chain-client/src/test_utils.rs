@@ -2,10 +2,10 @@
 //! test modules.
 
 use alloy_consensus::{
-    transaction::{Recovered, TransactionInfo},
     ReceiptEnvelope, SignableTransaction, TxEip1559, TxEnvelope,
+    transaction::{Recovered, TransactionInfo},
 };
-use alloy_primitives::{Address, Signature, B256, U256};
+use alloy_primitives::{Address, B256, Signature, U256};
 use alloy_rpc_types_eth::{Block, BlockTransactions, Header, Log, Transaction, TransactionReceipt};
 
 /// Builds a header with the given number and hash.
