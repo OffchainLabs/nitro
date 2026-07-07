@@ -147,7 +147,7 @@ func (r *ChainTipBlockRecorder) Recording(pos arbutil.MessageIndex) (*execution.
 	if recording == nil || recording.record == nil || recording.record.Pos != pos {
 		return nil, fmt.Errorf("chain-tip recording unavailable for pos %d", pos)
 	}
-	if err := r.validateRecording(pos, recording); err != nil {
+	if err := r.validateRecording(recording); err != nil {
 		return nil, err
 	}
 	if err := r.loadCodePreimages(recording.record, recording.codeHashes); err != nil {
@@ -163,7 +163,8 @@ func (r *ChainTipBlockRecorder) Recording(pos arbutil.MessageIndex) (*execution.
 	return recording.record, nil
 }
 
-func (r *ChainTipBlockRecorder) validateRecording(pos arbutil.MessageIndex, recording *chainTipRecording) error {
+func (r *ChainTipBlockRecorder) validateRecording(recording *chainTipRecording) error {
+	pos := recording.record.Pos
 	expectedBlockNumber := r.execEngine.MessageIndexToBlockNumber(pos)
 	if recording.blockNumber != expectedBlockNumber {
 		return fmt.Errorf("chain-tip recording block number mismatch for pos %d: got %d expected %d", pos, recording.blockNumber, expectedBlockNumber)
