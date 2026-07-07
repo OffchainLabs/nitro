@@ -344,8 +344,11 @@ fn activate_test_wat() -> arbos::programs::types::ActivationResult {
     let codehash = [0x42_u8; 32];
     let mut gas = u64::MAX;
     arb_stylus::activate_program(
-        &wasm, &codehash, /* stylus_version */ 1, /* arbos_version */ 30,
-        /* page_limit */ 128, /* debug */ false, &mut gas,
+        &wasm, &codehash, // stylus_version
+        1,         // arbos_version
+        30,        // page_limit
+        128,       // debug
+        false, &mut gas,
     )
     .expect("activation")
 }

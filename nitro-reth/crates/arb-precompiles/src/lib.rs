@@ -28,6 +28,13 @@ mod arbwasmcache;
 mod nodeinterface;
 mod nodeinterface_debug;
 
+use std::sync::Arc;
+
+use alloy_evm::{
+    precompiles::{DynPrecompile, PrecompileInput, PrecompilesMap},
+    EvmInternals,
+};
+use arb_context::ArbPrecompileCtx;
 pub use arbaddresstable::{create_arbaddresstable_precompile, ARBADDRESSTABLE_ADDRESS};
 pub use arbaggregator::{create_arbaggregator_precompile, ARBAGGREGATOR_ADDRESS};
 pub use arbbls::{create_arbbls_precompile, ARBBLS_ADDRESS};
@@ -61,14 +68,7 @@ pub use nodeinterface::{
 pub use nodeinterface_debug::{
     create_nodeinterface_debug_precompile, NODE_INTERFACE_DEBUG_ADDRESS,
 };
-
-use alloy_evm::{
-    precompiles::{DynPrecompile, PrecompileInput, PrecompilesMap},
-    EvmInternals,
-};
-use arb_context::ArbPrecompileCtx;
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
-use std::sync::Arc;
 
 /// RIP-7212 P256VERIFY precompile address (ArbOS v30+).
 pub const P256VERIFY_ADDRESS: alloy_primitives::Address =

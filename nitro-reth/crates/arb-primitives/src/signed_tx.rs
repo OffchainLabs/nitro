@@ -11,14 +11,13 @@ use alloy_consensus::{
 use alloy_eips::eip2718::{Decodable2718, Eip2718Error, Eip2718Result, Encodable2718, IsTyped2718};
 use alloy_primitives::{keccak256, Address, Bytes, Signature, TxHash, TxKind, B256, U256};
 use alloy_rlp::{Decodable, Encodable};
-use reth_primitives_traits::{
-    crypto::secp256k1::{recover_signer, recover_signer_unchecked},
-    InMemorySize, SignedTransaction,
-};
-
 use arb_alloy_consensus::tx::{
     ArbContractTx, ArbDepositTx, ArbInternalTx, ArbRetryTx, ArbSubmitRetryableTx, ArbTxType,
     ArbUnsignedTx,
+};
+use reth_primitives_traits::{
+    crypto::secp256k1::{recover_signer, recover_signer_unchecked},
+    InMemorySize, SignedTransaction,
 };
 
 /// Internal ArbOS address used as sender for internal transactions.

@@ -246,13 +246,14 @@ pub fn derive_address(sk: B256) -> Address {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::messaging::test_support::{decode_body, round_trip};
     use alloy_consensus::transaction::SignerRecoverable;
     use alloy_eips::eip2718::Decodable2718;
     use alloy_primitives::{address, b256, hex};
     use arb_primitives::signed_tx::ArbTransactionSigned;
     use arbos::parse_l2::{parse_l2_transactions, ParsedTransaction};
+
+    use super::*;
+    use crate::messaging::test_support::{decode_body, round_trip};
 
     /// Hardhat default account #0 (private key well-known across the ecosystem).
     fn hardhat_key_0() -> B256 {

@@ -1,6 +1,7 @@
-use crate::AnyError;
 use alloc::{boxed::Box, string::String};
 use core::error::Error;
+
+use crate::AnyError;
 
 /// Errors surfaced by the underlying state database when arb-storage reads or
 /// writes a slot.

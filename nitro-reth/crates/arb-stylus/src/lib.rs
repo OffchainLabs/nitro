@@ -297,8 +297,9 @@ pub fn activate_program(
 
 #[cfg(test)]
 mod stylus_root_tests {
-    use super::*;
     use alloy_primitives::Address;
+
+    use super::*;
 
     fn make_fragment(chunk: &[u8]) -> Vec<u8> {
         let mut f = STYLUS_FRAGMENT_DISCRIMINANT.to_vec();

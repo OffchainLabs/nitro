@@ -13,8 +13,6 @@ use reth_evm::{
     ConfigureEngineEvm, ConfigureEvm, EvmEnv, EvmEnvFor, ExecutableTxIterator, ExecutionCtxFor,
     NextBlockEnvAttributes,
 };
-
-use crate::{assembler::ArbBlockAssembler, receipt::ArbReceiptBuilder};
 use reth_primitives_traits::{SealedBlock, SealedHeader, SignedTransaction, TxTy};
 use reth_storage_errors::any::AnyError;
 use revm::{
@@ -22,7 +20,10 @@ use revm::{
     primitives::hardfork::SpecId,
 };
 
-use crate::{build::ArbBlockExecutorFactory, context::ArbBlockExecutionCtx, evm::ArbEvmFactory};
+use crate::{
+    assembler::ArbBlockAssembler, build::ArbBlockExecutorFactory, context::ArbBlockExecutionCtx,
+    evm::ArbEvmFactory, receipt::ArbReceiptBuilder,
+};
 
 /// Arbitrum EVM configuration.
 ///

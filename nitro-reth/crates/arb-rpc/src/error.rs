@@ -99,8 +99,9 @@ impl From<RpcError> for ErrorObjectOwned {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use jsonrpsee::types::error::{INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE};
+
+    use super::*;
 
     fn into_obj(err: RpcError) -> ErrorObjectOwned {
         err.into()

@@ -1,15 +1,13 @@
 mod batch_poster;
 mod error;
 
-pub use batch_poster::*;
-pub use error::L1PricingError;
-
 use alloy_primitives::{Address, U256};
-
 use arb_storage::{
     Storage, StorageBackedAddress, StorageBackedBigInt, StorageBackedBigUint, StorageBackedInt64,
     StorageBackedUint64, StorageBackend, SystemStateBackend,
 };
+pub use batch_poster::*;
+pub use error::L1PricingError;
 
 use crate::util::BalanceError;
 

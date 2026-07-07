@@ -7,9 +7,8 @@ use std::{
 
 use alloy_primitives::{Address, B256, U256};
 use anyhow::{anyhow, bail, Context, Result};
-use serde_json::{json, Map, Value};
-
 use arb_test_harness::rpc::JsonRpcClient;
+use serde_json::{json, Map, Value};
 
 const DEFAULT_IMAGE: &str = "offchainlabs/nitro-node:v3.10.0-rc.10-b1cf6db";
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);

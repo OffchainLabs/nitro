@@ -1,14 +1,14 @@
 use std::{collections::HashMap, sync::RwLock};
 
+// Use the wasmparser bundled with wasmer-compiler so the `Operator` type matches the
+// `MiddlewareReaderState` API. Other crates may pull a different wasmparser version
+// transitively; routing through wasmer's own export keeps the middleware sound.
+use wasmer_compiler::wasmparser::{BlockType, Operator, ValType};
 use wasmer_compiler::{FunctionMiddleware, MiddlewareReaderState, ModuleMiddleware};
 use wasmer_types::{
     ExportIndex, FunctionIndex, FunctionType, GlobalIndex, GlobalInit, ImportIndex,
     LocalFunctionIndex, MiddlewareError, ModuleInfo, SignatureIndex, Type,
 };
-// Use the wasmparser bundled with wasmer-compiler so the `Operator` type matches the
-// `MiddlewareReaderState` API. Other crates may pull a different wasmparser version
-// transitively; routing through wasmer's own export keeps the middleware sound.
-use wasmer_compiler::wasmparser::{BlockType, Operator, ValType};
 
 use crate::meter::{STYLUS_ENTRY_POINT, STYLUS_INK_LEFT, STYLUS_INK_STATUS, STYLUS_STACK_LEFT};
 

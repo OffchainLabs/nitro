@@ -5,9 +5,8 @@ use std::{
 };
 
 use alloy_primitives::{Address, Bytes, B256, U256};
-use serde_json::{json, Value};
-
 use arb_node::genesis::INITIAL_ARBOS_VERSION;
+use serde_json::{json, Value};
 
 use crate::{
     error::HarnessError,

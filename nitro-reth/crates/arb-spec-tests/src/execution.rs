@@ -10,8 +10,6 @@ use std::{
 };
 
 use alloy_primitives::{Address, Bytes, B256, U256};
-use serde::{Deserialize, Serialize};
-
 use arb_test_harness::{
     capture::capture_from_node,
     dual_exec::DualExec,
@@ -19,6 +17,7 @@ use arb_test_harness::{
     node::{nitro_docker::NitroDocker, remote::RemoteNode, NodeStartCtx},
     scenario::{Scenario, ScenarioSetup, ScenarioStep},
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{case::SpecError, mode::FixtureMode};
 

@@ -1,7 +1,8 @@
+use std::collections::HashMap;
+
 use alloy_primitives::{address, keccak256, Address, Bytes, U256};
 use arb_storage_errors::{DatabaseError, DatabaseErrorInfo, StorageError};
 use revm::Database;
-use std::collections::HashMap;
 
 fn db_read_error<E: core::fmt::Display>(err: E) -> StorageError {
     DatabaseError::Read(DatabaseErrorInfo::new(err.to_string())).into()
@@ -274,8 +275,9 @@ pub fn set_account_code<D: Database>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use revm_database::{states::bundle_state::BundleRetention, StateBuilder};
+
+    use super::*;
 
     /// In-memory database that returns empty for everything.
     #[derive(Default)]

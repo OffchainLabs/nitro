@@ -547,8 +547,9 @@ fn arb_owner_network_fee_account_round_trip() {
 // narrowing for the init-gas params, plus the per-type range rejection on the
 // narrow setters.
 mod stylus_params {
-    use super::*;
     use arb_storage::layout::{map_slot, programs::PARAMS_KEY, PROGRAMS_SUBSPACE};
+
+    use super::*;
 
     fn params_slot() -> U256 {
         let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);

@@ -1,8 +1,9 @@
 //! Unit coverage for `BlockCtx`, `TxCtx`, and `ArbPrecompileCtx`.
 
+use std::sync::Arc;
+
 use alloy_primitives::{address, b256, Address, B256, U256};
 use arb_context::{ArbPrecompileCtx, BlockCtx, RecentWasms, TxCtx};
-use std::sync::Arc;
 
 // ── BlockCtx: L1/L2 block number and L2 block hash caches ───────────
 

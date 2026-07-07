@@ -5,6 +5,8 @@
 //! block producer to send `InsertExecutedBlock` and `ForkchoiceUpdated`
 //! directly to the engine tree for persistence.
 
+use std::sync::Arc;
+
 use crossbeam_channel::Sender;
 use futures::Stream;
 use reth_consensus::FullConsensus;
@@ -29,7 +31,6 @@ use reth_prune::PrunerWithFactory;
 use reth_stages_api::{MetricEventsSender, Pipeline};
 use reth_tasks::Runtime;
 use reth_trie_db::ChangesetCache;
-use std::sync::Arc;
 
 /// The sender type for injecting blocks and FCU into the engine tree.
 pub type TreeSender<T, N> =

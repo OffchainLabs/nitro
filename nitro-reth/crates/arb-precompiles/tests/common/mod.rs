@@ -1,11 +1,17 @@
 #![allow(dead_code)]
 
+use std::sync::{Mutex, MutexGuard, OnceLock};
+
 use alloy_evm::{
     eth::EthEvmContext,
     precompiles::{DynPrecompile, Precompile, PrecompileInput},
     EvmInternals,
 };
 use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
+use arb_storage::{
+    layout::{root_slot, VERSION_OFFSET},
+    ARBOS_STATE_ADDRESS,
+};
 use revm::{
     database::{CacheDB, EmptyDB},
     precompile::{PrecompileError, PrecompileOutput, PrecompileResult},
@@ -13,13 +19,7 @@ use revm::{
     state::{AccountInfo, EvmState},
     Database,
 };
-use std::sync::{Mutex, MutexGuard, OnceLock};
 use tiny_keccak::{Hasher, Keccak};
-
-use arb_storage::{
-    layout::{root_slot, VERSION_OFFSET},
-    ARBOS_STATE_ADDRESS,
-};
 
 /// Serialises tests that share global state in arb-precompiles.
 fn test_lock() -> MutexGuard<'static, ()> {

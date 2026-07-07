@@ -16,7 +16,6 @@ use alloy_rpc_types_engine::{
     ExecutionPayloadEnvelopeV5, ExecutionPayloadEnvelopeV6, ExecutionPayloadFieldV2,
     ExecutionPayloadV1, ExecutionPayloadV3, PayloadAttributes as AlloyPayloadAttributes, PayloadId,
 };
-
 use arb_primitives::ArbPrimitives;
 use reth_engine_primitives::EngineTypes;
 use reth_payload_primitives::{

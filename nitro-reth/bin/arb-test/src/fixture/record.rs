@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-
 use arb_spec_tests::{ExecutionExpectations, ExecutionFixture};
 use arb_test_harness::{capture::capture_from_node, node::remote::RemoteNode};
 

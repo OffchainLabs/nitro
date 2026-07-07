@@ -3,7 +3,6 @@ use alloy_evm::{
     Evm,
 };
 use alloy_primitives::Log;
-
 use arb_primitives::{signed_tx::ArbTxTypeLocal, ArbReceipt, ArbReceiptKind, ArbTransactionSigned};
 
 /// Builds `ArbReceipt` from execution results.

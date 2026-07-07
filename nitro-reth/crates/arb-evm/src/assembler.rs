@@ -9,11 +9,10 @@ use alloy_evm::{
     eth::EthBlockExecutionCtx,
 };
 use alloy_primitives::{B256, B64, U256};
+use arbos::header::{derive_arb_header_info, read_l2_base_fee, ArbHeaderInfo};
 use reth_evm::execute::{BlockAssembler, BlockAssemblerInput};
 use reth_primitives_traits::{logs_bloom, Receipt, SignedTransaction};
 use revm::context::Block as RevmBlock;
-
-use arbos::header::{derive_arb_header_info, read_l2_base_fee, ArbHeaderInfo};
 
 /// Arbitrum block assembler.
 ///

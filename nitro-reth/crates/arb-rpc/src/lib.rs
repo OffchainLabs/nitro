@@ -25,6 +25,7 @@ pub mod stylus_tracer;
 pub mod transaction;
 pub mod types;
 
+use alloy_primitives::{B256, U256};
 pub use api::ArbEthApi;
 pub use arb_api::{ArbApiHandler, ArbApiServer};
 pub use block_producer::{BlockProducer, BlockProducerError, BlockProductionInput, ProducedBlock};
@@ -35,11 +36,9 @@ pub use nitro_execution::{NitroExecutionApiServer, RpcMessageResult, RpcMessageW
 pub use nitro_execution_handler::NitroExecutionHandler;
 pub use receipt::ArbReceiptConverter;
 pub use response::ArbRpcTxConverter;
+use serde::{Deserialize, Serialize};
 pub use transaction::ArbTransactionRequest;
 pub use types::ArbRpcTypes;
-
-use alloy_primitives::{B256, U256};
-use serde::{Deserialize, Serialize};
 
 /// Arbitrum transaction receipt extension fields.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

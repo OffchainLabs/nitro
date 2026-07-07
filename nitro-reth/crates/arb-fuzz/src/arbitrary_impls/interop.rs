@@ -8,9 +8,6 @@
 //! to keep `solc` out of the build path (see `stylus_callback_runtime` etc).
 
 use alloy_primitives::{b256, keccak256, Address, Bytes, B256, U256};
-use arbitrary::{Arbitrary, Unstructured};
-use serde::Serialize;
-
 use arb_test_harness::{
     messaging::{
         signed_tx::{derive_address, L2TxKind, SignedL2TxBuilder},
@@ -18,6 +15,8 @@ use arb_test_harness::{
     },
     scenario::{Scenario, ScenarioSetup, ScenarioStep},
 };
+use arbitrary::{Arbitrary, Unstructured};
+use serde::Serialize;
 
 use crate::{
     arbitrary_impls::{message_step, ArbosVersion, FUZZ_L1_BASE_FEE},
