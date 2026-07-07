@@ -4,7 +4,9 @@ use alloy_consensus::TxLegacy;
 use alloy_primitives::{Address, B256, LogData};
 use alloy_rpc_types_eth::Log;
 
-use crate::{LogsFetcher, MelResult, TxFetcher};
+use crate::{
+    DelayedInboxMessage, DelayedMessageDB, LogsFetcher, MelError, MelResult, MelState, TxFetcher,
+};
 
 /// Wraps `data` in an rpc [`Log`] emitted by `address`.
 pub(crate) fn rpc_log(address: Address, data: LogData) -> Log {
@@ -37,5 +39,18 @@ impl TxFetcher for MockTx {
     type Transaction = TxLegacy;
     fn transaction_by_log(&self, _log: &Log) -> MelResult<TxLegacy> {
         Ok(TxLegacy::default())
+    }
+}
+
+/// A [`DelayedMessageDB`] stub for tests that never read delayed messages.
+pub(crate) struct MockDelayedDb;
+
+impl DelayedMessageDB for MockDelayedDb {
+    fn read_delayed_message(
+        &self,
+        _state: &MelState,
+        _index: u64,
+    ) -> MelResult<DelayedInboxMessage> {
+        Err(MelError::Unknown)
     }
 }
