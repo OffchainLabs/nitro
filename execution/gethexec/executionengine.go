@@ -554,6 +554,9 @@ func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newM
 	s.delayedMsgsMutex.Lock()
 	defer s.delayedMsgsMutex.Unlock()
 	s.delayedMsgs = containers.Queue[*delayedMsg]{}
+	// Drop any filtered-tx wait tied to the discarded queue so a stale halt
+	// cannot gate an unrelated new head message.
+	s.waitingForFilteredTx = nil
 
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
@@ -948,6 +951,9 @@ func (s *ExecutionEngine) SequenceDelayedMessage() (*execution.SequencedMsg, err
 		// delayedMsgs will eventually be filled again by Consensus.
 		log.Error("unexpected error sequencing delayed message, resetting delayed queue", "delayedMsgIdx", delayedMsgToSequence.msgIdx, "err", err)
 		s.delayedMsgs = containers.Queue[*delayedMsg]{}
+		// Drop any filtered-tx wait tied to the discarded queue so a stale halt
+		// cannot gate an unrelated new head message.
+		s.waitingForFilteredTx = nil
 		return nil, err
 	}
 
