@@ -163,7 +163,10 @@ type ExecutionSequencer interface {
 	//   - any other error: staged regular transactions are failed back to their
 	//     submitters with that error.
 	// A staged delayed message is left queued for a later turn on any non-nil
-	// error. When StartSequencing produced nothing, EndSequencing is a no-op.
+	// error. When StartSequencing took no turn (idle or throttled), EndSequencing
+	// is a no-op. When a turn ran but produced no block (e.g. every tx errored),
+	// EndSequencing still delivers per-transaction results to waiting submitters
+	// and records nonce failures — it must be called regardless.
 	EndSequencing(ctx context.Context, errWhileSequencing error)
 
 	// EnqueueDelayedMessages feeds delayed (L1-inbox) messages to the execution
