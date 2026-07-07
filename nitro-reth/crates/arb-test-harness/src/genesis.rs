@@ -176,11 +176,10 @@ impl GenesisBuilder {
         user_entries
             .entry(arbos_state_addr)
             .and_modify(|v| {
-                if let Value::Object(map) = v {
-                    if !map.contains_key("nonce") {
+                if let Value::Object(map) = v
+                    && !map.contains_key("nonce") {
                         map.insert("nonce".into(), Value::Number(1u64.into()));
                     }
-                }
             })
             .or_insert(Value::Object(arbos_entry));
 
@@ -209,19 +208,17 @@ fn alloc_value(alloc: &AccountAlloc) -> Value {
         "balance".into(),
         Value::String(format!("0x{:x}", alloc.balance.unwrap_or(U256::ZERO))),
     );
-    if let Some(nonce) = alloc.nonce {
-        if nonce > 0 {
+    if let Some(nonce) = alloc.nonce
+        && nonce > 0 {
             map.insert("nonce".into(), Value::Number(nonce.into()));
         }
-    }
-    if let Some(code) = &alloc.code {
-        if !code.is_empty() {
+    if let Some(code) = &alloc.code
+        && !code.is_empty() {
             map.insert(
                 "code".into(),
                 Value::String(format!("0x{}", hex::encode(code))),
             );
         }
-    }
     if !alloc.storage.is_empty() {
         let mut storage = Map::new();
         for (slot, value) in &alloc.storage {

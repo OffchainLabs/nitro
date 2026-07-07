@@ -458,8 +458,8 @@ fn check_assertions(
                 v,
             )?;
         }
-        if let Some(num) = s.has_hash_for {
-            if bh
+        if let Some(num) = s.has_hash_for
+            && bh
                 .block_hash(unsafe { &mut *state_ptr }, num)
                 .map_err(map_err)?
                 .is_none()
@@ -468,9 +468,8 @@ fn check_assertions(
                     "blockhash.has_hash_for {num}: missing"
                 )));
             }
-        }
-        if let Some(num) = s.no_hash_for {
-            if bh
+        if let Some(num) = s.no_hash_for
+            && bh
                 .block_hash(unsafe { &mut *state_ptr }, num)
                 .map_err(map_err)?
                 .is_some()
@@ -479,7 +478,6 @@ fn check_assertions(
                     "blockhash.no_hash_for {num}: present"
                 )));
             }
-        }
         if let Some(check) = &s.hash_for_block_equals {
             let actual = bh
                 .block_hash(unsafe { &mut *state_ptr }, check.block_number)

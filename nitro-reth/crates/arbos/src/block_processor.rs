@@ -387,12 +387,10 @@ impl BlockProductionState {
             }
             TxOutcome::Success(result) => {
                 // Internal start-block tx must not fail.
-                if matches!(action, TxAction::ExecuteStartBlock) {
-                    if let Some(ref err) = result.evm_error {
+                if matches!(action, TxAction::ExecuteStartBlock) && let Some(ref err) = result.evm_error {
                         return Err(BlockProcessorError::InternalTxFailed {
                             reason: err.clone(),
                         });
-                    }
                 }
 
                 let tx_gas_used = result.gas_used;

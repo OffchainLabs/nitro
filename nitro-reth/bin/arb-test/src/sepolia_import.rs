@@ -189,13 +189,11 @@ fn candidates_for(addr: &str, prestate: &Value) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     if let Some(map) = prestate.as_object() {
         for (key, val) in map {
-            if !addr_eq(key, addr) {
-                if let Some(code) = val.get("code").and_then(Value::as_str) {
-                    if code != "0x" {
+            if !addr_eq(key, addr)
+                && let Some(code) = val.get("code").and_then(Value::as_str)
+                    && code != "0x" {
                         continue;
                     }
-                }
-            }
             if let Some(storage) = val.get("storage").and_then(Value::as_object) {
                 for slot in storage.keys() {
                     out.push(slot.clone());

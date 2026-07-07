@@ -578,25 +578,23 @@ fn verify_tx_receipt(client: &RpcClient, exp: &ExpectedTxReceipt) -> Result<(), 
     // ARB_SPEC_DUMP_HOSTIO_TRACE=path → dump Stylus hostio trace to that
     // file before doing anything else. Used to diff arbreth's per-hostio
     // ink charges against canonical for divergence root-causing.
-    if let Ok(path) = std::env::var("ARB_SPEC_DUMP_HOSTIO_TRACE") {
-        if let Ok(trace) = client.call::<serde_json::Value>(
+    if let Ok(path) = std::env::var("ARB_SPEC_DUMP_HOSTIO_TRACE")
+        && let Ok(trace) = client.call::<serde_json::Value>(
             "debug_traceTransaction",
             serde_json::json!([exp.tx_hash, {"tracer": "stylusTracer"}]),
         ) {
             let _ = std::fs::write(&path, serde_json::to_vec_pretty(&trace).unwrap_or_default());
             eprintln!("[arb-spec] dumped hostio trace to {path}");
         }
-    }
     // ARB_SPEC_DUMP_RECEIPT=path → dump full receipt JSON.
-    if let Ok(path) = std::env::var("ARB_SPEC_DUMP_RECEIPT") {
-        if let Ok(rcpt) = client.call::<serde_json::Value>(
+    if let Ok(path) = std::env::var("ARB_SPEC_DUMP_RECEIPT")
+        && let Ok(rcpt) = client.call::<serde_json::Value>(
             "eth_getTransactionReceipt",
             serde_json::json!([exp.tx_hash]),
         ) {
             let _ = std::fs::write(&path, serde_json::to_vec_pretty(&rcpt).unwrap_or_default());
             eprintln!("[arb-spec] dumped receipt to {path}");
         }
-    }
     // ARB_SPEC_PROBE_ARBOS=1 → log key ArbOS state slots so we can verify
     // chain init wiring at runtime.
     if std::env::var("ARB_SPEC_PROBE_ARBOS").is_ok() {

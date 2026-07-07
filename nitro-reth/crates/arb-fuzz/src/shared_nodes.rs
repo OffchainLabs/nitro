@@ -45,11 +45,10 @@ pub fn captured_genesis_path(chain_id: u64, arbos_version: u64) -> PathBuf {
 
 fn load_captured_or_build(chain_id: u64, arbos_version: u64) -> serde_json::Value {
     let path = captured_genesis_path(chain_id, arbos_version);
-    if let Ok(bytes) = std::fs::read(&path) {
-        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+    if let Ok(bytes) = std::fs::read(&path)
+        && let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
             return value;
         }
-    }
     GenesisBuilder::new(chain_id, arbos_version)
         .build()
         .expect("genesis build")

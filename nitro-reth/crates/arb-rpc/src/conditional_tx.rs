@@ -71,26 +71,22 @@ pub fn check_simple_predicates(
     current_l1_block: u64,
     current_l2_timestamp: u64,
 ) -> Result<(), ErrorObject<'static>> {
-    if let Some(min) = opts.block_number_min {
-        if current_l1_block < min {
+    if let Some(min) = opts.block_number_min
+        && current_l1_block < min {
             return Err(condition_rejected("BlockNumberMin condition not met"));
         }
-    }
-    if let Some(max) = opts.block_number_max {
-        if current_l1_block > max {
+    if let Some(max) = opts.block_number_max
+        && current_l1_block > max {
             return Err(condition_rejected("BlockNumberMax condition not met"));
         }
-    }
-    if let Some(min) = opts.timestamp_min {
-        if current_l2_timestamp < min {
+    if let Some(min) = opts.timestamp_min
+        && current_l2_timestamp < min {
             return Err(condition_rejected("TimestampMin condition not met"));
         }
-    }
-    if let Some(max) = opts.timestamp_max {
-        if current_l2_timestamp > max {
+    if let Some(max) = opts.timestamp_max
+        && current_l2_timestamp > max {
             return Err(condition_rejected("TimestampMax condition not met"));
         }
-    }
     Ok(())
 }
 

@@ -1701,14 +1701,13 @@ fn is_stylus_call(frame_init: &FrameInit, arbos_version: u64) -> Option<Bytes> {
     if arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS {
         return None;
     }
-    if let FrameInput::Call(ref inputs) = frame_init.frame_input {
-        if let Some((_, ref code)) = inputs.known_bytecode {
+    if let FrameInput::Call(ref inputs) = frame_init.frame_input
+        && let Some((_, ref code)) = inputs.known_bytecode {
             let raw = code.original_bytes();
             if arb_stylus::is_stylus_runnable(&raw) {
                 return Some(raw);
             }
         }
-    }
     None
 }
 
@@ -1722,8 +1721,8 @@ fn execute_stylus_call_concrete<DB: Database>(
     pre_ctx: &std::sync::Arc<arb_context::ArbPrecompileCtx>,
 ) -> FrameResult {
     // Handle value transfer for non-delegate calls (matches EthFrame::make_call_frame).
-    if let revm::interpreter::CallValue::Transfer(value) = inputs.value {
-        if let Some(i) =
+    if let revm::interpreter::CallValue::Transfer(value) = inputs.value
+        && let Some(i) =
             ctx.journal_mut()
                 .transfer_loaded(inputs.caller, inputs.target_address, value)
         {
@@ -1736,7 +1735,6 @@ fn execute_stylus_call_concrete<DB: Database>(
                 precompile_call_logs: Vec::new(),
             });
         }
-    }
 
     let result = execute_stylus_program(ctx, inputs, bytecode, pre_ctx);
 
@@ -1824,13 +1822,12 @@ where
                         .and_then(|acc| acc.data.info.code.as_ref().map(|c| c.original_bytes()))
                 });
 
-            if let Some(bytecode) = bytecode {
-                if arb_stylus::is_stylus_runnable(&bytecode) {
+            if let Some(bytecode) = bytecode
+                && arb_stylus::is_stylus_runnable(&bytecode) {
                     return Ok(Some(execute_stylus_program(
                         context, inputs, &bytecode, &self.ctx,
                     )));
                 }
-            }
         }
 
         Ok(None)
@@ -2016,8 +2013,7 @@ where
             });
         }
 
-        if let Some(bytecode) = is_stylus_call(&frame_input, pre_ctx.block.arbos_version) {
-            if let FrameInput::Call(ref inputs) = frame_input.frame_input {
+        if let Some(bytecode) = is_stylus_call(&frame_input, pre_ctx.block.arbos_version) && let FrameInput::Call(ref inputs) = frame_input.frame_input {
                 if frame_input.depth > revm::primitives::constants::CALL_STACK_LIMIT as usize {
                     let gas = EvmGas::new(inputs.gas_limit);
                     if pushed_caller {
@@ -2047,7 +2043,6 @@ where
                 }
                 return Ok(ItemOrResult::Result(result));
             }
-        }
 
         self.inner.frame_init(frame_input)
     }
@@ -2079,8 +2074,7 @@ where
         // can deploy; we re-apply it here with the Stylus exception.
         if let FrameResult::Create(ref mut outcome) = result {
             let create_ctx = self.create_ctx_stack.pop();
-            if outcome.instruction_result().is_ok() {
-                if let Some(addr) = outcome.address {
+            if outcome.instruction_result().is_ok() && let Some(addr) = outcome.address {
                     let code_bytes: Vec<u8> = self
                         .inner
                         .ctx
@@ -2112,7 +2106,6 @@ where
                         outcome.result.output = Bytes::new();
                         outcome.result.gas.spend_all();
                     }
-                }
             }
         }
         self.inner.frame_return_result(result)

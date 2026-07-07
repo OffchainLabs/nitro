@@ -217,11 +217,10 @@ fn resolve_published_port(container_name: &str) -> Result<u16> {
         if out.status.success() {
             let mapping = String::from_utf8_lossy(&out.stdout);
             for line in mapping.lines() {
-                if let Some((_, port)) = line.rsplit_once(':') {
-                    if let Ok(p) = port.trim().parse::<u16>() {
+                if let Some((_, port)) = line.rsplit_once(':')
+                    && let Ok(p) = port.trim().parse::<u16>() {
                         return Ok(p);
                     }
-                }
             }
         }
         if Instant::now() >= deadline {
@@ -365,11 +364,10 @@ fn parse_dump_account(raw: &Value) -> Result<Map<String, Value>> {
                 .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
         })
     });
-    if let Some(n) = nonce_opt {
-        if n > 0 {
+    if let Some(n) = nonce_opt
+        && n > 0 {
             entry.insert("nonce".into(), Value::String(format!("{n:#x}")));
         }
-    }
 
     if let Some(code) = raw.get("code").and_then(Value::as_str) {
         let trimmed = code.trim_start_matches("0x");

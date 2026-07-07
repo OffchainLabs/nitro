@@ -1184,15 +1184,13 @@ where
             //   address callValueRefundAddress, bytes data)
             //
             // selector: 0xc3dc5879
-            if target == Some(NODE_INTERFACE_ADDRESS) {
-                if let Some(ref buf) = input_bytes {
-                    if buf.len() >= 4 && buf[..4] == [0xc3, 0xdc, 0x58, 0x79] {
+            if target == Some(NODE_INTERFACE_ADDRESS)
+                && let Some(ref buf) = input_bytes
+                    && buf.len() >= 4 && buf[..4] == [0xc3, 0xdc, 0x58, 0x79] {
                         return self
                             .estimate_retryable_ticket_gas(buf, at, state_override)
                             .await;
                     }
-                }
-            }
 
             // Extract calldata length before request is consumed by the binary search.
             let calldata_len = input_bytes.as_ref().map(|b| b.len()).unwrap_or(0);

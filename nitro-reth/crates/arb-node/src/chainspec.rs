@@ -380,11 +380,10 @@ pub fn serialize_chain_config_go_style(config: &Value) -> Vec<u8> {
         writer.write_optional_big_int(cfg, json_key, name);
     }
 
-    if let Some(map) = cfg {
-        if map.get("daoForkSupport").and_then(Value::as_bool) == Some(true) {
+    if let Some(map) = cfg
+        && map.get("daoForkSupport").and_then(Value::as_bool) == Some(true) {
             writer.write_bool_field("daoForkSupport", true);
         }
-    }
 
     for (name, json_key) in BIG_INT_BLOCK_FIELDS_AFTER_DAO {
         writer.write_optional_big_int(cfg, json_key, name);
@@ -405,11 +404,10 @@ pub fn serialize_chain_config_go_style(config: &Value) -> Vec<u8> {
         true,
     );
 
-    if let Some(map) = cfg {
-        if map.get("enableVerkleAtGenesis").and_then(Value::as_bool) == Some(true) {
+    if let Some(map) = cfg
+        && map.get("enableVerkleAtGenesis").and_then(Value::as_bool) == Some(true) {
             writer.write_bool_field("enableVerkleAtGenesis", true);
         }
-    }
 
     // Ethash and Clique are pointer types in Go, so their slots only appear
     // when present in the input. Clique always has period+epoch (no

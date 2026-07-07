@@ -228,14 +228,13 @@ fn build_custom_genesis(base_genesis: &Path, dest: &Path, workload: &Workload) -
         .map_err(|e| eyre::eyre!("read base genesis {}: {e}", base_genesis.display()))?;
     let mut json: serde_json::Value = serde_json::from_slice(&bytes)?;
 
-    if let Some(config) = json.get_mut("config") {
-        if let Some(obj) = config.as_object_mut() {
+    if let Some(config) = json.get_mut("config")
+        && let Some(obj) = config.as_object_mut() {
             obj.insert(
                 "chainId".into(),
                 serde_json::Value::Number(workload.chain_id.into()),
             );
         }
-    }
 
     let alloc = json
         .get_mut("alloc")
@@ -370,15 +369,12 @@ fn wait_for_ready(
         "params": [],
     });
     while start.elapsed() < timeout {
-        if let Ok(resp) = client.post(url).json(&body).send() {
-            if resp.status().is_success() {
-                if let Ok(json) = resp.json::<serde_json::Value>() {
-                    if json.get("result").is_some() {
+        if let Ok(resp) = client.post(url).json(&body).send()
+            && resp.status().is_success()
+                && let Ok(json) = resp.json::<serde_json::Value>()
+                    && json.get("result").is_some() {
                         return Ok(());
                     }
-                }
-            }
-        }
         thread::sleep(Duration::from_millis(250));
     }
     Err(eyre::eyre!(
@@ -443,11 +439,10 @@ impl NodeProcess {
                     if stop_e.load(Ordering::Relaxed) {
                         return;
                     }
-                    if let Ok(l) = line {
-                        if echo {
+                    if let Ok(l) = line
+                        && echo {
                             eprintln!("[arb-reth] {l}");
                         }
-                    }
                 }
             });
             let reader = BufReader::new(stdout);
@@ -455,11 +450,10 @@ impl NodeProcess {
                 if stop_o.load(Ordering::Relaxed) {
                     break;
                 }
-                if let Ok(l) = line {
-                    if echo {
+                if let Ok(l) = line
+                    && echo {
                         eprintln!("[arb-reth] {l}");
                     }
-                }
             }
             let _ = stderr_jh.join();
         }));
