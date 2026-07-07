@@ -6,14 +6,14 @@
 
 use std::{fmt::Debug, sync::Arc};
 
-use alloy_consensus::{proofs::calculate_receipt_root, TxReceipt};
+use alloy_consensus::{TxReceipt, proofs::calculate_receipt_root};
 use alloy_primitives::Bloom;
 use reth_chainspec::{EthChainSpec, EthereumHardforks};
 use reth_consensus::{Consensus, ConsensusError, FullConsensus, HeaderValidator, ReceiptRootBloom};
 use reth_execution_types::BlockExecutionResult;
 use reth_primitives_traits::{
-    receipt::gas_spent_by_transactions, Block, BlockHeader, GotExpected, NodePrimitives, Receipt,
-    RecoveredBlock, SealedBlock, SealedHeader,
+    Block, BlockHeader, GotExpected, NodePrimitives, Receipt, RecoveredBlock, SealedBlock,
+    SealedHeader, receipt::gas_spent_by_transactions,
 };
 
 /// Arbitrum consensus engine.
@@ -160,13 +160,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::verify_block_execution;
     use alloy_consensus::{
-        proofs::calculate_receipt_root, Eip658Value, Header, Receipt as AlloyReceipt, TxReceipt,
+        Eip658Value, Header, Receipt as AlloyReceipt, TxReceipt, proofs::calculate_receipt_root,
     };
-    use alloy_primitives::{Bloom, B256};
+    use alloy_primitives::{B256, Bloom};
     use arb_primitives::{ArbReceipt, ArbReceiptKind};
     use reth_consensus::ConsensusError;
+
+    use super::verify_block_execution;
 
     fn receipts() -> Vec<ArbReceipt> {
         vec![ArbReceipt::new(ArbReceiptKind::Eip1559(AlloyReceipt {

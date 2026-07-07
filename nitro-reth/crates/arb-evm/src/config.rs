@@ -3,8 +3,8 @@ use core::{convert::Infallible, fmt::Debug};
 
 use alloy_consensus::{BlockHeader, Header};
 use alloy_eips::Decodable2718;
-use alloy_evm::eth::{spec::EthExecutorSpec, EthBlockExecutionCtx};
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_evm::eth::{EthBlockExecutionCtx, spec::EthExecutorSpec};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use alloy_rpc_types_engine::ExecutionData;
 use arb_chainspec::ArbitrumChainSpec;
 use arb_primitives::ArbPrimitives;
@@ -13,8 +13,6 @@ use reth_evm::{
     ConfigureEngineEvm, ConfigureEvm, EvmEnv, EvmEnvFor, ExecutableTxIterator, ExecutionCtxFor,
     NextBlockEnvAttributes,
 };
-
-use crate::{assembler::ArbBlockAssembler, receipt::ArbReceiptBuilder};
 use reth_primitives_traits::{SealedBlock, SealedHeader, SignedTransaction, TxTy};
 use reth_storage_errors::any::AnyError;
 use revm::{
@@ -22,7 +20,10 @@ use revm::{
     primitives::hardfork::SpecId,
 };
 
-use crate::{build::ArbBlockExecutorFactory, context::ArbBlockExecutionCtx, evm::ArbEvmFactory};
+use crate::{
+    assembler::ArbBlockAssembler, build::ArbBlockExecutorFactory, context::ArbBlockExecutionCtx,
+    evm::ArbEvmFactory, receipt::ArbReceiptBuilder,
+};
 
 /// Arbitrum EVM configuration.
 ///

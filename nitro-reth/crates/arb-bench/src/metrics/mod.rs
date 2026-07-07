@@ -2,9 +2,8 @@ pub mod clock;
 pub mod memory;
 pub mod rolling;
 
-use serde::{Deserialize, Serialize};
-
 use rolling::WindowMetric;
+use serde::{Deserialize, Serialize};
 
 /// Per-block measurement captured by the runner.
 #[derive(Debug, Clone, Serialize, Deserialize)]

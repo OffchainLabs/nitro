@@ -5,7 +5,7 @@ mod common;
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::B256;
 use arb_precompiles::create_arbretryabletx_precompile;
-use common::{calldata, word_u256, PrecompileTest};
+use common::{PrecompileTest, calldata, word_u256};
 
 const ARBOS_V30: u64 = 30;
 

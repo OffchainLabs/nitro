@@ -1,17 +1,16 @@
 //! `arbtrace_*` namespace — forwards pre-Arbitrum-One classic trace
 //! requests to a configured classic-node RPC endpoint.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use jsonrpsee::{
-    core::{client::ClientT, RpcResult},
+    core::{RpcResult, client::ClientT},
     proc_macros::rpc,
-    types::{error::INTERNAL_ERROR_CODE, ErrorObject},
+    types::{ErrorObject, error::INTERNAL_ERROR_CODE},
 };
 use jsonrpsee_http_client::{HttpClient, HttpClientBuilder};
 use parking_lot::Mutex;
-use serde_json::{self as json, value::RawValue, Value as JsonValue};
-use std::time::Duration;
+use serde_json::{self as json, Value as JsonValue, value::RawValue};
 
 fn forwarding_not_configured() -> ErrorObject<'static> {
     ErrorObject::owned(
@@ -147,17 +146,15 @@ impl ArbTraceHandler {
         block_num_or_hash: &RawValue,
     ) -> Result<(), ErrorObject<'static>> {
         let parsed: JsonValue = json::from_str(block_num_or_hash.get()).unwrap_or(JsonValue::Null);
-        if let Some(s) = parsed.as_str() {
-            if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-                if let Ok(n) = i64::from_str_radix(hex, 16) {
-                    if n < 0 || (n as u64) > self.config.genesis_block_num {
-                        return Err(block_unsupported_by_classic(
-                            n,
-                            self.config.genesis_block_num,
-                        ));
-                    }
-                }
-            }
+        if let Some(s) = parsed.as_str()
+            && let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X"))
+            && let Ok(n) = i64::from_str_radix(hex, 16)
+            && (n < 0 || (n as u64) > self.config.genesis_block_num)
+        {
+            return Err(block_unsupported_by_classic(
+                n,
+                self.config.genesis_block_num,
+            ));
         }
         Ok(())
     }

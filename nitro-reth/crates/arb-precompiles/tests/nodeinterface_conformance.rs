@@ -14,14 +14,14 @@ use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::{B256, U256};
 use arb_precompiles::create_nodeinterface_precompile;
 use arb_storage::{
-    layout::{root_slot, subspace_slot, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE},
     ARBOS_STATE_ADDRESS,
+    layout::{L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE, root_slot, subspace_slot},
 };
 use arbos::{
     arbos_state::GENESIS_BLOCK_NUM_OFFSET, l1_pricing::PRICE_PER_UNIT_OFFSET as L1_PRICE_PER_UNIT,
     l2_pricing::BASE_FEE_WEI_OFFSET as L2_BASE_FEE,
 };
-use common::{calldata, calldata_estimate, decode_u256, decode_word, word_u256, PrecompileTest};
+use common::{PrecompileTest, calldata, calldata_estimate, decode_u256, decode_word, word_u256};
 
 fn nodeinterface(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
     create_nodeinterface_precompile(ctx)

@@ -8,12 +8,16 @@
 //! This is the reth SDK-native approach: implement `LaunchNode` with custom
 //! orchestrator wiring while reusing all other engine infrastructure.
 
-use crate::{
-    engine::{build_arb_engine_orchestrator, TreeSender},
-    error::LauncherError,
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::{Arc, OnceLock},
 };
+
 use alloy_consensus::BlockHeader;
-use futures::{stream::FusedStream, stream_select, FutureExt, StreamExt};
+use arb_payload::ArbEngineTypes;
+use arb_primitives::ArbPrimitives;
+use futures::{FutureExt, StreamExt, stream::FusedStream, stream_select};
 use reth_chainspec::{EthChainSpec, EthereumHardforks};
 use reth_engine_tree::{
     chain::{ChainEvent, FromOrchestrator},
@@ -22,18 +26,18 @@ use reth_engine_tree::{
 };
 use reth_engine_util::EngineMessageStreamExt;
 use reth_exex::ExExManagerHandle;
-use reth_network::{types::BlockRangeUpdate, NetworkSyncUpdater, SyncState};
+use reth_network::{NetworkSyncUpdater, SyncState, types::BlockRangeUpdate};
 use reth_network_api::BlockDownloaderProvider;
 use reth_node_api::{
     BuiltPayload, ConsensusEngineHandle, FullNodeTypes, NodeTypes, NodeTypesWithDBAdapter,
 };
 use reth_node_builder::{
+    AddOns, AddOnsContext, FullNode, LaunchContext, LaunchNode, NodeAdapter,
+    NodeBuilderWithComponents, NodeComponents, NodeComponentsBuilder, NodeHandle, NodeTypesAdapter,
     common::{Attached, LaunchContextWith, WithConfigs},
     hooks::NodeHooks,
     rpc::{EngineShutdown, EngineValidatorAddOn, EngineValidatorBuilder, RethRpcAddOns, RpcHandle},
     setup::build_networked_pipeline,
-    AddOns, AddOnsContext, FullNode, LaunchContext, LaunchNode, NodeAdapter,
-    NodeBuilderWithComponents, NodeComponents, NodeComponentsBuilder, NodeHandle, NodeTypesAdapter,
 };
 use reth_node_core::{
     dirs::{ChainPath, DataDirPath},
@@ -42,23 +46,20 @@ use reth_node_core::{
 };
 use reth_node_events::node;
 use reth_provider::{
-    providers::{BlockchainProvider, NodeTypesForProvider},
     BlockNumReader, StorageSettingsCache,
+    providers::{BlockchainProvider, NodeTypesForProvider},
 };
 use reth_tasks::TaskExecutor;
 use reth_tokio_util::EventSender;
 use reth_tracing::tracing::{debug, error, info};
 use reth_trie_db::ChangesetCache;
-use std::{
-    future::Future,
-    pin::Pin,
-    sync::{Arc, OnceLock},
-};
 use tokio::sync::{mpsc::unbounded_channel, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use arb_payload::ArbEngineTypes;
-use arb_primitives::ArbPrimitives;
+use crate::{
+    engine::{TreeSender, build_arb_engine_orchestrator},
+    error::LauncherError,
+};
 
 static TREE_SENDER: OnceLock<TreeSender<ArbEngineTypes, ArbPrimitives>> = OnceLock::new();
 static ENGINE_HANDLE: OnceLock<ConsensusEngineHandle<ArbEngineTypes>> = OnceLock::new();
@@ -115,10 +116,10 @@ pub fn engine_handle() -> Option<&'static ConsensusEngineHandle<ArbEngineTypes>>
 
 /// Send blocks to the background persistence thread (non-blocking).
 pub fn start_flush(request: FlushRequest) {
-    if let Some(handle) = FLUSH_HANDLE.get() {
-        if let Err(e) = handle.sender.send(PersistenceRequest::Flush(request)) {
-            error!(target: "reth::cli", "Failed to send flush request: {e}");
-        }
+    if let Some(handle) = FLUSH_HANDLE.get()
+        && let Err(e) = handle.sender.send(PersistenceRequest::Flush(request))
+    {
+        error!(target: "reth::cli", "Failed to send flush request: {e}");
     }
 }
 
@@ -191,11 +192,11 @@ impl ArbEngineLauncher {
     ) -> eyre::Result<NodeHandle<NodeAdapter<T, CB::Components>, AO>>
     where
         T: FullNodeTypes<
-            Types: NodeTypesForProvider<Payload = ArbEngineTypes, Primitives = ArbPrimitives>,
-            Provider = BlockchainProvider<
-                NodeTypesWithDBAdapter<<T as FullNodeTypes>::Types, <T as FullNodeTypes>::DB>,
+                Types: NodeTypesForProvider<Payload = ArbEngineTypes, Primitives = ArbPrimitives>,
+                Provider = BlockchainProvider<
+                    NodeTypesWithDBAdapter<<T as FullNodeTypes>::Types, <T as FullNodeTypes>::DB>,
+                >,
             >,
-        >,
         CB: NodeComponentsBuilder<T>,
         AO: RethRpcAddOns<NodeAdapter<T, CB::Components>>
             + EngineValidatorAddOn<NodeAdapter<T, CB::Components>>,
@@ -660,11 +661,11 @@ impl ArbEngineLauncher {
 impl<T, CB, AO> LaunchNode<NodeBuilderWithComponents<T, CB, AO>> for ArbEngineLauncher
 where
     T: FullNodeTypes<
-        Types: NodeTypesForProvider<Payload = ArbEngineTypes, Primitives = ArbPrimitives>,
-        Provider = BlockchainProvider<
-            NodeTypesWithDBAdapter<<T as FullNodeTypes>::Types, <T as FullNodeTypes>::DB>,
+            Types: NodeTypesForProvider<Payload = ArbEngineTypes, Primitives = ArbPrimitives>,
+            Provider = BlockchainProvider<
+                NodeTypesWithDBAdapter<<T as FullNodeTypes>::Types, <T as FullNodeTypes>::DB>,
+            >,
         >,
-    >,
     CB: NodeComponentsBuilder<T> + 'static,
     AO: RethRpcAddOns<NodeAdapter<T, CB::Components>>
         + EngineValidatorAddOn<NodeAdapter<T, CB::Components>>

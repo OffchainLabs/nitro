@@ -1,4 +1,4 @@
-use alloy_primitives::{address, Address, U256};
+use alloy_primitives::{Address, U256, address};
 use arb_test_utils::ArbosHarness;
 use arbos::l1_pricing::BATCH_POSTER_ADDRESS;
 

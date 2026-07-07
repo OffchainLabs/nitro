@@ -1,7 +1,7 @@
 use alloy_eips::eip2718::{Decodable2718, Encodable2718};
 use arb_bench::capture::synthetic::generate;
 use arb_primitives::ArbTransactionSigned;
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 
 fn corpus(txs_per_block: usize) -> Vec<Vec<u8>> {
     let g = generate(

@@ -1,13 +1,13 @@
+use std::sync::Arc;
+
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{Address, Log, B256, U256};
+use alloy_primitives::{Address, B256, Log, U256};
 use alloy_sol_types::{SolEvent, SolInterface};
 use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
-
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
-use std::sync::Arc;
 
-use crate::{interfaces::IArbNativeTokenManager, ArbPrecompileError};
+use crate::{ArbPrecompileError, interfaces::IArbNativeTokenManager};
 
 /// ArbNativeTokenManager precompile address (0x73).
 pub const ARBNATIVETOKENMANAGER_ADDRESS: Address = Address::new([

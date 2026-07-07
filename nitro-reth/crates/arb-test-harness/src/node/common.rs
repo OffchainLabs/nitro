@@ -1,12 +1,12 @@
 use std::sync::atomic::AtomicU16;
 
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use serde_json::Value;
 
 use crate::{
+    Result,
     error::HarnessError,
     node::{ArbReceiptFields, Block, EvmLog, TxReceipt, TxRequest},
-    Result,
 };
 
 pub(crate) fn tx_request_to_json(tx: &TxRequest) -> Value {
@@ -93,10 +93,10 @@ pub(crate) fn extract_tx_hashes(v: &Value) -> Vec<B256> {
             Value::Object(map) => map.get("hash").and_then(|h| h.as_str()),
             _ => None,
         };
-        if let Some(s) = hash_str {
-            if let Ok(h) = s.parse::<B256>() {
-                out.push(h);
-            }
+        if let Some(s) = hash_str
+            && let Ok(h) = s.parse::<B256>()
+        {
+            out.push(h);
         }
     }
     out

@@ -1,20 +1,33 @@
 mod error;
 pub mod initialize;
 
-pub use error::ArbosStateError;
-
-use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
-use revm::Database;
 use std::sync::OnceLock;
 
+use alloy_primitives::{Address, B256, Bytes, U256, keccak256};
 use arb_primitives::arbos_versions::{
     HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE_ARBITRUM, PRECOMPILE_MIN_ARBOS_VERSIONS,
 };
-use arb_storage::{
-    get_account_balance, set_account_code, set_account_nonce, storage_key_map, Detached, Storage,
-    StorageBackedAddress, StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64,
-    StorageBackend, SystemStateBackend, ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
+// Root-level field offsets and subspace IDs are defined once in the storage
+// layout module; re-export the offsets that callers reference by name.
+use arb_storage::layout::{
+    ADDRESS_TABLE_SUBSPACE, BLOCKHASHES_SUBSPACE, CHAIN_CONFIG_SUBSPACE, CHAIN_OWNER_SUBSPACE,
+    FEATURES_SUBSPACE, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE, NATIVE_TOKEN_SUBSPACE,
+    PROGRAMS_SUBSPACE, RETRYABLES_SUBSPACE, SEND_MERKLE_SUBSPACE, TRANSACTION_FILTERER_SUBSPACE,
 };
+pub use arb_storage::layout::{
+    BROTLI_COMPRESSION_LEVEL_OFFSET, CHAIN_ID_OFFSET, COLLECT_TIPS_OFFSET,
+    FILTERED_FUNDS_RECIPIENT_OFFSET, GENESIS_BLOCK_NUM_OFFSET, INFRA_FEE_ACCOUNT_OFFSET,
+    NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NETWORK_FEE_ACCOUNT_OFFSET,
+    TRANSACTION_FILTERING_ENABLED_FROM_TIME_OFFSET, UPGRADE_TIMESTAMP_OFFSET,
+    UPGRADE_VERSION_OFFSET, VERSION_OFFSET,
+};
+use arb_storage::{
+    ARBOS_STATE_ADDRESS, Detached, FILTERED_TX_STATE_ADDRESS, Storage, StorageBackedAddress,
+    StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64, StorageBackend,
+    SystemStateBackend, get_account_balance, set_account_code, set_account_nonce, storage_key_map,
+};
+pub use error::ArbosStateError;
+use revm::Database;
 
 use crate::{
     address_set::{self, AddressSet},
@@ -30,24 +43,9 @@ use crate::{
     retryables::RetryableState,
 };
 
-// Root-level field offsets and subspace IDs are defined once in the storage
-// layout module; re-export the offsets that callers reference by name.
-use arb_storage::layout::{
-    ADDRESS_TABLE_SUBSPACE, BLOCKHASHES_SUBSPACE, CHAIN_CONFIG_SUBSPACE, CHAIN_OWNER_SUBSPACE,
-    FEATURES_SUBSPACE, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE, NATIVE_TOKEN_SUBSPACE,
-    PROGRAMS_SUBSPACE, RETRYABLES_SUBSPACE, SEND_MERKLE_SUBSPACE, TRANSACTION_FILTERER_SUBSPACE,
-};
-pub use arb_storage::layout::{
-    BROTLI_COMPRESSION_LEVEL_OFFSET, CHAIN_ID_OFFSET, COLLECT_TIPS_OFFSET,
-    FILTERED_FUNDS_RECIPIENT_OFFSET, GENESIS_BLOCK_NUM_OFFSET, INFRA_FEE_ACCOUNT_OFFSET,
-    NATIVE_TOKEN_ENABLED_FROM_TIME_OFFSET, NETWORK_FEE_ACCOUNT_OFFSET,
-    TRANSACTION_FILTERING_ENABLED_FROM_TIME_OFFSET, UPGRADE_TIMESTAMP_OFFSET,
-    UPGRADE_VERSION_OFFSET, VERSION_OFFSET,
-};
-
 /// Cached root→subspace derivations: `keccak256(sub_key)` for each static child.
 macro_rules! cached_root_key {
-    ($name:ident, $sub:expr) => {
+    ($name:ident, $sub:expr_2021) => {
         fn $name() -> B256 {
             static KEY: OnceLock<B256> = OnceLock::new();
             *KEY.get_or_init(|| keccak256($sub))

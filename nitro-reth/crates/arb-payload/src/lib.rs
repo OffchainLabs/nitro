@@ -9,14 +9,13 @@ use alloy_eips::{
     eip4895::{Withdrawal, Withdrawals},
     eip7685::Requests,
 };
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use alloy_rpc_types_engine::{
     BlobsBundleV1, BlobsBundleV2, ExecutionData, ExecutionPayload as AlloyExecutionPayload,
     ExecutionPayloadEnvelopeV2, ExecutionPayloadEnvelopeV3, ExecutionPayloadEnvelopeV4,
     ExecutionPayloadEnvelopeV5, ExecutionPayloadEnvelopeV6, ExecutionPayloadFieldV2,
     ExecutionPayloadV1, ExecutionPayloadV3, PayloadAttributes as AlloyPayloadAttributes, PayloadId,
 };
-
 use arb_primitives::ArbPrimitives;
 use reth_engine_primitives::EngineTypes;
 use reth_payload_primitives::{

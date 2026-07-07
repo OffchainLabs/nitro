@@ -1,8 +1,8 @@
 use arb_bench::{
     capture::synthetic::generate,
-    runner::{in_process::InProcessRunner, RunnerConfig},
+    runner::{RunnerConfig, in_process::InProcessRunner},
 };
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
 /// Wires up to the runner via the `stylus_deep_call_stack` synthetic generator.
 /// The generator currently delegates to `transfer_train` until end-to-end

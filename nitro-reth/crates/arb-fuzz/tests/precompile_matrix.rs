@@ -18,13 +18,12 @@
 //!     cargo test -p arb-fuzz --test precompile_matrix --release \
 //!     -- --ignored matrix --nocapture
 
-use alloy_primitives::{address, Address, Bytes, U256};
-
-use arb_fuzz::shared_nodes::{next_msg_idx, shared_dual_exec, FUZZ_L2_CHAIN_ID};
+use alloy_primitives::{Address, Bytes, U256, address};
+use arb_fuzz::shared_nodes::{FUZZ_L2_CHAIN_ID, next_msg_idx, shared_dual_exec};
 use arb_test_harness::{
     messaging::{
-        signed_tx::{derive_address, L2TxKind, SignedL2TxBuilder},
         DepositBuilder, MessageBuilder,
+        signed_tx::{L2TxKind, SignedL2TxBuilder, derive_address},
     },
     node::{BlockId, ExecutionNode, TxRequest},
     scenario::{Scenario, ScenarioSetup, ScenarioStep},
@@ -174,7 +173,9 @@ fn cases() -> Vec<(&'static str, Address, Vec<u8>)> {
     out.push(("bls_map_g2_zero", addr(0x11), vec![0u8; 128]));
 
     // 0x100 P256VERIFY — vector from RIP-7212.
-    let p256 = hex_decode("4cee90eb86eaa050036147a12d49004b6b9c72bd725d39d4785011fe190f0b4da73bd4903f0ce3b639bbbf6e8e80d16931ff4bcf5993d58468e8fb19086e8cac36dbcd03009df8c59286b162af3bd7fcc0450c9aa81be5d10d312af6c66b1d604aebd3099c618202fcfe16ae7770b0c49ab5eadf74b754204a3bb6060e44eff37618b065f9832de4ca6ca971a7a1adc826d0f7c00181a5fb2ddf79ae00b4e10e");
+    let p256 = hex_decode(
+        "4cee90eb86eaa050036147a12d49004b6b9c72bd725d39d4785011fe190f0b4da73bd4903f0ce3b639bbbf6e8e80d16931ff4bcf5993d58468e8fb19086e8cac36dbcd03009df8c59286b162af3bd7fcc0450c9aa81be5d10d312af6c66b1d604aebd3099c618202fcfe16ae7770b0c49ab5eadf74b754204a3bb6060e44eff37618b065f9832de4ca6ca971a7a1adc826d0f7c00181a5fb2ddf79ae00b4e10e",
+    );
     out.push(("p256verify", P256_ADDR, p256));
 
     // ── Arbitrum-specific precompiles (read-only methods only).

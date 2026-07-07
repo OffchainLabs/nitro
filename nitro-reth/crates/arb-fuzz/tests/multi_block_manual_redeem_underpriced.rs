@@ -21,16 +21,16 @@
 //!     cargo test -p arb-fuzz --test multi_block_manual_redeem_underpriced \
 //!     --release -- --ignored --nocapture
 
-use alloy_primitives::{b256, Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256, b256};
 use arb_fuzz::{
     arbitrary_impls::message_step,
-    shared_nodes::{fuzz_arbos_version, next_msg_idx, shared_dual_exec, FUZZ_L2_CHAIN_ID},
+    shared_nodes::{FUZZ_L2_CHAIN_ID, fuzz_arbos_version, next_msg_idx, shared_dual_exec},
 };
 use arb_test_harness::{
     messaging::{
-        retryable::{apply_l1_to_l2_alias, RetryableSubmitBuilder},
-        signed_tx::{derive_address, L2TxKind, SignedL2TxBuilder},
         DepositBuilder, MessageBuilder,
+        retryable::{RetryableSubmitBuilder, apply_l1_to_l2_alias},
+        signed_tx::{L2TxKind, SignedL2TxBuilder, derive_address},
     },
     scenario::{Scenario, ScenarioSetup},
 };

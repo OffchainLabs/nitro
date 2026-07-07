@@ -3,9 +3,9 @@
 mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
-use alloy_primitives::{address, Address, U256};
+use alloy_primitives::{Address, U256, address};
 use arb_precompiles::create_arbaggregator_precompile;
-use common::{calldata, word_address, word_u256, PrecompileTest};
+use common::{PrecompileTest, calldata, word_address, word_u256};
 
 const ARBOS_V30: u64 = 30;
 

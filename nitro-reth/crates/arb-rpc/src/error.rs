@@ -6,8 +6,8 @@
 //! storage / database / consensus details to RPC callers.
 
 use jsonrpsee::types::{
-    error::{INTERNAL_ERROR_CODE, INTERNAL_ERROR_MSG, INVALID_PARAMS_CODE},
     ErrorObject, ErrorObjectOwned,
+    error::{INTERNAL_ERROR_CODE, INTERNAL_ERROR_MSG, INVALID_PARAMS_CODE},
 };
 
 use crate::BlockProducerError;
@@ -99,8 +99,9 @@ impl From<RpcError> for ErrorObjectOwned {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use jsonrpsee::types::error::{INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE};
+
+    use super::*;
 
     fn into_obj(err: RpcError) -> ErrorObjectOwned {
         err.into()

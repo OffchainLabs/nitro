@@ -1,7 +1,7 @@
-use alloy_primitives::{address, b256, keccak256, Address, B256, U256};
+use alloy_primitives::{Address, B256, U256, address, b256, keccak256};
 use arb_test_utils::ArbosHarness;
 use arbos::retryables::{
-    retryable_escrow_address, retryable_submission_fee, RETRYABLE_LIFETIME_SECONDS,
+    RETRYABLE_LIFETIME_SECONDS, retryable_escrow_address, retryable_submission_fee,
 };
 
 const FROM: Address = address!("00000000000000000000000000000000000A11CE");

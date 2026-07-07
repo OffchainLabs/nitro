@@ -4,7 +4,7 @@
 //! `P` must cost the same as activating `P` then calling its twin `Q`.
 
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
@@ -13,11 +13,11 @@ mod common;
 use std::sync::Arc;
 
 use alloy_evm::{
+    EvmFactory,
     block::{BlockExecutor, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
-    EvmFactory,
 };
-use alloy_primitives::{address, hex, Address, Bytes, TxKind, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, TxKind, U256, address, hex};
 use arb_evm::config::ArbEvmConfig;
 use arb_executor_tests::helpers::{
     alice, alice_key, deploy_contract, fund_account, recover, sign_1559,

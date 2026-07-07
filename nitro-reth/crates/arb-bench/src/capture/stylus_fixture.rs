@@ -1,7 +1,7 @@
 //! Stylus contract fixtures: deploys real WASM at genesis, activated in
 //! block 1 via `ArbWasm.activateProgram`.
 
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use tiny_keccak::{Hasher, Keccak};
 
 use crate::runner::DeployedContract;

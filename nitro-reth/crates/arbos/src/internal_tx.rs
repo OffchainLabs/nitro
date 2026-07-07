@@ -1,11 +1,10 @@
 use alloy_primitives::{Address, B256, U256};
-use arb_storage::{StorageBackend, StorageError};
-
 use arb_chainspec::arbos_version;
+use arb_storage::{StorageBackend, StorageError};
 
 use crate::{
     arbos_state::{ArbosState, ArbosStateError},
-    arbos_types::{legacy_cost_for_stats, BatchDataStats},
+    arbos_types::{BatchDataStats, legacy_cost_for_stats},
     blockhash::BlockhashesError,
     burn::Burner,
     util::BalanceError,

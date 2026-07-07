@@ -11,16 +11,16 @@
 //! callvalue. With no escrow to move, both nodes agree — isolating the sweep
 //! from the cancel itself.
 
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use arb_fuzz::{
     arbitrary_impls::{interop::interop_eoa, message_step},
-    scaffolding::{fund_interop_eoa, selector4, signed, FUZZ_L1_BASE_FEE, INVOKE_GAS_CAP},
-    shared_nodes::{next_msg_idx, shared_dual_exec, FUZZ_L2_CHAIN_ID},
+    scaffolding::{FUZZ_L1_BASE_FEE, INVOKE_GAS_CAP, fund_interop_eoa, selector4, signed},
+    shared_nodes::{FUZZ_L2_CHAIN_ID, next_msg_idx, shared_dual_exec},
 };
 use arb_test_harness::{
     messaging::{
-        apply_l1_to_l2_alias, submit_retryable_ticket_id, DepositBuilder, MessageBuilder,
-        RetryableSubmitBuilder,
+        DepositBuilder, MessageBuilder, RetryableSubmitBuilder, apply_l1_to_l2_alias,
+        submit_retryable_ticket_id,
     },
     scenario::{Scenario, ScenarioSetup, ScenarioStep, StateCheck},
 };

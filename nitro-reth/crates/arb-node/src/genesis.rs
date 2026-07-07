@@ -4,23 +4,22 @@
 //! Runs when the first message (Kind=11, Initialize) is received from the
 //! consensus sidecar.
 
-use alloy_primitives::{address, Address, Bytes, B256, U256};
-use revm::{database::State, Database};
-use tracing::info;
-
+use alloy_primitives::{Address, B256, Bytes, U256, address};
 use arb_storage::{
+    ARBOS_STATE_ADDRESS, Storage, StorageBackedBigUint, StorageBackedBytes,
     layout::{
         ADDRESS_TABLE_SUBSPACE, BLOCKHASHES_SUBSPACE, CHAIN_CONFIG_SUBSPACE, CHAIN_OWNER_SUBSPACE,
         FEATURES_SUBSPACE, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE, RETRYABLES_SUBSPACE,
         SEND_MERKLE_SUBSPACE,
     },
-    set_account_code, set_account_nonce, Storage, StorageBackedBigUint, StorageBackedBytes,
-    ARBOS_STATE_ADDRESS,
+    set_account_code, set_account_nonce,
 };
 use arbos::{
     arbos_state::ArbosState, arbos_types::ParsedInitMessage, burn::SystemBurner, l1_pricing,
     l2_pricing,
 };
+use revm::{Database, database::State};
+use tracing::info;
 
 use crate::error::GenesisError;
 

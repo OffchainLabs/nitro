@@ -23,20 +23,19 @@
 ///
 /// Defined for the linker only; never called from Rust.
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
 use std::{path::PathBuf, sync::Arc};
 
 use alloy_primitives::{Address, B256, U256};
+use arb_storage::{StorageBackend, StorageError, SystemStateBackend};
+use arbos::{arbos_state::arbos_from_input, burn::SystemBurner, programs::Programs};
 use clap::Parser;
 use eyre::Context;
 use reth_chainspec::ChainSpec;
 use reth_provider::providers::{ProviderFactoryBuilder, ReadOnlyConfig};
 use reth_storage_api::StateProvider;
-
-use arb_storage::{StorageBackend, StorageError, SystemStateBackend};
-use arbos::{arbos_state::arbos_from_input, burn::SystemBurner, programs::Programs};
 
 #[derive(Parser, Debug)]
 #[command(about = "Dump Stylus activation state at a given block")]
@@ -238,11 +237,7 @@ fn dump_one(state: &dyn StateProvider, addr: Address) -> eyre::Result<()> {
 }
 
 fn ok(b: bool) -> &'static str {
-    if b {
-        "MATCH"
-    } else {
-        "MISMATCH"
-    }
+    if b { "MATCH" } else { "MISMATCH" }
 }
 
 fn main() -> eyre::Result<()> {

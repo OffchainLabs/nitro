@@ -1,7 +1,6 @@
-use alloy_primitives::{keccak256, B256};
-use revm::Database;
-
+use alloy_primitives::{B256, keccak256};
 use arb_storage::{Storage, StorageBackedUint64, StorageBackend, SystemStateBackend};
+use revm::Database;
 
 mod error;
 pub use error::BlockhashesError;

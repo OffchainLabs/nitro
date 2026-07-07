@@ -18,9 +18,9 @@ use reth_config::Config;
 use reth_consensus::noop::NoopConsensus;
 use reth_evm::ConfigureEvm;
 use reth_provider::{
-    providers::ProviderNodeTypes, BlockNumReader, ChainSpecProvider, ProviderFactory,
+    BlockNumReader, ChainSpecProvider, ProviderFactory, providers::ProviderNodeTypes,
 };
-use reth_stages::{sets::OfflineStages, Pipeline};
+use reth_stages::{Pipeline, sets::OfflineStages};
 use reth_static_file::StaticFileProducer;
 use tracing::*;
 

@@ -5,14 +5,14 @@
 use std::sync::Arc;
 
 use alloy_consensus::BlockHeader;
-use alloy_primitives::{Address, StorageKey, B256, U256};
+use alloy_primitives::{Address, B256, StorageKey, U256};
 use alloy_rpc_types_eth::BlockNumberOrTag;
 use arb_storage::{
-    layout::{
-        derive_subspace_key, map_slot, subspace_slot, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
-        RETRYABLES_SUBSPACE, ROOT_STORAGE_KEY,
-    },
     ARBOS_STATE_ADDRESS,
+    layout::{
+        L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE, RETRYABLES_SUBSPACE, ROOT_STORAGE_KEY,
+        derive_subspace_key, map_slot, subspace_slot,
+    },
 };
 use arbos::{
     l1_pricing::{
@@ -42,7 +42,7 @@ use arbos::{
 use jsonrpsee::{
     core::RpcResult,
     proc_macros::rpc,
-    types::{error::INTERNAL_ERROR_CODE, ErrorObject},
+    types::{ErrorObject, error::INTERNAL_ERROR_CODE},
 };
 use reth_provider::{BlockReaderIdExt, ReceiptProvider, StateProviderFactory};
 use serde::{Deserialize, Serialize};

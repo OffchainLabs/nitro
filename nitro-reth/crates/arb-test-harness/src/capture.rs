@@ -1,9 +1,9 @@
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::{
+    Result,
     node::{BlockId, EvmLog, ExecutionNode, TxReceipt},
     scenario::{Scenario, ScenarioStep},
-    Result,
 };
 
 #[derive(Debug, Clone)]

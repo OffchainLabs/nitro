@@ -1,20 +1,20 @@
 mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
-use alloy_primitives::{address, Address, B256, U256};
+use alloy_primitives::{Address, B256, U256, address};
 use arb_precompiles::create_arbowner_precompile;
 use arb_storage::{
-    layout::{
-        derive_subspace_key, map_slot_b256, root_slot, subspace_slot, CHAIN_OWNER_SUBSPACE,
-        L2_PRICING_SUBSPACE, ROOT_STORAGE_KEY,
-    },
     ARBOS_STATE_ADDRESS,
+    layout::{
+        CHAIN_OWNER_SUBSPACE, L2_PRICING_SUBSPACE, ROOT_STORAGE_KEY, derive_subspace_key,
+        map_slot_b256, root_slot, subspace_slot,
+    },
 };
 use arbos::{
     arbos_state::{NETWORK_FEE_ACCOUNT_OFFSET, UPGRADE_TIMESTAMP_OFFSET, UPGRADE_VERSION_OFFSET},
     l2_pricing::SPEED_LIMIT_PER_SECOND_OFFSET as L2_SPEED_LIMIT,
 };
-use common::{calldata, decode_u256, word_address, word_u256, PrecompileTest};
+use common::{PrecompileTest, calldata, decode_u256, word_address, word_u256};
 
 fn arbowner(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
     create_arbowner_precompile(ctx)
@@ -547,8 +547,9 @@ fn arb_owner_network_fee_account_round_trip() {
 // narrowing for the init-gas params, plus the per-type range rejection on the
 // narrow setters.
 mod stylus_params {
+    use arb_storage::layout::{PROGRAMS_SUBSPACE, map_slot, programs::PARAMS_KEY};
+
     use super::*;
-    use arb_storage::layout::{map_slot, programs::PARAMS_KEY, PROGRAMS_SUBSPACE};
 
     fn params_slot() -> U256 {
         let programs_key = derive_subspace_key(ROOT_STORAGE_KEY, PROGRAMS_SUBSPACE);

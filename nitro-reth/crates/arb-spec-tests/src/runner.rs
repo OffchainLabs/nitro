@@ -98,10 +98,10 @@ pub fn run_execution_dir(dir: &Path) {
         if stem.starts_with("pending_") && !include_pending {
             continue;
         }
-        if let Some(f) = &filter {
-            if !path.to_string_lossy().contains(f) {
-                continue;
-            }
+        if let Some(f) = &filter
+            && !path.to_string_lossy().contains(f)
+        {
+            continue;
         }
         count += 1;
         if let Err(e) = run_execution_fixture(path, rpc_url.as_deref()) {
@@ -443,8 +443,9 @@ fn merge_alloc(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn merge_keeps_system_addresses_and_adds_fixture_entry() {

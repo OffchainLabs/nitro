@@ -4,23 +4,22 @@ use std::{
     time::{Duration, Instant},
 };
 
-use alloy_primitives::{Address, Bytes, B256, U256};
-use serde_json::{json, Value};
-
+use alloy_primitives::{Address, B256, Bytes, U256};
 use arb_node::genesis::INITIAL_ARBOS_VERSION;
+use serde_json::{Value, json};
 
 use crate::{
+    Result,
     error::HarnessError,
     messaging::L1Message,
     node::{
+        ArbReceiptFields, Block, BlockId, ExecutionNode, NodeKind, NodeStartCtx, TxReceipt,
+        TxRequest,
         common::{
             arb_receipt_fields, block_from_json, receipt_from_json, tail, tx_request_to_json,
         },
-        ArbReceiptFields, Block, BlockId, ExecutionNode, NodeKind, NodeStartCtx, TxReceipt,
-        TxRequest,
     },
     rpc::JsonRpcClient,
-    Result,
 };
 
 const DEFAULT_IMAGE: &str = "offchainlabs/nitro-node:v3.10.1-d7f07be";
@@ -186,10 +185,10 @@ fn resolve_published_port(container_name: &str) -> Result<u16> {
     }
     let mapping = String::from_utf8_lossy(&out.stdout);
     for line in mapping.lines() {
-        if let Some((_, port)) = line.rsplit_once(':') {
-            if let Ok(p) = port.trim().parse::<u16>() {
-                return Ok(p);
-            }
+        if let Some((_, port)) = line.rsplit_once(':')
+            && let Ok(p) = port.trim().parse::<u16>()
+        {
+            return Ok(p);
         }
     }
     Err(HarnessError::Rpc(format!(

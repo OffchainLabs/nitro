@@ -7,11 +7,11 @@ use reth_chainspec::{EthereumHardforks, Hardforks};
 use reth_evm::ConfigureEvm;
 use reth_node_api::{FullNodeComponents, HeaderTy, TxTy};
 use reth_node_builder::{
-    rpc::{EthApiBuilder, EthApiCtx},
     NodeTypes,
+    rpc::{EthApiBuilder, EthApiCtx},
 };
 use reth_rpc_convert::{RpcConvert, RpcConverter, RpcTypes, SignableTxRequest};
-use reth_rpc_eth_api::{helpers::pending_block::BuildPendingEnv, FromEvmError, FullEthApiServer};
+use reth_rpc_eth_api::{FromEvmError, FullEthApiServer, helpers::pending_block::BuildPendingEnv};
 use reth_rpc_eth_types::EthApiError;
 
 use crate::{
@@ -45,16 +45,16 @@ impl<NetworkT> Default for ArbEthApiBuilder<NetworkT> {
 impl<N, NetworkT> EthApiBuilder<N> for ArbEthApiBuilder<NetworkT>
 where
     N: FullNodeComponents<
-        Types: NodeTypes<ChainSpec: Hardforks + EthereumHardforks, Primitives = ArbPrimitives>,
-        Evm: ConfigureEvm<NextBlockEnvCtx: BuildPendingEnv<HeaderTy<N::Types>>>,
-    >,
+            Types: NodeTypes<ChainSpec: Hardforks + EthereumHardforks, Primitives = ArbPrimitives>,
+            Evm: ConfigureEvm<NextBlockEnvCtx: BuildPendingEnv<HeaderTy<N::Types>>>,
+        >,
     NetworkT: RpcTypes<TransactionRequest: SignableTxRequest<TxTy<N::Types>>>,
     ArbRpcConvert<N>: RpcConvert<
-        Primitives = ArbPrimitives,
-        Error = EthApiError,
-        Network = NetworkT,
-        Evm = N::Evm,
-    >,
+            Primitives = ArbPrimitives,
+            Error = EthApiError,
+            Network = NetworkT,
+            Evm = N::Evm,
+        >,
     EthApiError: FromEvmError<N::Evm>,
     ArbEthApi<N, ArbRpcConvert<N>>: FullEthApiServer<Provider = N::Provider, Pool = N::Pool>,
 {

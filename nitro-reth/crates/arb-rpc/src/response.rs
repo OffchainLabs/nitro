@@ -1,11 +1,12 @@
 //! Arbitrum transaction response conversion.
 
+use std::convert::Infallible;
+
 use alloy_primitives::Address;
 use alloy_rpc_types_eth::{Transaction, TransactionInfo};
 use alloy_serde::WithOtherFields;
 use arb_primitives::{ArbTransactionSigned, ArbTypedTransaction};
 use reth_rpc_convert::transaction::RpcTxConverter;
-use std::convert::Infallible;
 
 /// Converts consensus transactions to RPC transaction responses.
 #[derive(Debug, Clone)]

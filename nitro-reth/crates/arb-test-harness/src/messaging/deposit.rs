@@ -1,8 +1,9 @@
 use alloy_primitives::{Address, U256};
 
 use crate::messaging::{
+    L1Message, L1MessageHeader, MessageBuilder,
     encoding::{encode_address, encode_uint256, request_id_from_seq},
-    kinds, L1Message, L1MessageHeader, MessageBuilder,
+    kinds,
 };
 
 #[derive(Debug, Clone)]
@@ -44,10 +45,11 @@ impl MessageBuilder for DepositBuilder {
 
 #[cfg(test)]
 mod tests {
+    use alloy_primitives::address;
+    use arbos::parse_l2::{ParsedTransaction, parse_l2_transactions};
+
     use super::*;
     use crate::messaging::test_support::{decode_body, round_trip};
-    use alloy_primitives::address;
-    use arbos::parse_l2::{parse_l2_transactions, ParsedTransaction};
 
     fn sample() -> DepositBuilder {
         DepositBuilder {

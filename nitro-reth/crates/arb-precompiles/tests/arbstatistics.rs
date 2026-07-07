@@ -3,7 +3,7 @@ mod common;
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::U256;
 use arb_precompiles::create_arbstatistics_precompile;
-use common::{calldata, decode_word, PrecompileTest};
+use common::{PrecompileTest, calldata, decode_word};
 
 fn arbstatistics(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
     create_arbstatistics_precompile(ctx)

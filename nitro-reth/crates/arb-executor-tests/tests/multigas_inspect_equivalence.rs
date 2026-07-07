@@ -3,16 +3,18 @@
 //! path: the same contract-call block must produce identical post-state whether
 //! or not the inspector is present.
 
+use std::sync::Arc;
+
 use alloy_consensus::{
-    crypto::secp256k1::sign_message, transaction::Recovered, EthereumTxEnvelope,
-    SignableTransaction, TxLegacy,
+    EthereumTxEnvelope, SignableTransaction, TxLegacy, crypto::secp256k1::sign_message,
+    transaction::Recovered,
 };
 use alloy_evm::{
+    EvmFactory,
     block::{BlockExecutor, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
-    EvmFactory,
 };
-use alloy_primitives::{address, keccak256, Address, TxKind, B256, U256};
+use alloy_primitives::{Address, B256, TxKind, U256, address, keccak256};
 use arb_evm::{
     config::ArbEvmConfig,
     multi_gas::{MultiGasInspector, MultiGasSink},
@@ -23,11 +25,10 @@ use reth_chainspec::ChainSpec;
 use reth_evm::{ConfigureEvm, EvmEnv};
 use revm::{
     context::{BlockEnv, CfgEnv},
-    database::{states::account_status::AccountStatus, PlainAccount, State},
+    database::{PlainAccount, State, states::account_status::AccountStatus},
     primitives::hardfork::SpecId,
     state::{AccountInfo, Bytecode},
 };
-use std::sync::Arc;
 
 const SECRET_KEY: [u8; 32] = [
     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,

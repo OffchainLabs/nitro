@@ -1,6 +1,6 @@
 use arb_spec_tests::{
     run_dir, run_execution_dir,
-    runner::{fixtures_root, BINARY_ENV, REQUIRE_BINARY_ENV, RPC_URL_ENV},
+    runner::{BINARY_ENV, REQUIRE_BINARY_ENV, RPC_URL_ENV, fixtures_root},
 };
 
 /// Sentinel test that fails when `ARB_SPEC_REQUIRE_BINARY=1` is set

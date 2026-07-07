@@ -1,7 +1,7 @@
 use alloy_primitives::{Address, Bytes};
 
 use crate::messaging::{
-    encoding::request_id_from_seq, kinds, L1Message, L1MessageHeader, MessageBuilder,
+    L1Message, L1MessageHeader, MessageBuilder, encoding::request_id_from_seq, kinds,
 };
 
 #[derive(Debug, Clone)]
@@ -45,9 +45,10 @@ impl MessageBuilder for DelayedTxBuilder {
 
 #[cfg(test)]
 mod tests {
+    use alloy_primitives::address;
+
     use super::*;
     use crate::messaging::test_support::{decode_body, round_trip};
-    use alloy_primitives::address;
 
     fn sample(payload: Bytes, timeout: Option<u16>) -> DelayedTxBuilder {
         DelayedTxBuilder {

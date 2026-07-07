@@ -1,6 +1,6 @@
 use arbos::programs::{
     memory::MemoryModel,
-    types::{evm_memory_cost, to_word_size, UserOutcome},
+    types::{UserOutcome, evm_memory_cost, to_word_size},
 };
 
 #[test]

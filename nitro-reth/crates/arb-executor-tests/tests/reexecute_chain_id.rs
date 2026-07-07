@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use alloy_evm::{
+    EvmFactory,
     block::{BlockExecutor, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
-    EvmFactory,
 };
 use alloy_primitives::{B256, U256};
 use arb_evm::config::ArbEvmConfig;

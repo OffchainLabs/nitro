@@ -1,15 +1,16 @@
+use std::sync::Arc;
+
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{keccak256, Address, Log, B256, U256};
+use alloy_primitives::{Address, B256, Log, U256, keccak256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
 use arbos::retryables::{
-    CancelOutcome, LookupOutcome, RetryableError, RETRYABLE_LIFETIME_SECONDS, RETRYABLE_REAP_PRICE,
+    CancelOutcome, LookupOutcome, RETRYABLE_LIFETIME_SECONDS, RETRYABLE_REAP_PRICE, RetryableError,
 };
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
-use std::sync::Arc;
 
-use crate::{interfaces::IArbRetryableTx, ArbPrecompileError};
+use crate::{ArbPrecompileError, interfaces::IArbRetryableTx};
 
 /// ArbRetryableTx precompile address (0x6e).
 pub const ARBRETRYABLETX_ADDRESS: Address = Address::new([

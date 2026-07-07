@@ -1,8 +1,8 @@
 use alloy_consensus::{
-    crypto::secp256k1::sign_message, transaction::Recovered, EthereumTxEnvelope,
-    SignableTransaction, TxLegacy,
+    EthereumTxEnvelope, SignableTransaction, TxLegacy, crypto::secp256k1::sign_message,
+    transaction::Recovered,
 };
-use alloy_primitives::{address, Bytes, TxKind, B256, U256};
+use alloy_primitives::{B256, Bytes, TxKind, U256, address};
 use arb_primitives::ArbTransactionSigned;
 use arb_txpool::ArbPooledTransaction;
 use reth_transaction_pool::PoolTransaction;

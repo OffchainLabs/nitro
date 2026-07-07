@@ -5,7 +5,8 @@
 use std::{path::Path, str::FromStr, sync::Arc};
 
 use alloy_genesis::GenesisAccount;
-use alloy_primitives::{hex, Address, B256, U256};
+use alloy_primitives::{Address, B256, U256, hex};
+use arbos::arbos_types::ParsedInitMessage;
 use eyre::eyre;
 use reth_chainspec::ChainSpec;
 use reth_cli::chainspec::ChainSpecParser;
@@ -13,8 +14,6 @@ use reth_ethereum_cli::chainspec::EthereumChainSpecParser;
 use revm::database::{EmptyDB, State, StateBuilder};
 use revm_database::states::bundle_state::BundleRetention;
 use serde_json::Value;
-
-use arbos::arbos_types::ParsedInitMessage;
 
 use crate::genesis;
 
@@ -381,10 +380,10 @@ pub fn serialize_chain_config_go_style(config: &Value) -> Vec<u8> {
         writer.write_optional_big_int(cfg, json_key, name);
     }
 
-    if let Some(map) = cfg {
-        if map.get("daoForkSupport").and_then(Value::as_bool) == Some(true) {
-            writer.write_bool_field("daoForkSupport", true);
-        }
+    if let Some(map) = cfg
+        && map.get("daoForkSupport").and_then(Value::as_bool) == Some(true)
+    {
+        writer.write_bool_field("daoForkSupport", true);
     }
 
     for (name, json_key) in BIG_INT_BLOCK_FIELDS_AFTER_DAO {
@@ -406,10 +405,10 @@ pub fn serialize_chain_config_go_style(config: &Value) -> Vec<u8> {
         true,
     );
 
-    if let Some(map) = cfg {
-        if map.get("enableVerkleAtGenesis").and_then(Value::as_bool) == Some(true) {
-            writer.write_bool_field("enableVerkleAtGenesis", true);
-        }
+    if let Some(map) = cfg
+        && map.get("enableVerkleAtGenesis").and_then(Value::as_bool) == Some(true)
+    {
+        writer.write_bool_field("enableVerkleAtGenesis", true);
     }
 
     // Ethash and Clique are pointer types in Go, so their slots only appear
@@ -702,8 +701,9 @@ fn pad_address_lower(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn serialize_chain_config_matches_v10_default_layout() {

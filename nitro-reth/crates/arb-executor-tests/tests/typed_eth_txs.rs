@@ -2,15 +2,15 @@ use std::sync::Arc;
 
 use alloy_eips::eip2930::{AccessList, AccessListItem};
 use alloy_evm::{
+    EvmFactory,
     block::{BlockExecutor, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
-    EvmFactory,
 };
-use alloy_primitives::{Address, Bytes, TxKind, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, TxKind, U256};
 use arb_evm::config::ArbEvmConfig;
 use arb_executor_tests::helpers::{
-    alice, alice_key, balance_of, fund_account, nonce_of, recover, sign_1559, sign_2930, ONE_ETH,
-    ONE_GWEI, RECIPIENT,
+    ONE_ETH, ONE_GWEI, RECIPIENT, alice, alice_key, balance_of, fund_account, nonce_of, recover,
+    sign_1559, sign_2930,
 };
 use arb_test_utils::ArbosHarness;
 use reth_chainspec::ChainSpec;

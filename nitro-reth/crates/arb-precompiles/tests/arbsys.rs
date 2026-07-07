@@ -1,8 +1,8 @@
 mod common;
 
-use alloy_primitives::{address, Address, B256, U256};
+use alloy_primitives::{Address, B256, U256, address};
 use arb_precompiles::create_arbsys_precompile;
-use common::{calldata, decode_address, decode_u256, word_address, word_u256, PrecompileTest};
+use common::{PrecompileTest, calldata, decode_address, decode_u256, word_address, word_u256};
 use revm::precompile::PrecompileError;
 
 const ARBOS_V11: u64 = 11;

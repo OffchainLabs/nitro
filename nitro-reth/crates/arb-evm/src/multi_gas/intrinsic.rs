@@ -56,8 +56,9 @@ pub fn intrinsic_multigas(input: IntrinsicInput) -> MultiGas {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use arb_primitives::multigas::ResourceKind::*;
+
+    use super::*;
 
     fn input() -> IntrinsicInput {
         IntrinsicInput {

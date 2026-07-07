@@ -1,9 +1,10 @@
-use alloy_primitives::{Address, B256, U256};
 use std::io::{self, Cursor, Read};
 
+use alloy_primitives::{Address, B256, U256};
+
 use crate::util::{
-    address_from_256_from_reader, address_from_reader, hash_from_reader, uint256_from_reader,
-    uint64_from_reader,
+    address_from_256_from_reader, address_from_reader, hash_from_reader, uint64_from_reader,
+    uint256_from_reader,
 };
 
 /// L1 message type constants.

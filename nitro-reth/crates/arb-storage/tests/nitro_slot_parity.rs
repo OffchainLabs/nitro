@@ -2,7 +2,7 @@
 //! must round-trip through our `storage_key_map`. If our slot derivation drifts,
 //! every dual-exec block-replay test would fail; this is the cheap pre-flight.
 
-use alloy_primitives::{b256, keccak256, B256, U256};
+use alloy_primitives::{B256, U256, b256, keccak256};
 use arb_storage::storage_key_map;
 
 #[test]

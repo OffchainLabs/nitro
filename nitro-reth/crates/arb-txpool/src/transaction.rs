@@ -1,21 +1,21 @@
+use core::convert::Infallible;
+
 use alloy_consensus::{
-    transaction::{Recovered, TxHashRef},
     BlobTransactionValidationError, Typed2718,
+    transaction::{Recovered, TxHashRef},
 };
 use alloy_eips::{
-    eip2718::WithEncoded, eip2930::AccessList, eip7594::BlobTransactionSidecarVariant,
-    Encodable2718,
+    Encodable2718, eip2718::WithEncoded, eip2930::AccessList,
+    eip7594::BlobTransactionSidecarVariant,
 };
-use alloy_primitives::{Address, Bytes, TxHash, TxKind, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, TxHash, TxKind, U256};
+use arb_primitives::ArbTransactionSigned;
 use c_kzg::KzgSettings;
-use core::convert::Infallible;
 use derive_more::Deref;
 use reth_primitives_traits::InMemorySize;
 use reth_transaction_pool::{
     EthBlobTransactionSidecar, EthPoolTransaction, EthPooledTransaction, PoolTransaction,
 };
-
-use arb_primitives::ArbTransactionSigned;
 
 /// Pooled Arbitrum transaction wrapping the standard pool transaction type.
 #[derive(Debug, Clone, Deref)]

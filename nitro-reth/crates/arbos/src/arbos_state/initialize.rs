@@ -1,18 +1,17 @@
 use alloy_primitives::{Address, B256, U256};
 use arb_storage::{
-    set_account_nonce, Storage, StorageBackedAddress, StorageBackedBigUint, StorageBackend,
-    ARBOS_STATE_ADDRESS,
+    ARBOS_STATE_ADDRESS, Storage, StorageBackedAddress, StorageBackedBigUint, StorageBackend,
+    set_account_nonce,
 };
-use revm::{database::State, Database};
+use revm::{Database, database::State};
 
+use super::{ArbosState, ArbosStateError};
 use crate::{
     burn::Burner,
     l1_pricing::L1PricingState,
     l2_pricing::L2PricingState,
     retryables::{self, RetryableState},
 };
-
-use super::{ArbosState, ArbosStateError};
 
 /// Genesis data for a retryable ticket.
 #[derive(Debug, Clone)]

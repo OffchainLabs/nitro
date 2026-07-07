@@ -1,5 +1,4 @@
 use alloy_primitives::B256;
-
 use arb_storage::{StorageBackedUint64, StorageBackend, SystemStateBackend};
 
 use super::L2PricingError;

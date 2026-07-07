@@ -6,7 +6,7 @@
 //! - ArbOS >= 50:  Cancun + P256 + Osaka (BLS + Osaka modexp)     — adds 0x0b..=0x11
 
 use alloy_evm::precompiles::PrecompilesMap;
-use alloy_primitives::{address, Address};
+use alloy_primitives::{Address, address};
 use arb_precompiles::register_arb_precompiles;
 use revm::{handler::EthPrecompiles, precompile::Precompiles, primitives::hardfork::SpecId};
 
