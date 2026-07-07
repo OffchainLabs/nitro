@@ -3,8 +3,10 @@ use std::collections::HashMap;
 use alloy_primitives::B256;
 use alloy_transport::{RpcError, TransportErrorKind};
 
+mod mock;
 mod rpc;
 
+pub use mock::MockDaReader;
 pub use rpc::RpcDaReader;
 
 /// Something went wrong while reading from the DA provider.
