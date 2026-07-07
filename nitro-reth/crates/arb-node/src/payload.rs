@@ -10,9 +10,9 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures_util::{ready, StreamExt};
+use futures_util::{StreamExt, ready};
 use reth_node_builder::{
-    components::PayloadServiceBuilder, BuilderContext, FullNodeTypes, NodeTypes,
+    BuilderContext, FullNodeTypes, NodeTypes, components::PayloadServiceBuilder,
 };
 use reth_payload_builder::{PayloadBuilderHandle, PayloadServiceCommand};
 use reth_payload_primitives::{PayloadBuilderAttributes, PayloadTypes};

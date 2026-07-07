@@ -25,16 +25,16 @@ use arb_evm::ArbEvmConfig;
 use arb_payload::ArbEngineTypes;
 use arb_primitives::{ArbPrimitives, ArbTransactionSigned};
 use arb_rpc::{
-    stylus_debug::{StylusDebugHandler, StylusDebugServer},
     ArbApiHandler, ArbApiServer, ArbEthApiBuilder, NitroExecutionApiServer, NitroExecutionHandler,
+    stylus_debug::{StylusDebugHandler, StylusDebugServer},
 };
 pub use error::{GenesisError, LauncherError};
 use reth_chain_state::CanonicalInMemoryState;
 use reth_chainspec::ChainSpec;
 use reth_node_builder::{
+    BuilderContext, FullNodeComponents, FullNodeTypes, Node, NodeAdapter, NodeTypes,
     components::{ComponentsBuilder, ConsensusBuilder, ExecutorBuilder},
     rpc::{BasicEngineApiBuilder, BasicEngineValidatorBuilder, RpcAddOns, RpcContext},
-    BuilderContext, FullNodeComponents, FullNodeTypes, Node, NodeAdapter, NodeTypes,
 };
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider, StateProviderFactory};
 use reth_storage_api::{CanonChainTracker, EthStorage};
@@ -178,14 +178,14 @@ where
 fn register_arb_rpc<N, EthApi>(ctx: RpcContext<'_, N, EthApi>) -> eyre::Result<()>
 where
     N: FullNodeComponents<
-        Types: NodeTypes<ChainSpec = ChainSpec, Primitives = ArbPrimitives>,
-        Provider: BlockNumReader
-                      + BlockReaderIdExt
-                      + HeaderProvider
-                      + StateProviderFactory
-                      + InMemoryStateAccess<Primitives = ArbPrimitives>
-                      + CanonChainTracker<Header = Header>,
-    >,
+            Types: NodeTypes<ChainSpec = ChainSpec, Primitives = ArbPrimitives>,
+            Provider: BlockNumReader
+                          + BlockReaderIdExt
+                          + HeaderProvider
+                          + StateProviderFactory
+                          + InMemoryStateAccess<Primitives = ArbPrimitives>
+                          + CanonChainTracker<Header = Header>,
+        >,
     EthApi: reth_rpc_eth_api::FullEthApiTypes
         + reth_rpc_eth_api::helpers::TraceExt
         + Clone

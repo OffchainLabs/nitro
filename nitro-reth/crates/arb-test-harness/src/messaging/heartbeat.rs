@@ -1,6 +1,6 @@
 use alloy_primitives::{Address, U256};
 
-use crate::messaging::{kinds, L1Message, L1MessageHeader, MessageBuilder};
+use crate::messaging::{L1Message, L1MessageHeader, MessageBuilder, kinds};
 
 #[derive(Debug, Clone)]
 pub struct HeartbeatBuilder {

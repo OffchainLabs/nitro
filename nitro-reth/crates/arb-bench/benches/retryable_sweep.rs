@@ -1,8 +1,8 @@
 use arb_bench::{
     capture::synthetic::generate,
-    runner::{in_process::InProcessRunner, RunnerConfig},
+    runner::{RunnerConfig, in_process::InProcessRunner},
 };
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
 fn bench_retryable_sweep(c: &mut Criterion) {
     let mut group = c.benchmark_group("retryable_sweep");

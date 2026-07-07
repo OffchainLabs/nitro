@@ -1,9 +1,9 @@
-use alloy_primitives::{address, B256, U256};
+use alloy_primitives::{B256, U256, address};
 use arb_test_utils::ArbosHarness;
 use arbos::{
     arbos_state::initialize::{
-        initialize_retryables, make_genesis_block, AccountInitInfo, AggregatorInitInfo,
-        ContractInitInfo, GenesisBlockInfo, InitRetryableData,
+        AccountInitInfo, AggregatorInitInfo, ContractInitInfo, GenesisBlockInfo, InitRetryableData,
+        initialize_retryables, make_genesis_block,
     },
     retryables::retryable_escrow_address,
 };

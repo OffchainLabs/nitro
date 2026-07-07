@@ -7,16 +7,16 @@
 mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
-use alloy_primitives::{address, Address, B256, U256};
+use alloy_primitives::{Address, B256, U256, address};
 use arb_precompiles::create_arbowner_precompile;
 use arb_storage::{
-    layout::{
-        derive_subspace_key, map_slot, map_slot_b256, programs::CACHE_MANAGERS_KEY,
-        CHAIN_OWNER_SUBSPACE, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
-    },
     ARBOS_STATE_ADDRESS,
+    layout::{
+        CHAIN_OWNER_SUBSPACE, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY, derive_subspace_key, map_slot,
+        map_slot_b256, programs::CACHE_MANAGERS_KEY,
+    },
 };
-use common::{calldata, word_address, PrecompileTest};
+use common::{PrecompileTest, calldata, word_address};
 
 const OWNER: Address = address!("00000000000000000000000000000000000000aa");
 const MANAGER: Address = address!("d01c86379c53650b02ae259ae4b608684687c73a");

@@ -29,7 +29,7 @@ resolver = "2"
 
 [workspace.package]
 version = "0.1.5"
-edition = "2021"
+edition = "2024"
 rust-version = "1.93"
 license = "BUSL-1.1"
 

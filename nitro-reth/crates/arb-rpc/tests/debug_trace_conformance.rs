@@ -20,7 +20,7 @@
 //! require a running node and live against the e2e harness.
 
 use alloy_consensus::{Transaction, TxLegacy};
-use alloy_primitives::{address, Bytes, Signature, TxKind, B256, U256};
+use alloy_primitives::{B256, Bytes, Signature, TxKind, U256, address};
 use arb_alloy_consensus::tx::{
     ArbContractTx, ArbDepositTx, ArbInternalTx, ArbRetryTx, ArbSubmitRetryableTx, ArbUnsignedTx,
 };

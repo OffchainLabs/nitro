@@ -1,4 +1,4 @@
-use rand::{rngs::StdRng, RngCore, SeedableRng};
+use rand::{RngCore, SeedableRng, rngs::StdRng};
 use serde::{Deserialize, Serialize};
 
 use crate::metrics::RunResult;

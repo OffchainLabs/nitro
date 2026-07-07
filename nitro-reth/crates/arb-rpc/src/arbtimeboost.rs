@@ -8,11 +8,11 @@
 //! When timeboost isn't configured on the node, both namespaces
 //! return "not enabled" errors.
 
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use jsonrpsee::{
     core::RpcResult,
     proc_macros::rpc,
-    types::{error::INTERNAL_ERROR_CODE, ErrorObject},
+    types::{ErrorObject, error::INTERNAL_ERROR_CODE},
 };
 use serde::{Deserialize, Serialize};
 

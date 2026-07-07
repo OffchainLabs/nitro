@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use alloy_primitives::Address;
-use revm::{database::State, Database};
+use revm::{Database, database::State};
 use revm_database::{AccountStatus as CacheAccountStatus, TransitionAccount};
 use revm_state::AccountInfo;
 
@@ -229,7 +229,7 @@ impl StateOverlay {
 
 #[cfg(test)]
 mod tests {
-    use alloy_primitives::{address, U256};
+    use alloy_primitives::{U256, address};
     use revm::database::{EmptyDB, State};
     use revm_database::states::{
         bundle_state::BundleRetention, cache_account::CacheAccount, plain_account::PlainAccount,

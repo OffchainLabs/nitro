@@ -7,9 +7,9 @@
 mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
-use alloy_primitives::{address, Address};
+use alloy_primitives::{Address, address};
 use arb_precompiles::create_arbownerpublic_precompile;
-use common::{calldata, word_address, PrecompileTest};
+use common::{PrecompileTest, calldata, word_address};
 
 // Constants used across the precompile's per-method schedules.
 const SLOAD: u64 = 800;

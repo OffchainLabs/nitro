@@ -2,10 +2,10 @@
 //! `RetryableError::Balance(BalanceError::InsufficientBalance { .. })`
 //! through the retryable subsystem's typed error surface.
 
-use alloy_primitives::{address, b256, Address, B256, U256};
+use alloy_primitives::{Address, B256, U256, address, b256};
 use arb_test_utils::ArbosHarness;
 use arbos::{
-    retryables::{retryable_escrow_address, RetryableError},
+    retryables::{RetryableError, retryable_escrow_address},
     util::BalanceError,
 };
 

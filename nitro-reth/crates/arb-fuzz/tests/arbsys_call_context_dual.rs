@@ -6,7 +6,7 @@ use arb_fuzz::{
     arbitrary_impls::{interop::wrap_init_code, message_step},
     guards::GuardedRun,
     scaffolding::{
-        eoa_create_addr, fund_interop_eoa, selector4, signed, DEPLOY_GAS_CAP, INVOKE_GAS_CAP,
+        DEPLOY_GAS_CAP, INVOKE_GAS_CAP, eoa_create_addr, fund_interop_eoa, selector4, signed,
     },
     shared_nodes::next_msg_idx,
 };
@@ -27,7 +27,7 @@ fn delegatecall_runtime(precompile: u8, selector: [u8; 4]) -> Vec<u8> {
     c.push(0x63); // PUSH4 selector
     c.extend_from_slice(&selector);
     c.extend_from_slice(&[0x60, 0xE0, 0x1b, 0x60, 0x00, 0x52]); // PUSH1 0xE0 SHL PUSH1 0 MSTORE
-                                                                // DELEGATECALL operands (reverse): retLen retOff argLen argOff addr gas
+    // DELEGATECALL operands (reverse): retLen retOff argLen argOff addr gas
     c.extend_from_slice(&[0x60, 0x00, 0x60, 0x00, 0x60, 0x04, 0x60, 0x00]);
     c.extend_from_slice(&[0x60, precompile]);
     c.push(0x5a); // GAS
@@ -77,7 +77,7 @@ fn call_with_value_runtime(precompile: u8, selector: [u8; 4], value: u8) -> Vec<
     c.push(0x63); // PUSH4 selector
     c.extend_from_slice(&selector);
     c.extend_from_slice(&[0x60, 0xE0, 0x1b, 0x60, 0x00, 0x52]); // PUSH1 0xE0 SHL PUSH1 0 MSTORE
-                                                                // CALL operands (reverse): retLen retOff argLen argOff value addr gas
+    // CALL operands (reverse): retLen retOff argLen argOff value addr gas
     c.extend_from_slice(&[0x60, 0x00, 0x60, 0x00, 0x60, 0x04, 0x60, 0x00]);
     c.extend_from_slice(&[0x60, value]); // PUSH1 value
     c.extend_from_slice(&[0x60, precompile]); // PUSH1 precompile
@@ -101,7 +101,7 @@ fn call_arg_with_value_runtime(
     c.push(0x7f); // PUSH32 arg
     c.extend_from_slice(&arg);
     c.extend_from_slice(&[0x60, 0x04, 0x52]); // PUSH1 4 MSTORE
-                                              // CALL operands (reverse): retLen retOff argLen(0x24) argOff value addr gas
+    // CALL operands (reverse): retLen retOff argLen(0x24) argOff value addr gas
     c.extend_from_slice(&[0x60, 0x00, 0x60, 0x00, 0x60, 0x24, 0x60, 0x00]);
     c.extend_from_slice(&[0x60, value]);
     c.extend_from_slice(&[0x60, precompile]);
@@ -162,7 +162,7 @@ fn staticcall_arg_runtime(precompile: u8, selector: [u8; 4], arg: [u8; 32]) -> V
     c.push(0x7f); // PUSH32 arg
     c.extend_from_slice(&arg);
     c.extend_from_slice(&[0x60, 0x04, 0x52]); // PUSH1 4 MSTORE
-                                              // STATICCALL operands (reverse): retLen retOff argLen(0x24) argOff addr gas
+    // STATICCALL operands (reverse): retLen retOff argLen(0x24) argOff addr gas
     c.extend_from_slice(&[0x60, 0x00, 0x60, 0x00, 0x60, 0x24, 0x60, 0x00]);
     c.extend_from_slice(&[0x60, precompile]);
     c.push(0x5a); // GAS

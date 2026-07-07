@@ -6,13 +6,13 @@
 //! and `effectiveGasPrice` per tx type when CollectTips is set.
 
 use alloy_consensus::{
-    transaction::Recovered, Block, BlockBody, Header, Receipt as AlloyReceipt, TxLegacy,
+    Block, BlockBody, Header, Receipt as AlloyReceipt, TxLegacy, transaction::Recovered,
 };
-use alloy_primitives::{address, Bytes, Log, Signature, TxKind, B256, U256};
+use alloy_primitives::{B256, Bytes, Log, Signature, TxKind, U256, address};
 use arb_alloy_consensus::tx::{ArbDepositTx, ArbInternalTx, ArbRetryTx, ArbSubmitRetryableTx};
 use arb_primitives::{
-    multigas::MultiGas, receipt::ArbDepositReceipt, ArbReceipt, ArbReceiptKind,
-    ArbTransactionSigned, ArbTypedTransaction,
+    ArbReceipt, ArbReceiptKind, ArbTransactionSigned, ArbTypedTransaction, multigas::MultiGas,
+    receipt::ArbDepositReceipt,
 };
 use arb_rpc::ArbReceiptConverter;
 use reth_primitives_traits::{SealedBlock, TransactionMeta};

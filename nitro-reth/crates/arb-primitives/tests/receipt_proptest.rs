@@ -1,6 +1,6 @@
 use alloy_consensus::{Eip658Value, Receipt as AlloyReceipt, Typed2718};
 use alloy_eips::eip2718::{Decodable2718, Encodable2718};
-use alloy_primitives::{Address, Bytes, Log, LogData, B256};
+use alloy_primitives::{Address, B256, Bytes, Log, LogData};
 use arb_primitives::{
     multigas::MultiGas,
     receipt::{ArbDepositReceipt, ArbReceipt, ArbReceiptKind},

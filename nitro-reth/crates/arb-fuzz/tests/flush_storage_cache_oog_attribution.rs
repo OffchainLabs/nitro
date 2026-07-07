@@ -17,23 +17,23 @@
 //! the two scenarios differ only in the forwarded gas cap.
 
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
     Mutex,
+    atomic::{AtomicU64, Ordering},
 };
 
 static SERIAL: Mutex<()> = Mutex::new(());
 
-use alloy_primitives::{address, keccak256, Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256, address, keccak256};
 use arb_fuzz::{arbitrary_impls::interop::WhichProgram, scaffolding::selector4};
 use arb_test_harness::{
     dual_exec::DualExec,
     genesis::GenesisBuilder,
     messaging::{
-        signed_tx::{derive_address, L2TxKind, SignedL2TxBuilder},
         DepositBuilder, MessageBuilder,
+        signed_tx::{L2TxKind, SignedL2TxBuilder, derive_address},
     },
     mock_l1::MockL1,
-    node::{arbreth::ArbrethProcess, nitro_docker::NitroDocker, NodeStartCtx},
+    node::{NodeStartCtx, arbreth::ArbrethProcess, nitro_docker::NitroDocker},
     scenario::{Scenario, ScenarioSetup, ScenarioStep, StateCheck},
 };
 
@@ -152,7 +152,7 @@ fn forwarder_runtime(target: Address, gas_cap: u16) -> Vec<u8> {
     c.push(0x36); // argLen = CALLDATASIZE
     c.extend_from_slice(&[0x60, 0x00]); // argOff
     c.extend_from_slice(&[0x60, 0x00]); // value
-                                        // addr
+    // addr
     c.push(0x73);
     c.extend_from_slice(target.as_slice());
     // gas = PUSH2 gas_cap

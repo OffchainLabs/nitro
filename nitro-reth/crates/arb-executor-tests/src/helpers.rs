@@ -3,11 +3,11 @@
 use std::sync::Arc;
 
 use alloy_consensus::{
+    EthereumTxEnvelope, SignableTransaction, TxEip1559, TxEip2930, TxLegacy,
     crypto::secp256k1::sign_message,
     transaction::{Recovered, SignerRecoverable},
-    EthereumTxEnvelope, SignableTransaction, TxEip1559, TxEip2930, TxLegacy,
 };
-use alloy_primitives::{address, keccak256, Address, Bytes, TxKind, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, TxKind, U256, address, keccak256};
 use arb_evm::config::ArbEvmConfig;
 use arb_primitives::ArbTransactionSigned;
 use arb_test_utils::{ArbosHarness, EmptyDb};
@@ -15,7 +15,7 @@ use reth_chainspec::ChainSpec;
 use reth_evm::EvmEnv;
 use revm::{
     context::{BlockEnv, CfgEnv},
-    database::{states::account_status::AccountStatus, PlainAccount, State},
+    database::{PlainAccount, State, states::account_status::AccountStatus},
     primitives::hardfork::SpecId,
     state::AccountInfo,
 };

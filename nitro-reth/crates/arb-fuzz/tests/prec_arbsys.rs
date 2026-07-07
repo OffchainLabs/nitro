@@ -3,8 +3,8 @@ use arb_fuzz::{
     arbitrary_impls::message_step,
     guards::GuardedRun,
     scaffolding::{
-        baseline_stylus_plus_helper, eoa_create_addr, selector4, signed, ARBSYS_ADDR,
-        INVOKE_GAS_CAP,
+        ARBSYS_ADDR, INVOKE_GAS_CAP, baseline_stylus_plus_helper, eoa_create_addr, selector4,
+        signed,
     },
     shared_nodes::next_msg_idx,
 };

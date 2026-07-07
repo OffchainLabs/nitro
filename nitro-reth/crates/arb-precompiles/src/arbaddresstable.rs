@@ -4,11 +4,11 @@ use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, Bytes, U256};
 use alloy_sol_types::SolInterface;
 use arb_context::ArbPrecompileCtx;
-use arb_storage::{write_cost, ARBOS_STATE_ADDRESS, STORAGE_READ_GAS, STORAGE_WRITE_GAS};
+use arb_storage::{ARBOS_STATE_ADDRESS, STORAGE_READ_GAS, STORAGE_WRITE_GAS, write_cost};
 use arbos::address_table::AddressTableError;
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::{interfaces::IArbAddressTable, ArbPrecompileError};
+use crate::{ArbPrecompileError, interfaces::IArbAddressTable};
 
 /// ArbAddressTable precompile address (0x66).
 pub const ARBADDRESSTABLE_ADDRESS: Address = Address::new([

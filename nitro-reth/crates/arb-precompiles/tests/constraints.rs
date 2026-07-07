@@ -7,13 +7,13 @@
 mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
-use alloy_primitives::{address, Address, B256, U256};
+use alloy_primitives::{Address, B256, U256, address};
 use arb_precompiles::{create_arbgasinfo_precompile, create_arbowner_precompile};
 use arb_storage::{
-    layout::{derive_subspace_key, map_slot_b256, CHAIN_OWNER_SUBSPACE, ROOT_STORAGE_KEY},
     ARBOS_STATE_ADDRESS,
+    layout::{CHAIN_OWNER_SUBSPACE, ROOT_STORAGE_KEY, derive_subspace_key, map_slot_b256},
 };
-use common::{calldata, word_u64, PrecompileTest};
+use common::{PrecompileTest, calldata, word_u64};
 
 fn arbowner(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
     create_arbowner_precompile(ctx)

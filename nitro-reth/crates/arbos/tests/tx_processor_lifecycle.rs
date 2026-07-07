@@ -1,4 +1,4 @@
-use alloy_primitives::{address, Address, B256, U256};
+use alloy_primitives::{Address, B256, U256, address};
 use arbos::tx_processor::{
     EndTxNormalParams, GasChargingError, GasChargingParams, RevertedTxAction, TxProcessor,
 };

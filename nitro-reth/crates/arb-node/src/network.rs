@@ -1,8 +1,8 @@
 //! Arbitrum network builder.
 
 use reth_chainspec::Hardforks;
-use reth_network::{primitives::BasicNetworkPrimitives, NetworkHandle, PeersInfo};
-use reth_node_builder::{components::NetworkBuilder, BuilderContext, FullNodeTypes, NodeTypes};
+use reth_network::{NetworkHandle, PeersInfo, primitives::BasicNetworkPrimitives};
+use reth_node_builder::{BuilderContext, FullNodeTypes, NodeTypes, components::NetworkBuilder};
 use reth_node_types::PrimitivesTy;
 use reth_transaction_pool::{PoolPooledTx, PoolTransaction, TransactionPool};
 use tracing::info;

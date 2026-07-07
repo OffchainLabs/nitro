@@ -2,7 +2,7 @@ mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
 use arb_precompiles::create_arbdebug_precompile;
-use common::{calldata, PrecompileTest};
+use common::{PrecompileTest, calldata};
 
 fn arbdebug(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
     create_arbdebug_precompile(ctx)

@@ -17,16 +17,16 @@ use std::{
     fs,
     path::PathBuf,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Mutex, OnceLock,
+        atomic::{AtomicUsize, Ordering},
     },
     time::Instant,
 };
 
 use arb_fuzz::{
     arbitrary_impls::{
-        interop::{counter_calldata, erc20_calldata, sol_caller_calldata, storage_stress_calldata},
         ArbosVersion, DiffStylusInteropScenario, WhichProgram,
+        interop::{counter_calldata, erc20_calldata, sol_caller_calldata, storage_stress_calldata},
     },
     shared_nodes::shared_dual_exec,
 };

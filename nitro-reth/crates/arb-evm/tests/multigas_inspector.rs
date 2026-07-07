@@ -9,12 +9,12 @@
 use arb_evm::multi_gas::MultiGasInspector;
 use arb_primitives::multigas::{MultiGas, ResourceKind};
 use revm::{
-    bytecode::{opcode, Bytecode},
+    Context, InspectEvm, MainBuilder, MainContext,
+    bytecode::{Bytecode, opcode},
     context::TxEnv,
     database::{CacheDB, EmptyDB},
-    primitives::{hardfork::SpecId, Address, TxKind, U256},
+    primitives::{Address, TxKind, U256, hardfork::SpecId},
     state::AccountInfo,
-    Context, InspectEvm, MainBuilder, MainContext,
 };
 
 const INTRINSIC: u64 = 21_000;

@@ -3,8 +3,8 @@
 use std::collections::BTreeMap;
 
 use alloy_primitives::{Address, Bytes, TxKind, U256};
-use arb_executor_tests::helpers::{derive_address, sign_1559, sign_legacy, ONE_ETH, ONE_GWEI};
-use rand::{rngs::StdRng, RngCore, SeedableRng};
+use arb_executor_tests::helpers::{ONE_ETH, ONE_GWEI, derive_address, sign_1559, sign_legacy};
+use rand::{RngCore, SeedableRng, rngs::StdRng};
 use rand_chacha::ChaCha20Rng;
 use serde::Deserialize;
 
@@ -555,8 +555,8 @@ fn stylus_call_workload(
     _description: &str,
 ) -> eyre::Result<Workload> {
     use super::stylus_fixture::{
-        activate_program_calldata, activate_program_value, stylus_call_selector, stylus_fixture,
-        ARB_WASM_ADDRESS, STYLUS_FIXTURE_ADDRESS,
+        ARB_WASM_ADDRESS, STYLUS_FIXTURE_ADDRESS, activate_program_calldata,
+        activate_program_value, stylus_call_selector, stylus_fixture,
     };
     let p: CommonShape = serde_json::from_value(params.clone()).unwrap_or(CommonShape {
         block_count: 20,

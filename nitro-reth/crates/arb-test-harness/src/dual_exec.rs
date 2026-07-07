@@ -2,9 +2,9 @@ use alloy_primitives::{Address, B256};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    Result,
     node::{BlockId, EvmLog, ExecutionNode, TxReceipt},
     scenario::{Scenario, ScenarioStep, StateCheck},
-    Result,
 };
 
 pub struct DualExec<L: ExecutionNode, R: ExecutionNode> {
@@ -244,8 +244,12 @@ impl<L: ExecutionNode, R: ExecutionNode> DualExec<L, R> {
                                 rb.as_ref().map(|b| b.hash),
                                 rb.as_ref().and_then(|b| b.base_fee_per_gas),
                                 rb.as_ref().and_then(|b| b.mix_hash).map(|m| m.0[25]),
-                                l.effective_gas_price, l.status, l.gas_used,
-                                r.effective_gas_price, r.status, r.gas_used,
+                                l.effective_gas_price,
+                                l.status,
+                                l.gas_used,
+                                r.effective_gas_price,
+                                r.status,
+                                r.gas_used,
                             );
                         }
                     }

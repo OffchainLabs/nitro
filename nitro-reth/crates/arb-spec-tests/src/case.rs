@@ -458,27 +458,25 @@ fn check_assertions(
                 v,
             )?;
         }
-        if let Some(num) = s.has_hash_for {
-            if bh
+        if let Some(num) = s.has_hash_for
+            && bh
                 .block_hash(unsafe { &mut *state_ptr }, num)
                 .map_err(map_err)?
                 .is_none()
-            {
-                return Err(SpecError::Assertion(format!(
-                    "blockhash.has_hash_for {num}: missing"
-                )));
-            }
+        {
+            return Err(SpecError::Assertion(format!(
+                "blockhash.has_hash_for {num}: missing"
+            )));
         }
-        if let Some(num) = s.no_hash_for {
-            if bh
+        if let Some(num) = s.no_hash_for
+            && bh
                 .block_hash(unsafe { &mut *state_ptr }, num)
                 .map_err(map_err)?
                 .is_some()
-            {
-                return Err(SpecError::Assertion(format!(
-                    "blockhash.no_hash_for {num}: present"
-                )));
-            }
+        {
+            return Err(SpecError::Assertion(format!(
+                "blockhash.no_hash_for {num}: present"
+            )));
         }
         if let Some(check) = &s.hash_for_block_equals {
             let actual = bh

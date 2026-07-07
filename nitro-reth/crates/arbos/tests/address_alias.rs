@@ -1,7 +1,7 @@
-use alloy_primitives::{address, Address};
+use alloy_primitives::{Address, address};
 use arbos::util::{
-    does_tx_type_alias, inverse_remap_l1_address, remap_l1_address, tx_type_has_poster_costs,
-    ADDRESS_ALIAS_OFFSET, INVERSE_ADDRESS_ALIAS_OFFSET,
+    ADDRESS_ALIAS_OFFSET, INVERSE_ADDRESS_ALIAS_OFFSET, does_tx_type_alias,
+    inverse_remap_l1_address, remap_l1_address, tx_type_has_poster_costs,
 };
 use proptest::prelude::*;
 

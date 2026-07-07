@@ -5,11 +5,11 @@ use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolInterface;
 use arb_context::ArbPrecompileCtx;
 use arb_storage::{
-    write_cost, ARBOS_STATE_ADDRESS, STORAGE_READ_GAS, STORAGE_WRITE_GAS, STORAGE_WRITE_ZERO_GAS,
+    ARBOS_STATE_ADDRESS, STORAGE_READ_GAS, STORAGE_WRITE_GAS, STORAGE_WRITE_ZERO_GAS, write_cost,
 };
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::{interfaces::IArbAggregator, ArbPrecompileError};
+use crate::{ArbPrecompileError, interfaces::IArbAggregator};
 
 /// ArbAggregator precompile address (0x6d).
 pub const ARBAGGREGATOR_ADDRESS: Address = Address::new([

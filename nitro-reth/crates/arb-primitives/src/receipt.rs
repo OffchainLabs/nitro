@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use alloy_consensus::{
-    Eip2718EncodableReceipt, Eip658Value, Receipt as AlloyReceipt, TxReceipt, Typed2718,
+    Eip658Value, Eip2718EncodableReceipt, Receipt as AlloyReceipt, TxReceipt, Typed2718,
 };
 use alloy_eips::{Decodable2718, Encodable2718};
 use alloy_primitives::{Bloom, Log};
@@ -840,7 +840,7 @@ mod tests {
     // fields fetched from a real node. Proves our typed-tx hash preimage matches.
     #[test]
     fn canonical_block1_retry_tx_hash() {
-        use alloy_primitives::{address, b256, hex, keccak256, Bytes, U256};
+        use alloy_primitives::{Bytes, U256, address, b256, hex, keccak256};
         use arb_alloy_consensus::tx::ArbRetryTx;
         let tx = ArbRetryTx {
             chain_id: U256::from(421614u64),
@@ -871,7 +871,7 @@ mod tests {
     // ticketId that feeds the retry tx. Proves our type-0x69 hash preimage.
     #[test]
     fn canonical_block1_submit_retryable_hash() {
-        use alloy_primitives::{address, b256, hex, keccak256, Bytes, U256};
+        use alloy_primitives::{Bytes, U256, address, b256, hex, keccak256};
         use arb_alloy_consensus::tx::ArbSubmitRetryableTx;
         let tx = ArbSubmitRetryableTx {
             chain_id: U256::from(421614u64),

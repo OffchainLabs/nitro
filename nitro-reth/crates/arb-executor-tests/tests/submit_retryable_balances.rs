@@ -10,15 +10,15 @@ use std::sync::Arc;
 use alloy_consensus::transaction::{Recovered, SignerRecoverable};
 use alloy_eips::eip2718::{Decodable2718, Encodable2718};
 use alloy_evm::{
+    EvmFactory,
     block::{BlockExecutor, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
-    EvmFactory,
 };
-use alloy_primitives::{address, Address, Signature, B256, U256};
+use alloy_primitives::{Address, B256, Signature, U256, address};
 use arb_alloy_consensus::tx::ArbSubmitRetryableTx;
 use arb_evm::config::ArbEvmConfig;
 use arb_executor_tests::helpers::{balance_of, deploy_contract};
-use arb_primitives::{signed_tx::ArbTypedTransaction, ArbTransactionSigned};
+use arb_primitives::{ArbTransactionSigned, signed_tx::ArbTypedTransaction};
 use arb_test_utils::ArbosHarness;
 use reth_chainspec::ChainSpec;
 use reth_evm::{ConfigureEvm, EvmEnv};

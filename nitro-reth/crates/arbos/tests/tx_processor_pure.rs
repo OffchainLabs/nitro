@@ -1,7 +1,7 @@
-use alloy_primitives::{address, Address, U256};
+use alloy_primitives::{Address, U256, address};
 use arbos::tx_processor::{
-    compute_poster_gas, compute_retryable_gas_split, compute_submit_retryable_fees, get_poster_gas,
-    take_funds, SubmitRetryableParams,
+    SubmitRetryableParams, compute_poster_gas, compute_retryable_gas_split,
+    compute_submit_retryable_fees, get_poster_gas, take_funds,
 };
 
 const ONE_GWEI: u64 = 1_000_000_000;

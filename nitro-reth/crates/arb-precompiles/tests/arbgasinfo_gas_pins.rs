@@ -8,7 +8,7 @@ mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
 use arb_precompiles::create_arbgasinfo_precompile;
-use common::{calldata, PrecompileTest};
+use common::{PrecompileTest, calldata};
 
 const ARBOS_V30: u64 = 30;
 const ARBOS_V50: u64 = 50;

@@ -12,5 +12,5 @@ pub use capture::capture_from_node;
 pub use dual_exec::{DiffReport, DualExec};
 pub use error::{HarnessError, Result};
 pub use messaging::L1Message;
-pub use node::{remote::RemoteNode, Block, ExecutionNode, MultiGasDims, NodeStartCtx};
+pub use node::{Block, ExecutionNode, MultiGasDims, NodeStartCtx, remote::RemoteNode};
 pub use scenario::{Scenario, ScenarioSetup, ScenarioStep};

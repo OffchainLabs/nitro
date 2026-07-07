@@ -6,8 +6,8 @@ use std::{cell::Cell, convert::Infallible};
 
 use alloy_primitives::{Address, B256, U256};
 use arb_storage::{
-    read_storage_at, write_arbos_storage, write_storage_at, DatabaseError, StorageError,
-    ARBOS_STATE_ADDRESS,
+    ARBOS_STATE_ADDRESS, DatabaseError, StorageError, read_storage_at, write_arbos_storage,
+    write_storage_at,
 };
 use revm::Database;
 use revm_database::StateBuilder;

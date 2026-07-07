@@ -2,15 +2,15 @@
 
 use alloy_primitives::{Address, Bytes, U256};
 use arb_test_harness::{
-    messaging::{retryable::RetryableSubmitBuilder, DepositBuilder, MessageBuilder},
+    messaging::{DepositBuilder, MessageBuilder, retryable::RetryableSubmitBuilder},
     scenario::{Scenario, ScenarioSetup},
 };
 use arbitrary::{Arbitrary, Unstructured};
 use serde::Serialize;
 
 use crate::{
-    arbitrary_impls::{message_step, ArbosVersion, BoundedBytes, FUZZ_GAS_CAP, FUZZ_L1_BASE_FEE},
-    shared_nodes::{next_msg_idx, FUZZ_L2_CHAIN_ID},
+    arbitrary_impls::{ArbosVersion, BoundedBytes, FUZZ_GAS_CAP, FUZZ_L1_BASE_FEE, message_step},
+    shared_nodes::{FUZZ_L2_CHAIN_ID, next_msg_idx},
 };
 
 #[derive(Debug, Clone, Serialize)]

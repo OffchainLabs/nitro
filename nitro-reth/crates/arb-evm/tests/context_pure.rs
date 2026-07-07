@@ -59,9 +59,10 @@ fn activate_wasm_same_targets_replaces_ok() {
     let mut asm2 = HashMap::new();
     asm2.insert("x86_64".to_string(), vec![3]);
     asm2.insert("arm64".to_string(), vec![4]);
-    assert!(x
-        .activate_wasm(B256::repeat_byte(1), asm2, vec![0xCC])
-        .is_ok());
+    assert!(
+        x.activate_wasm(B256::repeat_byte(1), asm2, vec![0xCC])
+            .is_ok()
+    );
 }
 
 #[test]

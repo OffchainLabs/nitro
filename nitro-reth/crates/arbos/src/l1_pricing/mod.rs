@@ -762,7 +762,7 @@ pub fn byte_count_after_brotli_level(data: &[u8], level: u64) -> u64 {
     const BROTLI_PARAM_LGWIN: u32 = 2;
     const BROTLI_OPERATION_FINISH: u32 = 2;
 
-    extern "C" {
+    unsafe extern "C" {
         fn BrotliEncoderCreateInstance(
             alloc: Option<extern "C" fn(*mut c_void, usize) -> *mut c_void>,
             free: Option<extern "C" fn(*mut c_void, *mut c_void)>,
