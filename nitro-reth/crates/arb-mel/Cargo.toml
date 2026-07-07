@@ -12,6 +12,7 @@ arb-storage-errors = { workspace = true }
 
 # Alloy
 alloy-primitives = { workspace = true, features = ["std"] }
+alloy-consensus = { workspace = true }
 alloy-rpc-types-eth = { workspace = true }
 alloy-rlp = { workspace = true }
 alloy-sol-types = { workspace = true }
