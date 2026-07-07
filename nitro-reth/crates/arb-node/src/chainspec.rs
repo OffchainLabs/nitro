@@ -6,6 +6,7 @@ use std::{path::Path, str::FromStr, sync::Arc};
 
 use alloy_genesis::GenesisAccount;
 use alloy_primitives::{hex, Address, B256, U256};
+use arbos::arbos_types::ParsedInitMessage;
 use eyre::eyre;
 use reth_chainspec::ChainSpec;
 use reth_cli::chainspec::ChainSpecParser;
@@ -13,8 +14,6 @@ use reth_ethereum_cli::chainspec::EthereumChainSpecParser;
 use revm::database::{EmptyDB, State, StateBuilder};
 use revm_database::states::bundle_state::BundleRetention;
 use serde_json::Value;
-
-use arbos::arbos_types::ParsedInitMessage;
 
 use crate::genesis;
 
@@ -702,8 +701,9 @@ fn pad_address_lower(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn serialize_chain_config_matches_v10_default_layout() {

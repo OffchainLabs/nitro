@@ -112,13 +112,14 @@ impl MessageBuilder for InternalTxBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::messaging::test_support::round_trip;
     use alloy_primitives::address;
     use arbos::internal_tx::{
         decode_start_block_data, INTERNAL_TX_BATCH_POSTING_REPORT_METHOD_ID,
         INTERNAL_TX_BATCH_POSTING_REPORT_V2_METHOD_ID, INTERNAL_TX_START_BLOCK_METHOD_ID,
     };
+
+    use super::*;
+    use crate::messaging::test_support::round_trip;
 
     fn sample(kind: InternalTxKind) -> InternalTxBuilder {
         InternalTxBuilder {

@@ -1,7 +1,8 @@
+use std::{marker::PhantomData, ptr::NonNull};
+
 use alloy_primitives::{Address, B256, U256};
 use arb_storage_errors::StorageError;
 use revm::Database;
-use std::{marker::PhantomData, ptr::NonNull};
 
 use crate::{
     slot::{derive_sub_key, storage_key_map, storage_key_map_b256},

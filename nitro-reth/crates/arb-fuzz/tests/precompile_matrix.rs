@@ -19,7 +19,6 @@
 //!     -- --ignored matrix --nocapture
 
 use alloy_primitives::{address, Address, Bytes, U256};
-
 use arb_fuzz::shared_nodes::{next_msg_idx, shared_dual_exec, FUZZ_L2_CHAIN_ID};
 use arb_test_harness::{
     messaging::{

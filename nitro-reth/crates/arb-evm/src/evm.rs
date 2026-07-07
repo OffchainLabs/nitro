@@ -1,3 +1,5 @@
+use core::fmt::Debug;
+
 use alloy_evm::{
     eth::EthEvmContext, precompiles::PrecompilesMap, Database, Evm, EvmEnv, EvmFactory,
 };
@@ -8,7 +10,6 @@ use arb_stylus::{
     StylusEvmApi,
 };
 use arbos::programs::types::EvmData;
-use core::fmt::Debug;
 use revm::{
     context::{
         result::{EVMError, ExecutionResult, InvalidTransaction},
@@ -2474,8 +2475,9 @@ impl EvmFactory for ArbEvmFactory {
 
 #[cfg(test)]
 mod tests {
-    use super::ArbEvmFactory;
     use std::sync::Arc;
+
+    use super::ArbEvmFactory;
 
     #[test]
     fn isolated_clone_has_independent_staging_and_caches() {

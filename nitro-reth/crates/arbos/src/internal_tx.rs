@@ -1,7 +1,6 @@
 use alloy_primitives::{Address, B256, U256};
-use arb_storage::{StorageBackend, StorageError};
-
 use arb_chainspec::arbos_version;
+use arb_storage::{StorageBackend, StorageError};
 
 use crate::{
     arbos_state::{ArbosState, ArbosStateError},

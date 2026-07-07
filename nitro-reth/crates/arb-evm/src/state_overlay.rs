@@ -229,12 +229,13 @@ impl StateOverlay {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use alloy_primitives::{address, U256};
     use revm::database::{EmptyDB, State};
     use revm_database::states::{
         bundle_state::BundleRetention, cache_account::CacheAccount, plain_account::PlainAccount,
     };
+
+    use super::*;
 
     fn make_state() -> State<EmptyDB> {
         State::builder()

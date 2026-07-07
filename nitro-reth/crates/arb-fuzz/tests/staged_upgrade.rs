@@ -15,8 +15,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use alloy_primitives::{Address, Bytes, B256, U256};
-use arbitrary::{Arbitrary, Unstructured};
-
 use arb_fuzz::arbitrary_impls::{MessageStep, SignedKind};
 use arb_test_harness::{
     dual_exec::DualExec,
@@ -32,6 +30,7 @@ use arb_test_harness::{
     },
     scenario::{Scenario, ScenarioSetup, ScenarioStep},
 };
+use arbitrary::{Arbitrary, Unstructured};
 
 /// Dedicated chain id for upgrade-transition runs. Distinct from the
 /// shared fuzz harness's 412346 so a stale captured genesis can't be

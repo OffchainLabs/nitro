@@ -1,5 +1,6 @@
-use alloy_primitives::{Address, B256, U256};
 use std::collections::{HashMap, HashSet};
+
+use alloy_primitives::{Address, B256, U256};
 
 /// Arbitrum-specific block execution context.
 ///

@@ -1,5 +1,7 @@
 mod common;
 
+use std::sync::Arc;
+
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::{address, Address, U256};
 use arb_context::ArbPrecompileCtx;
@@ -29,7 +31,6 @@ use arbos::{
     },
 };
 use common::{calldata, decode_address, decode_u256, decode_word, PrecompileTest};
-use std::sync::Arc;
 
 fn arbgasinfo(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
     create_arbgasinfo_precompile(ctx)

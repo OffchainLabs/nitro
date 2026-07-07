@@ -1,9 +1,8 @@
 use alloy_primitives::U256;
+use arb_chainspec::arbos_version as version;
 use arb_primitives::multigas::{MultiGas, ResourceKind, NUM_RESOURCE_KIND};
 use arb_storage::{StorageBackend, SystemStateBackend};
 use revm::Database;
-
-use arb_chainspec::arbos_version as version;
 
 use super::{L2PricingError, L2PricingState};
 

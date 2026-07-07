@@ -4,6 +4,12 @@
 //! by returning a valid broadcast receiver. Block building is driven
 //! externally by the sequencer via RPC, not by the payload builder.
 
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
+
 use futures_util::{ready, StreamExt};
 use reth_node_builder::{
     components::PayloadServiceBuilder, BuilderContext, FullNodeTypes, NodeTypes,
@@ -11,11 +17,6 @@ use reth_node_builder::{
 use reth_payload_builder::{PayloadBuilderHandle, PayloadServiceCommand};
 use reth_payload_primitives::{PayloadBuilderAttributes, PayloadTypes};
 use reth_transaction_pool::TransactionPool;
-use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-};
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;

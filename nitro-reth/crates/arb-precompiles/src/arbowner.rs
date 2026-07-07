@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, B256, U256};
 use alloy_sol_types::{SolEvent, SolInterface};
@@ -16,7 +18,6 @@ use revm::{
     precompile::{PrecompileId, PrecompileOutput, PrecompileResult},
     primitives::Log,
 };
-use std::sync::Arc;
 
 use crate::{interfaces::IArbOwner, ArbPrecompileError};
 

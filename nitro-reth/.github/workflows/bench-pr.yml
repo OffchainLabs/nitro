@@ -31,7 +31,7 @@ jobs:
   abba:
     name: abba pr-gate
     needs: [build-feature, build-baseline]
-    runs-on: ubuntu-latest
+    runs-on: ocl-8cpu-32ram
     timeout-minutes: 60
     permissions:
       contents: read

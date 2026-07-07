@@ -416,8 +416,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use base64::engine::general_purpose::STANDARD as B64;
+
+    use super::*;
 
     #[test]
     fn decode_empty_option_is_ok() {

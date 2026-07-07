@@ -59,10 +59,11 @@ impl MessageBuilder for BatchBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::messaging::test_support::{decode_body, round_trip};
     use alloy_primitives::{address, b256};
     use arbos::arbos_types::parse_batch_posting_report_fields;
+
+    use super::*;
+    use crate::messaging::test_support::{decode_body, round_trip};
 
     fn sample(variant: BatchPostingVariant) -> BatchBuilder {
         BatchBuilder {
