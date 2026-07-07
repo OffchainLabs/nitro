@@ -13,7 +13,7 @@ env:
 jobs:
   deny-and-audit:
     name: cargo deny & audit
-    runs-on: ocl-8cpu-32ram
+    runs-on: ocl-2cpu-8ram-dind
     steps:
       - uses: actions/checkout@v6
       # Advisories are checked separately below via rustsec/audit-check, so
