@@ -11,7 +11,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  deny and audit:
+  deny-and-audit:
     name: cargo deny & audit
     runs-on: ubuntu-latest
     steps:
@@ -31,10 +31,12 @@ jobs:
           done
           echo "Submodule init failed after 3 attempts"
           exit 1
+      # Advisories are checked separately below via rustsec/audit-check, so
+      # this only runs the categories cargo-deny uniquely covers.
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          command: check
-      # The ignore list lives in .cargo/audit.toml and mirrors deny.toml.
+          command: check bans licenses sources
+      # The ignore list lives in .cargo/audit.toml.
       - uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}

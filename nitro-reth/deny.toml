@@ -7,22 +7,10 @@ targets = [
 ]
 all-features = true
 
-[advisories]
-yanked = "warn"
-ignore = [
-    "RUSTSEC-2021-0139", # ansi_term unmaintained - transitive via vendored wasmer
-    "RUSTSEC-2024-0370", # proc-macro-error unmaintained - transitive via reth
-    "RUSTSEC-2026-0173", # proc-macro-error2 unmaintained - transitive via reth
-    "RUSTSEC-2024-0375", # atty unmaintained - transitive via vendored wasmer
-    "RUSTSEC-2024-0388", # derivative unmaintained - transitive via reth
-    "RUSTSEC-2024-0436", # paste unmaintained - transitive via reth
-    "RUSTSEC-2025-0141", # bincode unmaintained - transitive via reth
-    "RUSTSEC-2026-0067", # tar unpack_in symlink - transitive via reth
-    "RUSTSEC-2026-0068", # tar PAX size headers - transitive via reth
-    "RUSTSEC-2026-0118", # hickory-dns NSEC3 - transitive via reth/discv5
-    "RUSTSEC-2026-0119", # hickory-dns name compression - transitive via reth/discv5
-    "RUSTSEC-2022-0104", # structopt unmaintained - transitive via prover
-]
+# Advisory scanning (RustSec vulnerability DB) is owned by `cargo audit` /
+# rustsec/audit-check + .cargo/audit.toml — CI runs cargo-deny with
+# `check bans licenses sources` so it doesn't duplicate that check with a
+# second, independently-drifting ignore list.
 
 [licenses]
 version = 2
