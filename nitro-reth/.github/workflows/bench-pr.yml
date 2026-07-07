@@ -12,6 +12,10 @@ on:
       - ".github/workflows/bench-pr.yml"
       - ".github/workflows/_build-release.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
