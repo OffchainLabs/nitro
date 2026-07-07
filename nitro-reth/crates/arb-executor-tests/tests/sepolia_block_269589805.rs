@@ -7,7 +7,7 @@
 //! refund must reconcile correctly under per-opcode dimensional attribution.
 
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
@@ -16,17 +16,17 @@ use std::{collections::BTreeMap, sync::Arc};
 use alloy_consensus::transaction::Recovered;
 use alloy_eips::Decodable2718;
 use alloy_evm::{
+    EvmFactory,
     block::{BlockExecutor, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
-    EvmFactory,
 };
-use alloy_primitives::{address, b256, hex, Address, Bytes, Signature, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, Signature, U256, address, b256, hex};
 use arb_alloy_consensus::tx::ArbInternalTx;
 use arb_evm::{
     config::ArbEvmConfig,
     multi_gas::{MultiGasInspector, MultiGasSink},
 };
-use arb_primitives::{signed_tx::ArbTypedTransaction, ArbTransactionSigned};
+use arb_primitives::{ArbTransactionSigned, signed_tx::ArbTypedTransaction};
 use arb_storage::{set_account_code, set_account_nonce, write_storage_at};
 use arb_test_utils::{ArbosHarness, EmptyDb};
 use arbos::internal_tx::encode_start_block;
@@ -124,10 +124,10 @@ fn seed_prestate(state: &mut State<EmptyDb>, snap: &BTreeMap<String, AccountSnap
                 set_account_code(state, ad, Bytes::from(by));
             }
         }
-        if let Some(n) = acct.nonce {
-            if n > 0 {
-                set_account_nonce(state, ad, n);
-            }
+        if let Some(n) = acct.nonce
+            && n > 0
+        {
+            set_account_nonce(state, ad, n);
         }
         for (slot, val) in &acct.storage {
             write_storage_at(state, ad, hu(slot), hu(val)).unwrap();

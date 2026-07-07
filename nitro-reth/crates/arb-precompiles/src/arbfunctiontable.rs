@@ -6,7 +6,7 @@ use alloy_sol_types::SolInterface;
 use arb_context::ArbPrecompileCtx;
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::{interfaces::IArbFunctionTable, ArbPrecompileError};
+use crate::{ArbPrecompileError, interfaces::IArbFunctionTable};
 
 /// ArbFunctionTable precompile address (0x68).
 pub const ARBFUNCTIONTABLE_ADDRESS: Address = Address::new([

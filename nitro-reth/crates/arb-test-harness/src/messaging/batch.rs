@@ -1,8 +1,9 @@
 use alloy_primitives::{Address, B256, U256};
 
 use crate::messaging::{
-    encoding::{encode_address, encode_hash, encode_uint256, encode_uint64, request_id_from_seq},
-    kinds, L1Message, L1MessageHeader, MessageBuilder,
+    L1Message, L1MessageHeader, MessageBuilder,
+    encoding::{encode_address, encode_hash, encode_uint64, encode_uint256, request_id_from_seq},
+    kinds,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

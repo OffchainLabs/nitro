@@ -1,5 +1,5 @@
 use alloy_primitives::B256;
-use arb_storage::{vector::open_sub_storage_vector, Storage};
+use arb_storage::{Storage, vector::open_sub_storage_vector};
 use arb_test_utils::ArbosHarness;
 
 fn fresh(h: &mut ArbosHarness, sub: u8) -> arb_storage::vector::SubStorageVector {

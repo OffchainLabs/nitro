@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use alloy_sol_types::{SolError, SolEvent, SolInterface};
 use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
@@ -10,7 +10,7 @@ use revm::{
     primitives::Log,
 };
 
-use crate::{interfaces::IArbDebug, ArbPrecompileError};
+use crate::{ArbPrecompileError, interfaces::IArbDebug};
 
 /// ArbDebug precompile address (0xff).
 pub const ARBDEBUG_ADDRESS: Address = Address::new([

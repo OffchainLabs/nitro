@@ -12,7 +12,7 @@ use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider};
 
 use crate::{
-    stylus_tracer::HostioTraceInfo, ArbBlockInfo, ArbMaintenanceStatus, NumberAndBlockMetadata,
+    ArbBlockInfo, ArbMaintenanceStatus, NumberAndBlockMetadata, stylus_tracer::HostioTraceInfo,
 };
 
 /// Arbitrum `arb_` RPC namespace.

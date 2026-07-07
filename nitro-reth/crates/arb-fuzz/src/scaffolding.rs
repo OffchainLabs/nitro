@@ -1,18 +1,18 @@
-use alloy_primitives::{keccak256, Address, Bytes, U256};
+use alloy_primitives::{Address, Bytes, U256, keccak256};
 use arb_test_harness::{
     messaging::{
-        signed_tx::{L2TxKind, SignedL2TxBuilder},
         DepositBuilder, MessageBuilder,
+        signed_tx::{L2TxKind, SignedL2TxBuilder},
     },
     scenario::ScenarioStep,
 };
 
 use crate::{
     arbitrary_impls::{
-        interop::{create_address, interop_eoa, interop_signing_key, WhichProgram},
+        interop::{WhichProgram, create_address, interop_eoa, interop_signing_key},
         message_step,
     },
-    shared_nodes::{next_msg_idx, FUZZ_L2_CHAIN_ID},
+    shared_nodes::{FUZZ_L2_CHAIN_ID, next_msg_idx},
 };
 
 pub const FUZZ_L1_BASE_FEE: u64 = 30_000_000_000;

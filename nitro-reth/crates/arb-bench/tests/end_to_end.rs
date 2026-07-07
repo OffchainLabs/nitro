@@ -5,9 +5,9 @@ use arb_bench::{
     corpus::manifest::Manifest,
     report::{self, compare::Verdict},
     runner::{
-        abba::{run_abba, AbbaConfig},
-        in_process::InProcessRunner,
         BenchRunner, RunnerConfig,
+        abba::{AbbaConfig, run_abba},
+        in_process::InProcessRunner,
     },
 };
 

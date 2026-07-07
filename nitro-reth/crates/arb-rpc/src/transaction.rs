@@ -1,6 +1,6 @@
 //! Arbitrum transaction request and conversion types.
 
-use alloy_consensus::{error::ValueError, SignableTransaction};
+use alloy_consensus::{SignableTransaction, error::ValueError};
 use alloy_evm::rpc::TryIntoTxEnv;
 use alloy_primitives::Signature;
 use alloy_rpc_types_eth::request::TransactionRequest;

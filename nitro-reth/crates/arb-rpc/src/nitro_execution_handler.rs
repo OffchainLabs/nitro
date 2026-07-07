@@ -9,15 +9,14 @@ use alloy_consensus::BlockHeader;
 use alloy_primitives::B256;
 use alloy_rpc_types_eth::BlockNumberOrTag;
 use base64::{
-    alphabet,
+    Engine as _, alphabet,
     engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig},
-    Engine as _,
 };
 use jsonrpsee::core::RpcResult;
 use parking_lot::RwLock;
 use reth_metrics::{
-    metrics::{self, Gauge},
     Metrics,
+    metrics::{self, Gauge},
 };
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider};
 use tracing::{debug, info, warn};

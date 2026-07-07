@@ -490,15 +490,15 @@ impl DepthCheckerFn {
         let mut stack: u32 = 0;
 
         macro_rules! push {
-            ($count:expr) => {{ stack += $count; worst = worst.max(stack); }};
+            ($count:expr_2021) => {{ stack += $count; worst = worst.max(stack); }};
             () => { push!(1) };
         }
         macro_rules! pop {
-            ($count:expr) => {{ stack = stack.saturating_sub($count); }};
+            ($count:expr_2021) => {{ stack = stack.saturating_sub($count); }};
             () => { pop!(1) };
         }
         macro_rules! ins_and_outs {
-            ($ty:expr) => {{
+            ($ty:expr_2021) => {{
                 let ins = $ty.params().len() as u32;
                 let outs = $ty.results().len() as u32;
                 push!(outs);
@@ -516,7 +516,7 @@ impl DepthCheckerFn {
             };
         }
         macro_rules! block_type {
-            ($ty:expr) => {{
+            ($ty:expr_2021) => {{
                 match $ty {
                     BlockType::Empty => {}
                     BlockType::Type(_) => push!(1),
@@ -913,10 +913,10 @@ impl ModuleMiddleware for HeapBound {
             .ok_or_else(|| mw_err("scratch global not found"))?;
 
         let pay_func = info.imports.iter().find_map(|(key, idx)| {
-            if key.field == "pay_for_memory_grow" {
-                if let ImportIndex::Function(f) = idx {
-                    return Some(*f);
-                }
+            if key.field == "pay_for_memory_grow"
+                && let ImportIndex::Function(f) = idx
+            {
+                return Some(*f);
             }
             None
         });

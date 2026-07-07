@@ -1,9 +1,9 @@
 use alloy_evm::{
-    eth::receipt_builder::{ReceiptBuilder, ReceiptBuilderCtx},
     Evm,
+    eth::receipt_builder::{ReceiptBuilder, ReceiptBuilderCtx},
 };
 use alloy_primitives::Log;
-use arb_primitives::{signed_tx::ArbTxTypeLocal, ArbReceipt, ArbReceiptKind, ArbTransactionSigned};
+use arb_primitives::{ArbReceipt, ArbReceiptKind, ArbTransactionSigned, signed_tx::ArbTxTypeLocal};
 
 /// Builds `ArbReceipt` from execution results.
 #[derive(Debug, Clone, Copy, Default)]

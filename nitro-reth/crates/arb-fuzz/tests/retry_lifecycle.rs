@@ -1,16 +1,16 @@
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use arb_fuzz::{
     arbitrary_impls::{interop::interop_eoa, message_step},
     guards::GuardedRun,
     scaffolding::{
-        deploy_solidity, eoa_create_addr, fund_interop_eoa, selector4, signed, FUZZ_L1_BASE_FEE,
-        INVOKE_GAS_CAP,
+        FUZZ_L1_BASE_FEE, INVOKE_GAS_CAP, deploy_solidity, eoa_create_addr, fund_interop_eoa,
+        selector4, signed,
     },
-    shared_nodes::{next_msg_idx, FUZZ_L2_CHAIN_ID},
+    shared_nodes::{FUZZ_L2_CHAIN_ID, next_msg_idx},
 };
 use arb_test_harness::messaging::{
-    apply_l1_to_l2_alias, submit_retryable_ticket_id, DepositBuilder, MessageBuilder,
-    RetryableSubmitBuilder,
+    DepositBuilder, MessageBuilder, RetryableSubmitBuilder, apply_l1_to_l2_alias,
+    submit_retryable_ticket_id,
 };
 
 const ARBRETRYABLETX: Address = Address::new([
@@ -351,7 +351,7 @@ fn cancel_self_runtime(ticket: B256) -> Vec<u8> {
     code.push(0x7f); // PUSH32 ticket
     code.extend_from_slice(ticket.as_slice());
     code.extend_from_slice(&[0x60, 0x04, 0x52]); // PUSH1 4; MSTORE
-                                                 // CALL(gas, 0x6e, 0, 0, 36, 0, 0)
+    // CALL(gas, 0x6e, 0, 0, 36, 0, 0)
     code.extend_from_slice(&[
         0x60, 0x00, // retLength
         0x60, 0x00, // retOffset

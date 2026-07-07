@@ -7,13 +7,13 @@ mod multi_gas_fees;
 use alloy_primitives::U256;
 use arb_primitives::multigas::NUM_RESOURCE_KIND;
 use arb_storage::{
-    open_sub_storage_vector, Storage, StorageBackedBigUint, StorageBackedUint64, StorageBackend,
-    SubStorageVector, SystemStateBackend,
+    Storage, StorageBackedBigUint, StorageBackedUint64, StorageBackend, SubStorageVector,
+    SystemStateBackend, open_sub_storage_vector,
 };
 pub use error::L2PricingError;
-pub use gas_constraint::{open_gas_constraint, GasConstraint};
+pub use gas_constraint::{GasConstraint, open_gas_constraint};
 pub use model::*;
-pub use multi_gas_constraint::{open_multi_gas_constraint, MultiGasConstraint};
+pub use multi_gas_constraint::{MultiGasConstraint, open_multi_gas_constraint};
 pub use multi_gas_fees::MultiGasFees;
 
 // Storage offsets for L2 pricing state.

@@ -6,15 +6,15 @@
 use std::sync::Arc;
 
 use alloy_consensus::{
-    crypto::secp256k1::sign_message, transaction::Recovered, EthereumTxEnvelope,
-    SignableTransaction, TxLegacy,
+    EthereumTxEnvelope, SignableTransaction, TxLegacy, crypto::secp256k1::sign_message,
+    transaction::Recovered,
 };
 use alloy_evm::{
+    EvmFactory,
     block::{BlockExecutor, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
-    EvmFactory,
 };
-use alloy_primitives::{address, keccak256, Address, TxKind, B256, U256};
+use alloy_primitives::{Address, B256, TxKind, U256, address, keccak256};
 use arb_evm::{
     config::ArbEvmConfig,
     multi_gas::{MultiGasInspector, MultiGasSink},
@@ -25,7 +25,7 @@ use reth_chainspec::ChainSpec;
 use reth_evm::{ConfigureEvm, EvmEnv};
 use revm::{
     context::{BlockEnv, CfgEnv},
-    database::{states::account_status::AccountStatus, PlainAccount, State},
+    database::{PlainAccount, State, states::account_status::AccountStatus},
     primitives::hardfork::SpecId,
     state::{AccountInfo, Bytecode},
 };

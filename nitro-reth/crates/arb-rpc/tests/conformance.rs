@@ -5,14 +5,14 @@
 //! tx-specific fields) matches the canonical Nitro layout.
 
 use alloy_consensus::{Header, TxEip1559, TxEip2930, TxLegacy};
-use alloy_primitives::{address, Bytes, TxKind, B256, U256};
+use alloy_primitives::{B256, Bytes, TxKind, U256, address};
 use alloy_serde::WithOtherFields;
 use arb_alloy_consensus::tx::{
     ArbContractTx, ArbDepositTx, ArbInternalTx, ArbRetryTx, ArbSubmitRetryableTx, ArbUnsignedTx,
 };
 use arb_primitives::ArbTypedTransaction;
 use arb_rpc::{
-    header::{l1_block_number_from_mix_hash, ArbHeaderConverter},
+    header::{ArbHeaderConverter, l1_block_number_from_mix_hash},
     response::arb_tx_fields,
 };
 use reth_primitives_traits::SealedHeader;

@@ -1,16 +1,16 @@
 mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
-use alloy_primitives::{address, Address, B256, U256};
+use alloy_primitives::{Address, B256, U256, address};
 use arb_precompiles::create_arbaggregator_precompile;
 use arb_storage::{
-    layout::{
-        derive_subspace_key, map_slot, map_slot_b256, CHAIN_OWNER_SUBSPACE, L1_PRICING_SUBSPACE,
-        ROOT_STORAGE_KEY,
-    },
     ARBOS_STATE_ADDRESS,
+    layout::{
+        CHAIN_OWNER_SUBSPACE, L1_PRICING_SUBSPACE, ROOT_STORAGE_KEY, derive_subspace_key, map_slot,
+        map_slot_b256,
+    },
 };
-use common::{calldata, decode_address, decode_u256, decode_word, word_address, PrecompileTest};
+use common::{PrecompileTest, calldata, decode_address, decode_u256, decode_word, word_address};
 
 fn arbaggregator(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
     create_arbaggregator_precompile(ctx)

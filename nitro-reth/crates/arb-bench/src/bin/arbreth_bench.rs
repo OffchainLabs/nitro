@@ -8,18 +8,18 @@ use arb_bench::{
     metrics::RunResult,
     report::{
         self,
-        compare::{compare, ComparisonReport, Verdict},
+        compare::{ComparisonReport, Verdict, compare},
         markdown,
     },
     runner::{
-        abba::{run_abba, AbbaConfig, AbbaResult},
+        BenchRunner, RunnerConfig, Workload,
+        abba::{AbbaConfig, AbbaResult, run_abba},
         in_process::InProcessRunner,
         subprocess::{SubprocessConfig, SubprocessRunner},
-        BenchRunner, RunnerConfig, Workload,
     },
 };
 use clap::{Parser, Subcommand, ValueEnum};
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
 
 #[derive(Parser, Debug)]
 #[command(

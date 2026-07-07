@@ -1,13 +1,13 @@
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use arb_fuzz::{
     arbitrary_impls::{interop::interop_signing_key, message_step},
     guards::GuardedRun,
-    scaffolding::{fund_interop_eoa, FUZZ_L1_BASE_FEE, INVOKE_GAS_CAP, SEQUENCER_ALIAS},
-    shared_nodes::{next_msg_idx, FUZZ_L2_CHAIN_ID},
+    scaffolding::{FUZZ_L1_BASE_FEE, INVOKE_GAS_CAP, SEQUENCER_ALIAS, fund_interop_eoa},
+    shared_nodes::{FUZZ_L2_CHAIN_ID, next_msg_idx},
 };
 use arb_test_harness::messaging::{
-    signed_tx::{L2TxKind, SignedL2TxBuilder},
     MessageBuilder,
+    signed_tx::{L2TxKind, SignedL2TxBuilder},
 };
 
 fn make_tx(kind: L2TxKind, nonce: u64) -> SignedL2TxBuilder {

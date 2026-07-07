@@ -1,4 +1,4 @@
-use arb_primitives::multigas::{MultiGas, ResourceKind, NUM_RESOURCE_KIND};
+use arb_primitives::multigas::{MultiGas, NUM_RESOURCE_KIND, ResourceKind};
 use proptest::prelude::*;
 
 fn multigas_strategy() -> impl Strategy<Value = MultiGas> {

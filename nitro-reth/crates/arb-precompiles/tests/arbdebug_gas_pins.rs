@@ -9,9 +9,9 @@
 mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
-use alloy_primitives::{address, B256, U256};
+use alloy_primitives::{B256, U256, address};
 use arb_precompiles::create_arbdebug_precompile;
-use common::{calldata, word_u256, PrecompileTest};
+use common::{PrecompileTest, calldata, word_u256};
 
 const ARBOS_V30: u64 = 30;
 const GAS_LIMIT: u64 = 1_000_000;

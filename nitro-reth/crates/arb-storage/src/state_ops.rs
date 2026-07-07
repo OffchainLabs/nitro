@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use alloy_primitives::{address, keccak256, Address, Bytes, U256};
+use alloy_primitives::{Address, Bytes, U256, address, keccak256};
 use arb_storage_errors::{DatabaseError, DatabaseErrorInfo, StorageError};
 use revm::Database;
 
@@ -21,20 +21,20 @@ fn ensure_cache_account<D: Database>(state: &mut revm::database::State<D>, addr:
 
     let _ = state.load_cache_account(addr);
 
-    if let Some(cached) = state.cache.accounts.get_mut(&addr) {
-        if cached.account.is_none() {
-            cached.account = Some(revm_database::PlainAccount {
-                info: revm_state::AccountInfo {
-                    balance: U256::ZERO,
-                    nonce: 0,
-                    code_hash: keccak256([]),
-                    code: None,
-                    account_id: None,
-                },
-                storage: Default::default(),
-            });
-            cached.status = AccountStatus::InMemoryChange;
-        }
+    if let Some(cached) = state.cache.accounts.get_mut(&addr)
+        && cached.account.is_none()
+    {
+        cached.account = Some(revm_database::PlainAccount {
+            info: revm_state::AccountInfo {
+                balance: U256::ZERO,
+                nonce: 0,
+                code_hash: keccak256([]),
+                code: None,
+                account_id: None,
+            },
+            storage: Default::default(),
+        });
+        cached.status = AccountStatus::InMemoryChange;
     }
 }
 
@@ -44,18 +44,17 @@ pub fn read_storage_at<D: Database>(
     account: Address,
     slot: U256,
 ) -> Result<U256, StorageError> {
-    if let Some(cached_acc) = state.cache.accounts.get(&account) {
-        if let Some(ref account) = cached_acc.account {
-            if let Some(&value) = account.storage.get(&slot) {
-                return Ok(value);
-            }
-        }
+    if let Some(cached_acc) = state.cache.accounts.get(&account)
+        && let Some(ref account) = cached_acc.account
+        && let Some(&value) = account.storage.get(&slot)
+    {
+        return Ok(value);
     }
 
-    if let Some(acc) = state.bundle_state.state.get(&account) {
-        if let Some(slot_entry) = acc.storage.get(&slot) {
-            return Ok(slot_entry.present_value);
-        }
+    if let Some(acc) = state.bundle_state.state.get(&account)
+        && let Some(slot_entry) = acc.storage.get(&slot)
+    {
+        return Ok(slot_entry.present_value);
     }
 
     state.database.storage(account, slot).map_err(db_read_error)
@@ -169,10 +168,10 @@ pub fn get_account_balance<D: Database>(
     state: &mut revm::database::State<D>,
     addr: Address,
 ) -> U256 {
-    if let Some(cached_acc) = state.cache.accounts.get(&addr) {
-        if let Some(ref account) = cached_acc.account {
-            return account.info.balance;
-        }
+    if let Some(cached_acc) = state.cache.accounts.get(&addr)
+        && let Some(ref account) = cached_acc.account
+    {
+        return account.info.balance;
     }
 
     state
@@ -275,7 +274,7 @@ pub fn set_account_code<D: Database>(
 
 #[cfg(test)]
 mod tests {
-    use revm_database::{states::bundle_state::BundleRetention, StateBuilder};
+    use revm_database::{StateBuilder, states::bundle_state::BundleRetention};
 
     use super::*;
 

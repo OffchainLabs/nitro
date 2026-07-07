@@ -6,6 +6,6 @@ pub mod classify;
 pub mod inspector;
 pub mod intrinsic;
 
-pub use classify::{classify, OpKind};
+pub use classify::{OpKind, classify};
 pub use inspector::{MultiGasInspector, MultiGasSink};
-pub use intrinsic::{intrinsic_multigas, IntrinsicInput};
+pub use intrinsic::{IntrinsicInput, intrinsic_multigas};

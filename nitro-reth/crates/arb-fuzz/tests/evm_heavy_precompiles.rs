@@ -2,7 +2,7 @@ use alloy_primitives::{Address, Bytes, U256};
 use arb_fuzz::{
     arbitrary_impls::message_step,
     guards::GuardedRun,
-    scaffolding::{fund_interop_eoa, signed, INVOKE_GAS_CAP},
+    scaffolding::{INVOKE_GAS_CAP, fund_interop_eoa, signed},
     shared_nodes::next_msg_idx,
 };
 use arb_test_harness::messaging::MessageBuilder;

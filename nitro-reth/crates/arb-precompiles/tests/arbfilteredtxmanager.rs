@@ -1,13 +1,13 @@
 mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
-use alloy_primitives::{address, Address, B256, U256};
+use alloy_primitives::{Address, B256, U256, address};
 use arb_precompiles::create_arbfilteredtxmanager_precompile;
 use arb_storage::{
-    layout::{derive_subspace_key, map_slot_b256, ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE},
     ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS,
+    layout::{ROOT_STORAGE_KEY, TRANSACTION_FILTERER_SUBSPACE, derive_subspace_key, map_slot_b256},
 };
-use common::{calldata, decode_u256, PrecompileTest};
+use common::{PrecompileTest, calldata, decode_u256};
 
 fn arbfilteredtxmanager(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
     create_arbfilteredtxmanager_precompile(ctx)

@@ -1,6 +1,6 @@
 use alloy_primitives::U256;
 use arb_chainspec::arbos_version as version;
-use arb_primitives::multigas::{MultiGas, ResourceKind, NUM_RESOURCE_KIND};
+use arb_primitives::multigas::{MultiGas, NUM_RESOURCE_KIND, ResourceKind};
 use arb_storage::{StorageBackend, SystemStateBackend};
 use revm::Database;
 
@@ -504,11 +504,7 @@ impl<D: Database> L2PricingState<'_, D> {
                 base_fee
             } else {
                 let cached = cached_fees[kind as usize];
-                if cached.is_zero() {
-                    base_fee
-                } else {
-                    cached
-                }
+                if cached.is_zero() { base_fee } else { cached }
             };
             total = total.saturating_add(U256::from(amount).saturating_mul(fee));
         }
@@ -549,10 +545,10 @@ fn apply_gas_delta_op(op: BacklogOperation, backlog: u64, delta: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use alloy_primitives::{address, keccak256, Address, B256, U256};
+    use alloy_primitives::{Address, B256, U256, address, keccak256};
     use arb_primitives::multigas::MultiGas;
     use arb_storage::Storage;
-    use revm::{database::StateBuilder, Database};
+    use revm::{Database, database::StateBuilder};
 
     const ARBOS_STATE_ADDRESS: Address = address!("A4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
 
@@ -580,23 +576,23 @@ mod tests {
 
     /// Create ArbOS account in the cache if it doesn't exist.
     fn ensure_cache_account(state: &mut revm::database::State<EmptyDb>, addr: Address) {
-        use revm::database::{states::account_status::AccountStatus, PlainAccount};
+        use revm::database::{PlainAccount, states::account_status::AccountStatus};
 
         let _ = state.load_cache_account(addr);
-        if let Some(cached) = state.cache.accounts.get_mut(&addr) {
-            if cached.account.is_none() {
-                cached.account = Some(PlainAccount {
-                    info: revm::state::AccountInfo {
-                        balance: U256::ZERO,
-                        nonce: 0,
-                        code_hash: keccak256([]),
-                        code: None,
-                        account_id: None,
-                    },
-                    storage: Default::default(),
-                });
-                cached.status = AccountStatus::InMemoryChange;
-            }
+        if let Some(cached) = state.cache.accounts.get_mut(&addr)
+            && cached.account.is_none()
+        {
+            cached.account = Some(PlainAccount {
+                info: revm::state::AccountInfo {
+                    balance: U256::ZERO,
+                    nonce: 0,
+                    code_hash: keccak256([]),
+                    code: None,
+                    account_id: None,
+                },
+                storage: Default::default(),
+            });
+            cached.status = AccountStatus::InMemoryChange;
         }
     }
 
@@ -696,7 +692,7 @@ mod tests {
     #[test]
     fn grow_backlog_survives_submit_retryable_then_retry_tx_flow() {
         use alloy_primitives::map::HashMap;
-        use revm::{database::states::bundle_state::BundleRetention, DatabaseCommit};
+        use revm::{DatabaseCommit, database::states::bundle_state::BundleRetention};
 
         // --- Compute the real ArbOS slot addresses ---
         let l2_base = keccak256([1u8]); // L2 pricing subspace key
@@ -1076,7 +1072,7 @@ mod tests {
     #[test]
     fn grow_backlog_with_arbos_in_evm_commit() {
         use alloy_primitives::map::HashMap;
-        use revm::{database::states::bundle_state::BundleRetention, DatabaseCommit};
+        use revm::{DatabaseCommit, database::states::bundle_state::BundleRetention};
 
         let l2_base = keccak256([1u8]);
         let gas_backlog_slot = arb_storage::storage_key_map(l2_base.as_slice(), 4);
@@ -1325,8 +1321,8 @@ mod tests {
     fn grow_backlog_with_transition_state_consumed() {
         use alloy_primitives::map::HashMap;
         use revm::{
-            database::states::{bundle_state::BundleRetention, plain_account::StorageSlot},
             DatabaseCommit,
+            database::states::{bundle_state::BundleRetention, plain_account::StorageSlot},
         };
 
         let l2_base = keccak256([1u8]);
@@ -1449,37 +1445,17 @@ mod tests {
 
             // Inline augment_bundle_from_cache for ArbOS account
             if let Some(bundle_acct) = bundle.state.get_mut(&arbos) {
-                if let Some(cached_acc) = state.cache.accounts.get(&arbos) {
-                    if let Some(ref plain) = cached_acc.account {
-                        for (key, value) in &plain.storage {
-                            if let Some(slot) = bundle_acct.storage.get_mut(key) {
-                                slot.present_value = *value;
-                            } else {
-                                let original =
-                                    state.database.storage(arbos, *key).unwrap_or(U256::ZERO);
-                                if *value != original {
-                                    bundle_acct.storage.insert(
-                                        *key,
-                                        StorageSlot {
-                                            previous_or_original_value: original,
-                                            present_value: *value,
-                                        },
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                // ArbOS not in bundle — add it from cache
-                if let Some(cached_acc) = state.cache.accounts.get(&arbos) {
-                    if let Some(ref plain) = cached_acc.account {
-                        let mut storage_changes: HashMap<U256, StorageSlot> = HashMap::default();
-                        for (key, value) in &plain.storage {
+                if let Some(cached_acc) = state.cache.accounts.get(&arbos)
+                    && let Some(ref plain) = cached_acc.account
+                {
+                    for (key, value) in &plain.storage {
+                        if let Some(slot) = bundle_acct.storage.get_mut(key) {
+                            slot.present_value = *value;
+                        } else {
                             let original =
                                 state.database.storage(arbos, *key).unwrap_or(U256::ZERO);
                             if *value != original {
-                                storage_changes.insert(
+                                bundle_acct.storage.insert(
                                     *key,
                                     StorageSlot {
                                         previous_or_original_value: original,
@@ -1488,17 +1464,36 @@ mod tests {
                                 );
                             }
                         }
-                        if !storage_changes.is_empty() {
-                            bundle.state.insert(
-                                arbos,
-                                revm::database::BundleAccount {
-                                    info: Some(plain.info.clone()),
-                                    original_info: None,
-                                    storage: storage_changes,
-                                    status: revm::database::AccountStatus::Changed,
+                    }
+                }
+            } else {
+                // ArbOS not in bundle — add it from cache
+                if let Some(cached_acc) = state.cache.accounts.get(&arbos)
+                    && let Some(ref plain) = cached_acc.account
+                {
+                    let mut storage_changes: HashMap<U256, StorageSlot> = HashMap::default();
+                    for (key, value) in &plain.storage {
+                        let original = state.database.storage(arbos, *key).unwrap_or(U256::ZERO);
+                        if *value != original {
+                            storage_changes.insert(
+                                *key,
+                                StorageSlot {
+                                    previous_or_original_value: original,
+                                    present_value: *value,
                                 },
                             );
                         }
+                    }
+                    if !storage_changes.is_empty() {
+                        bundle.state.insert(
+                            arbos,
+                            revm::database::BundleAccount {
+                                info: Some(plain.info.clone()),
+                                original_info: None,
+                                storage: storage_changes,
+                                status: revm::database::AccountStatus::Changed,
+                            },
+                        );
                     }
                 }
             }
@@ -1540,8 +1535,8 @@ mod tests {
     #[test]
     fn test_grow_backlog_survives_evm_commit_and_augment() {
         use revm::{
-            database::states::{bundle_state::BundleRetention, plain_account::StorageSlot},
             DatabaseCommit,
+            database::states::{bundle_state::BundleRetention, plain_account::StorageSlot},
         };
 
         // Compute the actual gasBacklog slot for assertions

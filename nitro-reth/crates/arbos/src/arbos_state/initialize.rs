@@ -1,9 +1,9 @@
 use alloy_primitives::{Address, B256, U256};
 use arb_storage::{
-    set_account_nonce, Storage, StorageBackedAddress, StorageBackedBigUint, StorageBackend,
-    ARBOS_STATE_ADDRESS,
+    ARBOS_STATE_ADDRESS, Storage, StorageBackedAddress, StorageBackedBigUint, StorageBackend,
+    set_account_nonce,
 };
-use revm::{database::State, Database};
+use revm::{Database, database::State};
 
 use super::{ArbosState, ArbosStateError};
 use crate::{

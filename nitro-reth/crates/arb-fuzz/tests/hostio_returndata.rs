@@ -1,9 +1,9 @@
-use alloy_primitives::{keccak256, Address, Bytes, U256};
+use alloy_primitives::{Address, Bytes, U256, keccak256};
 use arb_fuzz::{
     arbitrary_impls::message_step,
     guards::GuardedRun,
     scaffolding::{
-        baseline_stylus_plus_helper, eoa_create_addr, selector4, signed, INVOKE_GAS_CAP,
+        INVOKE_GAS_CAP, baseline_stylus_plus_helper, eoa_create_addr, selector4, signed,
     },
     shared_nodes::next_msg_idx,
 };

@@ -1,13 +1,13 @@
 mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
-use alloy_primitives::{address, Address, B256, U256};
+use alloy_primitives::{Address, B256, U256, address};
 use arb_precompiles::create_arbnativetokenmanager_precompile;
 use arb_storage::{
-    layout::{derive_subspace_key, map_slot_b256, NATIVE_TOKEN_SUBSPACE, ROOT_STORAGE_KEY},
     ARBOS_STATE_ADDRESS,
+    layout::{NATIVE_TOKEN_SUBSPACE, ROOT_STORAGE_KEY, derive_subspace_key, map_slot_b256},
 };
-use common::{calldata, word_u256, PrecompileTest};
+use common::{PrecompileTest, calldata, word_u256};
 
 fn arbnativetokenmanager(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
     create_arbnativetokenmanager_precompile(ctx)

@@ -7,9 +7,9 @@
 mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
-use alloy_primitives::{address, Address, B256};
+use alloy_primitives::{Address, B256, address};
 use arb_precompiles::create_arbwasmcache_precompile;
-use common::{calldata, word_address, PrecompileTest};
+use common::{PrecompileTest, calldata, word_address};
 
 const SLOAD: u64 = 800;
 const COPY: u64 = 3;

@@ -61,7 +61,7 @@ fn convert_single_receipt(
     l1_block_number: Option<u64>,
     collect_tips: bool,
 ) -> WithOtherFields<TransactionReceipt> {
-    use alloy_consensus::{transaction::TxHashRef, Transaction};
+    use alloy_consensus::{Transaction, transaction::TxHashRef};
 
     let ConvertReceiptInput {
         receipt,

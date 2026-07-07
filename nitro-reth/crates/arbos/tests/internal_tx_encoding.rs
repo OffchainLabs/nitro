@@ -1,8 +1,8 @@
-use alloy_primitives::{address, U256};
+use alloy_primitives::{U256, address};
 use arbos::internal_tx::{
-    decode_start_block_data, encode_batch_posting_report, encode_batch_posting_report_v2,
-    encode_start_block, INTERNAL_TX_BATCH_POSTING_REPORT_METHOD_ID,
-    INTERNAL_TX_BATCH_POSTING_REPORT_V2_METHOD_ID, INTERNAL_TX_START_BLOCK_METHOD_ID,
+    INTERNAL_TX_BATCH_POSTING_REPORT_METHOD_ID, INTERNAL_TX_BATCH_POSTING_REPORT_V2_METHOD_ID,
+    INTERNAL_TX_START_BLOCK_METHOD_ID, decode_start_block_data, encode_batch_posting_report,
+    encode_batch_posting_report_v2, encode_start_block,
 };
 use proptest::prelude::*;
 

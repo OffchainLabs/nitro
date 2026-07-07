@@ -4,25 +4,25 @@
 //! upfront cost; the sender's net charge must stay `base_fee * gas_used`.
 
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
 use std::sync::Arc;
 
-use alloy_consensus::{transaction::Recovered, TxLegacy};
+use alloy_consensus::{TxLegacy, transaction::Recovered};
 use alloy_evm::{
+    EvmFactory,
     block::{BlockExecutor, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
-    EvmFactory,
 };
-use alloy_primitives::{address, hex, Address, Bytes, Signature, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, Signature, U256, address, hex};
 use arb_alloy_consensus::tx::ArbInternalTx;
 use arb_evm::{
     config::ArbEvmConfig,
     multi_gas::{MultiGasInspector, MultiGasSink},
 };
-use arb_primitives::{signed_tx::ArbTypedTransaction, ArbTransactionSigned};
+use arb_primitives::{ArbTransactionSigned, signed_tx::ArbTypedTransaction};
 use arb_test_utils::{ArbosHarness, EmptyDb};
 use arbos::internal_tx::encode_start_block;
 use reth_chainspec::ChainSpec;
@@ -299,7 +299,8 @@ fn nested_upfront_oog_under_stylus_earns_no_refund() {
     let paid = sender_before - sender_after;
     let expected = U256::from(gas_used) * U256::from(BASE_FEE);
     assert_eq!(
-        paid, expected,
+        paid,
+        expected,
         "sender net charge must equal base_fee * gas_used (no refund); gas_used={gas_used} paid={paid} expected={expected}, over-refund={}",
         expected.saturating_sub(paid),
     );

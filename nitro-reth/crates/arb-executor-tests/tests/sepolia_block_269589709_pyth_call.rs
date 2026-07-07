@@ -6,27 +6,27 @@
 //! pricing model touches under ArbOS v60.
 
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
 use std::{collections::BTreeMap, sync::Arc};
 
-use alloy_consensus::{transaction::Recovered, EthereumTxEnvelope, SignableTransaction, TxEip1559};
+use alloy_consensus::{EthereumTxEnvelope, SignableTransaction, TxEip1559, transaction::Recovered};
 use alloy_evm::{
+    EvmFactory,
     block::{BlockExecutor, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
-    EvmFactory,
 };
-use alloy_primitives::{address, b256, hex, Address, Bytes, Signature, TxKind, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, Signature, TxKind, U256, address, b256, hex};
 use arb_alloy_consensus::tx::ArbInternalTx;
 use arb_evm::config::ArbEvmConfig;
 use arb_primitives::{
+    ArbTransactionSigned,
     arbos_versions::{HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE_ARBITRUM},
     signed_tx::ArbTypedTransaction,
-    ArbTransactionSigned,
 };
-use arb_storage::{set_account_code, set_account_nonce, write_storage_at, ARBOS_STATE_ADDRESS};
+use arb_storage::{ARBOS_STATE_ADDRESS, set_account_code, set_account_nonce, write_storage_at};
 use arb_test_utils::{ArbosHarness, EmptyDb};
 use arbos::internal_tx::encode_start_block;
 use reth_chainspec::ChainSpec;
@@ -126,10 +126,10 @@ fn seed_prestate(state: &mut State<EmptyDb>, snapshot: &BTreeMap<String, Account
                 set_account_code(state, addr, Bytes::from(bytes));
             }
         }
-        if let Some(nonce) = acct.nonce {
-            if nonce > 0 {
-                set_account_nonce(state, addr, nonce);
-            }
+        if let Some(nonce) = acct.nonce
+            && nonce > 0
+        {
+            set_account_nonce(state, addr, nonce);
         }
         for (slot, value) in &acct.storage {
             let slot_u = parse_hex_u256(slot);

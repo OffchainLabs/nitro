@@ -907,10 +907,10 @@ fn tx_data_zero_count(data: &[u8]) -> usize {
 
 #[cfg(test)]
 mod block1_retryable_repro {
-    use alloy_primitives::{address, b256, keccak256, Address, Bytes, U256};
+    use alloy_primitives::{Address, Bytes, U256, address, b256, keccak256};
     use arb_alloy_consensus::tx::{ArbRetryTx, ArbTxType};
 
-    use super::{compute_submit_retryable_fees, SubmitRetryableParams};
+    use super::{SubmitRetryableParams, compute_submit_retryable_fees};
 
     // Arbitrum Sepolia block 1 (ArbOS v10) SubmitRetryable inputs from a real
     // node; drives our fee computation to the canonical auto-redeem tx hash.

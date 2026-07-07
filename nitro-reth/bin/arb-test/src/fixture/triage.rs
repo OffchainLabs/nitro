@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use arb_spec_tests::ExecutionFixture;
-use arb_test_harness::{node::remote::RemoteNode, DiffReport, DualExec};
+use arb_test_harness::{DiffReport, DualExec, node::remote::RemoteNode};
 use serde::Serialize;
 use serde_json::Value;
 

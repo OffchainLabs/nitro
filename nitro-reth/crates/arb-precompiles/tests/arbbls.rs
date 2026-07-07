@@ -1,7 +1,7 @@
 mod common;
 
 use arb_precompiles::create_arbbls_precompile;
-use common::{calldata, PrecompileTest};
+use common::{PrecompileTest, calldata};
 
 #[test]
 fn arbbls_has_no_methods() {

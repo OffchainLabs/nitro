@@ -1,17 +1,17 @@
 mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
-use alloy_primitives::{address, Address, B256, U256};
+use alloy_primitives::{Address, B256, U256, address};
 use arb_precompiles::create_arbwasmcache_precompile;
 use arb_storage::{
-    layout::{
-        derive_subspace_key, map_slot, map_slot_b256,
-        programs::{CACHE_MANAGERS_KEY, PARAMS_KEY, PROGRAM_DATA_KEY},
-        CHAIN_OWNER_SUBSPACE, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
-    },
     ARBOS_STATE_ADDRESS,
+    layout::{
+        CHAIN_OWNER_SUBSPACE, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY, derive_subspace_key, map_slot,
+        map_slot_b256,
+        programs::{CACHE_MANAGERS_KEY, PARAMS_KEY, PROGRAM_DATA_KEY},
+    },
 };
-use common::{calldata, decode_u256, word_address, PrecompileTest};
+use common::{PrecompileTest, calldata, decode_u256, word_address};
 use revm::state::AccountInfo;
 
 fn arbwasmcache(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {

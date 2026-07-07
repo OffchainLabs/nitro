@@ -8,7 +8,7 @@ use arb_storage::ARBOS_STATE_ADDRESS;
 use arbos::address_set::AddressSetError;
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::{interfaces::IArbOwnerPublic, ArbPrecompileError};
+use crate::{ArbPrecompileError, interfaces::IArbOwnerPublic};
 
 /// ArbOwnerPublic precompile address (0x6b).
 pub const ARBOWNERPUBLIC_ADDRESS: Address = Address::new([

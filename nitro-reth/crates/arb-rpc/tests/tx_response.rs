@@ -5,7 +5,7 @@
 //! map carries the Arbitrum-specific fields extracted by `arb_tx_fields`.
 
 use alloy_consensus::TxLegacy;
-use alloy_primitives::{address, Bytes, Signature, TxKind, B256, U256};
+use alloy_primitives::{B256, Bytes, Signature, TxKind, U256, address};
 use alloy_rpc_types_eth::TransactionInfo;
 use arb_alloy_consensus::tx::{
     ArbContractTx, ArbDepositTx, ArbInternalTx, ArbRetryTx, ArbSubmitRetryableTx, ArbUnsignedTx,

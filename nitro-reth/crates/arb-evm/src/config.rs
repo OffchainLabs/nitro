@@ -3,8 +3,8 @@ use core::{convert::Infallible, fmt::Debug};
 
 use alloy_consensus::{BlockHeader, Header};
 use alloy_eips::Decodable2718;
-use alloy_evm::eth::{spec::EthExecutorSpec, EthBlockExecutionCtx};
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_evm::eth::{EthBlockExecutionCtx, spec::EthExecutorSpec};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use alloy_rpc_types_engine::ExecutionData;
 use arb_chainspec::ArbitrumChainSpec;
 use arb_primitives::ArbPrimitives;

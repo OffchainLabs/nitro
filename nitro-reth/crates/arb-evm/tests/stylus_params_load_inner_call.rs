@@ -8,12 +8,12 @@
 //! on a Sepolia-style upgrade path.
 
 use arb_storage::{
-    layout::{derive_subspace_key, programs::PARAMS_KEY, PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY},
-    Detached, Storage, ARBOS_STATE_ADDRESS,
+    ARBOS_STATE_ADDRESS, Detached, Storage,
+    layout::{PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY, derive_subspace_key, programs::PARAMS_KEY},
 };
 use arb_test_utils::ArbosHarness;
 use arbos::programs::params::{
-    StylusParams, ARBOS_VERSION_40, ARBOS_VERSION_STYLUS_CONTRACT_LIMIT, INITIAL_PAGE_RAMP,
+    ARBOS_VERSION_40, ARBOS_VERSION_STYLUS_CONTRACT_LIMIT, INITIAL_PAGE_RAMP, StylusParams,
 };
 
 /// Build a baseline `StylusParams` value for `arbos_version`. The version-gated

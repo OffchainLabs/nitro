@@ -1,7 +1,7 @@
 use alloy_eips::eip4895::Withdrawal;
-use alloy_primitives::{address, Bytes, B256};
+use alloy_primitives::{B256, Bytes, address};
 use alloy_rpc_types_engine::PayloadAttributes as AlloyPayloadAttributes;
-use arb_payload::{arb_payload_id, ArbPayloadAttributes, ArbPayloadBuilderAttributes};
+use arb_payload::{ArbPayloadAttributes, ArbPayloadBuilderAttributes, arb_payload_id};
 use reth_payload_primitives::{PayloadAttributes, PayloadBuilderAttributes};
 
 fn base_attrs() -> ArbPayloadAttributes {

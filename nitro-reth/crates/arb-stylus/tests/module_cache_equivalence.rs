@@ -10,12 +10,12 @@
 ///
 /// Defined for the linker only; never called from Rust.
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
 use alloy_primitives::B256;
 use arb_stylus::{cache::InitCache, compile_module, config::CompileConfig};
-use wasmer::{imports, Instance, Module, Store, Value};
+use wasmer::{Instance, Module, Store, Value, imports};
 
 const VERSION: u16 = 1;
 const DEBUG: bool = false;

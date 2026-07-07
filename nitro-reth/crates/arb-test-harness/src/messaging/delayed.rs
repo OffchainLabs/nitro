@@ -1,7 +1,7 @@
 use alloy_primitives::{Address, Bytes};
 
 use crate::messaging::{
-    encoding::request_id_from_seq, kinds, L1Message, L1MessageHeader, MessageBuilder,
+    L1Message, L1MessageHeader, MessageBuilder, encoding::request_id_from_seq, kinds,
 };
 
 #[derive(Debug, Clone)]

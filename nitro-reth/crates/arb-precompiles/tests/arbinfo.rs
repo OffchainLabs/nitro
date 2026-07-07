@@ -1,9 +1,9 @@
 mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
-use alloy_primitives::{address, Address, U256};
+use alloy_primitives::{Address, U256, address};
 use arb_precompiles::create_arbinfo_precompile;
-use common::{calldata, decode_u256, word_address, PrecompileTest};
+use common::{PrecompileTest, calldata, decode_u256, word_address};
 use revm::state::AccountInfo;
 
 fn arbinfo(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {

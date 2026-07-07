@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use super::{BenchRunner, RunnerConfig, Workload};
 use crate::{
     metrics::{BlockMetric, RunResult},
-    report::compare::{bootstrap_paired_delta, BootstrapDelta, MetricKey, Verdict},
+    report::compare::{BootstrapDelta, MetricKey, Verdict, bootstrap_paired_delta},
 };
 
 /// Configuration for the ABBA scheduler.
