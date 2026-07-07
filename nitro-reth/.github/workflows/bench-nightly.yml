@@ -31,7 +31,7 @@ jobs:
       - name: Init submodules
         shell: bash
         run: git submodule update --init --recursive --depth 1
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: bench-nightly-binaries
           path: target/release
@@ -45,7 +45,7 @@ jobs:
         env:
           RUST_LOG: arb_bench=info
       - name: Upload nightly results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nightly-arbos-${{ matrix.arbos }}
           path: target/bench/nightly
@@ -58,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: nightly-arbos-*
           path: target/bench/nightly
