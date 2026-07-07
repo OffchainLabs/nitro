@@ -1,24 +1,25 @@
+use std::sync::Arc;
+
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, B256, U256};
 use alloy_sol_types::{SolEvent, SolInterface};
 use arb_context::ArbPrecompileCtx;
 use arb_primitives::multigas::NUM_RESOURCE_KIND;
 use arb_storage::{
-    write_cost, ARBOS_STATE_ADDRESS, STORAGE_READ_GAS, STORAGE_WRITE_GAS, STORAGE_WRITE_ZERO_GAS,
+    ARBOS_STATE_ADDRESS, STORAGE_READ_GAS, STORAGE_WRITE_GAS, STORAGE_WRITE_ZERO_GAS, write_cost,
 };
 use arbos::{
     address_set::AddressSet,
     programs::params::{
-        StylusParams, COST_SCALAR_PERCENT, MIN_CACHED_GAS_UNITS, MIN_INIT_GAS_UNITS,
+        COST_SCALAR_PERCENT, MIN_CACHED_GAS_UNITS, MIN_INIT_GAS_UNITS, StylusParams,
     },
 };
 use revm::{
     precompile::{PrecompileId, PrecompileOutput, PrecompileResult},
     primitives::Log,
 };
-use std::sync::Arc;
 
-use crate::{interfaces::IArbOwner, ArbPrecompileError};
+use crate::{ArbPrecompileError, interfaces::IArbOwner};
 
 /// ArbOwner precompile address (0x70).
 pub const ARBOWNER_ADDRESS: Address = Address::new([

@@ -28,47 +28,47 @@ mod arbwasmcache;
 mod nodeinterface;
 mod nodeinterface_debug;
 
-pub use arbaddresstable::{create_arbaddresstable_precompile, ARBADDRESSTABLE_ADDRESS};
-pub use arbaggregator::{create_arbaggregator_precompile, ARBAGGREGATOR_ADDRESS};
-pub use arbbls::{create_arbbls_precompile, ARBBLS_ADDRESS};
-pub use arbdebug::{create_arbdebug_precompile, ARBDEBUG_ADDRESS};
-pub use arbfilteredtxmanager::{
-    create_arbfilteredtxmanager_precompile, ARBFILTEREDTXMANAGER_ADDRESS,
-};
-pub use arbfunctiontable::{create_arbfunctiontable_precompile, ARBFUNCTIONTABLE_ADDRESS};
-pub use arbgasinfo::{create_arbgasinfo_precompile, ARBGASINFO_ADDRESS};
-pub use arbinfo::{create_arbinfo_precompile, ARBINFO_ADDRESS};
-pub use arbnativetokenmanager::{
-    create_arbnativetokenmanager_precompile, ARBNATIVETOKENMANAGER_ADDRESS,
-};
-pub use arbosacts::{create_arbosacts_precompile, ARBOSACTS_ADDRESS};
-pub use arbostest::{create_arbostest_precompile, ARBOSTEST_ADDRESS};
-pub use arbowner::{create_arbowner_precompile, ARBOWNER_ADDRESS};
-pub use arbownerpublic::{create_arbownerpublic_precompile, ARBOWNERPUBLIC_ADDRESS};
-pub use arbretryabletx::{
-    create_arbretryabletx_precompile, redeem_scheduled_topic, ticket_created_topic,
-    ARBRETRYABLETX_ADDRESS,
-};
-pub use arbstatistics::{create_arbstatistics_precompile, ARBSTATISTICS_ADDRESS};
-pub use arbsys::{create_arbsys_precompile, ARBSYS_ADDRESS};
-pub use arbwasm::{create_arbwasm_precompile, ARBWASM_ADDRESS};
-pub use arbwasmcache::{create_arbwasmcache_precompile, ARBWASMCACHE_ADDRESS};
-pub use error::ArbPrecompileError;
-pub use nodeinterface::{
-    build_fake_tx_bytes, compute_l1_gas_for_estimate, create_nodeinterface_precompile,
-    decode_estimate_args, NODE_INTERFACE_ADDRESS,
-};
-pub use nodeinterface_debug::{
-    create_nodeinterface_debug_precompile, NODE_INTERFACE_DEBUG_ADDRESS,
-};
+use std::sync::Arc;
 
 use alloy_evm::{
-    precompiles::{DynPrecompile, PrecompileInput, PrecompilesMap},
     EvmInternals,
+    precompiles::{DynPrecompile, PrecompileInput, PrecompilesMap},
 };
 use arb_context::ArbPrecompileCtx;
+pub use arbaddresstable::{ARBADDRESSTABLE_ADDRESS, create_arbaddresstable_precompile};
+pub use arbaggregator::{ARBAGGREGATOR_ADDRESS, create_arbaggregator_precompile};
+pub use arbbls::{ARBBLS_ADDRESS, create_arbbls_precompile};
+pub use arbdebug::{ARBDEBUG_ADDRESS, create_arbdebug_precompile};
+pub use arbfilteredtxmanager::{
+    ARBFILTEREDTXMANAGER_ADDRESS, create_arbfilteredtxmanager_precompile,
+};
+pub use arbfunctiontable::{ARBFUNCTIONTABLE_ADDRESS, create_arbfunctiontable_precompile};
+pub use arbgasinfo::{ARBGASINFO_ADDRESS, create_arbgasinfo_precompile};
+pub use arbinfo::{ARBINFO_ADDRESS, create_arbinfo_precompile};
+pub use arbnativetokenmanager::{
+    ARBNATIVETOKENMANAGER_ADDRESS, create_arbnativetokenmanager_precompile,
+};
+pub use arbosacts::{ARBOSACTS_ADDRESS, create_arbosacts_precompile};
+pub use arbostest::{ARBOSTEST_ADDRESS, create_arbostest_precompile};
+pub use arbowner::{ARBOWNER_ADDRESS, create_arbowner_precompile};
+pub use arbownerpublic::{ARBOWNERPUBLIC_ADDRESS, create_arbownerpublic_precompile};
+pub use arbretryabletx::{
+    ARBRETRYABLETX_ADDRESS, create_arbretryabletx_precompile, redeem_scheduled_topic,
+    ticket_created_topic,
+};
+pub use arbstatistics::{ARBSTATISTICS_ADDRESS, create_arbstatistics_precompile};
+pub use arbsys::{ARBSYS_ADDRESS, create_arbsys_precompile};
+pub use arbwasm::{ARBWASM_ADDRESS, create_arbwasm_precompile};
+pub use arbwasmcache::{ARBWASMCACHE_ADDRESS, create_arbwasmcache_precompile};
+pub use error::ArbPrecompileError;
+pub use nodeinterface::{
+    NODE_INTERFACE_ADDRESS, build_fake_tx_bytes, compute_l1_gas_for_estimate,
+    create_nodeinterface_precompile, decode_estimate_args,
+};
+pub use nodeinterface_debug::{
+    NODE_INTERFACE_DEBUG_ADDRESS, create_nodeinterface_debug_precompile,
+};
 use revm::precompile::{PrecompileError, PrecompileId, PrecompileOutput, PrecompileResult};
-use std::sync::Arc;
 
 /// RIP-7212 P256VERIFY precompile address (ArbOS v30+).
 pub const P256VERIFY_ADDRESS: alloy_primitives::Address =

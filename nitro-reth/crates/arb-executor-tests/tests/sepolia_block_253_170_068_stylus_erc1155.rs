@@ -6,15 +6,15 @@
 //! decrementing balances[id][from] 3->2 and setting balances[id][to] 0->1.
 
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
 use std::sync::Arc;
 
-use alloy_consensus::{transaction::Recovered, EthereumTxEnvelope, SignableTransaction, TxEip1559};
-use alloy_evm::{block::BlockExecutorFactory, eth::EthBlockExecutionCtx, EvmFactory};
-use alloy_primitives::{address, b256, hex, Address, Bytes, Signature, TxKind, B256, U256};
+use alloy_consensus::{EthereumTxEnvelope, SignableTransaction, TxEip1559, transaction::Recovered};
+use alloy_evm::{EvmFactory, block::BlockExecutorFactory, eth::EthBlockExecutionCtx};
+use alloy_primitives::{Address, B256, Bytes, Signature, TxKind, U256, address, b256, hex};
 use arb_evm::config::ArbEvmConfig;
 use arb_executor_tests::helpers::{deploy_contract, fund_account, recover};
 use arb_primitives::ArbTransactionSigned;
@@ -22,7 +22,7 @@ use arb_storage::write_storage_at;
 use arb_test_utils::ArbosHarness;
 use arbos::programs::Program;
 use reth_chainspec::ChainSpec;
-use reth_evm::{block::BlockExecutor, ConfigureEvm, EvmEnv};
+use reth_evm::{ConfigureEvm, EvmEnv, block::BlockExecutor};
 use revm::primitives::hardfork::SpecId;
 
 const CONTRACT: Address = address!("8bb9a1f6be8857d530ec73a5febb57d9d02c71a3");

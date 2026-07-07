@@ -1,11 +1,10 @@
-use alloy_primitives::{keccak256, Address, B256, U256};
-use revm::Database;
-
+use alloy_primitives::{Address, B256, U256, keccak256};
 use arb_storage::{
-    initialize_queue, open_queue, Queue, Storage, StorageBackedAddress, StorageBackedAddressOrNil,
-    StorageBackedBigUint, StorageBackedBytes, StorageBackedUint64, StorageBackend,
-    SystemStateBackend,
+    Queue, Storage, StorageBackedAddress, StorageBackedAddressOrNil, StorageBackedBigUint,
+    StorageBackedBytes, StorageBackedUint64, StorageBackend, SystemStateBackend, initialize_queue,
+    open_queue,
 };
+use revm::Database;
 
 use crate::util::BalanceError;
 
@@ -308,7 +307,7 @@ impl<'a, D> RetryableState<'a, D> {
                 return Ok(RetryableLookup {
                     outcome: LookupOutcome::NoTicket,
                     extra_gas,
-                })
+                });
             }
         };
         let timeout = retryable.calculate_timeout(backend)?;
@@ -344,7 +343,7 @@ impl<'a, D> RetryableState<'a, D> {
                 return Ok(CancelLookup {
                     outcome: CancelOutcome::NoTicket,
                     extra_gas,
-                })
+                });
             }
         };
         let beneficiary = retryable.beneficiary(backend)?;

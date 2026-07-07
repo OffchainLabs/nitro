@@ -123,8 +123,9 @@ fn non_computation(kind: OpKind) -> MultiGas {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use arb_primitives::multigas::ResourceKind::*;
+
+    use super::*;
 
     fn dims(mg: &MultiGas) -> (u64, u64, u64, u64, u64) {
         (

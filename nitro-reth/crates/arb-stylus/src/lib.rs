@@ -27,7 +27,7 @@ pub use evm_api::EvmApi;
 pub use evm_api_impl::StylusEvmApi;
 pub use ink::{Gas, Ink};
 pub use meter::{MachineMeter, MeteredMachine, STYLUS_ENTRY_POINT};
-pub use native::{compile_module, NativeInstance};
+pub use native::{NativeInstance, compile_module};
 pub use run::RunProgram;
 
 /// Prefix bytes that identify a Stylus WASM program in contract bytecode.
@@ -297,8 +297,9 @@ pub fn activate_program(
 
 #[cfg(test)]
 mod stylus_root_tests {
-    use super::*;
     use alloy_primitives::Address;
+
+    use super::*;
 
     fn make_fragment(chunk: &[u8]) -> Vec<u8> {
         let mut f = STYLUS_FRAGMENT_DISCRIMINANT.to_vec();

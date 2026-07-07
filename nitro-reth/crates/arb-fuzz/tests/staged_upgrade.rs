@@ -14,24 +14,23 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use alloy_primitives::{Address, Bytes, B256, U256};
-use arbitrary::{Arbitrary, Unstructured};
-
+use alloy_primitives::{Address, B256, Bytes, U256};
 use arb_fuzz::arbitrary_impls::{MessageStep, SignedKind};
 use arb_test_harness::{
     dual_exec::DualExec,
     genesis::GenesisBuilder,
     messaging::{
-        retryable::{apply_l1_to_l2_alias, RetryableSubmitBuilder},
-        signed_tx::{derive_address, AuthorizationItem, L2TxKind, SignedL2TxBuilder},
         DepositBuilder, MessageBuilder,
+        retryable::{RetryableSubmitBuilder, apply_l1_to_l2_alias},
+        signed_tx::{AuthorizationItem, L2TxKind, SignedL2TxBuilder, derive_address},
     },
     mock_l1::MockL1,
     node::{
-        arbreth::ArbrethProcess, nitro_docker::NitroDocker, BlockId, ExecutionNode, NodeStartCtx,
+        BlockId, ExecutionNode, NodeStartCtx, arbreth::ArbrethProcess, nitro_docker::NitroDocker,
     },
     scenario::{Scenario, ScenarioSetup, ScenarioStep},
 };
+use arbitrary::{Arbitrary, Unstructured};
 
 /// Dedicated chain id for upgrade-transition runs. Distinct from the
 /// shared fuzz harness's 412346 so a stale captured genesis can't be

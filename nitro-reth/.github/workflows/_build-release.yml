@@ -26,7 +26,7 @@ env:
 jobs:
   build:
     name: build release binaries
-    runs-on: ubuntu-latest
+    runs-on: ocl-16cpu-64ram
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
@@ -46,6 +46,8 @@ jobs:
           done
           echo "Submodule init failed after 3 attempts"
           exit 1
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
       - uses: dtolnay/rust-toolchain@1.93
       - uses: Swatinem/rust-cache@v2
         with:
@@ -62,7 +64,7 @@ jobs:
             fi
           fi
       - name: Upload release binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.artifact-name }}
           path: |

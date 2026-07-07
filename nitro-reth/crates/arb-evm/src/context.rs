@@ -1,5 +1,6 @@
-use alloy_primitives::{Address, B256, U256};
 use std::collections::{HashMap, HashSet};
+
+use alloy_primitives::{Address, B256, U256};
 
 /// Arbitrum-specific block execution context.
 ///
@@ -136,7 +137,9 @@ pub struct ArbitrumExtraData {
 /// Two activations of the same Stylus module within a single block disagreed
 /// on the set of compilation targets.
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
-#[error("inconsistent WASM targets for module {module_hash}: existing has {existing:?}, requested {requested:?}")]
+#[error(
+    "inconsistent WASM targets for module {module_hash}: existing has {existing:?}, requested {requested:?}"
+)]
 pub struct InconsistentWasmTargets {
     /// Module hash that disagreed.
     pub module_hash: B256,

@@ -1,5 +1,5 @@
 use alloy_evm::{eth::EthEvmContext, precompiles::PrecompilesMap};
-use alloy_primitives::{address, Address};
+use alloy_primitives::{Address, address};
 use arb_precompiles::register_arb_precompiles;
 use revm::{
     database::EmptyDB,

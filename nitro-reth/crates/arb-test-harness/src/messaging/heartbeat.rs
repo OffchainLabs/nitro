@@ -1,6 +1,6 @@
 use alloy_primitives::{Address, U256};
 
-use crate::messaging::{kinds, L1Message, L1MessageHeader, MessageBuilder};
+use crate::messaging::{L1Message, L1MessageHeader, MessageBuilder, kinds};
 
 #[derive(Debug, Clone)]
 pub struct HeartbeatBuilder {
@@ -66,9 +66,10 @@ impl MessageBuilder for HeartbeatBuilder {
 
 #[cfg(test)]
 mod tests {
+    use arbos::arbos_types::parse_init_message;
+
     use super::*;
     use crate::messaging::test_support::{decode_body, round_trip};
-    use arbos::arbos_types::parse_init_message;
 
     fn sample(body: HeartbeatBody) -> HeartbeatBuilder {
         HeartbeatBuilder {

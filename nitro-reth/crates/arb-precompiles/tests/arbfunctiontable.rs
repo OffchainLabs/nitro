@@ -1,9 +1,9 @@
 mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
-use alloy_primitives::{address, Address, U256};
+use alloy_primitives::{Address, U256, address};
 use arb_precompiles::create_arbfunctiontable_precompile;
-use common::{calldata, decode_u256, word_address, word_u256, PrecompileTest};
+use common::{PrecompileTest, calldata, decode_u256, word_address, word_u256};
 
 fn arbfunctiontable(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
     create_arbfunctiontable_precompile(ctx)

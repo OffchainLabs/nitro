@@ -13,7 +13,7 @@ mod common;
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::{Address, U256};
 use arb_precompiles::create_nodeinterface_precompile;
-use common::{calldata, calldata_estimate, word_u256, PrecompileTest};
+use common::{PrecompileTest, calldata, calldata_estimate, word_u256};
 
 const SLOAD: u64 = 800;
 const COPY: u64 = 3;

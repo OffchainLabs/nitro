@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use serde::{Deserialize, Serialize};
 
-use crate::{messaging::L1Message, Result};
+use crate::{Result, messaging::L1Message};
 
 pub mod arbreth;
 pub mod nitro_docker;

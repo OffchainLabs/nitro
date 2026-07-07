@@ -22,7 +22,7 @@ pub const ONE_IN_BIPS: u64 = 10_000;
 /// # Examples
 ///
 /// ```
-/// use arb_math::{approx_exp_basis_points, ONE_IN_BIPS};
+/// use arb_math::{ONE_IN_BIPS, approx_exp_basis_points};
 ///
 /// // exp(0) == 1.0, scaled by 10_000.
 /// assert_eq!(approx_exp_basis_points(0, 12), ONE_IN_BIPS);

@@ -1,8 +1,8 @@
 use arb_bench::{
     capture::synthetic::generate,
-    runner::{in_process::InProcessRunner, RunnerConfig},
+    runner::{RunnerConfig, in_process::InProcessRunner},
 };
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
 /// Cold-cache Stylus dispatch. Same upgrade path as `stylus_dispatch`.
 fn bench_stylus_ink_metering(c: &mut Criterion) {

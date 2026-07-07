@@ -9,7 +9,15 @@
 //! continuing with a now-stale bundle (which otherwise cascades into
 //! receipt divergence on every following block in the chunk).
 
-use alloy_consensus::{transaction::TxHashRef, BlockHeader, TxReceipt};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{Duration, Instant},
+};
+
+use alloy_consensus::{BlockHeader, TxReceipt, transaction::TxHashRef};
 use clap::Parser;
 use eyre::WrapErr;
 use reth_chainspec::{EthChainSpec, EthereumHardforks, Hardforks};
@@ -20,21 +28,14 @@ use reth_cli_commands::common::{
 };
 use reth_cli_util::cancellation::CancellationToken;
 use reth_consensus::FullConsensus;
-use reth_evm::{block::BlockExecutor, execute::BlockExecutionError, ConfigureEvm};
-use reth_primitives_traits::{format_gas_throughput, BlockBody, GotExpected};
+use reth_evm::{ConfigureEvm, block::BlockExecutor, execute::BlockExecutionError};
+use reth_primitives_traits::{BlockBody, GotExpected, format_gas_throughput};
 use reth_provider::{
     BlockNumReader, BlockReader, ChainSpecProvider, DatabaseProviderFactory, HeaderProvider,
     ReceiptProvider, TransactionVariant,
 };
 use reth_revm::database::StateProviderDatabase;
-use revm_database::{states::bundle_state::BundleRetention, State};
-use std::{
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
-    time::{Duration, Instant},
-};
+use revm_database::{State, states::bundle_state::BundleRetention};
 use tokio::{sync::mpsc, task::JoinSet};
 use tracing::*;
 

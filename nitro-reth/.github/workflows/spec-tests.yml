@@ -17,7 +17,7 @@ jobs:
   spec:
     name: arb-spec-tests
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ocl-16cpu-64ram
     steps:
       - uses: actions/checkout@v6
         with:
@@ -35,12 +35,14 @@ jobs:
           done
           echo "Submodule init failed after 3 attempts"
           exit 1
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
       - uses: dtolnay/rust-toolchain@1.93
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: spec-tests-binaries
           path: target/release

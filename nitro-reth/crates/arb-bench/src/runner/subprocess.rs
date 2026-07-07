@@ -5,8 +5,8 @@ use std::{
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -14,15 +14,15 @@ use std::{
 
 use alloy_eips::eip2718::Encodable2718;
 use alloy_primitives::Address;
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use serde::{Deserialize, Serialize};
 
 use super::{BlockInput, RunnerConfig, Workload};
 use crate::metrics::{
-    clock::Stopwatch, memory::RssMonitor, rolling::build_windows, BlockMetric, HostInfo, RunResult,
-    SummaryMetrics,
+    BlockMetric, HostInfo, RunResult, SummaryMetrics, clock::Stopwatch, memory::RssMonitor,
+    rolling::build_windows,
 };
 
 const L1_KIND_L2_MESSAGE: u8 = 3;
@@ -228,13 +228,13 @@ fn build_custom_genesis(base_genesis: &Path, dest: &Path, workload: &Workload) -
         .map_err(|e| eyre::eyre!("read base genesis {}: {e}", base_genesis.display()))?;
     let mut json: serde_json::Value = serde_json::from_slice(&bytes)?;
 
-    if let Some(config) = json.get_mut("config") {
-        if let Some(obj) = config.as_object_mut() {
-            obj.insert(
-                "chainId".into(),
-                serde_json::Value::Number(workload.chain_id.into()),
-            );
-        }
+    if let Some(config) = json.get_mut("config")
+        && let Some(obj) = config.as_object_mut()
+    {
+        obj.insert(
+            "chainId".into(),
+            serde_json::Value::Number(workload.chain_id.into()),
+        );
     }
 
     let alloc = json
@@ -370,14 +370,12 @@ fn wait_for_ready(
         "params": [],
     });
     while start.elapsed() < timeout {
-        if let Ok(resp) = client.post(url).json(&body).send() {
-            if resp.status().is_success() {
-                if let Ok(json) = resp.json::<serde_json::Value>() {
-                    if json.get("result").is_some() {
-                        return Ok(());
-                    }
-                }
-            }
+        if let Ok(resp) = client.post(url).json(&body).send()
+            && resp.status().is_success()
+            && let Ok(json) = resp.json::<serde_json::Value>()
+            && json.get("result").is_some()
+        {
+            return Ok(());
         }
         thread::sleep(Duration::from_millis(250));
     }
@@ -443,10 +441,10 @@ impl NodeProcess {
                     if stop_e.load(Ordering::Relaxed) {
                         return;
                     }
-                    if let Ok(l) = line {
-                        if echo {
-                            eprintln!("[arb-reth] {l}");
-                        }
+                    if let Ok(l) = line
+                        && echo
+                    {
+                        eprintln!("[arb-reth] {l}");
                     }
                 }
             });
@@ -455,10 +453,10 @@ impl NodeProcess {
                 if stop_o.load(Ordering::Relaxed) {
                     break;
                 }
-                if let Ok(l) = line {
-                    if echo {
-                        eprintln!("[arb-reth] {l}");
-                    }
+                if let Ok(l) = line
+                    && echo
+                {
+                    eprintln!("[arb-reth] {l}");
                 }
             }
             let _ = stderr_jh.join();
@@ -488,9 +486,10 @@ impl Drop for NodeProcess {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use alloy_primitives::{Bytes, TxKind, U256};
-    use arb_executor_tests::helpers::{alice_key, sign_legacy, ONE_GWEI};
+    use arb_executor_tests::helpers::{ONE_GWEI, alice_key, sign_legacy};
+
+    use super::*;
 
     #[test]
     fn encode_batch_single_tx_roundtrips_to_kind_batch() {

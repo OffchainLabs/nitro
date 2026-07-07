@@ -1,16 +1,16 @@
+use std::sync::Arc;
+
 use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
 use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolInterface;
 use arb_context::ArbPrecompileCtx;
 use arb_storage::ARBOS_STATE_ADDRESS;
-
 use revm::{
     context_interface::block::Block,
     precompile::{PrecompileId, PrecompileOutput, PrecompileResult},
 };
-use std::sync::Arc;
 
-use crate::{interfaces::IArbGasInfo, ArbPrecompileError};
+use crate::{ArbPrecompileError, interfaces::IArbGasInfo};
 
 /// ArbGasInfo precompile address (0x6c).
 pub const ARBGASINFO_ADDRESS: Address = Address::new([
@@ -963,7 +963,7 @@ fn handle_multi_gas_base_fee(
     gas_used: &mut u64,
     ctx: &ArbPrecompileCtx,
 ) -> PrecompileResult {
-    use arb_primitives::multigas::{ResourceKind, NUM_RESOURCE_KIND};
+    use arb_primitives::multigas::{NUM_RESOURCE_KIND, ResourceKind};
     let gas_limit = input.gas;
     load_arbos(input)?;
 

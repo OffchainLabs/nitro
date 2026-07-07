@@ -1,8 +1,9 @@
 use alloy_primitives::{Address, B256, U256};
 
 use crate::messaging::{
-    encoding::{encode_address, encode_hash, encode_uint256, encode_uint64, request_id_from_seq},
-    kinds, L1Message, L1MessageHeader, MessageBuilder,
+    L1Message, L1MessageHeader, MessageBuilder,
+    encoding::{encode_address, encode_hash, encode_uint64, encode_uint256, request_id_from_seq},
+    kinds,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,10 +60,11 @@ impl MessageBuilder for BatchBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::messaging::test_support::{decode_body, round_trip};
     use alloy_primitives::{address, b256};
     use arbos::arbos_types::parse_batch_posting_report_fields;
+
+    use super::*;
+    use crate::messaging::test_support::{decode_body, round_trip};
 
     fn sample(variant: BatchPostingVariant) -> BatchBuilder {
         BatchBuilder {

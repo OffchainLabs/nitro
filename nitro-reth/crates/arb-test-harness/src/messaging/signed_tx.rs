@@ -1,17 +1,17 @@
 use alloy_consensus::{
-    crypto::secp256k1::sign_message, EthereumTxEnvelope, SignableTransaction, TxEip1559, TxEip2930,
-    TxEip7702, TxLegacy,
+    EthereumTxEnvelope, SignableTransaction, TxEip1559, TxEip2930, TxEip7702, TxLegacy,
+    crypto::secp256k1::sign_message,
 };
 use alloy_eips::{
     eip2718::Encodable2718,
     eip2930::{AccessList, AccessListItem},
     eip7702::{Authorization, SignedAuthorization},
 };
-use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256, keccak256};
 
 use crate::{
     error::HarnessError,
-    messaging::{kinds, L1Message, L1MessageHeader, MessageBuilder},
+    messaging::{L1Message, L1MessageHeader, MessageBuilder, kinds},
 };
 
 /// Selects which Ethereum tx envelope is wrapped inside the L2 SignedTx
@@ -246,13 +246,14 @@ pub fn derive_address(sk: B256) -> Address {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::messaging::test_support::{decode_body, round_trip};
     use alloy_consensus::transaction::SignerRecoverable;
     use alloy_eips::eip2718::Decodable2718;
     use alloy_primitives::{address, b256, hex};
     use arb_primitives::signed_tx::ArbTransactionSigned;
-    use arbos::parse_l2::{parse_l2_transactions, ParsedTransaction};
+    use arbos::parse_l2::{ParsedTransaction, parse_l2_transactions};
+
+    use super::*;
+    use crate::messaging::test_support::{decode_body, round_trip};
 
     /// Hardhat default account #0 (private key well-known across the ecosystem).
     fn hardhat_key_0() -> B256 {

@@ -1,8 +1,7 @@
 use alloy_primitives::{Address, B256, U256};
 use alloy_rlp::{Decodable, Encodable, Header};
-use revm::Database;
-
 use arb_storage::{Storage, StorageBackedUint64, StorageBackend, SystemStateBackend};
+use revm::Database;
 
 mod error;
 pub use error::AddressTableError;

@@ -188,9 +188,10 @@ fn default_set_finality_is_noop_ok() {
     }
     let p = DefaultProducer;
     assert!(p.set_finality(None, None, None).is_ok());
-    assert!(p
-        .set_finality(Some(B256::ZERO), Some(B256::ZERO), Some(B256::ZERO))
-        .is_ok());
+    assert!(
+        p.set_finality(Some(B256::ZERO), Some(B256::ZERO), Some(B256::ZERO))
+            .is_ok()
+    );
 }
 
 #[test]

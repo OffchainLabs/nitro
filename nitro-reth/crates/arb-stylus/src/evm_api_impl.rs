@@ -1,15 +1,14 @@
 use std::collections::HashMap;
 
-use alloy_primitives::{Address, Log, B256, U256};
+use alloy_primitives::{Address, B256, Log, U256};
 use arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_LAST_CODE_CACHE_FIX;
 use arb_primitives::multigas::MultiGas;
 use revm::Database;
 
-use crate::multi_gas;
-
 use crate::{
     evm_api::{CreateResponse, EvmApi, UserOutcomeKind},
     ink::Gas,
+    multi_gas,
 };
 
 /// EIP-2929 gas costs for storage operations.
@@ -342,34 +341,36 @@ impl StylusEvmApi {
         do_call: Option<DoCallFn>,
         do_create: Option<DoCreateFn>,
     ) -> Self {
-        let journal: *mut dyn JournalAccess = {
-            // Bind the trait object with the borrow's own lifetime (so `DB` need
-            // not be `'static`), then erase that lifetime to `'static` for
-            // storage. A direct `as` cast forces the object to `'static` and
-            // thus `DB: 'static`, which the callers cannot satisfy.
-            // SAFETY: the caller guarantees the journal pointer outlives this
-            // struct (see the `# Safety` section above); transmuting a reference
-            // to a same-layout raw pointer only erases that lifetime.
-            let r: &mut dyn JournalAccess = &mut *journal;
-            core::mem::transmute(r)
-        };
-        Self {
-            journal,
-            address,
-            caller,
-            call_value,
-            storage_cache: StorageCache::new(),
-            sstore_refund: 0,
-            return_data: Vec::new(),
-            read_only,
-            arbos_version,
-            ctx_ptr,
-            precompile_ctx_ptr,
-            do_call,
-            do_create,
-            last_code: None,
-            multi_gas: MultiGas::zero(),
-            sub_call_gas: 0,
+        unsafe {
+            let journal: *mut dyn JournalAccess = {
+                // Bind the trait object with the borrow's own lifetime (so `DB` need
+                // not be `'static`), then erase that lifetime to `'static` for
+                // storage. A direct `as` cast forces the object to `'static` and
+                // thus `DB: 'static`, which the callers cannot satisfy.
+                // SAFETY: the caller guarantees the journal pointer outlives this
+                // struct (see the `# Safety` section above); transmuting a reference
+                // to a same-layout raw pointer only erases that lifetime.
+                let r: &mut dyn JournalAccess = &mut *journal;
+                core::mem::transmute(r)
+            };
+            Self {
+                journal,
+                address,
+                caller,
+                call_value,
+                storage_cache: StorageCache::new(),
+                sstore_refund: 0,
+                return_data: Vec::new(),
+                read_only,
+                arbos_version,
+                ctx_ptr,
+                precompile_ctx_ptr,
+                do_call,
+                do_create,
+                last_code: None,
+                multi_gas: MultiGas::zero(),
+                sub_call_gas: 0,
+            }
         }
     }
 
@@ -951,10 +952,10 @@ impl EvmApi for StylusEvmApi {
         address: Address,
         gas_left: Gas,
     ) -> eyre::Result<(Vec<u8>, Gas)> {
-        if let Some((stored, data)) = self.last_code.as_ref() {
-            if *stored == address {
-                return Ok((data.clone(), Gas(0)));
-            }
+        if let Some((stored, data)) = self.last_code.as_ref()
+            && *stored == address
+        {
+            return Ok((data.clone(), Gas(0)));
         }
         let (code, is_cold) = self.journal().account_code(address)?;
         // WasmAccountTouchCost(withCode=true): extCodeCost + cold/warm access cost
@@ -1094,8 +1095,9 @@ fn sstore_gas_cost(info: &SStoreInfo) -> u64 {
 // plus the EIP-3529 refund schedule.
 #[cfg(test)]
 mod sstore_parity_tests {
-    use super::{sstore_gas_cost, sstore_refund, SStoreInfo};
     use alloy_primitives::U256;
+
+    use super::{SStoreInfo, sstore_gas_cost, sstore_refund};
 
     fn info(original: u64, present: u64, new: u64, is_cold: bool) -> SStoreInfo {
         SStoreInfo {

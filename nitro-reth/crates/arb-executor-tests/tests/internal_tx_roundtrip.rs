@@ -5,12 +5,12 @@
 
 use alloy_consensus::Transaction as _;
 use alloy_eips::{
-    eip2718::{Decodable2718, Encodable2718},
     Typed2718,
+    eip2718::{Decodable2718, Encodable2718},
 };
 use alloy_primitives::{Signature, U256};
 use arb_alloy_consensus::tx::ArbInternalTx;
-use arb_primitives::{signed_tx::ArbTypedTransaction, ArbTransactionSigned};
+use arb_primitives::{ArbTransactionSigned, signed_tx::ArbTypedTransaction};
 use arbos::internal_tx::encode_start_block;
 use reth_db_api::table::{Compress, Decompress};
 

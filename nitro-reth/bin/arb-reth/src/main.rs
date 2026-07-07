@@ -8,16 +8,16 @@
 ///
 /// Defined for the linker only; never called from Rust.
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
 mod commands;
 
 use arb_node::{
-    chainspec::ArbChainSpecParser, cli_components, launcher::ArbEngineLauncher, ArbNode,
+    ArbNode, chainspec::ArbChainSpecParser, cli_components, launcher::ArbEngineLauncher,
 };
 use clap::Parser;
-use reth::{cli::Cli, CliRunner};
+use reth::{CliRunner, cli::Cli};
 use reth_engine_tree::tree::TreeConfig;
 use reth_tracing::{RethTracer, Tracer};
 use tracing::info;

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use alloy_evm::{
+    EvmFactory,
     block::{BlockExecutor, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
-    EvmFactory,
 };
 use alloy_primitives::{B256, U256};
 use arb_evm::config::ArbEvmConfig;
@@ -18,8 +18,8 @@ use revm::{
 
 use super::{BlockInput, RunnerConfig, Workload};
 use crate::metrics::{
-    clock::Stopwatch, memory::RssMonitor, rolling::build_windows, BlockMetric, HostInfo, RunResult,
-    SummaryMetrics,
+    BlockMetric, HostInfo, RunResult, SummaryMetrics, clock::Stopwatch, memory::RssMonitor,
+    rolling::build_windows,
 };
 
 /// In-process runner: drives `ArbBlockExecutor` directly with no networking.

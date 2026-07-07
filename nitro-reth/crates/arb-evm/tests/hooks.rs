@@ -1,4 +1,4 @@
-use alloy_primitives::{address, U256};
+use alloy_primitives::{U256, address};
 use arb_evm::hooks::{
     ArbOsHooks, EndTxContext, GasChargingContext, NoopArbOsHooks, StartTxContext,
 };

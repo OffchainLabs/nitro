@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use alloy_consensus::{
-    crypto::secp256k1::sign_message, transaction::SignerRecoverable, EthereumTxEnvelope,
-    SignableTransaction, TxLegacy,
+    EthereumTxEnvelope, SignableTransaction, TxLegacy, crypto::secp256k1::sign_message,
+    transaction::SignerRecoverable,
 };
-use alloy_evm::{block::BlockExecutorFactory, eth::EthBlockExecutionCtx, EvmFactory};
-use alloy_primitives::{address, keccak256, Address, TxKind, B256, U256};
+use alloy_evm::{EvmFactory, block::BlockExecutorFactory, eth::EthBlockExecutionCtx};
+use alloy_primitives::{Address, B256, TxKind, U256, address, keccak256};
 use arb_evm::config::ArbEvmConfig;
 use arb_primitives::ArbTransactionSigned;
 use arb_test_utils::{ArbosHarness, EmptyDb};
@@ -58,7 +58,7 @@ fn build_signed_legacy_tx(
 }
 
 fn fund_account(state: &mut revm::database::State<EmptyDb>, addr: Address, balance: U256) {
-    use revm::database::{states::account_status::AccountStatus, PlainAccount};
+    use revm::database::{PlainAccount, states::account_status::AccountStatus};
     let _ = state.load_cache_account(addr);
     if let Some(cached) = state.cache.accounts.get_mut(&addr) {
         cached.account = Some(PlainAccount {

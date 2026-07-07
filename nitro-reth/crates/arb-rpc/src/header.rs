@@ -3,13 +3,14 @@
 //! Extracts Arbitrum-specific fields (sendRoot, sendCount, l1BlockNumber)
 //! from the consensus header's mix_hash and extra_data fields.
 
+use std::convert::Infallible;
+
 use alloy_consensus::{BlockHeader, Header};
 use alloy_primitives::{B256, U256};
 use alloy_rpc_types_eth::Header as RpcHeader;
 use alloy_serde::WithOtherFields;
 use reth_primitives_traits::SealedHeader;
 use reth_rpc_convert::transaction::HeaderConverter;
-use std::convert::Infallible;
 
 /// Extract L1 block number from header mix_hash (bytes 8-15).
 pub fn l1_block_number_from_mix_hash(mix_hash: &B256) -> u64 {

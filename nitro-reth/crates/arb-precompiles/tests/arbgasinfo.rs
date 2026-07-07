@@ -1,12 +1,14 @@
 mod common;
 
+use std::sync::Arc;
+
 use alloy_evm::precompiles::DynPrecompile;
-use alloy_primitives::{address, Address, U256};
+use alloy_primitives::{Address, U256, address};
 use arb_context::ArbPrecompileCtx;
 use arb_precompiles::create_arbgasinfo_precompile;
 use arb_storage::{
-    layout::{subspace_slot, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE},
     ARBOS_STATE_ADDRESS,
+    layout::{L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE, subspace_slot},
 };
 use arbos::{
     l1_pricing::{
@@ -28,8 +30,7 @@ use arbos::{
         SPEED_LIMIT_PER_SECOND_OFFSET as L2_SPEED_LIMIT,
     },
 };
-use common::{calldata, decode_address, decode_u256, decode_word, PrecompileTest};
-use std::sync::Arc;
+use common::{PrecompileTest, calldata, decode_address, decode_u256, decode_word};
 
 fn arbgasinfo(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
     create_arbgasinfo_precompile(ctx)
@@ -457,7 +458,7 @@ fn get_minimum_gas_price_charges_two_sloads_and_one_copy_word() {
 const L1_PRICER_FUNDS_POOL: Address = address!("a4b00000000000000000000000000000000000f6");
 
 fn batch_poster_total_funds_due_slot() -> U256 {
-    use arb_storage::layout::{derive_subspace_key, map_slot, ROOT_STORAGE_KEY};
+    use arb_storage::layout::{ROOT_STORAGE_KEY, derive_subspace_key, map_slot};
     use arbos::l1_pricing::BATCH_POSTER_TABLE_KEY;
     let l1_key = derive_subspace_key(ROOT_STORAGE_KEY, L1_PRICING_SUBSPACE);
     let bpt_key = derive_subspace_key(l1_key.as_slice(), BATCH_POSTER_TABLE_KEY);

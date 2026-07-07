@@ -22,15 +22,15 @@
 //!
 //! Re-run with ARB_FUZZ_ARBOS_VERSION=51 for the v51 sweep.
 
-use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256, keccak256};
 use arb_fuzz::{
     arbitrary_impls::{interop::wrap_init_code, message_step},
-    shared_nodes::{fuzz_arbos_version, next_msg_idx, shared_dual_exec, FUZZ_L2_CHAIN_ID},
+    shared_nodes::{FUZZ_L2_CHAIN_ID, fuzz_arbos_version, next_msg_idx, shared_dual_exec},
 };
 use arb_test_harness::{
     messaging::{
-        signed_tx::{derive_address, AuthorizationItem, L2TxKind, SignedL2TxBuilder},
         DepositBuilder, MessageBuilder,
+        signed_tx::{AuthorizationItem, L2TxKind, SignedL2TxBuilder, derive_address},
     },
     scenario::{Scenario, ScenarioSetup, ScenarioStep},
 };

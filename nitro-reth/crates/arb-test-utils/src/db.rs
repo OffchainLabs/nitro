@@ -3,11 +3,11 @@
 //! Returns zero/default for every read so the cache layer above can serve
 //! everything that gets written during a test.
 
-use alloy_primitives::{keccak256, Address, B256, U256};
+use alloy_primitives::{Address, B256, U256, keccak256};
 use revm::{
-    database::{states::account_status::AccountStatus, PlainAccount, State},
-    state::{AccountInfo, Bytecode},
     Database,
+    database::{PlainAccount, State, states::account_status::AccountStatus},
+    state::{AccountInfo, Bytecode},
 };
 
 /// Database that returns empty/zero for all reads.
@@ -38,19 +38,19 @@ impl Database for EmptyDb {
 /// the first storage write so revm tracks it for bundle merging.
 pub fn ensure_cache_account(state: &mut State<EmptyDb>, addr: Address) {
     let _ = state.load_cache_account(addr);
-    if let Some(cached) = state.cache.accounts.get_mut(&addr) {
-        if cached.account.is_none() {
-            cached.account = Some(PlainAccount {
-                info: AccountInfo {
-                    balance: U256::ZERO,
-                    nonce: 0,
-                    code_hash: keccak256([]),
-                    code: None,
-                    account_id: None,
-                },
-                storage: Default::default(),
-            });
-            cached.status = AccountStatus::InMemoryChange;
-        }
+    if let Some(cached) = state.cache.accounts.get_mut(&addr)
+        && cached.account.is_none()
+    {
+        cached.account = Some(PlainAccount {
+            info: AccountInfo {
+                balance: U256::ZERO,
+                nonce: 0,
+                code_hash: keccak256([]),
+                code: None,
+                account_id: None,
+            },
+            storage: Default::default(),
+        });
+        cached.status = AccountStatus::InMemoryChange;
     }
 }

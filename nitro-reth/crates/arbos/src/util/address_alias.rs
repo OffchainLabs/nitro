@@ -34,8 +34,8 @@ pub fn inverse_remap_l1_address(l2_address: Address) -> Address {
 
 /// Wrapping addition of two addresses (treated as 160-bit integers).
 fn address_add(a: Address, b: Address) -> Address {
-    let a_bytes = a.0 .0;
-    let b_bytes = b.0 .0;
+    let a_bytes = a.0.0;
+    let b_bytes = b.0.0;
     let mut result = [0u8; 20];
     let mut carry: u16 = 0;
     for i in (0..20).rev() {

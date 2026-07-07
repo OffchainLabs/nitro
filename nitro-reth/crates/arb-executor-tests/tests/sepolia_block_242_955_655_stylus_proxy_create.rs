@@ -1,18 +1,18 @@
 //! Regression test for a Stylus-via-proxy-via-CREATE call chain.
 
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
 use std::sync::Arc;
 
 use alloy_evm::{
+    EvmFactory,
     block::{BlockExecutor, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
-    EvmFactory,
 };
-use alloy_primitives::{address, b256, hex, keccak256, Address, Bytes, TxKind, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, TxKind, U256, address, b256, hex, keccak256};
 use arb_evm::config::ArbEvmConfig;
 use arb_executor_tests::helpers::{
     alice, alice_key, deploy_contract, fund_account, recover, sign_1559,
@@ -69,7 +69,8 @@ fn build_tx() -> arb_primitives::signed_tx::ArbTransactionSigned {
     let input = hex::decode(TX_INPUT_HEX).expect("decode input");
     sign_1559(
         CHAIN_ID,
-        /* nonce */ 0,
+        // nonce
+        0,
         TX_MAX_FEE,
         TX_MAX_PRIO,
         TX_GAS_LIMIT,

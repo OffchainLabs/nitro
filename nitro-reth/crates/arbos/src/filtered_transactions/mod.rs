@@ -1,7 +1,6 @@
 use alloy_primitives::{B256, U256};
-use revm::Database;
-
 use arb_storage::{Storage, StorageBackend, SystemStateBackend};
+use revm::Database;
 
 mod error;
 pub use error::FilteredTxError;

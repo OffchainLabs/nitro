@@ -11,10 +11,10 @@ use alloy_primitives::{Bytes, U256};
 use arb_fuzz::{
     arbitrary_impls::message_step,
     scaffolding::{
-        activate_program, deploy_solidity, eoa_create_addr, fund_interop_eoa, signed,
-        DEPLOY_GAS_CAP, INVOKE_GAS_CAP,
+        DEPLOY_GAS_CAP, INVOKE_GAS_CAP, activate_program, deploy_solidity, eoa_create_addr,
+        fund_interop_eoa, signed,
     },
-    shared_nodes::{fuzz_arbos_version, next_msg_idx, shared_dual_exec, FUZZ_L2_CHAIN_ID},
+    shared_nodes::{FUZZ_L2_CHAIN_ID, fuzz_arbos_version, next_msg_idx, shared_dual_exec},
 };
 use arb_test_harness::{
     messaging::MessageBuilder,

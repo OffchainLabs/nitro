@@ -19,16 +19,15 @@
 ///
 /// Defined for the linker only; never called from Rust.
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
 use std::sync::Arc;
 
 use arb_stylus::config::CompileConfig;
 use wasmer::{
-    imports,
+    Imports, Instance, Module, Store, Value, imports,
     sys::{Cranelift, CraneliftOptLevel, EngineBuilder},
-    Imports, Instance, Module, Store, Value,
 };
 use wasmer_compiler::CompilerConfig;
 
@@ -178,9 +177,11 @@ fn call_indirect_dispatches_to_correct_function() {
     }
 
     // Out-of-table index must trap.
-    assert!(dispatch
-        .call(&mut store, &[Value::I32(99), Value::I32(1)])
-        .is_err());
+    assert!(
+        dispatch
+            .call(&mut store, &[Value::I32(99), Value::I32(1)])
+            .is_err()
+    );
 }
 
 // ── Test 5: round-trip serialize / deserialize ─────────────────────
@@ -344,8 +345,11 @@ fn activate_test_wat() -> arbos::programs::types::ActivationResult {
     let codehash = [0x42_u8; 32];
     let mut gas = u64::MAX;
     arb_stylus::activate_program(
-        &wasm, &codehash, /* stylus_version */ 1, /* arbos_version */ 30,
-        /* page_limit */ 128, /* debug */ false, &mut gas,
+        &wasm, &codehash, // stylus_version
+        1,         // arbos_version
+        30,        // page_limit
+        128,       // debug
+        false, &mut gas,
     )
     .expect("activation")
 }

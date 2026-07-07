@@ -6,7 +6,7 @@
 //! come from L2ToL1Tx / SendMerkleUpdate event logs; nodes past the
 //! balanced-tree boundary come from partial accumulator state.
 
-use alloy_primitives::{keccak256, B256};
+use alloy_primitives::{B256, keccak256};
 
 /// A position in the Merkle tree: level (0 = leaves) + leaf index
 /// within that level.

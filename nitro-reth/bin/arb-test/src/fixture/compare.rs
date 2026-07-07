@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
-
 use arb_spec_tests::ExecutionFixture;
-use arb_test_harness::{node::remote::RemoteNode, DualExec};
+use arb_test_harness::{DualExec, node::remote::RemoteNode};
 
 use super::CompareArgs;
 

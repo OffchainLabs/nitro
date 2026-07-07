@@ -1,8 +1,9 @@
-use alloy_primitives::{Address, B256, U256};
 use std::collections::HashMap;
 
-use crate::{l1_pricing, retryables, util::BalanceError};
+use alloy_primitives::{Address, B256, U256};
 use arb_chainspec::arbos_version as arb_ver;
+
+use crate::{l1_pricing, retryables, util::BalanceError};
 
 /// ArbOS system address (0x00000000000000000000000000000000000a4b05).
 pub const ARBOS_ADDRESS: Address = {
@@ -906,9 +907,10 @@ fn tx_data_zero_count(data: &[u8]) -> usize {
 
 #[cfg(test)]
 mod block1_retryable_repro {
-    use super::{compute_submit_retryable_fees, SubmitRetryableParams};
-    use alloy_primitives::{address, b256, keccak256, Address, Bytes, U256};
+    use alloy_primitives::{Address, Bytes, U256, address, b256, keccak256};
     use arb_alloy_consensus::tx::{ArbRetryTx, ArbTxType};
+
+    use super::{SubmitRetryableParams, compute_submit_retryable_fees};
 
     // Arbitrum Sepolia block 1 (ArbOS v10) SubmitRetryable inputs from a real
     // node; drives our fee computation to the canonical auto-redeem tx hash.

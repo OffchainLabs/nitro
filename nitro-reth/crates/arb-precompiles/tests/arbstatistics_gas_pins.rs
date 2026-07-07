@@ -5,7 +5,7 @@ mod common;
 use alloy_evm::precompiles::DynPrecompile;
 use alloy_primitives::Bytes;
 use arb_precompiles::create_arbstatistics_precompile;
-use common::{calldata, PrecompileTest};
+use common::{PrecompileTest, calldata};
 
 const ARBOS_V30: u64 = 30;
 const GAS_LIMIT: u64 = 1_000_000;

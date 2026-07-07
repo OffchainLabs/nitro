@@ -1,4 +1,4 @@
-use alloy_primitives::{keccak256, B256};
+use alloy_primitives::{B256, keccak256};
 use arb_test_utils::ArbosHarness;
 use arbos::blockhash::open_blockhashes;
 

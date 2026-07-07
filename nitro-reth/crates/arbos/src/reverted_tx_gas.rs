@@ -5,7 +5,7 @@
 //! Sepolia divergence from a Stylus ARM/x86 determinism incident; replays
 //! must apply the same override or block hashes diverge.
 
-use alloy_primitives::{b256, B256};
+use alloy_primitives::{B256, b256};
 
 /// Lookup the recorded L2 gas-used for a tx hash. `Some(g)` means the tx
 /// must be force-reverted with `g` total L2 gas (excludes poster gas).

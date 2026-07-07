@@ -9,8 +9,7 @@
 //!     cargo test -p arb-fuzz --test v60_slot_diff --release \
 //!     -- --ignored v60_block1_slot_diff --nocapture
 
-use alloy_primitives::{address, keccak256, Address, B256, U256};
-
+use alloy_primitives::{Address, B256, U256, address, keccak256};
 use arb_fuzz::shared_nodes::{next_msg_idx, shared_dual_exec};
 use arb_test_harness::{
     messaging::{DepositBuilder, MessageBuilder},

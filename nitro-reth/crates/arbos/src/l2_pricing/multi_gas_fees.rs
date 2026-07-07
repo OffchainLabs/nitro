@@ -1,6 +1,5 @@
 use alloy_primitives::U256;
-
-use arb_primitives::multigas::{ResourceKind, NUM_RESOURCE_KIND};
+use arb_primitives::multigas::{NUM_RESOURCE_KIND, ResourceKind};
 use arb_storage::{Storage, StorageBackedBigUint, StorageBackend, SystemStateBackend};
 
 use super::L2PricingError;

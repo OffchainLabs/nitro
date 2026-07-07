@@ -1,7 +1,7 @@
-use alloy_primitives::{b256, keccak256, B256, U256};
+use alloy_primitives::{B256, U256, b256, keccak256};
 use arb_storage::{
-    storage_key_map, StorageBackedAddress, StorageBackedBigInt, StorageBackedBigUint,
-    StorageBackedInt64, StorageBackedUint64, StorageBackend, ARBOS_STATE_ADDRESS,
+    ARBOS_STATE_ADDRESS, StorageBackedAddress, StorageBackedBigInt, StorageBackedBigUint,
+    StorageBackedInt64, StorageBackedUint64, StorageBackend, storage_key_map,
 };
 use arb_test_utils::ArbosHarness;
 

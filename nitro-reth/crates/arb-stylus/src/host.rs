@@ -1,7 +1,6 @@
 use alloy_primitives::{Address, B256, U256};
-use wasmer::FunctionEnvMut;
-
 use arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_CHARGING_FIXES;
+use wasmer::FunctionEnvMut;
 
 use crate::{
     env::WasmEnv,
@@ -13,7 +12,7 @@ use crate::{
 };
 
 macro_rules! hostio {
-    ($env:expr) => {
+    ($env:expr_2021) => {
         WasmEnv::program($env)?
     };
 }

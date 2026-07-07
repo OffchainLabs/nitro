@@ -5,40 +5,39 @@
 
 use std::{sync::Arc, time::Duration};
 
-use alloy_primitives::{Address, StorageKey, B256, U256};
-use alloy_rpc_types_eth::{state::StateOverride, BlockId};
+use alloy_primitives::{Address, B256, StorageKey, U256};
+use alloy_rpc_types_eth::{BlockId, state::StateOverride};
+use arb_storage::{
+    ARBOS_STATE_ADDRESS,
+    layout::{
+        BROTLI_COMPRESSION_LEVEL_OFFSET, CHAIN_ID_OFFSET, GENESIS_BLOCK_NUM_OFFSET,
+        L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE, root_slot, subspace_slot,
+    },
+};
 use reth_primitives_traits::{Recovered, WithEncoded};
 use reth_rpc::eth::core::EthApiInner;
 use reth_rpc_convert::{RpcConvert, RpcTxReq};
 use reth_rpc_eth_api::{
-    helpers::{
-        estimate::EstimateCall, pending_block::PendingEnvBuilder, Call, EthApiSpec, EthBlocks,
-        EthCall, EthFees, EthSigner, EthState, EthTransactions, LoadBlock, LoadFee,
-        LoadPendingBlock, LoadReceipt, LoadState, LoadTransaction, SpawnBlocking, Trace,
-    },
     EthApiTypes, FromEvmError, RpcNodeCore, RpcNodeCoreExt,
+    helpers::{
+        Call, EthApiSpec, EthBlocks, EthCall, EthFees, EthSigner, EthState, EthTransactions,
+        LoadBlock, LoadFee, LoadPendingBlock, LoadReceipt, LoadState, LoadTransaction,
+        SpawnBlocking, Trace, estimate::EstimateCall, pending_block::PendingEnvBuilder,
+    },
 };
 use reth_rpc_eth_types::{
-    builder::config::PendingBlockKind, EthApiError, EthStateCache, FeeHistoryCache, GasPriceOracle,
-    PendingBlock,
+    EthApiError, EthStateCache, FeeHistoryCache, GasPriceOracle, PendingBlock,
+    builder::config::PendingBlockKind,
 };
 use reth_storage_api::{ProviderHeader, StateProviderFactory, TransactionsProvider};
 use reth_tasks::{
-    pool::{BlockingTaskGuard, BlockingTaskPool},
     Runtime,
+    pool::{BlockingTaskGuard, BlockingTaskPool},
 };
 use reth_transaction_pool::{
     AddedTransactionOutcome, PoolPooledTx, PoolTransaction, TransactionOrigin, TransactionPool,
 };
 use tracing::trace;
-
-use arb_storage::{
-    layout::{
-        root_slot, subspace_slot, BROTLI_COMPRESSION_LEVEL_OFFSET, CHAIN_ID_OFFSET,
-        GENESIS_BLOCK_NUM_OFFSET, L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE,
-    },
-    ARBOS_STATE_ADDRESS,
-};
 
 /// Type alias matching reth's `SignersForRpc`.
 type SignersForRpc<Provider, Rpc> = parking_lot::RwLock<
@@ -470,8 +469,8 @@ where
     where
         RpcTxReq<<Rpc as RpcConvert>::Network>: From<alloy_rpc_types_eth::TransactionRequest>,
     {
-        use alloy_primitives::{keccak256, Bytes};
-        use arb_alloy_consensus::{tx::ArbSubmitRetryableTx, ArbTxEnvelope};
+        use alloy_primitives::{Bytes, keccak256};
+        use arb_alloy_consensus::{ArbTxEnvelope, tx::ArbSubmitRetryableTx};
 
         const HEAD_LEN: usize = 4 + 32 * 7;
         if input.len() < HEAD_LEN {
@@ -566,7 +565,7 @@ where
         input: &alloy_primitives::Bytes,
         at: BlockId,
     ) -> Result<alloy_primitives::Bytes, EthApiError> {
-        use arb_storage::layout::{derive_subspace_key, map_slot, ROOT_STORAGE_KEY};
+        use arb_storage::layout::{ROOT_STORAGE_KEY, derive_subspace_key, map_slot};
         use arbos::retryables::{
             BENEFICIARY_OFFSET, CALLDATA_KEY, CALLVALUE_OFFSET, FROM_OFFSET, NUM_TRIES_OFFSET,
             TIMEOUT_OFFSET, TO_OFFSET,
@@ -691,11 +690,11 @@ where
 
         use alloy_consensus::TxReceipt;
         use arb_precompiles::arbsys::{
-            l2_to_l1_tx_topic, send_merkle_update_topic, ARBSYS_ADDRESS,
+            ARBSYS_ADDRESS, l2_to_l1_tx_topic, send_merkle_update_topic,
         };
         use reth_provider::{BlockNumReader, ReceiptProvider};
 
-        use crate::outbox_proof::{encode_outbox_proof, finalize_proof, plan_proof, LevelAndLeaf};
+        use crate::outbox_proof::{LevelAndLeaf, encode_outbox_proof, finalize_proof, plan_proof};
 
         if input.len() < 4 + 64 {
             return Err(EthApiError::InvalidParams(
@@ -1054,7 +1053,7 @@ where
         use reth_rpc_convert::transaction::ConvertReceiptInput;
         use reth_rpc_eth_api::RpcNodeCoreExt;
         use reth_rpc_eth_types::{
-            error::FromEthApiError, utils::calculate_gas_used_and_next_log_index, EthApiError,
+            EthApiError, error::FromEthApiError, utils::calculate_gas_used_and_next_log_index,
         };
         async move {
             let hash = meta.block_hash;
@@ -1138,9 +1137,9 @@ where
 impl<N, Rpc> EthCall for ArbEthApi<N, Rpc>
 where
     N: RpcNodeCore<
-        Provider: StateProviderFactory + reth_provider::BlockReaderIdExt + Clone,
-        Primitives = arb_primitives::ArbPrimitives,
-    >,
+            Provider: StateProviderFactory + reth_provider::BlockReaderIdExt + Clone,
+            Primitives = arb_primitives::ArbPrimitives,
+        >,
     EthApiError: FromEvmError<N::Evm>,
     Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError, Evm = N::Evm>,
     RpcTxReq<<Rpc as RpcConvert>::Network>: AsRef<alloy_rpc_types_eth::TransactionRequest>
@@ -1166,8 +1165,9 @@ where
         state_override: Option<StateOverride>,
     ) -> impl std::future::Future<Output = Result<U256, Self::Error>> + Send {
         async move {
-            use crate::nodeinterface_rpc::NODE_INTERFACE_ADDRESS;
             use alloy_primitives::TxKind;
+
+            use crate::nodeinterface_rpc::NODE_INTERFACE_ADDRESS;
 
             let inner = request.as_ref();
             let target: Option<Address> = match inner.to {
@@ -1184,14 +1184,14 @@ where
             //   address callValueRefundAddress, bytes data)
             //
             // selector: 0xc3dc5879
-            if target == Some(NODE_INTERFACE_ADDRESS) {
-                if let Some(ref buf) = input_bytes {
-                    if buf.len() >= 4 && buf[..4] == [0xc3, 0xdc, 0x58, 0x79] {
-                        return self
-                            .estimate_retryable_ticket_gas(buf, at, state_override)
-                            .await;
-                    }
-                }
+            if target == Some(NODE_INTERFACE_ADDRESS)
+                && let Some(ref buf) = input_bytes
+                && buf.len() >= 4
+                && buf[..4] == [0xc3, 0xdc, 0x58, 0x79]
+            {
+                return self
+                    .estimate_retryable_ticket_gas(buf, at, state_override)
+                    .await;
             }
 
             // Extract calldata length before request is consumed by the binary search.
@@ -1225,14 +1225,16 @@ where
     ) -> impl std::future::Future<Output = Result<alloy_primitives::Bytes, Self::Error>> + Send
     {
         async move {
-            use crate::nodeinterface_rpc::{
-                encode_gas_estimate_components, encode_l2_block_range, encode_legacy_lookup_empty,
-                encode_u64_word, unpack_mix_hash, NODE_INTERFACE_ADDRESS, SEL_BLOCK_L1_NUM,
-                SEL_FIND_BATCH_CONTAINING_BLOCK, SEL_GAS_ESTIMATE_COMPONENTS,
-                SEL_GAS_ESTIMATE_L1_COMPONENT, SEL_GET_L1_CONFIRMATIONS, SEL_L2_BLOCK_RANGE_FOR_L1,
-                SEL_LEGACY_LOOKUP_MESSAGE_BATCH_PROOF, SEL_NITRO_GENESIS_BLOCK,
-            };
             use alloy_primitives::{Address, TxKind};
+
+            use crate::nodeinterface_rpc::{
+                NODE_INTERFACE_ADDRESS, SEL_BLOCK_L1_NUM, SEL_FIND_BATCH_CONTAINING_BLOCK,
+                SEL_GAS_ESTIMATE_COMPONENTS, SEL_GAS_ESTIMATE_L1_COMPONENT,
+                SEL_GET_L1_CONFIRMATIONS, SEL_L2_BLOCK_RANGE_FOR_L1,
+                SEL_LEGACY_LOOKUP_MESSAGE_BATCH_PROOF, SEL_NITRO_GENESIS_BLOCK,
+                encode_gas_estimate_components, encode_l2_block_range, encode_legacy_lookup_empty,
+                encode_u64_word, unpack_mix_hash,
+            };
 
             // Only intercept calls targeting the NodeInterface or
             // NodeInterfaceDebug addresses.

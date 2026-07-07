@@ -1,10 +1,10 @@
-use alloy_primitives::{address, Address, U256};
+use alloy_primitives::{Address, U256, address};
 use arb_test_utils::ArbosHarness;
 use arbos::l1_pricing::{
-    byte_count_after_brotli_level, compute_poster_cost_standalone, poster_units_from_bytes,
     BATCH_POSTER_ADDRESS, ESTIMATION_PADDING_BASIS_POINTS, ESTIMATION_PADDING_UNITS,
-    INITIAL_EQUILIBRATION_UNITS_V6, INITIAL_INERTIA, INITIAL_PER_BATCH_GAS_COST_V12,
-    INITIAL_PER_BATCH_GAS_COST_V6, INITIAL_PER_UNIT_REWARD, TX_DATA_NON_ZERO_GAS_EIP2028,
+    INITIAL_EQUILIBRATION_UNITS_V6, INITIAL_INERTIA, INITIAL_PER_BATCH_GAS_COST_V6,
+    INITIAL_PER_BATCH_GAS_COST_V12, INITIAL_PER_UNIT_REWARD, TX_DATA_NON_ZERO_GAS_EIP2028,
+    byte_count_after_brotli_level, compute_poster_cost_standalone, poster_units_from_bytes,
 };
 
 const ONE_GWEI: u64 = 1_000_000_000;

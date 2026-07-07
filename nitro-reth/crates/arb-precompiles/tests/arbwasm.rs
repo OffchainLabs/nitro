@@ -1,17 +1,16 @@
 mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
-use alloy_primitives::{address, B256, U256};
+use alloy_primitives::{B256, U256, address};
 use arb_precompiles::create_arbwasm_precompile;
 use arb_storage::{
-    layout::{
-        derive_subspace_key, map_slot, map_slot_b256,
-        programs::{PARAMS_KEY, PROGRAM_DATA_KEY},
-        PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY,
-    },
     ARBOS_STATE_ADDRESS,
+    layout::{
+        PROGRAMS_SUBSPACE, ROOT_STORAGE_KEY, derive_subspace_key, map_slot, map_slot_b256,
+        programs::{PARAMS_KEY, PROGRAM_DATA_KEY},
+    },
 };
-use common::{calldata, decode_u256, decode_word, word_address, PrecompileTest};
+use common::{PrecompileTest, calldata, decode_u256, decode_word, word_address};
 use revm::state::AccountInfo;
 
 const ARBOS_V30: u64 = 30;
@@ -239,7 +238,7 @@ fn full_round_trip_packs_and_unpacks_all_fields() {
     };
 
     macro_rules! check {
-        ($sig:expr, $expected:expr) => {{
+        ($sig:expr_2021, $expected:expr_2021) => {{
             let run = test_with(p, ARBOS_V32).call(arbwasm, &calldata($sig, &[]));
             assert_eq!(
                 decode_u256(run.output()),

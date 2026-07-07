@@ -4,28 +4,27 @@ pub mod memory;
 pub mod params;
 pub mod types;
 
-pub use error::ProgramsError;
-
 use alloy_primitives::{B256, U256};
 use arb_primitives::multigas::{MultiGas, ResourceKind};
+pub use arb_storage::layout::programs::DATA_PRICER_KEY;
+use arb_storage::{
+    Storage, StorageBackedUint64, StorageBackend, SystemStateBackend,
+    layout::programs::{
+        ACTIVATION_GAS_KEY, CACHE_MANAGERS_KEY, MODULE_HASHES_KEY, PARAMS_KEY, PROGRAM_DATA_KEY,
+    },
+};
+pub use error::ProgramsError;
 use revm::Database;
 
-use arb_storage::{Storage, StorageBackedUint64, StorageBackend, SystemStateBackend};
-
 pub use self::types::{
-    evm_memory_cost, to_word_size, ActivationResult, EvmData, ProgParams, UserOutcome,
+    ActivationResult, EvmData, ProgParams, UserOutcome, evm_memory_cost, to_word_size,
 };
 use self::{
-    data_pricer::{init_data_pricer, open_data_pricer, DataPricer, ARBITRUM_START_TIME},
+    data_pricer::{ARBITRUM_START_TIME, DataPricer, init_data_pricer, open_data_pricer},
     memory::MemoryModel,
-    params::{init_stylus_params, StylusParams},
+    params::{StylusParams, init_stylus_params},
 };
-use crate::address_set::{open_address_set, AddressSet};
-
-pub use arb_storage::layout::programs::DATA_PRICER_KEY;
-use arb_storage::layout::programs::{
-    ACTIVATION_GAS_KEY, CACHE_MANAGERS_KEY, MODULE_HASHES_KEY, PARAMS_KEY, PROGRAM_DATA_KEY,
-};
+use crate::address_set::{AddressSet, open_address_set};
 
 /// Per-program metadata stored in state.
 #[derive(Debug, Clone, Copy)]

@@ -1,4 +1,4 @@
-use alloy_primitives::{address, B256, U256};
+use alloy_primitives::{B256, U256, address};
 use arb_test_utils::ArbosHarness;
 use arbos::address_set::{initialize_address_set, open_address_set};
 
