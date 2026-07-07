@@ -160,6 +160,57 @@ func TestEndSequencingClearsPendingQueueItemsResults(t *testing.T) {
 	}
 }
 
+func TestEndSequencingRoutesStagedQueueItems(t *testing.T) {
+	newSeqWithStagedItem := func(t *testing.T) (*Sequencer, chan error) {
+		engine := &ExecutionEngine{}
+		configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
+		seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resultChan := make(chan error, 1)
+		seq.pendingQueueItemsResults = &pendingQueueItemsResults{
+			hooks:      &FullSequencingHooks{},
+			queueItems: []txQueueItem{{resultChan: resultChan, returnedResult: &atomic.Bool{}}},
+		}
+		return seq, resultChan
+	}
+
+	t.Run("retry without forwarder re-queues the item", func(t *testing.T) {
+		seq, resultChan := newSeqWithStagedItem(t)
+
+		seq.EndSequencing(context.Background(), execution.ErrRetrySequencer)
+
+		if seq.txRetryQueue.Len() != 1 {
+			t.Fatalf("staged item should be re-queued for retry, txRetryQueue len = %d", seq.txRetryQueue.Len())
+		}
+		select {
+		case err := <-resultChan:
+			t.Errorf("item should be retried, not returned to submitter; got result %v", err)
+		default:
+		}
+	})
+
+	t.Run("generic error returns the item to its submitter", func(t *testing.T) {
+		seq, resultChan := newSeqWithStagedItem(t)
+
+		wantErr := errors.New("durable write failed")
+		seq.EndSequencing(context.Background(), wantErr)
+
+		if seq.txRetryQueue.Len() != 0 {
+			t.Errorf("item should be returned to submitter, not re-queued; txRetryQueue len = %d", seq.txRetryQueue.Len())
+		}
+		select {
+		case err := <-resultChan:
+			if !errors.Is(err, wantErr) {
+				t.Errorf("submitter got %v, want %v", err, wantErr)
+			}
+		default:
+			t.Error("submitter never received a result")
+		}
+	})
+}
+
 func TestCheckHealthChosenSequencerDeadline(t *testing.T) {
 	past := time.Now().Add(-time.Second)
 	future := time.Now().Add(time.Hour)
