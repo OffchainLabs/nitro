@@ -259,8 +259,11 @@ func sequenceInBlock(t *testing.T, builder *NodeBuilder, txs types.Transactions)
 		Timestamp:   arbmath.SaturatingUCast[uint64](time.Now().Unix()),
 	}
 	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(txs, nil, nil, nil)
+	// SequenceTransactions only stages the block; it must be committed to the
+	// chain with a follow-up AppendLastSequencedBlock (see execution/interface.go).
 	_, _, err = builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
 	Require(t, err)
+	Require(t, builder.L2.ExecNode.ExecEngine.AppendLastSequencedBlock())
 
 	var blockNum uint64
 	receipts := make([]*types.Receipt, len(txs))
