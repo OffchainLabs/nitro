@@ -15,9 +15,11 @@ use alloy_primitives::B256;
 use alloy_transport::{RpcError, TransportErrorKind};
 
 mod mock;
+mod registry;
 mod rpc;
 
 pub use mock::MockDaReader;
+pub use registry::{DaReaderRegistry, DaReaderSource};
 pub use rpc::RpcDaReader;
 
 /// Something went wrong while reading from the DA provider.
