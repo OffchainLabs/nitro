@@ -89,8 +89,11 @@ type ExecutionRecorder interface {
 // operations needed to produce new blocks locally, rather than only digesting
 // blocks received from consensus.
 //
-// The consensus node drives sequencing as a repeated, single-threaded loop and
-// must not call these methods concurrently with one another. Each iteration:
+// The consensus node drives sequencing as a repeated, single-threaded loop.
+// StartSequencing, EndSequencing, AppendLastSequencedBlock, and
+// ResequenceReorgedMessage form one turn and must be serialized with one another
+// (consensus holds a single mutex across them); the other methods below may be
+// called concurrently with that loop. Each iteration:
 //
 //  1. StartSequencing produces at most one block and stages it, or returns
 //     (nil, wait) when there is nothing to do yet (wait is how long to back off).
@@ -143,8 +146,9 @@ type ExecutionSequencer interface {
 	//
 	// It returns a non-nil SequencedMsg when a block was produced, which the
 	// consensus node must persist and then commit via AppendLastSequencedBlock.
-	// It returns (nil, wait) when nothing was produced (idle or throttled), where
-	// wait is how long to back off before calling again.
+	// It returns (nil, wait) when no block was produced — because the node is idle
+	// or throttled, hit an internal sequencing error, or has no sequencer
+	// configured — where wait is how long to back off before calling again.
 	//
 	// The staged result is owned by the sequencer until EndSequencing is called.
 	// StartSequencing is not safe for concurrent use; it must be called from a
@@ -185,10 +189,10 @@ type ExecutionSequencer interface {
 	AppendLastSequencedBlock() error
 	// ResequenceReorgedMessage re-sequences a single message that was sequenced
 	// before a reorg, re-applying it on the reorged chain and staging the
-	// resulting block (to be committed via AppendLastSequencedBlock). It requires
-	// the node to be the active sequencer and handles both a delayed message (only
-	// if its delayed index matches the next expected one) and a regular
-	// batch-poster message. It returns (nil, nil) when the message should be
+	// resulting block (to be committed via AppendLastSequencedBlock). The caller
+	// must only invoke it when the node is the active sequencer (not enforced
+	// here). It handles both a delayed message (only if its delayed index matches
+	// the next expected one) and a regular batch-poster message. It returns (nil, nil) when the message should be
 	// skipped (e.g. unexpected delayed index or a non-standard message), and
 	// ExecutionEngineBlockCreationStopped when block creation is halted, on which
 	// the caller should stop resequencing.
