@@ -36,11 +36,10 @@ num-bigint = { workspace = true }
 rand = { workspace = true, features = ["default", "thread_rng"] }
 
 [features]
-default = ["rayon", "singlepass_rayon"]
+default = ["rayon"]
 llvm = ["dep:wasmer-compiler-llvm"]
 benchmark = []
 timings = []
-singlepass_rayon = ["prover/singlepass_rayon", "wasmer-compiler-singlepass/rayon"]
 rayon = ["prover/rayon"]
 cc_brotli = ["brotli/cc_brotli"]
 
