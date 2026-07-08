@@ -233,10 +233,6 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 			return
 		}
 		if err := d.tryToEnqueue(ctx, latestHeader); err != nil {
-			if errors.Is(err, execution.ExecutionEngineBlockCreationStopped) {
-				log.Info("stopping block creation in delayed sequencer because execution engine has stopped")
-				return
-			}
 			log.Error("Delayed sequencer error", "err", err)
 		}
 	}
