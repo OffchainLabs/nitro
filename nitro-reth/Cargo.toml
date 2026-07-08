@@ -2,6 +2,7 @@
 members = [
     "crates/arb-primitives",
     "crates/arb-chainspec",
+    "crates/arb-consensus-db",
     "crates/arb-context",
     "crates/arb-da-provider-client",
     "crates/arb-math",
@@ -39,6 +40,7 @@ license = "BUSL-1.1"
 # Internal crates
 arb-primitives = { path = "crates/arb-primitives" }
 arb-chainspec = { path = "crates/arb-chainspec" }
+arb-consensus-db = { path = "crates/arb-consensus-db" }
 arb-context = { path = "crates/arb-context" }
 arb-da-provider-client = { path = "crates/arb-da-provider-client" }
 arb-math = { path = "crates/arb-math" }

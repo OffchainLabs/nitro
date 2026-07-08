@@ -1083,6 +1083,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-consensus-db"
+version = "0.1.5"
+dependencies = [
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arb-context"
 version = "0.1.5"
 dependencies = [
