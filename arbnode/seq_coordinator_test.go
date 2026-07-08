@@ -17,6 +17,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
 )
@@ -248,6 +249,81 @@ func TestSeqCoordinatorDeletesFinalizedMessages(t *testing.T) {
 	Require(t, err)
 	if exists != 8 {
 		t.Fatal("non-finalized messages and signatures in range 7 to 10 are not fully available")
+	}
+}
+
+type activeUntilRecorder struct {
+	execution.ExecutionSequencer
+	mutex sync.Mutex
+	calls []time.Time
+}
+
+func (r *activeUntilRecorder) SetActiveUntil(deadline time.Time) {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	r.calls = append(r.calls, deadline)
+}
+
+func (r *activeUntilRecorder) lastCall(t *testing.T) time.Time {
+	t.Helper()
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	if len(r.calls) == 0 {
+		t.Fatal("SetActiveUntil was never called")
+	}
+	return r.calls[len(r.calls)-1]
+}
+
+func TestSeqCoordinatorPropagatesActiveUntilDeadline(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	coordConfig := TestSeqCoordinatorConfig
+	coordConfig.LockoutDuration = time.Millisecond * 100
+	coordConfig.LockoutSpare = time.Millisecond * 10
+	coordConfig.Signer.ECDSA.AcceptSequencer = false
+	coordConfig.Signer.SymmetricFallback = true
+	coordConfig.Signer.SymmetricSign = true
+	coordConfig.Signer.Symmetric.Dangerous.DisableSignatureVerification = true
+	coordConfig.Signer.Symmetric.SigningKey = ""
+
+	nullSigner, err := signature.NewSignVerify(&coordConfig.Signer, nil, nil)
+	Require(t, err)
+
+	redisUrl := redisutil.CreateTestRedis(ctx, t)
+	coordConfig.RedisUrl = redisUrl
+
+	config := coordConfig
+	config.MyUrl = "test"
+	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl, config.RedisQuorumSize)
+	Require(t, err)
+	recorder := &activeUntilRecorder{}
+	coordinator := &SeqCoordinator{
+		redisCoordinator: redisCoordinator,
+		config:           config,
+		signer:           nullSigner,
+		sequencer:        recorder,
+	}
+
+	// Acquiring the lockout propagates lockoutUntil-LockoutSpare, the same value
+	// mirrored into c.lockoutUntil.
+	pos := arbutil.MessageIndex(1)
+	Require(t, coordinator.acquireLockoutAndWriteMessage(ctx, pos, pos+1, &arbostypes.EmptyTestMessageWithMetadata, nil))
+	wantActiveUntil := atomicTimeRead(&coordinator.lockoutUntil)
+	if wantActiveUntil.IsZero() {
+		t.Fatal("coordinator lockoutUntil not set after acquiring lockout")
+	}
+	// c.lockoutUntil is stored at millisecond granularity (atomicTimeWrite), so
+	// compare against the propagated deadline at the same granularity.
+	if got := recorder.lastCall(t); got.UnixMilli() != wantActiveUntil.UnixMilli() {
+		t.Fatalf("SetActiveUntil on acquire = %v, want %v (lockoutUntil - LockoutSpare)", got, wantActiveUntil)
+	}
+
+	// Releasing the lockout propagates the zero time so the sequencer stops
+	// considering itself chosen.
+	Require(t, coordinator.chosenOneRelease(ctx))
+	if got := recorder.lastCall(t); !got.IsZero() {
+		t.Fatalf("SetActiveUntil on release = %v, want zero time", got)
 	}
 }
 

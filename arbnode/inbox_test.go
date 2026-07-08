@@ -37,19 +37,7 @@ type execClientWrapper struct {
 	t               *testing.T
 }
 
-func (w *execClientWrapper) Pause() { w.t.Error("not supported") }
-
-func (w *execClientWrapper) Activate() { w.t.Error("not supported") }
-
-func (w *execClientWrapper) ForwardTo(url string) error { w.t.Error("not supported"); return nil }
-
-func (w *execClientWrapper) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
-	return w.ExecutionEngine.SequenceDelayedMessage(message, delayedSeqNum)
-}
-
-func (w *execClientWrapper) NextDelayedMessageNumber() (uint64, error) {
-	return w.ExecutionEngine.NextDelayedMessageNumber()
-}
+var _ execution.ExecutionClient = (*execClientWrapper)(nil)
 
 func (w *execClientWrapper) MarkFeedStart(to arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
 	markFeedStartWithReturn := func(to arbutil.MessageIndex) (struct{}, error) {
@@ -71,14 +59,6 @@ func (w *execClientWrapper) TriggerMaintenance() containers.PromiseInterface[str
 	return containers.NewReadyPromise(struct{}{}, nil)
 }
 
-func (w *execClientWrapper) Synced(ctx context.Context) bool {
-	w.t.Error("not supported")
-	return false
-}
-func (w *execClientWrapper) FullSyncProgressMap(ctx context.Context) map[string]interface{} {
-	w.t.Error("not supported")
-	return nil
-}
 func (w *execClientWrapper) SetFinalityData(
 	safeFinalityData *arbutil.FinalityData,
 	finalizedFinalityData *arbutil.FinalityData,
@@ -95,8 +75,8 @@ func (w *execClientWrapper) DigestMessage(num arbutil.MessageIndex, msg *arbosty
 	return containers.NewReadyPromise(w.ExecutionEngine.DigestMessage(num, msg, msgForPrefetch))
 }
 
-func (w *execClientWrapper) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
-	return containers.NewReadyPromise(w.ExecutionEngine.Reorg(count, newMessages, oldMessages))
+func (w *execClientWrapper) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) containers.PromiseInterface[[]*execution.MessageResult] {
+	return containers.NewReadyPromise(w.ExecutionEngine.Reorg(count, newMessages))
 }
 
 func (w *execClientWrapper) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
@@ -141,14 +121,15 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &DefaultTransactionStreamerConfig }
-	execEngine := gethexec.NewExecutionEngine(bc, 0, false, false, nil, nil)
+	execEngine := gethexec.NewExecutionEngine(bc, 0, false, false, nil, nil, time.Second)
 	stylusTargetConfig := &gethexec.DefaultStylusTargetConfig
 	Require(t, stylusTargetConfig.Validate()) // pre-processes config (i.a. parses wasmTargets)
 	if err := execEngine.Initialize(gethexec.DefaultCachingConfig.StylusLRUCacheCapacity, &gethexec.DefaultStylusTargetConfig); err != nil {
 		Fail(t, err)
 	}
-	execSeq := &execClientWrapper{execEngine, t}
-	inbox, err := NewTransactionStreamer(ctx, consensusDB, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher)
+	execClient := &execClientWrapper{execEngine, t}
+	execSeq := containers.None[execution.ExecutionSequencer]()
+	inbox, err := NewTransactionStreamer(ctx, consensusDB, bc.Config(), execClient, execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher)
 	if err != nil {
 		Fail(t, err)
 	}

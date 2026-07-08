@@ -150,7 +150,7 @@ func waitForDelayedSequencerHaltOnHashes(t *testing.T, ctx context.Context, buil
 		if builder.L2.ConsensusNode.DelayedSequencer == nil {
 			t.Fatal("DelayedSequencer is nil")
 		}
-		hashes, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
+		hashes, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
 		if waiting && len(hashes) == len(expectedHashes) {
 			match := true
 			for _, h := range hashes {
@@ -166,7 +166,7 @@ func waitForDelayedSequencerHaltOnHashes(t *testing.T, ctx context.Context, buil
 		<-time.After(100 * time.Millisecond)
 	}
 	// Get current state for error message
-	hashes, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
+	hashes, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
 	t.Fatalf("timeout waiting for delayed sequencer to halt on expected hashes: expected=%v, got=%v, waiting=%v", expectedHashes, hashes, waiting)
 }
 
@@ -178,7 +178,7 @@ func waitForDelayedSequencerResume(t *testing.T, ctx context.Context, builder *N
 		if builder.L2.ConsensusNode.DelayedSequencer == nil {
 			t.Fatal("DelayedSequencer is nil")
 		}
-		_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
+		_, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
 		if !waiting {
 			return
 		}
@@ -389,6 +389,60 @@ func TestDelayedMessageFilterHalting(t *testing.T) {
 		"report should contain filtered address with reason 'to'")
 }
 
+func TestDelayedMessageFilterHaltDoesNotBlockRegularTxs(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := setupFilteredTxTestBuilder(t, ctx)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("Sender")
+	builder.L2Info.GenerateAccount("RegularUser")
+	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
+
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	regularAddr := builder.L2Info.GetAddress("RegularUser")
+
+	filteredInitial, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
+	require.NoError(t, err)
+	regularInitial, err := builder.L2.Client.BalanceAt(ctx, regularAddr, nil)
+	require.NoError(t, err)
+
+	// Block FilteredUser and send a delayed tx to it so delayed sequencing halts.
+	filter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+
+	delayedTx := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	delayedTxHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
+	advanceL1ForDelayed(t, ctx, builder)
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{delayedTxHash}, 10*time.Second)
+
+	// While delayed sequencing is halted, a regular L2 tx must still be sequenced.
+	regularTx := builder.L2Info.PrepareTx("Owner", "RegularUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err = builder.L2.Client.SendTransaction(ctx, regularTx)
+	require.NoError(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(regularTx)
+	require.NoError(t, err, "regular tx should be sequenced while delayed sequencing is halted")
+
+	// The regular recipient received funds, the filtered recipient did not, and the
+	// delayed sequencer is still halted - proving regular txs were sequenced
+	// concurrently with the halt rather than after it resolved.
+	regularFinal, err := builder.L2.Client.BalanceAt(ctx, regularAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, new(big.Int).Add(regularInitial, big.NewInt(1e12)), regularFinal,
+		"regular user should receive funds while delayed sequencing is halted")
+
+	filteredMid, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, filteredInitial, filteredMid, "filtered user balance should not change while halted")
+
+	_, stillWaiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
+	require.True(t, stillWaiting,
+		"delayed sequencer should still be halted on the filtered message after regular txs were sequenced")
+}
+
 // TestDelayedMessageFilterBypass verifies that adding tx hash to onchain filter allows tx to proceed.
 func TestDelayedMessageFilterBypass(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -597,7 +651,7 @@ func TestDelayedMessageFilterResumeNotBlockedByLaterUnfinalizedMessage(t *testin
 	var headAtResume uint64
 	deadline = time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t); !waiting {
+		if _, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t); !waiting {
 			headAtResume, err = builder.L1.Client.BlockNumber(ctx)
 			require.NoError(t, err)
 			resumed = true
@@ -964,7 +1018,7 @@ func TestDelayedMessageFilterNonFilteredPasses(t *testing.T) {
 	})
 
 	// Verify sequencer is NOT halted
-	_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
+	_, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
 	require.False(t, waiting, "sequencer should not be halted for non-filtered address")
 
 	// Verify balance DID change (message processed normally)
@@ -1354,7 +1408,7 @@ func TestDelayedMessageFilterTxHashesUpdateOnchainFilter(t *testing.T) {
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
 	// Configure short retry interval so we don't have to wait long
-	builder.nodeConfig.DelayedSequencer.FilteredTxFullRetryInterval = 200 * time.Millisecond
+	builder.execConfig.TransactionFiltering.FilteredTxFullRetryInterval = 200 * time.Millisecond
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -1433,7 +1487,7 @@ func TestDelayedMessageFilterTxHashesUpdateAddressSetChange(t *testing.T) {
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
 	// Configure short retry interval so we don't have to wait long
-	builder.nodeConfig.DelayedSequencer.FilteredTxFullRetryInterval = 200 * time.Millisecond
+	builder.execConfig.TransactionFiltering.FilteredTxFullRetryInterval = 200 * time.Millisecond
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -1721,7 +1775,7 @@ func TestFilteredRetryableRedirectWithExplicitRecipient(t *testing.T) {
 	require.True(t, redirectBalance.Sign() > 0, "redirect address should have received fee refunds")
 
 	// Verify sequencer is not re-halted
-	_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
+	_, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
 	require.False(t, waiting, "sequencer should not be re-halted after processing filtered retryable")
 }
 
@@ -1838,7 +1892,7 @@ func TestFilteredRetryableNoRedirectWhenNotFiltered(t *testing.T) {
 	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status, "non-filtered retryable should succeed")
 
 	// Verify sequencer is NOT halted
-	_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
+	_, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
 	require.False(t, waiting, "sequencer should not be halted for non-filtered retryable")
 }
 
@@ -1990,7 +2044,7 @@ func TestFilteredRetryableSequencerDoesNotReHalt(t *testing.T) {
 	require.True(t, redirectBalance.Sign() > 0, "redirect address should have received fee refunds")
 
 	// Verify sequencer is NOT halted
-	_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
+	_, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
 	require.False(t, waiting, "sequencer should not be re-halted after processing")
 }
 
@@ -2985,7 +3039,7 @@ func TestFilteredArbitrumDepositTx(t *testing.T) {
 	var depositTxHash common.Hash
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		hashes, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
+		hashes, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
 		if waiting && len(hashes) > 0 {
 			depositTxHash = hashes[0]
 			break

@@ -66,8 +66,8 @@ func (c *Client) DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.Mess
 	return sendRequest[*execution.MessageResult](c, "_digestMessage", msgIdx, msg, msgForPrefetch)
 }
 
-func (c *Client) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
-	return sendRequest[[]*execution.MessageResult](c, "_reorg", msgIdxOfFirstMsgToAdd, newMessages, oldMessages)
+func (c *Client) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) containers.PromiseInterface[[]*execution.MessageResult] {
+	return sendRequest[[]*execution.MessageResult](c, "_reorg", msgIdxOfFirstMsgToAdd, newMessages)
 }
 
 func (c *Client) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
