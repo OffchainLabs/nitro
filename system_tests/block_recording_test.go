@@ -259,8 +259,7 @@ func sequenceInBlock(t *testing.T, builder *NodeBuilder, txs types.Transactions)
 		Timestamp:   arbmath.SaturatingUCast[uint64](time.Now().Unix()),
 	}
 	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(txs, nil, nil, nil)
-	_, err = builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
-	Require(t, err)
+	sequenceTransactions(t, builder, header, hooks, nil)
 
 	var blockNum uint64
 	receipts := make([]*types.Receipt, len(txs))

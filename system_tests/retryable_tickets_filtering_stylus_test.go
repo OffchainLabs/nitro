@@ -30,7 +30,7 @@ func deployStylusStorageContract(
 // TestRetryableFilteringStylusSandwichRollback verifies that a group rollback
 // of a Stylus redeem chain does not affect neighboring transactions in the same
 // block. Three L2 transactions are forced into one block via
-// SequenceTransactionsForTest (bypasses the sequencer queue):
+// sequenceTransactionsInTheSameBlock (bypasses the sequencer queue):
 //   - TX1: writes keyBefore to multicall's storage
 //   - TX2: manual redeem that triggers a Stylus chain (multicall writes
 //     keyRedeem + CALLs filtered Stylus contract) → group rollback
@@ -78,8 +78,6 @@ func TestRetryableFilteringStylusSandwichRollback(t *testing.T) {
 	filter := newHashedChecker([]common.Address{filteredStylusAddr})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
-	sequencer := builder.L2.ExecNode.Sequencer
-
 	// Prepare TX1: write keyBefore=valueBefore to multicall M
 	tx1Args := multicallEmptyArgs()
 	tx1Args = multicallAppendStore(tx1Args, keyBefore, valueBefore, false, false)
@@ -105,11 +103,8 @@ func TestRetryableFilteringStylusSandwichRollback(t *testing.T) {
 	tx3 := builder.L2Info.PrepareTxTo("Sender2", &multicallAddr, 1e9, nil, tx3Args)
 
 	// --- Sequence all 3 txs in a single block (bypasses queue for determinism) ---
-	sequencer.Pause()
-	defer sequencer.Activate()
-
-	block, txErrors := sequencer.SequenceTransactionsForTest(
-		t, types.Transactions{tx1, tx2, tx3},
+	block, txErrors := sequenceTransactionsInTheSameBlock(
+		t, builder, types.Transactions{tx1, tx2, tx3},
 	)
 	require.NotNil(t, block, "block should have been created")
 	require.Len(t, txErrors, 3, "should have 3 tx results")
@@ -188,11 +183,7 @@ func TestRetryableFilteringStylusGroupRollbackNoCacheLeak(t *testing.T) {
 	txB := builder.L2Info.PrepareTxTo("SenderB", &multicallAddr, 1e7, nil, multicallEmptyArgs())
 	txC := builder.L2Info.PrepareTxTo("SenderC", &multicallAddr, 1e7, nil, multicallEmptyArgs())
 
-	sequencer := builder.L2.ExecNode.Sequencer
-	sequencer.Pause()
-	defer sequencer.Activate()
-
-	block, txErrors := sequencer.SequenceTransactionsForTest(t, types.Transactions{txRedeem, txB, txC})
+	block, txErrors := sequenceTransactionsInTheSameBlock(t, builder, types.Transactions{txRedeem, txB, txC})
 	require.NotNil(t, block)
 	require.Len(t, txErrors, 3)
 	require.Error(t, txErrors[0], "redeem group should be rolled back by the filter")

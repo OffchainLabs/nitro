@@ -256,6 +256,7 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	ReadFromTxQueueTimeout:       time.Second, // Dont want this to affect tests
 	MaxRevertGasReject:           params.TxGas + 10000,
 	MaxAcceptableTimestampDelta:  time.Hour,
+	PollInterval:                 50 * time.Millisecond,
 	SenderWhitelist:              []string{},
 	Forwarder:                    DefaultTestForwarderConfig,
 	QueueSize:                    128,
@@ -293,7 +294,7 @@ func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 	config.ForwardingTarget = "null"
 	config.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessNone
 	config.ExposeMultiGas = true
-	config.TransactionFiltering.EnableETHCallFilter = false
+	config.TransactionFiltering = gethexec.TestTransactionFilteringConfig
 
 	Require(t, config.Validate())
 
@@ -3007,6 +3008,41 @@ func populateMachineDir(t *testing.T, cr *github.ConsensusRelease) string {
 	_, err = io.Copy(replayFile, replayResp.Body)
 	Require(t, err)
 	return machineDir
+}
+func sequenceTransactions(
+	t *testing.T,
+	builder *NodeBuilder,
+	header *arbostypes.L1IncomingMessageHeader,
+	hooks *gethexec.FullSequencingHooks,
+	timeboostedTxs map[common.Hash]struct{},
+) (*types.Block, []error) {
+	sequencedMsg, block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, timeboostedTxs)
+	Require(t, err)
+	if sequencedMsg == nil {
+		Fatal(t, "sequencedMsg is nil")
+	}
+	err = builder.L2.ConsensusNode.TxStreamer.WriteSequencedMsg(sequencedMsg)
+	Require(t, err)
+	err = builder.L2.ExecNode.AppendLastSequencedBlock()
+	Require(t, err)
+	return block, hooks.GetTxErrors()
+}
+
+// sequenceTransactionsInTheSameBlock sequences all the given transactions into a
+// single block, using the sequencer's real pre/post tx filters and bypassing the
+// txQueue. It returns the produced block and the per-transaction errors.
+func sequenceTransactionsInTheSameBlock(
+	t *testing.T,
+	builder *NodeBuilder,
+	txes types.Transactions,
+) (*types.Block, []error) {
+	sequencer := builder.L2.ExecNode.Sequencer
+	sequencer.Pause()
+	defer sequencer.Activate()
+	header, hooks := sequencer.MakeSameBlockSequencingHooksAndHeaderForTest(t, txes)
+	block, txErrors := sequenceTransactions(t, builder, header, hooks, nil)
+	sequencer.DispatchPendingFilteredTxReportsForTest(t)
+	return block, txErrors
 }
 
 func waitForTCP(t *testing.T, addr string, timeout time.Duration) {

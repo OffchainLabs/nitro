@@ -558,7 +558,7 @@ func ProduceBlockAdvanced(
 			// If a redeem was rejected by the address filter and we have an
 			// active group checkpoint, roll back the entire group (user tx + all
 			// redeems) to the pre-group state.
-			if !isUserTx && buildState.activeGroupCP != nil && errors.Is(err, state.ErrArbTxFilter) {
+			if !isUserTx && buildState.activeGroupCP != nil && errors.Is(err, state.ErrSeqFilter) {
 				// Capture everything before rollback — addressCheckerStateß
 				cp := buildState.activeGroupCP
 				_, filteredAddresses := buildState.statedb.IsAddressFiltered()
@@ -701,7 +701,7 @@ func ProduceBlockAdvanced(
 	}
 
 	if buildState.statedb.IsTxFiltered() {
-		return nil, nil, nil, state.ErrArbTxFilter
+		return nil, nil, nil, state.ErrSeqFilter
 	}
 
 	if err = sequencingHooks.BlockFilter(header, buildState.statedb, buildState.complete, buildState.receipts); err != nil {
