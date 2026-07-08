@@ -45,7 +45,7 @@ func (f *txFilterer) CheckFiltered(statedb *state.StateDB, rootTx *types.Transac
 		if f.filteringReportRPCClient != nil {
 			f.reportFilteredTx(rootTx, header, records)
 		}
-		return state.ErrArbTxFilter
+		return state.ErrSeqFilter
 	}
 	return nil
 }

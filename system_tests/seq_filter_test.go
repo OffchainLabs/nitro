@@ -27,7 +27,7 @@ func TestSequencerTxFilter(t *testing.T) {
 	builder, header, txes, hooks, cleanup := setupSequencerFilterTest(t, false)
 	defer cleanup()
 
-	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
+	_, block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
 	Require(t, err) // There shouldn't be any error in block generation
 	if block == nil {
 		t.Fatal("block should be generated as second tx should pass")
@@ -41,8 +41,8 @@ func TestSequencerTxFilter(t *testing.T) {
 	if len(hooks.GetTxErrors()) != 2 {
 		t.Fatalf("expected 2 txErrors in hooks, found: %d", len(hooks.GetTxErrors()))
 	}
-	if hooks.GetTxErrors()[0].Error() != state.ErrArbTxFilter.Error() {
-		t.Fatalf("expected ErrArbTxFilter, found: %s", hooks.GetTxErrors()[0].Error())
+	if hooks.GetTxErrors()[0].Error() != state.ErrSeqFilter.Error() {
+		t.Fatalf("expected ErrSeqFilter, found: %s", hooks.GetTxErrors()[0].Error())
 	}
 	if hooks.GetTxErrors()[1] != nil {
 		t.Fatalf("found a non-nil error for second transaction: %v", hooks.GetTxErrors()[1])
@@ -53,15 +53,15 @@ func TestSequencerBlockFilterReject(t *testing.T) {
 	builder, header, _, hooks, cleanup := setupSequencerFilterTest(t, true)
 	defer cleanup()
 
-	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
+	_, block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
 	if block != nil {
 		t.Fatal("block shouldn't be generated when all txes have failed")
 	}
 	if err == nil {
-		t.Fatal("expected ErrArbTxFilter but found nil")
+		t.Fatal("expected ErrSeqFilter but found nil")
 	}
-	if err.Error() != state.ErrArbTxFilter.Error() {
-		t.Fatalf("expected ErrArbTxFilter, found: %s", err.Error())
+	if err.Error() != state.ErrSeqFilter.Error() {
+		t.Fatalf("expected ErrSeqFilter, found: %s", err.Error())
 	}
 }
 
@@ -71,7 +71,7 @@ func TestSequencerBlockFilterAccept(t *testing.T) {
 	_, _, err := hooks.NextTxToSequence() // remove first transaction from hooks
 	Require(t, err)
 	hooks.TxSucceeded()
-	block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
+	_, block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, nil)
 	Require(t, err)
 	if block == nil {
 		t.Fatal("block should be generated as the tx should pass")
@@ -120,7 +120,7 @@ func setupSequencerFilterTest(t *testing.T, isBlockFilter bool) (*NodeBuilder, *
 	if isBlockFilter {
 		blockFilter = func(_ *types.Header, _ *state.StateDB, txes types.Transactions, _ types.Receipts) error {
 			if len(txes[1].Data()) > 0 {
-				return state.ErrArbTxFilter
+				return state.ErrSeqFilter
 			}
 			return nil
 		}
@@ -133,7 +133,7 @@ func setupSequencerFilterTest(t *testing.T, isBlockFilter bool) (*NodeBuilder, *
 		}
 		postTxFilter = func(_ *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, _ common.Address, _ uint64, _ *core.ExecutionResult, _ int) error {
 			if statedb.IsTxFiltered() {
-				return state.ErrArbTxFilter
+				return state.ErrSeqFilter
 			}
 			return nil
 		}

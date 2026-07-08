@@ -27,12 +27,13 @@ type pgaMempoolTestEnv struct {
 }
 
 const testChanCap = 100
+const testRoundsPerBlock = 2
 
 // newPgaMempoolTestEnv builds an env whose mempool reads from a waiting-list channel of capacity testChanCap.
 func newPgaMempoolTestEnv() *pgaMempoolTestEnv {
 	ch := make(chan mockTx, testChanCap)
 	return &pgaMempoolTestEnv{
-		mempool: NewMempool(ch),
+		mempool: NewMempool(ch, testRoundsPerBlock),
 		ch:      ch,
 	}
 }
@@ -79,11 +80,22 @@ func expectResult(t *testing.T, resultChan chan error, want error) {
 // mustPop pops the next valid transaction, failing the test if the mempool has none left.
 func mustPop(t *testing.T, m *Mempool[mockTx]) mockTx {
 	t.Helper()
-	tx, ok := m.Pop()
+	entry, ok := m.Pop()
 	if !ok {
 		t.Fatal("Pop returned ok=false, want a transaction")
 	}
-	return tx
+	return entry.tx
+}
+
+// mustPopEntry pops the next valid entry, failing if the mempool is empty. Tests use it when they need the entry's
+// priority or boost, or want to re-insert it.
+func mustPopEntry(t *testing.T, m *Mempool[mockTx]) PrioritizedTx[mockTx] {
+	t.Helper()
+	entry, ok := m.Pop()
+	if !ok {
+		t.Fatal("Pop returned ok=false, want a transaction")
+	}
+	return entry
 }
 
 func TestPgaMempoolStartNewBlockDrainsWaitingList(t *testing.T) {
@@ -252,11 +264,11 @@ func TestPgaMempoolStartNewBlockRecomputesAgainstNewBaseFee(t *testing.T) {
 	env.ch <- itemB
 
 	env.mempool.StartNewBlock(big.NewInt(10), 1000) // base 10: A=10, B=50 -> B first
-	top := mustPop(t, env.mempool)
-	if top.id != idB {
-		t.Fatalf("before re-key: top = %d, want B", top.id)
+	top := mustPopEntry(t, env.mempool)
+	if top.tx.id != idB {
+		t.Fatalf("before re-key: top = %d, want B", top.tx.id)
 	}
-	env.mempool.Push(top) // restore for the re-key
+	env.mempool.PushPrioritized(top) // restore for the re-key
 
 	// A second StartNewBlock against a higher basefee re-keys the queued txs.
 	env.mempool.StartNewBlock(big.NewInt(55), 1000) // base 55: A=10, B=5 -> A first
@@ -369,11 +381,11 @@ func TestPgaMempoolPushBackKeepsPriority(t *testing.T) {
 	env.ch <- itemC
 	env.mempool.StartNewBlock(big.NewInt(40), 1000)
 
-	top := mustPop(t, env.mempool)
-	if top.id != idA {
-		t.Fatalf("first pop = %d, want A", top.id)
+	top := mustPopEntry(t, env.mempool)
+	if top.tx.id != idA {
+		t.Fatalf("first pop = %d, want A", top.tx.id)
 	}
-	env.mempool.Push(top) // push back; re-keyed to the same priority, so it pops first again
+	env.mempool.PushPrioritized(top) // push back; re-keyed to the same priority, so it pops first again
 
 	if again := mustPop(t, env.mempool); again.id != idA {
 		t.Fatalf("after push-back = %d, want A", again.id)
@@ -388,17 +400,17 @@ func TestPgaMempoolPushBackKeepsPriority(t *testing.T) {
 	}
 }
 
-// TestPgaMempoolPushDropsOnFeeError covers Push's re-key failure branch: a
-// push-back whose ComputePgaPriority errors is dropped with that error rather
-// than queued. The basefee is constant within a block, so a re-key that
-// succeeded on the way out cannot fail on push-back today; this pins the
+// TestPgaMempoolPushDropsOnFeeError covers PushPrioritized's re-key failure
+// branch: a push-back whose ComputePgaPriority errors is dropped with that
+// error rather than queued. The basefee is constant within a block, so a re-key
+// that succeeded on the way out cannot fail on push-back today; this pins the
 // public API's behavior regardless.
 func TestPgaMempoolPushDropsOnFeeError(t *testing.T) {
 	env := newPgaMempoolTestEnv()
-	env.mempool.StartNewBlock(big.NewInt(40), 1000) // sets the basefee Push re-keys against
+	env.mempool.StartNewBlock(big.NewInt(40), 1000) // sets the basefee PushPrioritized re-keys against
 
 	item, result := env.makePgaTestItem(context.Background(), failFee(errFeeCapTooLow), 10, defaultArrival)
-	env.mempool.Push(item)
+	env.mempool.PushPrioritized(PrioritizedTx[mockTx]{tx: item})
 
 	expectResult(t, result, errFeeCapTooLow)
 	if env.mempool.PriorityQueueLen() != 0 {
@@ -441,5 +453,138 @@ func TestPgaMempoolEmptyOps(t *testing.T) {
 	env.mempool.StartNewBlock(big.NewInt(40), 1000)
 	if env.mempool.PriorityQueueLen() != 0 {
 		t.Fatalf("len = %d after no-op StartNewBlock, want 0", env.mempool.PriorityQueueLen())
+	}
+}
+
+func TestPgaMempoolBoostAccumulation(t *testing.T) {
+	env := newPgaMempoolTestEnv()
+	base := big.NewInt(40)
+
+	// included pops and is recorded; remaining stays queued and should be boosted at the next round boundary.
+	included, _ := env.makePgaTestItem(context.Background(), constFee(100), 10, defaultArrival)
+	remaining, _ := env.makePgaTestItem(context.Background(), constFee(0), 10, defaultArrival)
+	env.ch <- included
+	env.ch <- remaining
+	env.mempool.StartNewBlock(base, 1000)
+
+	top := mustPopEntry(t, env.mempool)
+	if top.tx.id != included.id || top.cachedPriority != 100 {
+		t.Fatalf("first pop = (id %d, prio %d), want included with prio 100", top.tx.id, top.cachedPriority)
+	}
+	env.mempool.RecordIncludedTx(top.cachedPriority)
+
+	// Next round boosts the queue by lastIncludedPriority / (2K) = 100 / 4 = 25, lifting remaining from 0 to 25.
+	env.mempool.StartNewPGARound()
+	got := mustPopEntry(t, env.mempool)
+	if got.tx.id != remaining.id || got.cachedPriority != 25 {
+		t.Fatalf("boosted pop = (id %d, prio %d), want remaining with prio 25", got.tx.id, got.cachedPriority)
+	}
+	if got.boost != 25 {
+		t.Fatalf("remaining boost = %d, want 25", got.boost)
+	}
+}
+
+func TestPgaMempoolBoostFoldedIntoNextBlock(t *testing.T) {
+	env := newPgaMempoolTestEnv()
+
+	included, _ := env.makePgaTestItem(context.Background(), constFee(100), 10, defaultArrival)
+	// remaining's fee depends on the basefee: 0 at base 40, 7 at base 50. The next block must recompute the fee and
+	// re-add the accumulated boost.
+	remaining, _ := env.makePgaTestItem(context.Background(), func(baseFee *big.Int) (uint64, error) {
+		if baseFee.Cmp(big.NewInt(50)) == 0 {
+			return 7, nil
+		}
+		return 0, nil
+	}, 10, defaultArrival)
+	env.ch <- included
+	env.ch <- remaining
+	env.mempool.StartNewBlock(big.NewInt(40), 1000)
+
+	top := mustPopEntry(t, env.mempool)
+	if top.tx.id != included.id {
+		t.Fatalf("first pop = %d, want included", top.tx.id)
+	}
+	env.mempool.RecordIncludedTx(top.cachedPriority) // 100
+	env.mempool.StartNewPGARound()                   // boost remaining by 100 / 4 = 25
+
+	// A new block re-keys against base 50: remaining = fee(50) + boost = 7 + 25 = 32, proving the boost folds into the
+	// recomputed priority.
+	env.mempool.StartNewBlock(big.NewInt(50), 1000)
+	got := mustPopEntry(t, env.mempool)
+	if got.tx.id != remaining.id || got.cachedPriority != 32 {
+		t.Fatalf("after re-key pop = (id %d, prio %d), want remaining with prio 32", got.tx.id, got.cachedPriority)
+	}
+}
+
+func TestPgaMempoolPushPrioritizedPreservesBoost(t *testing.T) {
+	env := newPgaMempoolTestEnv()
+	base := big.NewInt(40)
+
+	deferred, _ := env.makePgaTestItem(context.Background(), constFee(50), 10, defaultArrival)
+	remaining, _ := env.makePgaTestItem(context.Background(), constFee(10), 10, defaultArrival)
+	env.ch <- deferred
+	env.ch <- remaining
+	env.mempool.StartNewBlock(base, 1000)
+
+	// Round 1 boost: lastIncludedPriority 40 -> delta 10 lifts both queued txs.
+	env.mempool.RecordIncludedTx(40)
+	env.mempool.StartNewPGARound()
+
+	// deferred is popped but does not fit in the block, carrying its round-1 boost of 10. The popped entry is a
+	// detached copy, so later boosts cannot touch it.
+	popped := mustPopEntry(t, env.mempool)
+	if popped.tx.id != deferred.id || popped.cachedPriority != 60 { // 50 + 10
+		t.Fatalf("popped = (id %d, prio %d), want deferred with prio 60", popped.tx.id, popped.cachedPriority)
+	}
+	if popped.boost != 10 {
+		t.Fatalf("deferred boost at pop = %d, want 10", popped.boost)
+	}
+
+	// Round 2 boost runs while deferred is out: lastIncludedPriority 20 -> delta 5 lifts only the still-queued tx.
+	env.mempool.RecordIncludedTx(20)
+	env.mempool.StartNewPGARound()
+	if popped.boost != 10 {
+		t.Fatalf("deferred boost while out = %d, want 10 (untouched while out of the queue)", popped.boost)
+	}
+
+	// PushPrioritized re-adds deferred with its boost of 10, not the round-2 boost it never received.
+	env.mempool.PushPrioritized(popped)
+
+	first := mustPopEntry(t, env.mempool)
+	if first.tx.id != deferred.id || first.cachedPriority != 60 { // 50 + 10, unaffected by round 2
+		t.Fatalf("re-added pop = (id %d, prio %d), want deferred with prio 60", first.tx.id, first.cachedPriority)
+	}
+	second := mustPopEntry(t, env.mempool)
+	if second.tx.id != remaining.id || second.cachedPriority != 25 { // 10 + 10 + 5
+		t.Fatalf("remaining pop = (id %d, prio %d), want remaining with prio 25", second.tx.id, second.cachedPriority)
+	}
+	if second.boost != 15 {
+		t.Fatalf("remaining boost = %d, want 15 (round 1 + round 2)", second.boost)
+	}
+}
+
+// TestPgaMempoolPushDropsBoost covers Push, the entry point for a transaction revived from the nonce-failure cache: it
+// re-enters keyed on its fee alone, dropping any boost it accumulated before being cached.
+func TestPgaMempoolPushDropsBoost(t *testing.T) {
+	env := newPgaMempoolTestEnv()
+	base := big.NewInt(40)
+
+	revived, _ := env.makePgaTestItem(context.Background(), constFee(50), 10, defaultArrival)
+	env.ch <- revived
+	env.mempool.StartNewBlock(base, 1000)
+
+	// Accumulate a boost on the queued tx, then pop it as if it were sent to the nonce-failure cache.
+	env.mempool.RecordIncludedTx(40)
+	env.mempool.StartNewPGARound() // delta 10
+	popped := mustPopEntry(t, env.mempool)
+	if popped.boost != 10 {
+		t.Fatalf("boost before re-add = %d, want 10", popped.boost)
+	}
+
+	// Push re-adds the bare transaction, as the nonce-failure cache does, so the boost is dropped.
+	env.mempool.Push(popped.tx)
+	got := mustPopEntry(t, env.mempool)
+	if got.tx.id != revived.id || got.cachedPriority != 50 || got.boost != 0 {
+		t.Fatalf("re-added pop = (id %d, prio %d, boost %d), want (id %d, 50, 0)", got.tx.id, got.cachedPriority, got.boost, revived.id)
 	}
 }
