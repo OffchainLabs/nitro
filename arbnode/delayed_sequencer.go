@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,28 +18,13 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
-
-var delayedSequencerFilteredTxWaitSeconds = metrics.NewRegisteredGauge(
-	"arb/delayedsequencer/filtered_tx_wait_seconds", nil)
-
-// FilteredTxWaitState tracks a halt while waiting for filtered transactions
-// to be added to the onchain filter
-type FilteredTxWaitState struct {
-	TxHashes      []common.Hash
-	DelayedMsgIdx uint64
-	FirstSeen     time.Time
-	LastLogTime   time.Time
-	LastFullRetry time.Time
-}
 
 type DelayedMessageFetcher interface {
 	GetDelayedCount() (uint64, error)
@@ -54,19 +40,17 @@ type DelayedSequencer struct {
 	delayedMessageFetcher    DelayedMessageFetcher
 	exec                     execution.ExecutionSequencer
 	coordinator              *SeqCoordinator
-	waitingForFinalizedBlock *uint64 // short-circuit: skip work until finalized parent chain block advances past this value
-	waitingForFilteredTx     *FilteredTxWaitState
-	mutex                    sync.Mutex
+	waitingForFinalizedBlock atomic.Pointer[uint64] // short-circuit: skip work until finalized parent chain block advances past this value
 	config                   DelayedSequencerConfigFetcher
+	mutex                    sync.Mutex
 }
 
 type DelayedSequencerConfig struct {
-	Enable                      bool          `koanf:"enable" reload:"hot"`
-	FinalizeDistance            int64         `koanf:"finalize-distance" reload:"hot"`
-	RequireFullFinality         bool          `koanf:"require-full-finality" reload:"hot"`
-	UseMergeFinality            bool          `koanf:"use-merge-finality" reload:"hot"`
-	RescanInterval              time.Duration `koanf:"rescan-interval" reload:"hot"`
-	FilteredTxFullRetryInterval time.Duration `koanf:"filtered-tx-full-retry-interval" reload:"hot"`
+	Enable              bool          `koanf:"enable" reload:"hot"`
+	FinalizeDistance    int64         `koanf:"finalize-distance" reload:"hot"`
+	RequireFullFinality bool          `koanf:"require-full-finality" reload:"hot"`
+	UseMergeFinality    bool          `koanf:"use-merge-finality" reload:"hot"`
+	RescanInterval      time.Duration `koanf:"rescan-interval" reload:"hot"`
 }
 
 type DelayedSequencerConfigFetcher func() *DelayedSequencerConfig
@@ -77,25 +61,22 @@ func DelayedSequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".require-full-finality", DefaultDelayedSequencerConfig.RequireFullFinality, "whether to wait for full finality before sequencing delayed messages")
 	f.Bool(prefix+".use-merge-finality", DefaultDelayedSequencerConfig.UseMergeFinality, "whether to use The Merge's notion of finality before sequencing delayed messages")
 	f.Duration(prefix+".rescan-interval", DefaultDelayedSequencerConfig.RescanInterval, "frequency to rescan for new delayed messages (the parent chain reader's poll-interval config is more important than this)")
-	f.Duration(prefix+".filtered-tx-full-retry-interval", DefaultDelayedSequencerConfig.FilteredTxFullRetryInterval, "how often to do a full re-execution when halted on a filtered delayed message")
 }
 
 var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
-	Enable:                      false,
-	FinalizeDistance:            20,
-	RequireFullFinality:         false,
-	UseMergeFinality:            true,
-	RescanInterval:              time.Second,
-	FilteredTxFullRetryInterval: 30 * time.Second,
+	Enable:              false,
+	FinalizeDistance:    20,
+	RequireFullFinality: false,
+	UseMergeFinality:    true,
+	RescanInterval:      time.Second,
 }
 
 var TestDelayedSequencerConfig = DelayedSequencerConfig{
-	Enable:                      true,
-	FinalizeDistance:            20,
-	RequireFullFinality:         false,
-	UseMergeFinality:            false,
-	RescanInterval:              time.Millisecond * 100,
-	FilteredTxFullRetryInterval: 1 * time.Second,
+	Enable:              true,
+	FinalizeDistance:    20,
+	RequireFullFinality: false,
+	UseMergeFinality:    false,
+	RescanInterval:      time.Millisecond * 100,
 }
 
 func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, delayedMessageFetcher DelayedMessageFetcher, delayedBridge *DelayedBridge, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
@@ -117,63 +98,21 @@ func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
 	return d.exec.NextDelayedMessageNumber()
 }
 
-func (d *DelayedSequencer) trySequence(ctx context.Context, lastBlockHeader *types.Header) error {
+func (d *DelayedSequencer) tryToEnqueue(ctx context.Context, lastBlockHeader *types.Header) error {
 	if d.coordinator != nil && !d.coordinator.CurrentlyChosen() {
 		return nil
 	}
 
-	return d.sequenceWithoutLockout(ctx, lastBlockHeader)
+	return d.enqueueWithoutLockout(ctx, lastBlockHeader)
 }
 
-func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlockHeader *types.Header) error {
+func (d *DelayedSequencer) enqueueWithoutLockout(ctx context.Context, lastBlockHeader *types.Header) error {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
 	config := d.config()
 	if !config.Enable {
 		return nil
-	}
-
-	// Periodic logging if halted waiting for filtered tx to be added to onchain filter
-	if d.waitingForFilteredTx != nil {
-		now := time.Now()
-		waitDuration := now.Sub(d.waitingForFilteredTx.FirstSeen)
-		delayedSequencerFilteredTxWaitSeconds.Update(int64(waitDuration.Seconds()))
-		if now.Sub(d.waitingForFilteredTx.LastLogTime) >= 5*time.Minute {
-			logLevel := log.Warn
-			if waitDuration > 1*time.Hour {
-				logLevel = log.Error
-			}
-			logLevel("DelayedSequencer halted on filtered tx - waiting for tx hashes to be added to onchain filter",
-				"txHashes", d.waitingForFilteredTx.TxHashes,
-				"delayedMsgIdx", d.waitingForFilteredTx.DelayedMsgIdx,
-				"waitingSince", d.waitingForFilteredTx.FirstSeen)
-			d.waitingForFilteredTx.LastLogTime = now
-		}
-
-		// Periodically attempt full re-execution even if the tx hashes aren't in the
-		// onchain filter yet. The filtered address set may have changed since the
-		// last attempt, which could allow the tx to succeed without needing bypass.
-		needsFullRetry := time.Since(d.waitingForFilteredTx.LastFullRetry) >= config.FilteredTxFullRetryInterval
-		if !needsFullRetry {
-			// Fast-path: check if all filtered tx hashes are now in the onchain filter
-			allInFilter := true
-			for _, txHash := range d.waitingForFilteredTx.TxHashes {
-				isInFilter, err := d.exec.IsTxHashInOnchainFilter(txHash)
-				if err != nil {
-					log.Error("error checking onchain filter", "err", err, "txHash", txHash)
-					allInFilter = false
-					break
-				}
-				if !isInFilter {
-					allInFilter = false
-					break
-				}
-			}
-			if !allInFilter {
-				return nil
-			}
-		}
 	}
 
 	var finalized uint64
@@ -200,18 +139,12 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		finalized = uint64(currentNum - config.FinalizeDistance)
 	}
 
-	// Normally there's nothing to do until the block we're waiting for finalizes. The exception is
-	// when we're halted on a filtered tx: that (already-finalized) message must be re-attempted as
-	// soon as its onchain-filter condition is met, regardless of a later message's finality. The
-	// collection loop below still enforces per-message finality, so nothing unfinalized gets sequenced.
-	awaitingLaterFinalization := d.waitingForFinalizedBlock != nil && *d.waitingForFinalizedBlock > finalized
-	haltedOnFilteredTx := d.waitingForFilteredTx != nil
-	if awaitingLaterFinalization && !haltedOnFilteredTx {
+	if w := d.waitingForFinalizedBlock.Load(); w != nil && *w > finalized {
 		return nil
 	}
 
 	// Reset what block we're waiting for if we've caught up
-	d.waitingForFinalizedBlock = nil
+	d.waitingForFinalizedBlock.Store(nil)
 
 	dbDelayedCount, err := d.delayedMessageFetcher.GetDelayedCount()
 	if err != nil {
@@ -230,7 +163,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	for pos < dbDelayedCount {
 		msg, acc, parentChainBlockNumber, err := d.delayedMessageFetcher.FinalizedDelayedMessageAtPosition(ctx, finalized, lastDelayedAcc, pos)
 		if errors.Is(err, mel.ErrDelayedMessageNotYetFinalized) {
-			d.waitingForFinalizedBlock = &parentChainBlockNumber
+			d.waitingForFinalizedBlock.Store(&parentChainBlockNumber)
 			break
 		} else if err != nil {
 			return err
@@ -247,57 +180,20 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		); err != nil {
 			return err
 		}
-		for i, msg := range messages {
-			// #nosec G115
-			err = d.exec.SequenceDelayedMessage(msg, startPos+uint64(i))
-			if err != nil {
-				var filteredErr *gethexec.ErrFilteredDelayedMessage
-				if errors.As(err, &filteredErr) {
-					now := time.Now()
-					if d.waitingForFilteredTx == nil {
-						// First time hitting filtered tx(es) - log and set waiting state
-						log.Info("Delayed message filtered - HALTING delayed sequencer",
-							"txHashes", filteredErr.TxHashes,
-							"delayedMsgIdx", filteredErr.DelayedMsgIdx)
-						d.waitingForFilteredTx = &FilteredTxWaitState{
-							TxHashes:      filteredErr.TxHashes,
-							DelayedMsgIdx: filteredErr.DelayedMsgIdx,
-							FirstSeen:     now,
-							LastLogTime:   now,
-							LastFullRetry: now,
-						}
-					} else {
-						d.waitingForFilteredTx.TxHashes = filteredErr.TxHashes
-						d.waitingForFilteredTx.LastFullRetry = now
-					}
-					// Return nil to halt without propagating error up - will retry on next interval
-					return nil
-				}
-				return err
-			}
-			// Success - clear waiting state if we were waiting
-			if d.waitingForFilteredTx != nil {
-				log.Info("Filtered tx resolved - resuming delayed sequencer",
-					"txHashes", d.waitingForFilteredTx.TxHashes,
-					"delayedMsgIdx", d.waitingForFilteredTx.DelayedMsgIdx,
-					"waitedFor", time.Since(d.waitingForFilteredTx.FirstSeen))
-				d.waitingForFilteredTx = nil
-				delayedSequencerFilteredTxWaitSeconds.Update(0)
-			}
-		}
-		log.Info("DelayedSequencer: Sequenced", "msgnum", len(messages), "startpos", startPos)
+		d.exec.EnqueueDelayedMessages(messages, startPos)
+		log.Info("Delayed messages enqueued", "msgnum", len(messages), "startpos", startPos)
 	}
 
 	return nil
 }
 
 // Dangerous: bypasses lockout check!
-func (d *DelayedSequencer) ForceSequenceDelayed(ctx context.Context) error {
+func (d *DelayedSequencer) ForceEnqueue(ctx context.Context) error {
 	lastBlockHeader, err := d.l1Reader.LastHeader(ctx)
 	if err != nil {
 		return err
 	}
-	return d.sequenceWithoutLockout(ctx, lastBlockHeader)
+	return d.enqueueWithoutLockout(ctx, lastBlockHeader)
 }
 
 func (d *DelayedSequencer) run(ctx context.Context) {
@@ -336,11 +232,7 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 			log.Debug("delayed sequencer: context done", "err", ctx.Err())
 			return
 		}
-		if err := d.trySequence(ctx, latestHeader); err != nil {
-			if errors.Is(err, gethexec.ExecutionEngineBlockCreationStopped) {
-				log.Info("stopping block creation in delayed sequencer because execution engine has stopped")
-				return
-			}
+		if err := d.tryToEnqueue(ctx, latestHeader); err != nil {
 			log.Error("Delayed sequencer error", "err", err)
 		}
 	}
@@ -351,24 +243,11 @@ func (d *DelayedSequencer) Start(ctxIn context.Context) {
 	d.LaunchThread(d.run)
 }
 
-// WaitingForFilteredTx returns the tx hashes being waited on, or nil and false if not halted.
-// Takes a testing.T to prevent production code from calling this test-only function.
-func (d *DelayedSequencer) WaitingForFilteredTx(t *testing.T) ([]common.Hash, bool) {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-	if d.waitingForFilteredTx == nil {
-		return nil, false
-	}
-	return d.waitingForFilteredTx.TxHashes, true
-}
-
 func (d *DelayedSequencer) WaitingForFinalizedBlock(t *testing.T) (uint64, bool) {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-	if d.waitingForFinalizedBlock == nil {
-		return 0, false
+	if w := d.waitingForFinalizedBlock.Load(); w != nil {
+		return *w, true
 	}
-	return *d.waitingForFinalizedBlock, true
+	return 0, false
 }
 
 func (d *DelayedSequencer) checkAccumulatorReorg(

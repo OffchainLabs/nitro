@@ -876,20 +876,25 @@ func TestBatchPosterL1SurplusMatchesBatchGasFlaky(t *testing.T) {
 	// Advance L1 to satisfy finality requirements for the batch posting report to be processed
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 2)
 
-	// find the L2 block which processed the delayed messages (the header Nonce increases)
-	latestL2, err := builder.L2.Client.BlockNumber(ctx)
-	Require(t, err)
-
+	// find the L2 block which processed the delayed messages (the header Nonce increases).
+	// Poll, because delayed messages are enqueued and sequenced asynchronously, so the
+	// block may not be produced the instant AdvanceL1 returns.
 	var foundBlock uint64
-	// scan recent L2 blocks for nonce increase
-	// we expect this to be within the last 50 since the batch poster should post quickly
-	for b := l2Block.Number().Uint64(); b <= latestL2; b++ {
-		block, err := builder.L2.Client.BlockByNumber(ctx, new(big.Int).SetUint64(b))
+	deadline := time.Now().Add(time.Duration(float64(30*time.Second) * getTestTimeoutScale()))
+	for time.Now().Before(deadline) && foundBlock == 0 {
+		latestL2, err := builder.L2.Client.BlockNumber(ctx)
 		Require(t, err)
-		t.Logf("checking L2 block %d: nonce=%d (looking for %d)", b, block.Nonce(), batchNum)
-		if block.Nonce() == batchNum+1 {
-			foundBlock = block.Header().Number.Uint64()
-			break
+		for b := l2Block.Number().Uint64(); b <= latestL2; b++ {
+			block, err := builder.L2.Client.BlockByNumber(ctx, new(big.Int).SetUint64(b))
+			Require(t, err)
+			t.Logf("checking L2 block %d: nonce=%d (looking for %d)", b, block.Nonce(), batchNum)
+			if block.Nonce() == batchNum+1 {
+				foundBlock = block.Header().Number.Uint64()
+				break
+			}
+		}
+		if foundBlock == 0 {
+			time.Sleep(10 * time.Millisecond)
 		}
 	}
 	if foundBlock == 0 {

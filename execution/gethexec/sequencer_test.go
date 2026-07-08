@@ -4,8 +4,13 @@
 package gethexec
 
 import (
+	"context"
+	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/offchainlabs/nitro/execution"
 )
 
 func TestSequencerConfigValidatePGA(t *testing.T) {
@@ -72,5 +77,238 @@ func TestPGARoundLength(t *testing.T) {
 	c.ExperimentalPGA.RoundsPerBlock = 2
 	if got := c.PGARoundLength(); got != 125*time.Millisecond {
 		t.Errorf("expected round length 125ms, got %v", got)
+	}
+}
+
+// TestEndSequencingDelayedCommitOutcome verifies that the delayed-message pop
+// is keyed on the commit outcome reported to EndSequencing, not on the staged
+// result: a failed durable write leaves the message queued for retry, a
+// successful one pops it.
+func TestEndSequencingDelayedCommitOutcome(t *testing.T) {
+	newSequencerWithPendingDelayedCommit := func(t *testing.T) *Sequencer {
+		engine := &ExecutionEngine{}
+		engine.delayedMsgs.Push(&delayedMsg{msgIdx: 7})
+		engine.waitingForFilteredTx = &FilteredTxWaitState{DelayedMsgIdx: 7}
+		configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
+		seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seq.pendingDelayedMsgCommit = true
+		return seq
+	}
+
+	t.Run("failed commit leaves message queued", func(t *testing.T) {
+		seq := newSequencerWithPendingDelayedCommit(t)
+		seq.EndSequencing(context.Background(), errors.New("durable write failed"))
+		if seq.pendingDelayedMsgCommit {
+			t.Error("pendingDelayedMsgCommit should be cleared")
+		}
+		if seq.execEngine.delayedMsgs.Len() != 1 {
+			t.Error("delayed message should stay queued for retry after a failed commit")
+		}
+		if seq.execEngine.waitingForFilteredTx == nil {
+			t.Error("filtered-tx halt should not be considered resolved by a failed commit")
+		}
+	})
+
+	t.Run("successful commit pops message", func(t *testing.T) {
+		seq := newSequencerWithPendingDelayedCommit(t)
+		seq.EndSequencing(context.Background(), nil)
+		if seq.pendingDelayedMsgCommit {
+			t.Error("pendingDelayedMsgCommit should be cleared")
+		}
+		if seq.execEngine.delayedMsgs.Len() != 0 {
+			t.Error("delayed message should be popped after a successful commit")
+		}
+		if seq.execEngine.waitingForFilteredTx != nil {
+			t.Error("filtered-tx halt should be resolved by a successful commit")
+		}
+	})
+}
+
+// EndSequencing must consume the staged queue-item results on every path;
+// a leftover struct would be re-processed by a later no-op turn's
+// EndSequencing(nil).
+func TestEndSequencingClearsPendingQueueItemsResults(t *testing.T) {
+	tests := []struct {
+		name        string
+		forwarder   *TxForwarder
+		errWhileSeq error
+	}{
+		{"retry with forwarder", &TxForwarder{}, execution.ErrRetrySequencer},
+		{"retry without forwarder", nil, execution.ErrRetrySequencer},
+		{"success", nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			engine := &ExecutionEngine{}
+			configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
+			seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			seq.forwarder = tt.forwarder
+			seq.pendingQueueItemsResults = &pendingQueueItemsResults{hooks: &FullSequencingHooks{}}
+
+			seq.EndSequencing(context.Background(), tt.errWhileSeq)
+
+			if seq.pendingQueueItemsResults != nil {
+				t.Error("pendingQueueItemsResults should be cleared by EndSequencing")
+			}
+		})
+	}
+}
+
+func TestEndSequencingRoutesStagedQueueItems(t *testing.T) {
+	newSeqWithStagedItem := func(t *testing.T) (*Sequencer, chan error) {
+		engine := &ExecutionEngine{}
+		configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
+		seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resultChan := make(chan error, 1)
+		seq.pendingQueueItemsResults = &pendingQueueItemsResults{
+			hooks:      &FullSequencingHooks{},
+			queueItems: []txQueueItem{{resultChan: resultChan, returnedResult: &atomic.Bool{}}},
+		}
+		return seq, resultChan
+	}
+
+	t.Run("retry without forwarder re-queues the item", func(t *testing.T) {
+		seq, resultChan := newSeqWithStagedItem(t)
+
+		seq.EndSequencing(context.Background(), execution.ErrRetrySequencer)
+
+		if seq.txRetryQueue.Len() != 1 {
+			t.Fatalf("staged item should be re-queued for retry, txRetryQueue len = %d", seq.txRetryQueue.Len())
+		}
+		select {
+		case err := <-resultChan:
+			t.Errorf("item should be retried, not returned to submitter; got result %v", err)
+		default:
+		}
+	})
+
+	t.Run("generic error returns the item to its submitter", func(t *testing.T) {
+		seq, resultChan := newSeqWithStagedItem(t)
+
+		wantErr := errors.New("durable write failed")
+		seq.EndSequencing(context.Background(), wantErr)
+
+		if seq.txRetryQueue.Len() != 0 {
+			t.Errorf("item should be returned to submitter, not re-queued; txRetryQueue len = %d", seq.txRetryQueue.Len())
+		}
+		select {
+		case err := <-resultChan:
+			if !errors.Is(err, wantErr) {
+				t.Errorf("submitter got %v, want %v", err, wantErr)
+			}
+		default:
+			t.Error("submitter never received a result")
+		}
+	})
+}
+
+func TestCheckHealthChosenSequencerDeadline(t *testing.T) {
+	past := time.Now().Add(-time.Second)
+	future := time.Now().Add(time.Hour)
+	tests := []struct {
+		name        string
+		forwarder   *TxForwarder
+		isActive    bool
+		activeUntil *time.Time
+		wantErr     error
+	}{
+		// Zero-value TxForwarder has enabled=false, so its CheckHealth returns
+		// ErrNoSequencer.
+		{"forwarding delegates to forwarder", &TxForwarder{}, false, &past, ErrNoSequencer},
+		{"paused is healthy even past deadline", nil, false, &past, nil},
+		{"active without coordinator signal is healthy", nil, true, nil, nil},
+		{"active within deadline is healthy", nil, true, &future, nil},
+		{"active past deadline is not chosen", nil, true, &past, ErrNotChosenSequencer},
+		{"active after release is not chosen", nil, true, &time.Time{}, ErrNotChosenSequencer},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			engine := &ExecutionEngine{}
+			configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
+			seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			seq.forwarder = tt.forwarder
+			seq.isActive = tt.isActive
+			if tt.activeUntil != nil {
+				seq.SetActiveUntil(*tt.activeUntil)
+			}
+
+			if got := seq.CheckHealth(context.Background()); !errors.Is(got, tt.wantErr) {
+				t.Errorf("CheckHealth() = %v, want %v", got, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestBackgroundForwarderExpiresNonceFailuresWhileInactive(t *testing.T) {
+	engine := &ExecutionEngine{}
+	configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
+	seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nonceErr := errors.New("nonce too high")
+	resultChan := make(chan error, 1)
+	seq.nonceFailures.LruCache.Add(
+		addressAndNonce{nonce: 7},
+		&nonceFailure{
+			queueItem: txQueueItem{
+				resultChan:     resultChan,
+				returnedResult: &atomic.Bool{},
+				ctx:            context.Background(),
+			},
+			nonceErr: nonceErr,
+			expiry:   time.Now().Add(-time.Second),
+		},
+	)
+
+	seq.backgroundForwarder(context.Background())
+
+	select {
+	case res := <-resultChan:
+		if !errors.Is(res, nonceErr) {
+			t.Errorf("parked tx got %v, want the original nonce error", res)
+		}
+	default:
+		t.Error("expired nonce failure was not returned to the client")
+	}
+	if seq.nonceFailures.Len() != 0 {
+		t.Errorf("nonceFailures.Len() = %d, want 0", seq.nonceFailures.Len())
+	}
+}
+
+func TestSequencerDoesntBlockWithoutTransactions(t *testing.T) {
+	engine := &ExecutionEngine{}
+	configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
+	seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan time.Duration, 1)
+	go func() {
+		_, wait := seq.StartSequencing(context.Background())
+		done <- wait
+	}()
+
+	select {
+	case wait := <-done:
+		if wait == 0 {
+			t.Fatal("expected non-zero next sequence time")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("StartSequencing blocked without transactions")
 	}
 }
