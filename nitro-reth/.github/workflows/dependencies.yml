@@ -21,6 +21,8 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check bans licenses sources
+      # The dind runner doesn't have cargo installed
+      - uses: dtolnay/rust-toolchain@1.93
       # The ignore list lives in .cargo/audit.toml.
       - uses: rustsec/audit-check@v2
         with:
