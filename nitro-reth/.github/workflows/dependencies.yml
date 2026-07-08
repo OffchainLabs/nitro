@@ -16,13 +16,14 @@ jobs:
     runs-on: ocl-2cpu-8ram-dind
     steps:
       - uses: actions/checkout@v6
+      # The dind runner doesn't have cargo installed
+      - uses: dtolnay/rust-toolchain@1.93
+      - uses: Swatinem/rust-cache@v2
       # Advisories are checked separately below via rustsec/audit-check, so
       # this only runs the categories cargo-deny uniquely covers.
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check bans licenses sources
-      # The dind runner doesn't have cargo installed
-      - uses: dtolnay/rust-toolchain@1.93
       # The ignore list lives in .cargo/audit.toml.
       - uses: rustsec/audit-check@v2
         with:
