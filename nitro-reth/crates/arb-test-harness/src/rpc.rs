@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use crate::{error::HarnessError, Result};
+use crate::{Result, error::HarnessError};
 
 fn build_agent(timeout: Duration) -> ureq::Agent {
     ureq::AgentBuilder::new()

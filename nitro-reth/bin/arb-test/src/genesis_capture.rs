@@ -6,9 +6,9 @@ use std::{
 };
 
 use alloy_primitives::{Address, B256, U256};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use arb_test_harness::rpc::JsonRpcClient;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 const DEFAULT_IMAGE: &str = "offchainlabs/nitro-node:v3.10.0-rc.10-b1cf6db";
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
@@ -217,10 +217,10 @@ fn resolve_published_port(container_name: &str) -> Result<u16> {
         if out.status.success() {
             let mapping = String::from_utf8_lossy(&out.stdout);
             for line in mapping.lines() {
-                if let Some((_, port)) = line.rsplit_once(':') {
-                    if let Ok(p) = port.trim().parse::<u16>() {
-                        return Ok(p);
-                    }
+                if let Some((_, port)) = line.rsplit_once(':')
+                    && let Ok(p) = port.trim().parse::<u16>()
+                {
+                    return Ok(p);
                 }
             }
         }
@@ -365,10 +365,10 @@ fn parse_dump_account(raw: &Value) -> Result<Map<String, Value>> {
                 .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
         })
     });
-    if let Some(n) = nonce_opt {
-        if n > 0 {
-            entry.insert("nonce".into(), Value::String(format!("{n:#x}")));
-        }
+    if let Some(n) = nonce_opt
+        && n > 0
+    {
+        entry.insert("nonce".into(), Value::String(format!("{n:#x}")));
     }
 
     if let Some(code) = raw.get("code").and_then(Value::as_str) {

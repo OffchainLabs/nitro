@@ -6,7 +6,7 @@ use alloy_sol_types::SolInterface;
 use arb_context::ArbPrecompileCtx;
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
-use crate::{interfaces::IArbInfo, ArbPrecompileError};
+use crate::{ArbPrecompileError, interfaces::IArbInfo};
 
 /// ArbInfo precompile address (0x65).
 pub const ARBINFO_ADDRESS: Address = Address::new([

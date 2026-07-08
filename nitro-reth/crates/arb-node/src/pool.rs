@@ -4,8 +4,8 @@ use arb_primitives::ArbTransactionSigned;
 use arb_txpool::ArbPooledTransaction;
 use reth_chainspec::EthereumHardforks;
 use reth_node_builder::{
-    components::{PoolBuilder, TxPoolBuilder},
     BuilderContext, FullNodeTypes, NodeTypes,
+    components::{PoolBuilder, TxPoolBuilder},
 };
 use reth_primitives_traits::NodePrimitives;
 use reth_transaction_pool::{
@@ -24,9 +24,9 @@ pub struct ArbPoolBuilder;
 impl<Types, Node, Evm> PoolBuilder<Node, Evm> for ArbPoolBuilder
 where
     Types: NodeTypes<
-        ChainSpec: EthereumHardforks,
-        Primitives: NodePrimitives<SignedTx = ArbTransactionSigned>,
-    >,
+            ChainSpec: EthereumHardforks,
+            Primitives: NodePrimitives<SignedTx = ArbTransactionSigned>,
+        >,
     Node: FullNodeTypes<Types = Types>,
     Evm: reth_evm::ConfigureEvm<Primitives = Types::Primitives> + Clone + 'static,
 {

@@ -1,14 +1,14 @@
 use alloy_primitives::{Address, B256, U256};
 use arbos::{
     arbos_types::{
-        get_data_stats, legacy_cost_for_stats, parse_batch_posting_report_fields,
-        parse_incoming_l1_message, parse_init_message, DEFAULT_INITIAL_L1_BASE_FEE,
-        L1_MESSAGE_TYPE_BATCH_POSTING_REPORT, L1_MESSAGE_TYPE_INITIALIZE,
-        L1_MESSAGE_TYPE_L2_MESSAGE,
+        DEFAULT_INITIAL_L1_BASE_FEE, L1_MESSAGE_TYPE_BATCH_POSTING_REPORT,
+        L1_MESSAGE_TYPE_INITIALIZE, L1_MESSAGE_TYPE_L2_MESSAGE, get_data_stats,
+        legacy_cost_for_stats, parse_batch_posting_report_fields, parse_incoming_l1_message,
+        parse_init_message,
     },
     parse_l2::{
-        parse_l2_transactions, ParsedTransaction, L2_MESSAGE_KIND_BATCH, L2_MESSAGE_KIND_HEARTBEAT,
-        L2_MESSAGE_KIND_NON_MUTATING_CALL, L2_MESSAGE_KIND_UNSIGNED_USER_TX,
+        L2_MESSAGE_KIND_BATCH, L2_MESSAGE_KIND_HEARTBEAT, L2_MESSAGE_KIND_NON_MUTATING_CALL,
+        L2_MESSAGE_KIND_UNSIGNED_USER_TX, ParsedTransaction, parse_l2_transactions,
     },
 };
 

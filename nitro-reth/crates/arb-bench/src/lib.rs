@@ -7,7 +7,7 @@ pub mod report;
 pub mod runner;
 
 pub use corpus::manifest::{Manifest, MessageSource, RegressionSpec, ScaleTier, WorkloadCategory};
-pub use metrics::{rolling::WindowMetric, BlockMetric, RunResult, SummaryMetrics};
+pub use metrics::{BlockMetric, RunResult, SummaryMetrics, rolling::WindowMetric};
 pub use report::compare::{BootstrapDelta, ComparisonReport, Verdict};
 pub use runner::{
     abba::{AbbaConfig, AbbaResult, PairedSample},

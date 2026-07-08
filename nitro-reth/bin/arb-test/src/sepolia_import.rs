@@ -1,8 +1,8 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use clap::Subcommand;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 #[derive(Debug, Subcommand)]
 pub enum SepoliaImportCommand {
@@ -189,12 +189,11 @@ fn candidates_for(addr: &str, prestate: &Value) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     if let Some(map) = prestate.as_object() {
         for (key, val) in map {
-            if !addr_eq(key, addr) {
-                if let Some(code) = val.get("code").and_then(Value::as_str) {
-                    if code != "0x" {
-                        continue;
-                    }
-                }
+            if !addr_eq(key, addr)
+                && let Some(code) = val.get("code").and_then(Value::as_str)
+                && code != "0x"
+            {
+                continue;
             }
             if let Some(storage) = val.get("storage").and_then(Value::as_object) {
                 for slot in storage.keys() {

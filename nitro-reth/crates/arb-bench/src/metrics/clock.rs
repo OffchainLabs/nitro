@@ -42,7 +42,7 @@ fn process_cpu_ns() -> u64 {
 #[cfg(target_os = "macos")]
 fn process_cpu_ns() -> u64 {
     use std::mem::MaybeUninit;
-    extern "C" {
+    unsafe extern "C" {
         fn clock_gettime_nsec_np(clock_id: u32) -> u64;
     }
     // CLOCK_PROCESS_CPUTIME_ID == 12 on Darwin.

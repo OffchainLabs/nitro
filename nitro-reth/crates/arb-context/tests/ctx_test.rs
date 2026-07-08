@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use alloy_primitives::{address, b256, Address, B256, U256};
+use alloy_primitives::{Address, B256, U256, address, b256};
 use arb_context::{ArbPrecompileCtx, BlockCtx, RecentWasms, TxCtx};
 
 // ── BlockCtx: L1/L2 block number and L2 block hash caches ───────────

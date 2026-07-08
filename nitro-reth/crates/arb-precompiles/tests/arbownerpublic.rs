@@ -1,14 +1,14 @@
 mod common;
 
 use alloy_evm::precompiles::DynPrecompile;
-use alloy_primitives::{address, Address, B256, U256};
+use alloy_primitives::{Address, B256, U256, address};
 use arb_precompiles::create_arbownerpublic_precompile;
 use arb_storage::{
-    layout::{
-        derive_subspace_key, map_slot_b256, root_slot, subspace_slot, CHAIN_OWNER_SUBSPACE,
-        L1_PRICING_SUBSPACE, ROOT_STORAGE_KEY,
-    },
     ARBOS_STATE_ADDRESS,
+    layout::{
+        CHAIN_OWNER_SUBSPACE, L1_PRICING_SUBSPACE, ROOT_STORAGE_KEY, derive_subspace_key,
+        map_slot_b256, root_slot, subspace_slot,
+    },
 };
 use arbos::{
     arbos_state::{
@@ -17,7 +17,7 @@ use arbos::{
     },
     l1_pricing::GAS_FLOOR_PER_TOKEN_OFFSET as L1_GAS_FLOOR_PER_TOKEN,
 };
-use common::{calldata, decode_address, decode_u256, decode_word, word_address, PrecompileTest};
+use common::{PrecompileTest, calldata, decode_address, decode_u256, decode_word, word_address};
 
 fn arbownerpublic(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
     create_arbownerpublic_precompile(ctx)

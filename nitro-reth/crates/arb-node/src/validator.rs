@@ -8,8 +8,8 @@ use arb_primitives::ArbTransactionSigned;
 use reth_chainspec::ChainSpec;
 use reth_engine_primitives::{EngineApiValidator, PayloadValidator};
 use reth_payload_primitives::{
-    validate_version_specific_fields, EngineApiMessageVersion, EngineObjectValidationError,
-    NewPayloadError, PayloadOrAttributes, PayloadTypes,
+    EngineApiMessageVersion, EngineObjectValidationError, NewPayloadError, PayloadOrAttributes,
+    PayloadTypes, validate_version_specific_fields,
 };
 use reth_primitives_traits::{Block as _, SealedBlock};
 

@@ -23,7 +23,7 @@ pub use signed_tx::{AuthInput, DiffSignedTxScenario, SignedTxKind};
 pub use stylus::StylusFuzzInput;
 pub use tx::{BoundedBytes, TxScenario};
 
-use crate::shared_nodes::{next_msg_idx, FUZZ_L2_CHAIN_ID};
+use crate::shared_nodes::{FUZZ_L2_CHAIN_ID, next_msg_idx};
 
 /// Default precompile-call gas ceiling, capped to keep fuzz iterations cheap.
 pub(crate) const FUZZ_GAS_CAP: u64 = 4_000_000;

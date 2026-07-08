@@ -24,19 +24,19 @@
 //! would differ on `gas_used` independently of this extension. Removing the
 //! time-advance trigger isolates the windowsLeft branch instead.
 
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use arb_fuzz::{
     arbitrary_impls::message_step,
-    scaffolding::{fund_interop_eoa, selector4, signed, FUZZ_L1_BASE_FEE, INVOKE_GAS_CAP},
-    shared_nodes::{next_msg_idx, shared_dual_exec, FUZZ_L2_CHAIN_ID},
+    scaffolding::{FUZZ_L1_BASE_FEE, INVOKE_GAS_CAP, fund_interop_eoa, selector4, signed},
+    shared_nodes::{FUZZ_L2_CHAIN_ID, next_msg_idx, shared_dual_exec},
 };
 use arb_test_harness::{
+    ExecutionNode,
     messaging::{
-        apply_l1_to_l2_alias, signed_l2_tx_hash, submit_retryable_ticket_id, DepositBuilder,
-        MessageBuilder, RetryableSubmitBuilder,
+        DepositBuilder, MessageBuilder, RetryableSubmitBuilder, apply_l1_to_l2_alias,
+        signed_l2_tx_hash, submit_retryable_ticket_id,
     },
     scenario::{Scenario, ScenarioSetup, ScenarioStep},
-    ExecutionNode,
 };
 
 const ARBRETRYABLETX: Address = Address::new([

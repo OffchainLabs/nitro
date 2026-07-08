@@ -387,12 +387,12 @@ impl BlockProductionState {
             }
             TxOutcome::Success(result) => {
                 // Internal start-block tx must not fail.
-                if matches!(action, TxAction::ExecuteStartBlock) {
-                    if let Some(ref err) = result.evm_error {
-                        return Err(BlockProcessorError::InternalTxFailed {
-                            reason: err.clone(),
-                        });
-                    }
+                if matches!(action, TxAction::ExecuteStartBlock)
+                    && let Some(ref err) = result.evm_error
+                {
+                    return Err(BlockProcessorError::InternalTxFailed {
+                        reason: err.clone(),
+                    });
                 }
 
                 let tx_gas_used = result.gas_used;
@@ -414,11 +414,7 @@ impl BlockProductionState {
                 // Compute used compute gas for block rate limiting.
                 let compute_used = if tx_gas_used >= data_gas {
                     let c = tx_gas_used - data_gas;
-                    if c < TX_GAS {
-                        TX_GAS
-                    } else {
-                        c
-                    }
+                    if c < TX_GAS { TX_GAS } else { c }
                 } else {
                     tracing::error!(tx_gas_used, data_gas, "tx used less gas than expected");
                     TX_GAS

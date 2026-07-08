@@ -2,16 +2,16 @@ use alloc::{sync::Arc, vec::Vec};
 use core::marker::PhantomData;
 
 use alloy_consensus::{
-    proofs, Block, BlockBody, BlockHeader, Header, TxReceipt, EMPTY_OMMER_ROOT_HASH,
+    Block, BlockBody, BlockHeader, EMPTY_OMMER_ROOT_HASH, Header, TxReceipt, proofs,
 };
 use alloy_evm::{
     block::{BlockExecutionError, BlockExecutionResult, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
 };
-use alloy_primitives::{B256, B64, U256};
-use arbos::header::{derive_arb_header_info, read_l2_base_fee, ArbHeaderInfo};
+use alloy_primitives::{B64, B256, U256};
+use arbos::header::{ArbHeaderInfo, derive_arb_header_info, read_l2_base_fee};
 use reth_evm::execute::{BlockAssembler, BlockAssemblerInput};
-use reth_primitives_traits::{logs_bloom, Receipt, SignedTransaction};
+use reth_primitives_traits::{Receipt, SignedTransaction, logs_bloom};
 use revm::context::Block as RevmBlock;
 
 /// Arbitrum block assembler.
@@ -37,10 +37,10 @@ impl<ChainSpec> ArbBlockAssembler<ChainSpec> {
 impl<F, ChainSpec> BlockAssembler<F> for ArbBlockAssembler<ChainSpec>
 where
     F: for<'a> BlockExecutorFactory<
-        ExecutionCtx<'a> = EthBlockExecutionCtx<'a>,
-        Transaction: SignedTransaction,
-        Receipt: Receipt,
-    >,
+            ExecutionCtx<'a> = EthBlockExecutionCtx<'a>,
+            Transaction: SignedTransaction,
+            Receipt: Receipt,
+        >,
     ChainSpec: Send + Sync + Unpin + 'static,
 {
     type Block = Block<F::Transaction>;

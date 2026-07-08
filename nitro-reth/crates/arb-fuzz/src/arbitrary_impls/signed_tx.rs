@@ -4,11 +4,11 @@
 //! but exercises the standard signed-tx ingest path that the
 //! ArbOS-internal-type fuzzer never touches.
 
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use arb_test_harness::{
     messaging::{
-        signed_tx::{derive_address, AuthorizationItem, L2TxKind, SignedL2TxBuilder},
         DepositBuilder,
+        signed_tx::{AuthorizationItem, L2TxKind, SignedL2TxBuilder, derive_address},
     },
     scenario::{Scenario, ScenarioSetup},
 };
@@ -17,9 +17,9 @@ use serde::Serialize;
 
 use crate::{
     arbitrary_impls::{
-        build_or_skip, message_step, ArbosVersion, BoundedBytes, FUZZ_GAS_CAP, FUZZ_L1_BASE_FEE,
+        ArbosVersion, BoundedBytes, FUZZ_GAS_CAP, FUZZ_L1_BASE_FEE, build_or_skip, message_step,
     },
-    shared_nodes::{next_msg_idx, FUZZ_L2_CHAIN_ID},
+    shared_nodes::{FUZZ_L2_CHAIN_ID, next_msg_idx},
 };
 
 const SEQUENCER_ALIAS: Address = Address::new([

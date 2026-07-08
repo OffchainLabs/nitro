@@ -5,7 +5,7 @@
 //! fallbacks return zero / empty (see `arb_precompiles::nodeinterface`)
 //! so callers that don't go through `eth_call` still get a valid response.
 
-use alloy_primitives::{address, Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256, address};
 
 /// NodeInterface virtual contract address.
 pub const NODE_INTERFACE_ADDRESS: Address = address!("00000000000000000000000000000000000000c8");

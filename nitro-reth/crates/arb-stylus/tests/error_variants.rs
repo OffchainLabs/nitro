@@ -8,10 +8,10 @@
 ///
 /// Defined for the linker only; never called from Rust.
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
-use arb_stylus::{decompress_wasm, strip_stylus_prefix, CompileConfig, StylusError};
+use arb_stylus::{CompileConfig, StylusError, decompress_wasm, strip_stylus_prefix};
 
 #[test]
 fn strip_stylus_prefix_rejects_short_bytecode() {

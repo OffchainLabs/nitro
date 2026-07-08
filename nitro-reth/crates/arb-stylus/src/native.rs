@@ -2,7 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use arbos::programs::types::EvmData;
 use wasmer::{
-    imports, Function, FunctionEnv, Instance, Memory, Module, Store, TypedFunction, Value,
+    Function, FunctionEnv, Instance, Memory, Module, Store, TypedFunction, Value, imports,
 };
 
 use crate::{
@@ -139,7 +139,7 @@ impl<E: EvmApi> NativeInstance<E> {
         let func_env = FunctionEnv::new(&mut store, env);
 
         macro_rules! func {
-            ($func:expr) => {
+            ($func:expr_2021) => {
                 Function::new_typed_with_env(&mut store, &func_env, $func)
             };
         }
@@ -242,15 +242,15 @@ impl<E: EvmApi> NativeInstance<E> {
         {
             let store = &mut self.store;
             let exports = &self.instance.exports;
-            if let Ok(ink_left) = exports.get_global(STYLUS_INK_LEFT) {
-                if let Value::I64(v) = ink_left.get(store) {
-                    ink_val = v as u64;
-                }
+            if let Ok(ink_left) = exports.get_global(STYLUS_INK_LEFT)
+                && let Value::I64(v) = ink_left.get(store)
+            {
+                ink_val = v as u64;
             }
-            if let Ok(ink_status) = exports.get_global(STYLUS_INK_STATUS) {
-                if let Value::I32(v) = ink_status.get(store) {
-                    status_val = v as u32;
-                }
+            if let Ok(ink_status) = exports.get_global(STYLUS_INK_STATUS)
+                && let Value::I32(v) = ink_status.get(store)
+            {
+                status_val = v as u32;
             }
         }
         if let Some(meter) = self.env_mut().meter.as_mut() {

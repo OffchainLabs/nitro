@@ -7,11 +7,11 @@ pub fn run(args: PromoteArgs) -> Result<()> {
     let _parsed: ExecutionFixture = ExecutionFixture::load(&args.captured)
         .with_context(|| format!("validate {}", args.captured.display()))?;
 
-    if let Some(parent) = args.committed.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("create parent dir {}", parent.display()))?;
-        }
+    if let Some(parent) = args.committed.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("create parent dir {}", parent.display()))?;
     }
 
     if let Err(e) = std::fs::rename(&args.captured, &args.committed) {

@@ -252,7 +252,7 @@ fn approx_exp_basis_points_zero_returns_one_in_bips() {
 mod end_tx_retryable {
     use std::cell::RefCell;
 
-    use alloy_primitives::{address, Address, B256};
+    use alloy_primitives::{Address, B256, address};
     use arbos::tx_processor::{EndTxRetryableParams, TxProcessor};
 
     use super::*;
@@ -440,9 +440,10 @@ mod end_tx_retryable {
         let (_, transfers) = run(&p, &params);
         let log = transfers.borrow();
         let refund = single - params.multi_dimensional_cost.unwrap();
-        assert!(log
-            .iter()
-            .any(|(from, to, amt)| *from == NETWORK && *to == REFUND_TO && *amt == refund));
+        assert!(
+            log.iter()
+                .any(|(from, to, amt)| *from == NETWORK && *to == REFUND_TO && *amt == refund)
+        );
     }
 
     #[test]
@@ -456,9 +457,10 @@ mod end_tx_retryable {
         let (_, transfers) = run(&p, &params);
         let log = transfers.borrow();
         let multi_refund = single - params.multi_dimensional_cost.unwrap();
-        assert!(!log
-            .iter()
-            .any(|(_, to, amt)| *to == REFUND_TO && *amt == multi_refund));
+        assert!(
+            !log.iter()
+                .any(|(_, to, amt)| *to == REFUND_TO && *amt == multi_refund)
+        );
     }
 
     #[test]
@@ -649,7 +651,7 @@ mod compute_retryable_gas_split_overflow {
 }
 
 mod retryable_lifecycle_edge_cases {
-    use alloy_primitives::{address, B256};
+    use alloy_primitives::{B256, address};
 
     use super::*;
 

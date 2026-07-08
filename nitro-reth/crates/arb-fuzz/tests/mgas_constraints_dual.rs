@@ -14,30 +14,30 @@
 //!     -- --ignored --nocapture
 
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
     Mutex,
+    atomic::{AtomicU64, Ordering},
 };
 
 /// Each test spawns its own Nitro + arbreth pair, so they must not run
 /// concurrently (Docker / port / process contention). Serialize them.
 static SERIAL: Mutex<()> = Mutex::new(());
 
-use alloy_primitives::{address, Address, Bytes, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256, address};
 use arb_fuzz::{
-    arbitrary_impls::interop::{wrap_init_code, WhichProgram},
+    arbitrary_impls::interop::{WhichProgram, wrap_init_code},
     scaffolding::selector4,
 };
 use arb_test_harness::{
     dual_exec::DualExec,
     genesis::GenesisBuilder,
     messaging::{
-        signed_tx::{derive_address, L2TxKind, SignedL2TxBuilder},
         DepositBuilder, MessageBuilder,
+        signed_tx::{L2TxKind, SignedL2TxBuilder, derive_address},
     },
     mock_l1::MockL1,
     node::{
-        arbreth::ArbrethProcess, nitro_docker::NitroDocker, BlockId, ExecutionNode, NodeStartCtx,
-        TxRequest,
+        BlockId, ExecutionNode, NodeStartCtx, TxRequest, arbreth::ArbrethProcess,
+        nitro_docker::NitroDocker,
     },
     scenario::{Scenario, ScenarioSetup, ScenarioStep},
 };

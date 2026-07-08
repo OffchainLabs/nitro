@@ -5,19 +5,19 @@ use core::{
 };
 
 use alloy_consensus::{
-    transaction::{RlpEcdsaDecodableTx, RlpEcdsaEncodableTx, TxHashRef},
     SignableTransaction, Transaction as ConsensusTx, TxLegacy, Typed2718,
+    transaction::{RlpEcdsaDecodableTx, RlpEcdsaEncodableTx, TxHashRef},
 };
 use alloy_eips::eip2718::{Decodable2718, Eip2718Error, Eip2718Result, Encodable2718, IsTyped2718};
-use alloy_primitives::{keccak256, Address, Bytes, Signature, TxHash, TxKind, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, Signature, TxHash, TxKind, U256, keccak256};
 use alloy_rlp::{Decodable, Encodable};
 use arb_alloy_consensus::tx::{
     ArbContractTx, ArbDepositTx, ArbInternalTx, ArbRetryTx, ArbSubmitRetryableTx, ArbTxType,
     ArbUnsignedTx,
 };
 use reth_primitives_traits::{
-    crypto::secp256k1::{recover_signer, recover_signer_unchecked},
     InMemorySize, SignedTransaction,
+    crypto::secp256k1::{recover_signer, recover_signer_unchecked},
 };
 
 /// Internal ArbOS address used as sender for internal transactions.

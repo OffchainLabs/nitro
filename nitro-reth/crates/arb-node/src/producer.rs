@@ -4,42 +4,41 @@
 //! executing them against the current state, and persisting the results.
 
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 use alloy_consensus::{
-    proofs,
+    Block, BlockBody, BlockHeader, EMPTY_OMMER_ROOT_HASH, Header, TxReceipt, proofs,
     transaction::{SignerRecoverable, TxHashRef},
-    Block, BlockBody, BlockHeader, Header, TxReceipt, EMPTY_OMMER_ROOT_HASH,
 };
 use alloy_eips::eip2718::Decodable2718;
 use alloy_evm::{
-    block::{BlockExecutor, BlockExecutorFactory},
     EvmFactory,
+    block::{BlockExecutor, BlockExecutorFactory},
 };
-use alloy_primitives::{Address, Bytes, B256, B64, U256};
+use alloy_primitives::{Address, B64, B256, Bytes, U256};
 use alloy_rpc_types_eth::BlockNumberOrTag;
-use arb_evm::config::{arbos_version_from_mix_hash, l1_block_number_from_mix_hash, ArbEvmConfig};
-use arb_primitives::{signed_tx::ArbTransactionSigned, tx_types::ArbInternalTx, ArbPrimitives};
+use arb_evm::config::{ArbEvmConfig, arbos_version_from_mix_hash, l1_block_number_from_mix_hash};
+use arb_primitives::{ArbPrimitives, signed_tx::ArbTransactionSigned, tx_types::ArbInternalTx};
 use arb_rpc::block_producer::{
     BlockProducer, BlockProducerError, BlockProductionInput, ProducedBlock,
 };
 use arbos::{
     arbos_types::parse_init_message,
-    header::{derive_arb_header_info, ArbHeaderInfo},
+    header::{ArbHeaderInfo, derive_arb_header_info},
     internal_tx,
-    parse_l2::{parse_l2_transactions, parsed_tx_to_signed, ParsedTransaction},
+    parse_l2::{ParsedTransaction, parse_l2_transactions, parsed_tx_to_signed},
 };
 use parking_lot::Mutex;
 use reth_chain_state::{CanonicalInMemoryState, ExecutedBlock, NewCanonicalChain};
 use reth_chainspec::ChainSpec;
 use reth_evm::ConfigureEvm;
 use reth_metrics::{
-    metrics::{self, Counter, Gauge, Histogram},
     Metrics,
+    metrics::{self, Counter, Gauge, Histogram},
 };
-use reth_primitives_traits::{logs_bloom, NodePrimitives, SealedHeader};
+use reth_primitives_traits::{NodePrimitives, SealedHeader, logs_bloom};
 use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider, StateProviderFactory};
 use reth_revm::database::StateProviderDatabase;
 use reth_storage_api::{StateProvider, StateProviderBox};
@@ -232,10 +231,10 @@ where
         head_state: &reth_chain_state::BlockState<ArbPrimitives>,
     ) -> Arc<crate::coalesced_state::CoalescedOverlay> {
         let mut cache = self.cached_overlay.lock();
-        if let Some(c) = cache.as_ref() {
-            if c.parent_hash == parent_hash {
-                return c.overlay.clone();
-            }
+        if let Some(c) = cache.as_ref()
+            && c.parent_hash == parent_hash
+        {
+            return c.overlay.clone();
         }
         let overlay = Arc::new(crate::coalesced_state::CoalescedOverlay::from_chain(
             head_state,
@@ -273,10 +272,10 @@ where
         head_state: Option<&reth_chain_state::BlockState<ArbPrimitives>>,
     ) -> Arc<alloy_primitives::map::HashMap<B256, revm::bytecode::Bytecode>> {
         let mut cache = self.cached_prestate.lock();
-        if let Some(c) = cache.as_ref() {
-            if c.parent_hash == parent_hash {
-                return c.contracts.clone();
-            }
+        if let Some(c) = cache.as_ref()
+            && c.parent_hash == parent_hash
+        {
+            return c.contracts.clone();
         }
         let mut contracts: alloy_primitives::map::HashMap<B256, revm::bytecode::Bytecode> =
             Default::default();
@@ -495,8 +494,11 @@ where
             .state_by_block_hash(parent_header.hash())
             .map_err(|e| BlockProducerError::StateAccess(e.to_string()))?;
 
-        let state_provider: StateProviderBox =
-            if let Some(head_state) = self.in_memory_state.state_by_hash(parent_header.hash()) {
+        let state_provider: StateProviderBox = match self
+            .in_memory_state
+            .state_by_hash(parent_header.hash())
+        {
+            Some(head_state) => {
                 let overlay = self.get_or_build_overlay(parent_header.hash(), &head_state);
                 if overlay.is_empty() {
                     raw_state_provider
@@ -504,9 +506,9 @@ where
                     crate::coalesced_state::CoalescedStateProvider::new(raw_state_provider, overlay)
                         .boxed()
                 }
-            } else {
-                raw_state_provider
-            };
+            }
+            _ => raw_state_provider,
+        };
 
         // Read the L2 baseFee from the parent's committed state.
         let l2_base_fee = {
@@ -628,17 +630,20 @@ where
                 let _ = arb_state
                     .l1_pricing_state
                     .set_price_per_unit(unsafe { &mut *state_ptr }, init_msg.initial_l1_base_fee);
-                if let Ok(target) = std::env::var("ARB_INITIAL_ARBOS_VERSION") {
-                    if let Ok(target_version) = target.parse::<u64>() {
-                        let current = arb_state.arbos_version();
-                        if target_version > current {
-                            if let Err(e) = arb_state.upgrade_arbos_version(
-                                unsafe { &mut *state_ptr },
-                                target_version,
-                                true,
-                            ) {
+                if let Ok(target) = std::env::var("ARB_INITIAL_ARBOS_VERSION")
+                    && let Ok(target_version) = target.parse::<u64>()
+                {
+                    let current = arb_state.arbos_version();
+                    if target_version > current {
+                        match arb_state.upgrade_arbos_version(
+                            unsafe { &mut *state_ptr },
+                            target_version,
+                            true,
+                        ) {
+                            Err(e) => {
                                 info!(target: "block_producer", err = ?e, target_version, "ArbOS upgrade via env var failed");
-                            } else {
+                            }
+                            _ => {
                                 info!(
                                     target: "block_producer",
                                     from = current,
@@ -968,10 +973,8 @@ where
                                 && info.balance.is_zero()
                                 && info.code_hash == keccak_empty_hash
                         });
-                    if still_empty {
-                        if let Some(bundle_acct) = bundle.state.get_mut(addr) {
-                            bundle_acct.info = None;
-                        }
+                    if still_empty && let Some(bundle_acct) = bundle.state.get_mut(addr) {
+                        bundle_acct.info = None;
                     }
                 } else {
                     let still_empty = bundle
@@ -1347,13 +1350,13 @@ where
             })?;
 
         // Drain any in-flight flush before unwinding so disk state is consistent.
-        if self.pending_flush.load(Ordering::SeqCst) {
-            if let Some(result) = crate::launcher::try_flush_result() {
-                self.in_memory_state
-                    .remove_persisted_blocks(result.last_num_hash);
-                *self.flushing_trie_input.lock() = None;
-                self.pending_flush.store(false, Ordering::SeqCst);
-            }
+        if self.pending_flush.load(Ordering::SeqCst)
+            && let Some(result) = crate::launcher::try_flush_result()
+        {
+            self.in_memory_state
+                .remove_persisted_blocks(result.last_num_hash);
+            *self.flushing_trie_input.lock() = None;
+            self.pending_flush.store(false, Ordering::SeqCst);
         }
 
         // Walk blocks above target in the in-memory state and gather
@@ -1440,23 +1443,23 @@ where
         // Propagate to reth's canonical in-memory state so
         // eth_getBlockByNumber("safe" | "finalized") returns the
         // correct header.
-        if let Some(h) = safe {
-            if let Ok(Some(sealed)) = self.provider.sealed_header_by_hash(h) {
-                self.in_memory_state.set_safe(sealed);
-            }
+        if let Some(h) = safe
+            && let Ok(Some(sealed)) = self.provider.sealed_header_by_hash(h)
+        {
+            self.in_memory_state.set_safe(sealed);
         }
-        if let Some(h) = finalized {
-            if let Ok(Some(sealed)) = self.provider.sealed_header_by_hash(h) {
-                self.in_memory_state.set_finalized(sealed);
-            }
+        if let Some(h) = finalized
+            && let Ok(Some(sealed)) = self.provider.sealed_header_by_hash(h)
+        {
+            self.in_memory_state.set_finalized(sealed);
         }
         // `validated` is Arbitrum-specific — reth's canonical state
         // exposes only safe/finalized. Push to the external watcher
         // so `arb_getValidatedBlock` RPC returns the latest value.
-        if let Some(h) = validated {
-            if let Some(w) = self.validated_watcher.lock().as_ref() {
-                *w.write() = h;
-            }
+        if let Some(h) = validated
+            && let Some(w) = self.validated_watcher.lock().as_ref()
+        {
+            *w.write() = h;
         }
         Ok(())
     }

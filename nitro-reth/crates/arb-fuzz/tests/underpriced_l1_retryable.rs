@@ -29,12 +29,12 @@
 use alloy_primitives::{Address, Bytes, U256};
 use arb_fuzz::{
     arbitrary_impls::message_step,
-    shared_nodes::{fuzz_arbos_version, shared_dual_exec, FUZZ_L2_CHAIN_ID},
+    shared_nodes::{FUZZ_L2_CHAIN_ID, fuzz_arbos_version, shared_dual_exec},
 };
 use arb_test_harness::{
     messaging::{
-        retryable::{apply_l1_to_l2_alias, RetryableSubmitBuilder},
         DepositBuilder, MessageBuilder,
+        retryable::{RetryableSubmitBuilder, apply_l1_to_l2_alias},
     },
     scenario::{Scenario, ScenarioSetup},
 };

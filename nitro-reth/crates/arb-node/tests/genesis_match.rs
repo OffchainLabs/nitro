@@ -1,6 +1,6 @@
 //! Pins the canonical genesis header constants the parser must produce.
 
-use alloy_primitives::{address, hex, Address, Bytes, B256, B64, U256};
+use alloy_primitives::{Address, B64, B256, Bytes, U256, address, hex};
 use arb_node::chainspec::ArbChainSpecParser;
 use reth_chainspec::EthChainSpec;
 use reth_cli::chainspec::ChainSpecParser;

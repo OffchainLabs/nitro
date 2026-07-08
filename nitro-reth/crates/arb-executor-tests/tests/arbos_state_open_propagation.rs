@@ -2,18 +2,18 @@ use std::{cell::Cell, sync::Arc};
 
 use alloy_consensus::Header;
 use alloy_evm::{
+    EvmFactory,
     block::{BlockExecutor, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
-    EvmFactory,
 };
 use alloy_primitives::{Address, B256, U256};
 use arb_evm::config::ArbEvmConfig;
 use reth_chainspec::ChainSpec;
 use reth_evm::{ConfigureEvm, EvmEnv};
 use revm::{
+    Database,
     database::{State, StateBuilder},
     primitives::hardfork::SpecId,
-    Database,
 };
 use revm_database_interface::DBErrorMarker;
 

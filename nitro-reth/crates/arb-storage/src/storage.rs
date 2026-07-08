@@ -6,7 +6,7 @@ use revm::Database;
 
 use crate::{
     slot::{derive_sub_key, storage_key_map, storage_key_map_b256},
-    state_ops::{read_storage_at, write_storage_at, ARBOS_STATE_ADDRESS},
+    state_ops::{ARBOS_STATE_ADDRESS, read_storage_at, write_storage_at},
 };
 
 /// Phantom backend used by read paths that drive ArbOS accessors through a

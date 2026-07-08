@@ -12,7 +12,7 @@ use crate::{
 };
 
 macro_rules! hostio {
-    ($env:expr) => {
+    ($env:expr_2021) => {
         WasmEnv::program($env)?
     };
 }

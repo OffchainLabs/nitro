@@ -1,8 +1,8 @@
 use arb_bench::{
     capture::synthetic::generate,
-    runner::{in_process::InProcessRunner, RunnerConfig},
+    runner::{RunnerConfig, in_process::InProcessRunner},
 };
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 
 /// Indirect proxy: runs `transfer_train` blocks with varying tx counts and
 /// measures total wall-clock per run. State-root recomputation is the dominant

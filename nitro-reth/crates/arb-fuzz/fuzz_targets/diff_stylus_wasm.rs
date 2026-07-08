@@ -4,10 +4,10 @@ use alloy_primitives::{Address, Bytes, U256};
 use arb_fuzz::{
     arbitrary_impls::{
         message_step,
-        stylus::{smith_wasm, StylusFuzzInput},
+        stylus::{StylusFuzzInput, smith_wasm},
     },
     corpus_helpers::dump_crash_as_fixture,
-    shared_nodes::{shared_dual_exec, FUZZ_L2_CHAIN_ID},
+    shared_nodes::{FUZZ_L2_CHAIN_ID, shared_dual_exec},
 };
 use arb_test_harness::{
     messaging::{ContractTxBuilder, DepositBuilder, MessageBuilder},

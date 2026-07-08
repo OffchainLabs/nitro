@@ -23,7 +23,7 @@
 ///
 /// Defined for the linker only; never called from Rust.
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
 use std::{path::PathBuf, sync::Arc};
@@ -237,11 +237,7 @@ fn dump_one(state: &dyn StateProvider, addr: Address) -> eyre::Result<()> {
 }
 
 fn ok(b: bool) -> &'static str {
-    if b {
-        "MATCH"
-    } else {
-        "MISMATCH"
-    }
+    if b { "MATCH" } else { "MISMATCH" }
 }
 
 fn main() -> eyre::Result<()> {
