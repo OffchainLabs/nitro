@@ -37,7 +37,7 @@ jobs:
           go build -o /usr/local/bin/geth ./cmd/geth
 
       - name: Setup emsdk
-        uses: emscripten-core/setup-emsdk@6ab9eb1bda2574c4ddb79809fc9247783eaf9021  # v14
+        uses: emscripten-core/setup-emsdk@4528d102f7230f0e7b276855c01ea1159be0e984  # v16
         with:
           # Make sure to set a version number!
           version: 3.1.7
@@ -45,6 +45,15 @@ jobs:
           # The cache folder will be placed in the build directory,
           #  so make sure it doesn't conflict with anything!
           no-cache: true
+
+      # setup-emsdk prepends emscripten's bundled Node.js (14) to PATH, which
+      # shadows the Node 24 from ci-setup and breaks `npm install` in the build
+      # steps below. emcc locates its own Node via EMSDK_NODE, so re-asserting
+      # Node 24 on PATH is safe.
+      - name: Restore Node 24 on PATH after emsdk
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@0abfcd587b70a713fdaa7fb502c885e2112acb15  # v2
@@ -64,7 +73,7 @@ jobs:
       - name: Prepare replay.wasm env
         run: make build-replay-env
 
-      - name: Clippy check
+      - name: Clippy check (non-SP1)
         run: cargo clippy --workspace --exclude stylus-compiler-program --exclude stylus-compiler-runner -- -D warnings
 
       - name: Run rust tests

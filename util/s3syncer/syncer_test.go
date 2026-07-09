@@ -119,6 +119,29 @@ func TestConfigValidate(t *testing.T) {
 	}
 }
 
+func TestConfigNumPreallocatedHashes(t *testing.T) {
+	cases := []struct {
+		name     string
+		prealloc bool
+		maxMB    int
+		want     int
+	}{
+		{"disabled", false, 10, 0},
+		{"no max size", true, 0, 0},
+		{"negative max size", true, -1, 0},
+		{"one mb", true, 1, 1024 * 1024 / minBytesPerHashEntry},
+		{"ten mb", true, 10, 10 * 1024 * 1024 / minBytesPerHashEntry},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{PreallocateMemory: tt.prealloc, MaxFileSizeMB: tt.maxMB}
+			if got := cfg.NumPreallocatedHashes(); got != tt.want {
+				t.Errorf("NumPreallocatedHashes() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 const testBucket = "test-bucket"
 
 func newTestConfig(endpoint, key string, maxFileSizeMB int) *Config {
@@ -321,5 +344,62 @@ func TestSyncer_CheckAndSync_SkipsUnchangedObject(t *testing.T) {
 	}
 	if rec.lastDigest != firstDigest {
 		t.Errorf("digest should be unchanged: got %q, want %q", rec.lastDigest, firstDigest)
+	}
+}
+
+func TestSyncer_PreallocatesAndReusesBuffer(t *testing.T) {
+	key := "data.json"
+	body := []byte(`{"hello":"world"}`)
+	endpoint, _ := s3syncertest.NewFakeS3(t, testBucket, map[string][]byte{key: body})
+
+	rec := &syncerRecorder{}
+	gauge := metrics.NewGauge()
+	cfg := newTestConfig(endpoint, key, 1)
+	cfg.PreallocateMemory = true
+	syncer := NewSyncer(cfg, rec.handleData, gauge)
+
+	if cap(syncer.reuseBuf) != bytesInMB {
+		t.Fatalf("reuseBuf cap = %d, want %d", cap(syncer.reuseBuf), bytesInMB)
+	}
+	if err := syncer.Initialize(t.Context()); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	if err := syncer.DownloadAndLoad(t.Context()); err != nil {
+		t.Fatalf("DownloadAndLoad: %v", err)
+	}
+
+	if rec.handlerCalls != 1 {
+		t.Fatalf("handlerCalls = %d, want 1", rec.handlerCalls)
+	}
+	if !bytes.Equal(rec.lastBody, body) {
+		t.Fatalf("handler body = %q, want %q", rec.lastBody, body)
+	}
+	if !bytes.Equal(syncer.reuseBuf[:len(body)], body) {
+		t.Fatalf("download did not reuse the preallocated buffer: %q", syncer.reuseBuf[:len(body)])
+	}
+}
+
+func TestSyncer_NoPreallocWhenDisabled(t *testing.T) {
+	key := "data.json"
+	body := []byte(`{"hello":"world"}`)
+	endpoint, _ := s3syncertest.NewFakeS3(t, testBucket, map[string][]byte{key: body})
+
+	rec := &syncerRecorder{}
+	gauge := metrics.NewGauge()
+	cfg := newTestConfig(endpoint, key, 1)
+	cfg.PreallocateMemory = false
+	syncer := NewSyncer(cfg, rec.handleData, gauge)
+
+	if syncer.reuseBuf != nil {
+		t.Fatal("reuseBuf should be nil when preallocation is disabled")
+	}
+	if err := syncer.Initialize(t.Context()); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	if err := syncer.DownloadAndLoad(t.Context()); err != nil {
+		t.Fatalf("DownloadAndLoad: %v", err)
+	}
+	if !bytes.Equal(rec.lastBody, body) {
+		t.Fatalf("handler body = %q, want %q", rec.lastBody, body)
 	}
 }

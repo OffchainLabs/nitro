@@ -74,13 +74,6 @@ We will always support the current minor release of Nitro. Older versions of Nit
 
 Visit the documentation [Support policy page](https://docs.arbitrum.io/run-arbitrum-node/nitro-support-policy) for more detail.
 
-### Current supported Nitro versions
-
-| Currently supported | Relevant links |
-| ------------------- | -------------- |
-| Nitro 3.10.x        | [GitHub](https://github.com/OffchainLabs/nitro/releases/tag/v3.10.0) |
-| Nitro 3.9.9         | [GitHub](https://github.com/OffchainLabs/nitro/releases/tag/v3.9.9)
-
 ### Special note about ArbOS & Arbitrum Classic
 
 - Only the ArbOS release that is activated on mainnet Arbitrum One will receive security updates and urgent vulnerability patches. We strongly recommend you stay up to date with the latest ArbOS since only the latest version will receive security updates. The activation timestamps for ArbOS upgrades on Arbitrum One can be found [here](https://docs.arbitrum.foundation/network-upgrades), with the most recent entry being the ArbOS version that is actively being used on Arbitrum One.

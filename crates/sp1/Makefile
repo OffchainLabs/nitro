@@ -31,11 +31,12 @@ install-sp1: # Install the SP1 RISC-V toolchain.
 .PHONY: brotli
 brotli: # Build brotli for RISC-V (SP1); artifacts go to $(BROTLI_LIB_DIR).
 	@echo "Building brotli for RISC-V (SP1)..."
-	@rm -rf $(BROTLI_SRC_DIR) $(BROTLI_BUILD_DIR) $(BROTLI_LIB_DIR)
-	@mkdir -p $(BROTLI_SRC_DIR) $(BROTLI_BUILD_DIR)
-	@cp -r $(TOP)/brotli/. $(BROTLI_SRC_DIR)
-	@cp $(TOP)/crates/sp1/brotli_cmake_patch.txt $(BROTLI_SRC_DIR)/CMakeLists.txt
-	@if { cmake -S $(BROTLI_SRC_DIR) -B $(BROTLI_BUILD_DIR) \
+	@rm -rf $(BROTLI_BUILD_DIR) $(BROTLI_LIB_DIR)
+	@mkdir -p $(BROTLI_BUILD_DIR)
+	@cp $(TOP)/brotli/CMakeLists.txt $(TOP)/brotli/CMakeLists.txt.bak; \
+	trap 'mv $(TOP)/brotli/CMakeLists.txt.bak $(TOP)/brotli/CMakeLists.txt' EXIT INT TERM; \
+	cp $(TOP)/crates/sp1/brotli_cmake_patch.txt $(TOP)/brotli/CMakeLists.txt; \
+	if { cmake -S $(TOP)/brotli -B $(BROTLI_BUILD_DIR) \
 		-DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
 		-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
 		-DCMAKE_SYSTEM_NAME=Generic \

@@ -1,0 +1,27 @@
+[package]
+name = "program"
+description = "Initial SP1 program for validating Arbitrum blocks, it will be bootloaded for optimizations."
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+arbutil = { workspace = true }
+caller-env = { workspace = true, features = ["brotli", "wasmer_traits", "integrity_check"] }
+prover = { workspace = true, features = ["native"] }
+sp1-zkvm = { workspace = true, features = ["may_dump_elf", "untrusted_programs"] }
+validation = { workspace = true, features = ["rkyv"] }
+wasmer = { workspace = true, features = ["compiler", "singlepass", "wasmparser", "baremetal", "unsafe-cothread"] }
+wasmer-types = { workspace = true }
+wasmer-vm = { workspace = true, features = ["baremetal"] }
+
+bytes = { workspace = true }
+corosensei = { workspace = true }
+eyre = { workspace = true }
+hex = { workspace = true }
+num-traits = { workspace = true }
+once_cell = { workspace = true }
+rand = { workspace = true }
+ruint2 = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tiny-keccak = { workspace = true, features = ["keccak"] }

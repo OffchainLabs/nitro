@@ -92,7 +92,7 @@ pub fn hash_preimage(preimage: &[u8], ty: PreimageType) -> Result<[u8; 32]> {
         }
         #[cfg(not(feature = "kzg"))]
         PreimageType::EthVersionedHash => {
-            eyre::bail!("kzg feature not enabled");
+            eyre::bail!("EthVersionedHash preimage hashing requires the 'kzg' feature");
         }
         PreimageType::DACertificate => {
             // There is no way for us to compute the hash of the preimage for DACertificate.

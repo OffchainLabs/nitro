@@ -60,11 +60,10 @@ name = "prover"
 crate-type = ["lib"]
 
 [features]
-default = ["native", "rayon", "singlepass_rayon", "kzg", "dep:structopt"]
+default = ["native", "rayon", "kzg", "dep:structopt"]
 cc_brotli = ["brotli/cc_brotli"]
 counters = []
 kzg = ["dep:c-kzg"]
 libc = ["dep:libc"]
 native = ["dep:wasmer", "dep:wasmer-compiler-singlepass", "brotli/wasmer_traits"]
 rayon = ["dep:rayon"]
-singlepass_rayon = ["wasmer-compiler-singlepass?/rayon"]

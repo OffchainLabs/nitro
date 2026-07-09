@@ -15,5 +15,5 @@ anyhow = { workspace = true }
 corosensei = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 sp1-zkvm = { workspace = true }
-wasmer = { workspace = true, features = ["sys", "compiler", "singlepass"] }
+wasmer = { workspace = true, features = ["sys", "compiler", "singlepass", "baremetal", "sp1"] }
 prover = { workspace = true, features = ["native"] }
