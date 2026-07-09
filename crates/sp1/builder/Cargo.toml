@@ -17,7 +17,7 @@ bincode = { workspace = true }
 clap = { workspace = true, features = ["cargo", "derive"] }
 serde_json = { workspace = true }
 tracing = { workspace = true }
-wasmer = { workspace = true, features = ["llvm"] }
+wasmer = { workspace = true, features = ["llvm", "sp1"] }
 wasmparser = { workspace = true }
 
 [build-dependencies]
