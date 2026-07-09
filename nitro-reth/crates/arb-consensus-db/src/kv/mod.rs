@@ -7,7 +7,7 @@ pub type KeyBuf = Vec<u8>;
 pub type Value = Vec<u8>;
 
 pub trait KvStore {
-    type Error;
+    type Error: std::error::Error + 'static;
 
     fn get(&self, key: Key) -> Result<Option<Value>, Self::Error>;
     fn has(&self, key: Key) -> Result<bool, Self::Error>;
@@ -16,9 +16,23 @@ pub trait KvStore {
     fn write_batch(&mut self, batch: Batch) -> Result<(), Self::Error>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Batch {
-    pub ops: Vec<Op>,
+    ops: Vec<Op>,
+}
+
+impl Batch {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn put(&mut self, key: impl Into<KeyBuf>, value: Value) {
+        self.ops.push(Op::Put(key.into(), value));
+    }
+
+    pub fn delete(&mut self, key: KeyBuf) {
+        self.ops.push(Op::Delete(key));
+    }
 }
 
 #[derive(Debug)]
