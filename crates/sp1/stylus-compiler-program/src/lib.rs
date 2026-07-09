@@ -21,6 +21,11 @@ pub struct CompileInput {
 
 /// Compiles a Stylus WASM program to a rv64 binary using the wasmer singlepass compiler.
 pub fn compile(input: &CompileInput) -> Result<Vec<u8>> {
+    anyhow::ensure!(
+        input.version <= 3,
+        "unsupported Stylus version {}, expected 0..=3",
+        input.version
+    );
     let compile_config = CompileConfig::version(input.version, input.debug);
     let mut config = Singlepass::new();
     config.canonicalize_nans(true);
