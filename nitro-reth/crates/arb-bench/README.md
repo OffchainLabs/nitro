@@ -22,7 +22,7 @@ cargo run -p arb-bench --release --bin arbreth-bench -- abba \
 ```
 
 `abba` runs your current branch as the "feature" and the last commit on
-`master` as the "baseline" by alternating in an A-B-B-A pattern on identical
+`main` as the "baseline" by alternating in an A-B-B-A pattern on identical
 workloads. Output is a paired bootstrap 95% CI on the perf delta — robust to
 laptop noise.
 
@@ -40,7 +40,7 @@ Writes `bench/baselines/local/synthetic__precompile-fanout__short.json`
 
 ```bash
 arbreth-bench compare \
-  --baseline bench/baselines/master/2026-04-24-abc123.json \
+  --baseline bench/baselines/main/2026-04-24-abc123.json \
   --feature  bench/baselines/local/synthetic__precompile-fanout__short.json
 ```
 
