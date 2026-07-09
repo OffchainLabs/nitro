@@ -19,11 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          submodules: false
-
-      - uses: ./.github/actions/setup-build-env
-        with:
-          apt-packages: clang libclang-dev cmake
+          submodules: recursive
 
       - uses: dtolnay/rust-toolchain@1.93
 
@@ -43,6 +39,9 @@ jobs:
         run: npm run build
 
       # Build and inject rustdoc
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y clang libclang-dev cmake
+
       - name: Build rustdoc
         run: |
           RUSTDOCFLAGS="-A rustdoc::broken-intra-doc-links" \

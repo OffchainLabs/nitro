@@ -20,8 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          submodules: false
-      - uses: ./.github/actions/setup-build-env
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri

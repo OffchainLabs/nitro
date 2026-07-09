@@ -18,8 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          submodules: false
-      - uses: ./.github/actions/setup-build-env
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt
@@ -31,10 +30,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          submodules: false
-      - uses: ./.github/actions/setup-build-env
-        with:
-          apt-packages: build-essential clang libclang-dev cmake
+          submodules: recursive
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
       - uses: dtolnay/rust-toolchain@1.93
         with:
           components: clippy
@@ -50,10 +48,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          submodules: false
-      - uses: ./.github/actions/setup-build-env
-        with:
-          apt-packages: build-essential clang libclang-dev cmake
+          submodules: recursive
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
       - uses: dtolnay/rust-toolchain@1.93
       - uses: Swatinem/rust-cache@v2
       - run: cargo doc --workspace --no-deps
