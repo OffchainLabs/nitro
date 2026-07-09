@@ -78,55 +78,25 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Native => {
-            let binary = compile(&input).with_context(|| {
-                format!(
-                    "failed to compile '{}' (version={}, debug={})",
-                    cli.wasm.display(),
-                    input.version,
-                    input.debug
-                )
-            })?;
+            let binary = compile(&input)
+                .with_context(|| format!("failed to compile '{}'", cli.wasm.display()))?;
             tracing::info!("compiled successfully, output size: {} bytes", binary.len());
         }
         Command::Execute => {
-            let binary = sp1_execute(&input).with_context(|| {
-                format!(
-                    "failed to execute '{}' in SP1 (version={}, debug={})",
-                    cli.wasm.display(),
-                    input.version,
-                    input.debug
-                )
-            })?;
+            let binary = sp1_execute(&input)
+                .with_context(|| format!("failed to execute '{}' in SP1", cli.wasm.display()))?;
             tracing::info!(
                 "SP1 execution completed, output size: {} bytes",
                 binary.len()
             );
         }
-        Command::Prove => sp1_prove(&input).with_context(|| {
-            format!(
-                "failed to prove '{}' in SP1 (version={}, debug={})",
-                cli.wasm.display(),
-                input.version,
-                input.debug
-            )
-        })?,
+        Command::Prove => sp1_prove(&input)
+            .with_context(|| format!("failed to prove '{}' in SP1", cli.wasm.display()))?,
         Command::Compare => {
-            let native = compile(&input).with_context(|| {
-                format!(
-                    "failed to compile '{}' natively (version={}, debug={})",
-                    cli.wasm.display(),
-                    input.version,
-                    input.debug
-                )
-            })?;
-            let sp1 = sp1_execute(&input).with_context(|| {
-                format!(
-                    "failed to execute '{}' in SP1 (version={}, debug={})",
-                    cli.wasm.display(),
-                    input.version,
-                    input.debug
-                )
-            })?;
+            let native = compile(&input)
+                .with_context(|| format!("failed to compile '{}' natively", cli.wasm.display()))?;
+            let sp1 = sp1_execute(&input)
+                .with_context(|| format!("failed to execute '{}' in SP1", cli.wasm.display()))?;
             assert_eq!(native, sp1, "native and SP1 outputs differ");
             tracing::info!("outputs match ({} bytes)", native.len());
         }
