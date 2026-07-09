@@ -47,6 +47,5 @@ if [ -n "${GITHUB_TOKEN:-}" ]; then
   edit "s|git@github.com:|https://x-access-token:${GITHUB_TOKEN}@github.com/|g"
 fi
 
-git submodule foreach --recursive 'git reset --hard HEAD; git clean -fd' 2>/dev/null || true
 git submodule sync --recursive
-git submodule update --init --recursive --force
+git submodule update --init --recursive

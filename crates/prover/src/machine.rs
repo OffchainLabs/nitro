@@ -16,8 +16,6 @@ use std::{
 
 use arbutil::{Bytes32, Color, DebugColor, PreimageType, crypto, math};
 use brotli::Dictionary;
-#[cfg(feature = "kzg")]
-use c_kzg::BYTES_PER_BLOB;
 use eyre::{Result, WrapErr, bail, ensure, eyre};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
@@ -29,6 +27,8 @@ use smallvec::SmallVec;
 use tiny_keccak::{Hasher, Keccak};
 use wasmer_types::FunctionIndex;
 use wasmparser::{DataKind, ElementItems, ElementKind, Operator, RefType, TableType};
+#[cfg(feature = "kzg")]
+use {crate::kzg::prove_kzg_preimage, c_kzg::BYTES_PER_BLOB};
 #[cfg(feature = "native")]
 use {
     crate::{
@@ -41,8 +41,6 @@ use {
     std::{num::Wrapping, ops::Add},
 };
 
-#[cfg(feature = "kzg")]
-use crate::kzg::prove_kzg_preimage;
 use crate::{
     binary::{
         self, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary, parse,
