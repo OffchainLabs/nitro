@@ -6,8 +6,11 @@ pub type Key<'a> = &'a [u8];
 pub type KeyBuf = Vec<u8>;
 pub type Value = Vec<u8>;
 
+pub trait KvError: std::error::Error + Send + Sync + 'static {}
+impl<T: std::error::Error + Send + Sync + 'static> KvError for T {}
+
 pub trait KvStore {
-    type Error: std::error::Error + 'static;
+    type Error: KvError;
 
     fn get(&self, key: Key) -> Result<Option<Value>, Self::Error>;
     fn has(&self, key: Key) -> Result<bool, Self::Error>;
@@ -30,8 +33,8 @@ impl Batch {
         self.ops.push(Op::Put(key.into(), value));
     }
 
-    pub fn delete(&mut self, key: KeyBuf) {
-        self.ops.push(Op::Delete(key));
+    pub fn delete(&mut self, key: impl Into<KeyBuf>) {
+        self.ops.push(Op::Delete(key.into()));
     }
 }
 

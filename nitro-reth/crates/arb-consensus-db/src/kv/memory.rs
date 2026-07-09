@@ -2,9 +2,15 @@ use std::collections::BTreeMap;
 
 use crate::kv::{Batch, Key, KeyBuf, KvStore, Op, Value};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct MemoryKvStore {
     values: BTreeMap<KeyBuf, Value>,
+}
+
+impl MemoryKvStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
 impl KvStore for MemoryKvStore {
@@ -31,8 +37,8 @@ impl KvStore for MemoryKvStore {
     fn write_batch(&mut self, batch: Batch) -> Result<(), Self::Error> {
         for op in batch.ops.into_iter() {
             match op {
-                Op::Put(key, value) => self.put(&key, value).unwrap(),
-                Op::Delete(key) => self.delete(&key).unwrap(),
+                Op::Put(key, value) => self.put(&key, value)?,
+                Op::Delete(key) => self.delete(&key)?,
             }
         }
         Ok(())

@@ -4,7 +4,7 @@ pub mod schema;
 #[derive(Debug, thiserror::Error)]
 pub enum ConsensusDbError {
     #[error(transparent)]
-    Store(Box<dyn std::error::Error>),
+    Store(Box<dyn std::error::Error + Send + Sync + 'static>),
 
     #[error("schema version malformed")]
     MalformedSchemaVersion,
@@ -14,7 +14,7 @@ pub enum ConsensusDbError {
 
 impl ConsensusDbError {
     /// Wrap a [`kv::KvStore`] error in [`ConsensusDbError::Store`].
-    fn from_store(err: impl std::error::Error + 'static) -> ConsensusDbError {
+    fn from_store(err: impl kv::KvError) -> ConsensusDbError {
         ConsensusDbError::Store(Box::new(err))
     }
 }
@@ -33,7 +33,7 @@ impl<S: kv::KvStore> ConsensusDb<S> {
         Ok(db)
     }
 
-    /// Check stored schema version, and perform migration to current verison.
+    /// Check stored schema version, and perform migration to current version.
     fn check_schema_version(&mut self) -> Result<()> {
         let mut version = self.get_schema_version()?;
         while version != schema::CURRENT_VERSION {
@@ -70,9 +70,7 @@ impl<S: kv::KvStore> ConsensusDb<S> {
     /// Get the schema version stored in the key-value store.
     fn get_schema_version(&self) -> Result<u64> {
         self.get_raw(schema::DB_SCHEMA_VERSION)?
-            .map(decode_schema_version)
-            .ok_or(ConsensusDbError::MalformedSchemaVersion)
-            .flatten()
+            .map_or(Ok(0), decode_schema_version)
     }
 }
 
@@ -86,7 +84,7 @@ fn decode_schema_version(bytes: kv::Value) -> Result<u64> {
     ))
 }
 
-/// Encodes scehma version as u64 in big-endian format, not RLP.
+/// Encodes schema version as u64 in big-endian format, not RLP.
 fn encode_schema_version(version: u64) -> kv::Value {
     version.to_be_bytes().to_vec()
 }
