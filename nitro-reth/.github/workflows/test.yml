@@ -15,6 +15,7 @@ jobs:
   nextest:
     name: unit tests (nextest)
     runs-on: ocl-16cpu-64ram
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -32,6 +33,7 @@ jobs:
   doctests:
     name: doctests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
         with:

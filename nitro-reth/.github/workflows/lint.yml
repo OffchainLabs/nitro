@@ -15,6 +15,7 @@ jobs:
   fmt:
     name: rustfmt
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
         with:
@@ -27,6 +28,7 @@ jobs:
   clippy:
     name: clippy
     runs-on: ocl-16cpu-64ram
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -42,6 +44,7 @@ jobs:
   docs:
     name: docs
     runs-on: ocl-16cpu-64ram
+    timeout-minutes: 30
     env:
       # Treat any rustdoc warning as an error, including broken intra-doc links.
       RUSTDOCFLAGS: "-D warnings"
@@ -59,6 +62,7 @@ jobs:
     # Forbidden-pattern grep checks.
     name: guardrails
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
 

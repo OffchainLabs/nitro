@@ -27,7 +27,7 @@ jobs:
   build:
     name: build release binaries
     runs-on: ocl-16cpu-64ram
-    timeout-minutes: 60
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
         with:
