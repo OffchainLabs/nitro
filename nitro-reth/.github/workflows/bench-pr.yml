@@ -45,9 +45,7 @@ jobs:
         with:
           fetch-depth: 0
           submodules: false
-      - name: Init submodules
-        shell: bash
-        run: git submodule update --init --recursive --depth 1
+      - uses: ./.github/actions/setup-build-env
       - uses: actions/download-artifact@v8
         with:
           name: bench-pr-feature-binaries

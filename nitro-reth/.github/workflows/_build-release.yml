@@ -33,11 +33,9 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
           submodules: false
-      - name: Init submodules
-        shell: bash
-        run: git submodule update --init --recursive --depth 1
-      - name: Install build deps
-        run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
+      - uses: ./.github/actions/setup-build-env
+        with:
+          apt-packages: build-essential clang libclang-dev cmake
       - uses: dtolnay/rust-toolchain@1.93
       - uses: Swatinem/rust-cache@v2
         with:
