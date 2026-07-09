@@ -6,6 +6,7 @@ members = [
     "crates/arb-context",
     "crates/arb-da-provider-client",
     "crates/arb-math",
+    "crates/arb-mel-db",
     "crates/arb-parent-chain-client",
     "crates/arb-storage",
     "crates/arb-storage-errors",
@@ -44,6 +45,7 @@ arb-consensus-db = { path = "crates/arb-consensus-db" }
 arb-context = { path = "crates/arb-context" }
 arb-da-provider-client = { path = "crates/arb-da-provider-client" }
 arb-math = { path = "crates/arb-math" }
+arb-mel-db = { path = "crates/arb-mel-db" }
 arb-parent-chain-client = { path = "crates/arb-parent-chain-client" }
 arb-storage = { path = "crates/arb-storage" }
 arb-storage-errors = { path = "crates/arb-storage-errors" }
