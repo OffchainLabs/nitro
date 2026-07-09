@@ -89,13 +89,27 @@ fn main() -> anyhow::Result<()> {
             tracing::info!("compiled successfully, output size: {} bytes", binary.len());
         }
         Command::Execute => {
-            let binary = sp1_execute(&input);
+            let binary = sp1_execute(&input).with_context(|| {
+                format!(
+                    "failed to execute '{}' in SP1 (version={}, debug={})",
+                    cli.wasm.display(),
+                    input.version,
+                    input.debug
+                )
+            })?;
             tracing::info!(
                 "SP1 execution completed, output size: {} bytes",
                 binary.len()
             );
         }
-        Command::Prove => sp1_prove(&input),
+        Command::Prove => sp1_prove(&input).with_context(|| {
+            format!(
+                "failed to prove '{}' in SP1 (version={}, debug={})",
+                cli.wasm.display(),
+                input.version,
+                input.debug
+            )
+        })?,
         Command::Compare => {
             let native = compile(&input).with_context(|| {
                 format!(
@@ -105,7 +119,14 @@ fn main() -> anyhow::Result<()> {
                     input.debug
                 )
             })?;
-            let sp1 = sp1_execute(&input);
+            let sp1 = sp1_execute(&input).with_context(|| {
+                format!(
+                    "failed to execute '{}' in SP1 (version={}, debug={})",
+                    cli.wasm.display(),
+                    input.version,
+                    input.debug
+                )
+            })?;
             assert_eq!(native, sp1, "native and SP1 outputs differ");
             tracing::info!("outputs match ({} bytes)", native.len());
         }
@@ -120,27 +141,28 @@ fn build_stdin(input: &CompileInput) -> SP1Stdin {
     stdin
 }
 
-fn sp1_execute(input: &CompileInput) -> Vec<u8> {
+fn sp1_execute(input: &CompileInput) -> anyhow::Result<Vec<u8>> {
     let client = ProverClient::from_env();
     let stdin = build_stdin(input);
     let (output, report) = client
         .execute(COMPILER_ELF, stdin)
         .run()
-        .expect("SP1 execution failed");
+        .context("SP1 execution failed")?;
     tracing::info!("cycles: {}", report.total_instruction_count());
-    bincode::deserialize(output.as_slice()).expect("deserialize output")
+    bincode::deserialize(output.as_slice()).context("failed to deserialize output")
 }
 
-fn sp1_prove(input: &CompileInput) {
+fn sp1_prove(input: &CompileInput) -> anyhow::Result<()> {
     let client = ProverClient::from_env();
     let stdin = build_stdin(input);
-    let pk = client.setup(COMPILER_ELF).expect("failed to setup ELF");
+    let pk = client.setup(COMPILER_ELF).context("failed to setup ELF")?;
     let proof = client
         .prove(&pk, stdin)
         .run()
-        .expect("failed to generate proof");
+        .context("failed to generate proof")?;
     client
         .verify(&proof, pk.verifying_key(), None)
-        .expect("failed to verify proof");
+        .context("failed to verify proof")?;
     tracing::info!("proof generated and verified successfully");
+    Ok(())
 }
