@@ -1,5 +1,6 @@
-# Advisories ignored by `cargo audit`.
-# Keep this list aligned with the `[advisories.ignore]` block in deny.toml.
+# Advisories ignored by `cargo audit` (the sole source of truth for advisory
+# ignores — cargo-deny's CI invocation excludes the advisories category so
+# the two don't keep two independently-drifting ignore lists).
 # Every entry below is transitive via reth, wasmer, or revm's ark-* deps,
 # and cannot be fixed without an upstream version bump or fork.
 

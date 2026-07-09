@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use alloy_eips::{eip2718::Encodable2718, BlockNumberOrTag};
+use alloy_eips::{BlockNumberOrTag, eip2718::Encodable2718};
 use alloy_primitives::B256;
 use alloy_rpc_types_eth::{Block, Filter, Header, Log, Transaction, TransactionReceipt};
 
@@ -147,10 +147,11 @@ impl ParentChainReader for MockParentChainReader {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::test_utils::{block, header, log_at, receipt, tx};
     use alloy_primitives::{Address, B256};
     use alloy_rpc_types_eth::BlockTransactions;
+
+    use super::*;
+    use crate::test_utils::{block, header, log_at, receipt, tx};
 
     #[tokio::test]
     async fn header_by_number_returns_matching_header() {
@@ -200,11 +201,12 @@ mod tests {
     async fn header_by_number_unknown_returns_none() {
         let mock = MockParentChainReader::new();
 
-        assert!(mock
-            .header_by_number(BlockNumberOrTag::Number(99))
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            mock.header_by_number(BlockNumberOrTag::Number(99))
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -220,11 +222,12 @@ mod tests {
     async fn header_by_hash_unknown_returns_none() {
         let mock = MockParentChainReader::new();
 
-        assert!(mock
-            .header_by_hash(B256::repeat_byte(0xff))
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            mock.header_by_hash(B256::repeat_byte(0xff))
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -245,33 +248,36 @@ mod tests {
     async fn block_by_number_unknown_returns_none() {
         let mock = MockParentChainReader::new();
 
-        assert!(mock
-            .block_by_number(BlockNumberOrTag::Number(99))
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            mock.block_by_number(BlockNumberOrTag::Number(99))
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]
     async fn block_by_hash_unknown_returns_none() {
         let mock = MockParentChainReader::new();
 
-        assert!(mock
-            .block_by_hash(B256::repeat_byte(0xff))
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            mock.block_by_hash(B256::repeat_byte(0xff))
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]
     async fn transaction_in_block_unknown_returns_none() {
         let mock = MockParentChainReader::new();
 
-        assert!(mock
-            .transaction_in_block(B256::repeat_byte(5), 0)
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            mock.transaction_in_block(B256::repeat_byte(5), 0)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -289,11 +295,12 @@ mod tests {
     async fn transaction_receipt_unknown_returns_none() {
         let mock = MockParentChainReader::new();
 
-        assert!(mock
-            .transaction_receipt(B256::repeat_byte(0xff))
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            mock.transaction_receipt(B256::repeat_byte(0xff))
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -311,11 +318,12 @@ mod tests {
     async fn transaction_by_hash_unknown_returns_none() {
         let mock = MockParentChainReader::new();
 
-        assert!(mock
-            .transaction_by_hash(B256::repeat_byte(0xff))
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            mock.transaction_by_hash(B256::repeat_byte(0xff))
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -356,11 +364,12 @@ mod tests {
         mock.with_block(block(5, hash, BlockTransactions::Full(vec![])));
 
         assert!(mock.header_by_hash(hash).await.unwrap().is_some());
-        assert!(mock
-            .header_by_number(BlockNumberOrTag::Number(5))
-            .await
-            .unwrap()
-            .is_some());
+        assert!(
+            mock.header_by_number(BlockNumberOrTag::Number(5))
+                .await
+                .unwrap()
+                .is_some()
+        );
     }
 
     #[tokio::test]

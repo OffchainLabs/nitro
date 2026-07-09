@@ -33,19 +33,9 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
           submodules: false
-      - name: Init submodules with retry
+      - name: Init submodules
         shell: bash
-        run: |
-          for i in 1 2 3; do
-            if git submodule update --init --recursive --depth 1; then
-              echo "Submodules initialized"
-              exit 0
-            fi
-            echo "Submodule init attempt $i failed; sleeping $((i*5))s before retry"
-            sleep $((i*5))
-          done
-          echo "Submodule init failed after 3 attempts"
-          exit 1
+        run: git submodule update --init --recursive --depth 1
       - name: Install build deps
         run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
       - uses: dtolnay/rust-toolchain@1.93
