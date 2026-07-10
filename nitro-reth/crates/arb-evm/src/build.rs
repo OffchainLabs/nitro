@@ -1273,9 +1273,8 @@ where
             let tx_type = recovered.tx().tx_type();
             let mut tx_err = None;
 
-            if tx_data.len() >= 4 {
-                let selector: [u8; 4] = tx_data[0..4].try_into().unwrap();
-                let is_start_block = selector == internal_tx::INTERNAL_TX_START_BLOCK_METHOD_ID;
+            if let Some(selector) = tx_data.first_chunk::<4>() {
+                let is_start_block = *selector == internal_tx::INTERNAL_TX_START_BLOCK_METHOD_ID;
 
                 if is_start_block
                     && let Ok(start_data) = internal_tx::decode_start_block_data(&tx_data)
