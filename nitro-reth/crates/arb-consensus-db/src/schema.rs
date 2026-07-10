@@ -1,7 +1,8 @@
 use alloy_primitives::{Address, B256, Bytes, U256};
-use alloy_rlp::{Decodable, EMPTY_LIST_CODE, Encodable, RlpDecodable, RlpEncodable, bytes::BufMut};
+use alloy_rlp::{RlpDecodable, RlpEncodable};
 
 use crate::kv::KeyBuf;
+use crate::rlp::{NilList, NilString};
 
 pub const CURRENT_VERSION: u64 = 2;
 
@@ -57,36 +58,23 @@ pub struct BatchDataStats {
     pub non_zeros: u64,
 }
 
-/// Optional field, which encodes `None` as empty list (`0xC0`).
-///
-/// `T` must never be encodable to `0xC0` since it will resolve to `None`.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct NilList<T>(pub Option<T>);
-
-impl<T: Encodable> Encodable for NilList<T> {
-    fn encode(&self, out: &mut dyn BufMut) {
-        match &self.0 {
-            None => out.put_u8(EMPTY_LIST_CODE), // 0xC0
-            Some(v) => v.encode(out),
-        }
-    }
-
-    fn length(&self) -> usize {
-        match &self.0 {
-            None => 1,
-            Some(v) => v.length(),
-        }
-    }
+#[derive(Debug, RlpEncodable, RlpDecodable)]
+pub struct MessageResult {
+    pub block_hash: B256,
+    pub send_root: B256,
 }
 
-impl<T: Decodable> Decodable for NilList<T> {
-    fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
-        if buf.first() == Some(&EMPTY_LIST_CODE) {
-            *buf = &buf[1..];
-            return Ok(Self(None));
-        }
-        Ok(Self(Some(T::decode(buf)?)))
-    }
+impl KeyPrefix for MessageResult {
+    const PREFIX: &[u8] = MESSAGE_RESULT_PREFIX;
+}
+
+#[derive(Debug, RlpEncodable, RlpDecodable)]
+pub struct BlockHashDbValue {
+    pub block_hash: NilString<B256>,
+}
+
+impl KeyPrefix for BlockHashDbValue {
+    const PREFIX: &[u8] = BLOCK_HASH_INPUT_FEED_PREFIX;
 }
 
 /// Maps a message sequence number to a message
