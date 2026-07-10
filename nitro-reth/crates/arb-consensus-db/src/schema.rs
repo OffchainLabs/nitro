@@ -1,5 +1,5 @@
-use alloy_primitives::B256;
-use alloy_rlp::{RlpDecodable, RlpEncodable};
+use alloy_primitives::{Address, B256, Bytes, U256};
+use alloy_rlp::{Decodable, EMPTY_LIST_CODE, Encodable, RlpDecodable, RlpEncodable, bytes::BufMut};
 
 use crate::kv::KeyBuf;
 
@@ -19,6 +19,74 @@ pub struct BatchMetadata {
 
 impl KeyPrefix for BatchMetadata {
     const PREFIX: &[u8] = SEQUENCER_BATCH_META_PREFIX;
+}
+
+#[derive(Debug, RlpEncodable, RlpDecodable)]
+pub struct MessageWithMetadata {
+    pub message: L1IncomingMessage,
+    pub delayed_messages_read: u64,
+}
+
+impl KeyPrefix for MessageWithMetadata {
+    const PREFIX: &[u8] = MESSAGE_PREFIX;
+}
+
+#[derive(Debug, RlpEncodable, RlpDecodable)]
+#[rlp(trailing)]
+pub struct L1IncomingMessage {
+    pub header: L1IncomingMessageHeader,
+    pub l2msg: Bytes,
+    pub legacy_batch_gas_cost: Option<u64>,
+    pub batch_data_stats: Option<BatchDataStats>,
+}
+
+#[derive(Debug, RlpEncodable, RlpDecodable)]
+pub struct L1IncomingMessageHeader {
+    pub kind: u8,
+    pub poster: Address,
+    pub block_number: u64,
+    pub timestamp: u64,
+    // TODO: can omit NilList if byte-compatibility is not needed
+    pub request_id: NilList<B256>,
+    pub l1_base_fee: U256,
+}
+
+#[derive(Debug, RlpEncodable, RlpDecodable)]
+pub struct BatchDataStats {
+    pub length: u64,
+    pub non_zeros: u64,
+}
+
+/// Optional field, which encodes `None` as empty list (`0xC0`).
+///
+/// `T` must never be encodable to `0xC0` since it will resolve to `None`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct NilList<T>(pub Option<T>);
+
+impl<T: Encodable> Encodable for NilList<T> {
+    fn encode(&self, out: &mut dyn BufMut) {
+        match &self.0 {
+            None => out.put_u8(EMPTY_LIST_CODE), // 0xC0
+            Some(v) => v.encode(out),
+        }
+    }
+
+    fn length(&self) -> usize {
+        match &self.0 {
+            None => 1,
+            Some(v) => v.length(),
+        }
+    }
+}
+
+impl<T: Decodable> Decodable for NilList<T> {
+    fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
+        if buf.first() == Some(&EMPTY_LIST_CODE) {
+            *buf = &buf[1..];
+            return Ok(Self(None));
+        }
+        Ok(Self(Some(T::decode(buf)?)))
+    }
 }
 
 /// Maps a message sequence number to a message

@@ -39,6 +39,14 @@ impl<S: kv::KvStore> ConsensusDb<S> {
         self.get_rlp(&schema::key(T::PREFIX, pos))
     }
 
+    pub fn put<T: schema::KeyPrefix + alloy_rlp::Encodable>(
+        &mut self,
+        pos: u64,
+        value: &T,
+    ) -> Result<()> {
+        self.put_rlp(&schema::key(T::PREFIX, pos), value)
+    }
+
     /// Check stored schema version, and perform migration to current version.
     fn check_schema_version(&mut self) -> Result<()> {
         let mut version = self.get_schema_version()?;
