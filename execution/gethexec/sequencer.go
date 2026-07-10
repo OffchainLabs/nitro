@@ -1253,7 +1253,6 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 		queueItems,
 		maxTxDataSize,
 		s,
-		nil,
 	)
 
 	for _, queueItem := range queueItems {

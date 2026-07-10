@@ -18,28 +18,14 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 )
 
-// TxFilter rejects individual txs before and after execution.
-type TxFilter interface {
-	// PreTxFilter rejects a tx before execution.
-	PreTxFilter(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info, int) error
-	// PostTxFilter rejects a tx after execution.
-	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error
-}
-
-// BlockFilter rejects an entire block after all txs have been applied.
-// It is currently only injected by tests; production passes nil.
-type BlockFilter interface {
-	BlockFilter(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
-}
-
 type FullSequencingHooks struct {
 	queueItems               []txQueueItem
 	sequencedQueueItemsCount int
 	sequencedTxsSizeSoFar    int
 	maxSequencedTxsSize      int
 	txErrors                 []error
-	txFilter                 TxFilter
-	blockFilter              BlockFilter
+	txFilter                 arbos.TxFilter
+	blockFilter              arbos.BlockFilter
 	txSizeLimitReached       bool
 }
 
@@ -48,8 +34,7 @@ var _ BlockSequencingHooks = (*FullSequencingHooks)(nil)
 func MakeSequencingHooks(
 	items []txQueueItem,
 	maxSequencedTxsSize int,
-	txFilter TxFilter,
-	blockFilter BlockFilter,
+	txFilter arbos.TxFilter,
 ) *FullSequencingHooks {
 	res := &FullSequencingHooks{
 		queueItems:               items,
@@ -57,7 +42,7 @@ func MakeSequencingHooks(
 		sequencedTxsSizeSoFar:    0,
 		maxSequencedTxsSize:      maxSequencedTxsSize,
 		txFilter:                 txFilter,
-		blockFilter:              blockFilter,
+		blockFilter:              nil, // only used in testing
 	}
 	return res
 }
@@ -66,8 +51,8 @@ func MakeSequencingHooks(
 // This allows all transactions to be included in a block regardless of size.
 func MakeZeroTxSizeSequencingHooksForTesting(
 	txes types.Transactions,
-	txFilter TxFilter,
-	blockFilter BlockFilter,
+	txFilter arbos.TxFilter,
+	blockFilter arbos.BlockFilter,
 ) *FullSequencingHooks {
 	var items []txQueueItem
 	for _, tx := range txes {
@@ -75,12 +60,9 @@ func MakeZeroTxSizeSequencingHooksForTesting(
 			tx: tx,
 		})
 	}
-	return MakeSequencingHooks(
-		items,
-		0,
-		txFilter,
-		blockFilter,
-	)
+	hooks := MakeSequencingHooks(items, 0, txFilter)
+	hooks.blockFilter = blockFilter
+	return hooks
 }
 
 func (s *FullSequencingHooks) SequencedTxes() ([]TxResult, error) {

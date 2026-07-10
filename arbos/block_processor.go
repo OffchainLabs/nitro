@@ -229,7 +229,22 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, baseFee *big.Int,
 
 type ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
 
+// TxFilter rejects individual txs before and after execution.
+type TxFilter interface {
+	// PreTxFilter rejects a tx before execution. Only called for user txs.
+	PreTxFilter(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info, int) error
+	// PostTxFilter rejects a tx after execution. Not called for internal txs.
+	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error
+}
+
+// BlockFilter rejects an entire block after all txs have been applied.
+type BlockFilter interface {
+	BlockFilter(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
+}
+
 type SequencingHooks interface {
+	TxFilter
+	BlockFilter
 	// NextTxToSequence returns the next tx to include, or nil when done.
 	NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error)
 	// CanDiscardTx returns whether failed txs can be excluded from the block.
@@ -238,12 +253,6 @@ type SequencingHooks interface {
 	// SupportsGroupRollback returns whether the hooks support checkpointing and
 	// rolling back a group of transactions (user tx + its scheduled redeems).
 	SupportsGroupRollback() bool
-	// PreTxFilter rejects a tx before execution. Only called for user txs.
-	PreTxFilter(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info, int) error
-	// PostTxFilter rejects a tx after execution. Not called for internal txs.
-	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error
-	// BlockFilter rejects an entire block after all txs have been applied.
-	BlockFilter(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
 	// TxSucceeded records that the last user tx from NextTxToSequence executed successfully.
 	TxSucceeded()
 	// TxFailed records an error for the last user tx from NextTxToSequence.

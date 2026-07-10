@@ -113,8 +113,8 @@ func setupSequencerFilterTest(t *testing.T, isBlockFilter bool) (*NodeBuilder, *
 	txes = append(txes, builder.L2Info.PrepareTx("Owner", "User", builder.L2Info.TransferGas, big.NewInt(1e12), []byte{1, 2, 3}))
 	txes = append(txes, builder.L2Info.PrepareTx("User", "Owner", builder.L2Info.TransferGas, big.NewInt(1e12), nil))
 
-	var txFilter gethexec.TxFilter
-	var blockFilter gethexec.BlockFilter
+	var txFilter arbos.TxFilter
+	var blockFilter arbos.BlockFilter
 
 	if isBlockFilter {
 		blockFilter = dataRejectingBlockFilter{}
