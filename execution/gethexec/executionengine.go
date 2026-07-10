@@ -112,16 +112,14 @@ type DelayedFilteringSequencingHooks struct {
 	eventFilter              *eventfilter.EventFilter
 	inboxRequestId           common.Hash
 	chainID                  uint64
-	transactionBroadcaster   transactionBroadcaster
 }
 
-func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter.EventFilter, inboxRequestId common.Hash, chainID uint64, tb transactionBroadcaster) *DelayedFilteringSequencingHooks {
+func NewDelayedFilteringSequencingHooks(txes types.Transactions, ef *eventfilter.EventFilter, inboxRequestId common.Hash, chainID uint64) *DelayedFilteringSequencingHooks {
 	return &DelayedFilteringSequencingHooks{
-		NoopSequencingHooks:    *arbos.NewNoopSequencingHooks(txes),
-		eventFilter:            ef,
-		inboxRequestId:         inboxRequestId,
-		chainID:                chainID,
-		transactionBroadcaster: tb,
+		NoopSequencingHooks: *arbos.NewNoopSequencingHooks(txes),
+		eventFilter:         ef,
+		inboxRequestId:      inboxRequestId,
+		chainID:             chainID,
 	}
 }
 
@@ -233,16 +231,10 @@ func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
 	f.pendingFilteredTxReports = append(f.pendingFilteredTxReports, report)
 }
 
+// TxAccepted deliberately does NOT broadcast to the transaction feed. A
+// delayed block is produced atomically from one inbox message and discarded
+// completly if any of its txs is filtered. It's broadcast is handled after block production.
 func (f *DelayedFilteringSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt) {
-	if f.transactionBroadcaster == nil {
-		return
-	}
-	msg, err := transactionfeed.BuildFeedMessage(header, tx, receipt)
-	if err != nil {
-		log.Error("Transaction feed: failed to build message", "block", header.Number, "err", err)
-		return
-	}
-	f.transactionBroadcaster.BroadcastTransaction(msg)
 }
 
 func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
@@ -958,6 +950,21 @@ func (s *ExecutionEngine) MessageIndexToBlockNumber(msgIdx arbutil.MessageIndex)
 	return uint64(msgIdx) + s.GetGenesisBlockNumber()
 }
 
+func (s *ExecutionEngine) broadcastBlockTxs(block *types.Block, receipts types.Receipts) {
+	if s.transactionBroadcaster == nil {
+		return
+	}
+	header := block.Header()
+	for i, tx := range block.Transactions() {
+		msg, err := transactionfeed.BuildFeedMessage(header, tx, receipts[i])
+		if err != nil {
+			log.Error("Transaction feed: failed to build message", "block", header.Number, "err", err)
+			continue
+		}
+		s.transactionBroadcaster.BroadcastTransaction(msg)
+	}
+}
+
 // must hold createBlockMutex
 //
 // isDelayedSequencing indicates the sequencer is actively building a block from
@@ -1025,7 +1032,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		if msg.Message.Header.RequestId != nil {
 			inboxRequestId = *msg.Message.Header.RequestId
 		}
-		filteringHooks := NewDelayedFilteringSequencingHooks(txes, s.eventFilter, inboxRequestId, chainConfig.ChainID.Uint64(), s.transactionBroadcaster)
+		filteringHooks := NewDelayedFilteringSequencingHooks(txes, s.eventFilter, inboxRequestId, chainConfig.ChainID.Uint64())
 
 		block, statedb, receipts, err := arbos.ProduceBlockAdvanced(
 			msg.Message.Header,
@@ -1071,6 +1078,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 				DelayedMsgIdx: msg.DelayedMessagesRead - 1,
 			}
 		}
+		s.broadcastBlockTxs(block, receipts)
 		return block, statedb, receipts, nil
 	}
 
@@ -1084,6 +1092,9 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		runCtx,
 		s.exposeMultiGas,
 	)
+	if err == nil && isDelayedSequencing {
+		s.broadcastBlockTxs(block, receipts)
+	}
 
 	return block, statedb, receipts, err
 }

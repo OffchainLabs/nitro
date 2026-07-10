@@ -967,7 +967,6 @@ type FullSequencingHooks struct {
 	postTxFilter             func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error
 	blockFilter              func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
 	txSizeLimitReached       bool
-	filteredTxCount          int
 	transactionFeedServer    transactionBroadcaster
 }
 
@@ -1082,13 +1081,7 @@ func (s *FullSequencingHooks) SequencedTx(txId int) (*types.Transaction, error) 
 
 func (s *FullSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *arbos.L1Info, positionInBlock int) error {
 	if s.preTxFilter != nil {
-		err := s.preTxFilter(config, header, db, a, transaction, options, address, info, positionInBlock)
-		if err != nil {
-			if errors.Is(err, state.ErrArbTxFilter) {
-				s.filteredTxCount++
-			}
-			return err
-		}
+		return s.preTxFilter(config, header, db, a, transaction, options, address, info, positionInBlock)
 	}
 	return nil
 }
@@ -1098,32 +1091,16 @@ func (s *FullSequencingHooks) PostTxFilter(header *types.Header, db *state.State
 		return nil
 	}
 	if s.postTxFilter != nil {
-		err := s.postTxFilter(header, db, a, transaction, address, u, result, positionInBlock)
-		if err != nil {
-			if errors.Is(err, state.ErrArbTxFilter) {
-				s.filteredTxCount++
-			}
-			return err
-		}
+		return s.postTxFilter(header, db, a, transaction, address, u, result, positionInBlock)
 	}
 	return nil
 }
 
 func (s *FullSequencingHooks) BlockFilter(header *types.Header, db *state.StateDB, transactions types.Transactions, receipts types.Receipts) error {
 	if s.blockFilter != nil {
-		err := s.blockFilter(header, db, transactions, receipts)
-		if err != nil {
-			if errors.Is(err, state.ErrArbTxFilter) {
-				s.filteredTxCount++
-			}
-			return err
-		}
+		return s.blockFilter(header, db, transactions, receipts)
 	}
 	return nil
-}
-
-func (s *FullSequencingHooks) FilteredTxCount() int {
-	return s.filteredTxCount
 }
 
 func MakeSequencingHooks(

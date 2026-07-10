@@ -226,8 +226,6 @@ type SequencingHooks interface {
 	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error
 	// BlockFilter rejects an entire block after all txs have been applied.
 	BlockFilter(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
-	// FilteredTxCount returns the number of transactions filtered during this block's processing.
-	FilteredTxCount() int
 	// TxSucceeded records that the last user tx from NextTxToSequence executed successfully.
 	TxSucceeded()
 	// TxFailed records an error for the last user tx from NextTxToSequence.
@@ -265,10 +263,6 @@ func (n *NoopSequencingHooks) PostTxFilter(header *types.Header, db *state.State
 
 func (n *NoopSequencingHooks) BlockFilter(header *types.Header, db *state.StateDB, transactions types.Transactions, receipts types.Receipts) error {
 	return nil
-}
-
-func (n *NoopSequencingHooks) FilteredTxCount() int {
-	return 0
 }
 
 func (n *NoopSequencingHooks) TxSucceeded() {}
@@ -381,9 +375,6 @@ func ProduceBlockAdvanced(
 	}
 
 	emitGroupAccepted := func() {
-		if runCtx.IsDelayedSequencing() {
-			return
-		}
 		if buildState.activeGroupCP == nil {
 			log.Warn("emitGroupAccepted was called with no active group checkpoint")
 			return
@@ -692,23 +683,16 @@ func ProduceBlockAdvanced(
 		if isUserTx {
 			if buildState.activeGroupCP == nil {
 				sequencingHooks.TxSucceeded()
-				if !runCtx.IsDelayedSequencing() {
-					sequencingHooks.TxAccepted(header, tx, receipt)
-				}
+				sequencingHooks.TxAccepted(header, tx, receipt)
 			}
 
 			buildState.userTxsProcessed++
+		} else if tx.Type() == types.ArbitrumInternalTxType {
+			sequencingHooks.TxAccepted(header, tx, receipt)
 		} else if buildState.activeGroupCP != nil && len(buildState.redeems) == 0 {
 			sequencingHooks.TxSucceeded()
 			emitGroupAccepted()
 			buildState.clearGroupCheckpoint()
-		}
-	}
-
-	if runCtx.IsDelayedSequencing() && sequencingHooks.FilteredTxCount() == 0 {
-		for i, receipt := range buildState.receipts {
-			tx := buildState.complete[i]
-			sequencingHooks.TxAccepted(header, tx, receipt)
 		}
 	}
 

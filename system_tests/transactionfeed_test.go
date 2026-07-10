@@ -182,8 +182,8 @@ type transactionFeedTestOpts struct {
 	// helpers (delayedInbox, lookupL2Tx) on the returned env.
 	withL1 bool
 	// withDelayedSequencer implies withL1; enables the delayed sequencer so
-	// that L1->L2 messages drive the DelayedFilteringSequencingHooks emit
-	// path in arbos/block_processor.go without ArbOS-level filtering.
+	// that L1->L2 messages drive the delayed-block broadcast path
+	// (ExecutionEngine.broadcastBlockTxs) without ArbOS-level filtering.
 	withDelayedSequencer bool
 	// enableFiltering implies withDelayedSequencer plus the ArbOS-level
 	// transaction-filtering machinery: ArbOS v60 and a Filterer /
@@ -238,6 +238,16 @@ func (env *transactionFeedTestEnv) assertFeedExactly(t *testing.T, want map[comm
 	}
 
 	got := env.recorder.counts()
+	// ArbOS internal txs handling
+	for h := range got {
+		if _, ok := expected[h]; ok {
+			continue
+		}
+		tx, _, err := builder.L2.Client.TransactionByHash(env.ctx, h)
+		if err == nil && tx.Type() == types.ArbitrumInternalTxType {
+			delete(got, h)
+		}
+	}
 	for h, wantCount := range expected {
 		if got[h] != wantCount {
 			t.Errorf("feed delivered tx %s %d time(s), want %d", h.Hex(), got[h], wantCount)
@@ -251,6 +261,18 @@ func (env *transactionFeedTestEnv) assertFeedExactly(t *testing.T, want map[comm
 	if t.Failed() {
 		t.FailNow()
 	}
+}
+
+// blockInternalTxHash returns the hash of the ArbOS internal startTx
+func (env *transactionFeedTestEnv) blockInternalTxHash(t *testing.T, blockNumber *big.Int) common.Hash {
+	t.Helper()
+	block, err := env.builder.L2.Client.BlockByNumber(env.ctx, blockNumber)
+	Require(t, err)
+	txs := block.Transactions()
+	if len(txs) == 0 || txs[0].Type() != types.ArbitrumInternalTxType {
+		t.Fatalf("block %s has no leading internal tx", blockNumber)
+	}
+	return txs[0].Hash()
 }
 
 func setupTransactionFeedTest(t *testing.T, ctx context.Context, opts transactionFeedTestOpts) *transactionFeedTestEnv {
@@ -384,6 +406,8 @@ func TestTransactionFeedDelivery(t *testing.T) {
 	if roundTrip.Hash() != tx.Hash() {
 		t.Fatalf("raw_tx round-trip hash mismatch: got %s want %s", roundTrip.Hash().Hex(), tx.Hash().Hex())
 	}
+
+	env.awaitFeedMessageFor(t, env.blockInternalTxHash(t, receipt.BlockNumber), 5*time.Second)
 
 	env.assertFeedExactly(t, map[common.Hash]int{tx.Hash(): 1})
 }
@@ -933,6 +957,8 @@ func TestTransactionFeedDelayedSequencerBroadcast(t *testing.T) {
 		t.Fatalf("auto-redeem block mismatch: feed=%d receipt=%d",
 			mRetry.Transaction.BlockNumber, retryReceipt.BlockNumber.Uint64())
 	}
+
+	env.awaitFeedMessageFor(t, env.blockInternalTxHash(t, submissionReceipt.BlockNumber), 10*time.Second)
 
 	env.assertFeedExactly(t, map[common.Hash]int{
 		submissionTx.Hash(): 1,
