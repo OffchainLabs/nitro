@@ -1,13 +1,13 @@
 use arb_consensus_db::{
     kv,
-    schema::{BatchMetadata, KeyPrefix},
+    schema::{BatchMetadata, StoredValue},
 };
 
-pub trait MelKeyPrefix: KeyPrefix {
+pub trait MelStoredValue: StoredValue {
     const MEL_PREFIX: Option<&[u8]> = None;
 }
 
-impl MelKeyPrefix for BatchMetadata {
+impl MelStoredValue for BatchMetadata {
     const MEL_PREFIX: Option<&[u8]> = Some(MEL_SEQUENCER_BATCH_META_PREFIX);
 }
 
@@ -23,7 +23,7 @@ pub const HEAD_MEL_STATE_BLOCK_NUM_KEY: &[u8] = b"_headMelStateBlockNum";
 /// Contains the initial MEL state's parent chain block number (legacy/MEL boundary)
 pub const INITIAL_MEL_STATE_BLOCK_NUM_KEY: &[u8] = b"_initialMelStateBlockNum";
 
-pub fn key<T: MelKeyPrefix>(pos: u64, init: u64) -> kv::KeyBuf {
+pub fn key<T: MelStoredValue>(pos: u64, init: u64) -> kv::KeyBuf {
     let prefix = if pos < init {
         T::PREFIX
     } else {

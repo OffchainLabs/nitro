@@ -17,11 +17,8 @@ impl<S: kv::KvStore> MelDb<S> {
         })
     }
 
-    pub fn get<T: schema::MelKeyPrefix + alloy_rlp::Decodable>(
-        &self,
-        pos: u64,
-    ) -> Result<Option<T>> {
+    pub fn get<T: schema::MelStoredValue>(&self, pos: u64) -> Result<Option<T>> {
         self.consensus_db
-            .get_rlp(&schema::key::<T>(pos, self.initial_batch_count))
+            .get_at_key(&schema::key::<T>(pos, self.initial_batch_count))
     }
 }

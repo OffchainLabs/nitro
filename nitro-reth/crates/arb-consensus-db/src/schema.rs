@@ -1,13 +1,21 @@
 use alloy_primitives::{Address, B256, Bytes, U256};
 use alloy_rlp::{RlpDecodable, RlpEncodable};
 
-use crate::kv::KeyBuf;
-use crate::rlp::{NilList, NilString};
+use crate::{
+    Result,
+    kv::KeyBuf,
+    rlp::{NilList, NilString},
+};
 
 pub const CURRENT_VERSION: u64 = 2;
 
-pub trait KeyPrefix {
+/// Stored value in the key-value store.
+///
+/// RLP encoding may be implemented using the [`rlp_value`] macro.
+pub trait StoredValue: Sized {
     const PREFIX: &[u8];
+    fn encode(&self) -> Vec<u8>;
+    fn decode(bytes: &[u8]) -> Result<Self>;
 }
 
 #[derive(Debug, RlpEncodable, RlpDecodable)]
@@ -18,18 +26,10 @@ pub struct BatchMetadata {
     pub parent_chain_block: u64,
 }
 
-impl KeyPrefix for BatchMetadata {
-    const PREFIX: &[u8] = SEQUENCER_BATCH_META_PREFIX;
-}
-
 #[derive(Debug, RlpEncodable, RlpDecodable)]
 pub struct MessageWithMetadata {
     pub message: L1IncomingMessage,
     pub delayed_messages_read: u64,
-}
-
-impl KeyPrefix for MessageWithMetadata {
-    const PREFIX: &[u8] = MESSAGE_PREFIX;
 }
 
 #[derive(Debug, RlpEncodable, RlpDecodable)]
@@ -64,18 +64,29 @@ pub struct MessageResult {
     pub send_root: B256,
 }
 
-impl KeyPrefix for MessageResult {
-    const PREFIX: &[u8] = MESSAGE_RESULT_PREFIX;
-}
-
 #[derive(Debug, RlpEncodable, RlpDecodable)]
 pub struct BlockHashDbValue {
     pub block_hash: NilString<B256>,
 }
 
-impl KeyPrefix for BlockHashDbValue {
-    const PREFIX: &[u8] = BLOCK_HASH_INPUT_FEED_PREFIX;
+macro_rules! rlp_value {
+    ($ty:ty => $prefix:expr) => {
+        impl StoredValue for $ty {
+            const PREFIX: &[u8] = $prefix;
+            fn encode(&self) -> Vec<u8> {
+                alloy_rlp::encode(self)
+            }
+            fn decode(bytes: &[u8]) -> Result<Self> {
+                Ok(alloy_rlp::decode_exact(bytes)?)
+            }
+        }
+    };
 }
+
+rlp_value!(BatchMetadata => SEQUENCER_BATCH_META_PREFIX);
+rlp_value!(MessageWithMetadata => MESSAGE_PREFIX);
+rlp_value!(MessageResult => MESSAGE_RESULT_PREFIX);
+rlp_value!(BlockHashDbValue => BLOCK_HASH_INPUT_FEED_PREFIX);
 
 /// Maps a message sequence number to a message
 pub const MESSAGE_PREFIX: &[u8] = b"m";

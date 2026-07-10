@@ -36,16 +36,13 @@ impl<S: kv::KvStore> ConsensusDb<S> {
         Ok(db)
     }
 
-    pub fn get<T: schema::KeyPrefix + alloy_rlp::Decodable>(&self, pos: u64) -> Result<Option<T>> {
-        self.get_rlp(&schema::key(T::PREFIX, pos))
+    pub fn get<T: schema::StoredValue>(&self, pos: u64) -> Result<Option<T>> {
+        self.get_at_key(&schema::key(T::PREFIX, pos))
     }
 
-    pub fn put<T: schema::KeyPrefix + alloy_rlp::Encodable>(
-        &mut self,
-        pos: u64,
-        value: &T,
-    ) -> Result<()> {
-        self.put_rlp(&schema::key(T::PREFIX, pos), value)
+    pub fn put<T: schema::StoredValue>(&mut self, pos: u64, value: &T) -> Result<()> {
+        let bytes = value.encode();
+        self.put_raw(&schema::key(T::PREFIX, pos), bytes)
     }
 
     /// Check stored schema version, and perform migration to current version.
@@ -68,6 +65,11 @@ impl<S: kv::KvStore> ConsensusDb<S> {
             self.write_kv_batch(batch)?;
         }
         Ok(())
+    }
+
+    pub fn get_at_key<T: schema::StoredValue>(&self, key: kv::Key) -> Result<Option<T>> {
+        let bytes = self.get_raw(key)?;
+        bytes.as_deref().map(T::decode).transpose()
     }
 
     /// Get raw bytes from the key-value store.
@@ -104,7 +106,7 @@ impl<S: kv::KvStore> ConsensusDb<S> {
     }
 
     /// RLP-encode `value` and store it at `key` (upsert).
-    fn put_rlp(&mut self, key: kv::Key, value: impl alloy_rlp::Encodable) -> Result<()> {
+    pub fn put_rlp(&mut self, key: kv::Key, value: impl alloy_rlp::Encodable) -> Result<()> {
         self.put_raw(key, alloy_rlp::encode(value))
     }
 }
