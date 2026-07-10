@@ -97,7 +97,7 @@ func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *type
 
 	return &TransactionFeedMessage{
 		Version:     TransactionFeedV1,
-		PGARound:    1, // TODO: placeholder until we connect with PGA round logic
+		PGARound:    0, // TODO: placeholder until we connect with PGA round logic
 		TimestampMs: arbmath.SaturatingUCast[uint64](time.Now().UnixMilli()),
 		Transaction: IncludedTransaction{
 			BlockNumber: header.Number.Uint64(),
