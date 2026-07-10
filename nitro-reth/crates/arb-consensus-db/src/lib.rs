@@ -9,6 +9,8 @@ pub enum ConsensusDbError {
     #[error(transparent)]
     Store(Box<dyn std::error::Error + Send + Sync + 'static>),
 
+    #[error("invalid stored value")]
+    InvalidStoredValue,
     #[error("schema version malformed")]
     MalformedSchemaVersion,
     #[error("schema version mismatch: found {found}, expected {expected}")]

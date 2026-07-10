@@ -1,8 +1,8 @@
 use alloy_primitives::{Address, B256, Bytes, U256};
-use alloy_rlp::{RlpDecodable, RlpEncodable};
+use alloy_rlp::{RlpDecodable, RlpDecodableWrapper, RlpEncodable, RlpEncodableWrapper};
 
 use crate::{
-    Result,
+    ConsensusDbError, Result,
     kv::KeyBuf,
     rlp::{NilList, NilString},
 };
@@ -69,6 +69,55 @@ pub struct BlockHashDbValue {
     pub block_hash: NilString<B256>,
 }
 
+#[derive(Debug)]
+pub struct BlockMetadata(pub Vec<u8>);
+
+impl StoredValue for BlockMetadata {
+    const PREFIX: &[u8] = BLOCK_METADATA_INPUT_FEED_PREFIX;
+
+    fn encode(&self) -> Vec<u8> {
+        self.0.clone()
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        Ok(Self(bytes.to_vec()))
+    }
+}
+
+#[derive(Debug)]
+pub struct MissingBlockMetadata;
+
+impl StoredValue for MissingBlockMetadata {
+    const PREFIX: &[u8] = MISSING_BLOCK_METADATA_INPUT_FEED_PREFIX;
+
+    fn encode(&self) -> Vec<u8> {
+        Vec::new()
+    }
+
+    fn decode(_bytes: &[u8]) -> Result<Self> {
+        Ok(Self)
+    }
+}
+
+#[derive(Debug)]
+pub struct ParentChainBlock(pub u64);
+
+impl StoredValue for ParentChainBlock {
+    const PREFIX: &[u8] = PARENT_CHAIN_BLOCK_NUMBER_PREFIX;
+    fn encode(&self) -> Vec<u8> {
+        self.0.to_be_bytes().to_vec()
+    }
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        Ok(Self(u64::from_be_bytes(
+            bytes
+                .try_into()
+                .map_err(|_| ConsensusDbError::InvalidStoredValue)?,
+        )))
+    }
+}
+#[derive(Debug, RlpEncodableWrapper, RlpDecodableWrapper)]
+pub struct DelayedSequenced(pub u64);
+
 macro_rules! rlp_value {
     ($ty:ty => $prefix:expr) => {
         impl StoredValue for $ty {
@@ -87,6 +136,7 @@ rlp_value!(BatchMetadata => SEQUENCER_BATCH_META_PREFIX);
 rlp_value!(MessageWithMetadata => MESSAGE_PREFIX);
 rlp_value!(MessageResult => MESSAGE_RESULT_PREFIX);
 rlp_value!(BlockHashDbValue => BLOCK_HASH_INPUT_FEED_PREFIX);
+rlp_value!(DelayedSequenced => DELAYED_SEQUENCED_PREFIX);
 
 /// Maps a message sequence number to a message
 pub const MESSAGE_PREFIX: &[u8] = b"m";
