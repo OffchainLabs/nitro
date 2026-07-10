@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net"
 	"net/http"
 	"sync/atomic"
@@ -34,11 +33,17 @@ var (
 // broadcastDroppedCounter still reflects every drop.
 const broadcastDropLogInterval = time.Minute
 
+// registerChanBuf and unregisterChanBuf absorb bursts of clients connecting
+// or disconnecting while the run loop is busy broadcasting.
+const (
+	registerChanBuf   = 16
+	unregisterChanBuf = 64
+)
+
 type clientConn struct {
 	conn       *websocket.Conn
 	remoteAddr string
 	out        chan []byte
-	done       chan struct{}
 }
 
 type Server struct {
@@ -57,8 +62,8 @@ type Server struct {
 func NewServer(config ServerConfig) *Server {
 	return &Server{
 		config:              config,
-		register:            make(chan *clientConn, 16),
-		unregister:          make(chan *clientConn, 64),
+		register:            make(chan *clientConn, registerChanBuf),
+		unregister:          make(chan *clientConn, unregisterChanBuf),
 		broadcast:           make(chan []byte, config.BroadcastBuf),
 		wsUpgradeErrHandler: util.NewEphemeralErrorHandler(time.Minute, "", 0),
 	}
@@ -105,7 +110,6 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		conn:       conn,
 		remoteAddr: r.RemoteAddr,
 		out:        make(chan []byte, s.config.ClientBuf),
-		done:       make(chan struct{}),
 	}
 
 	ctx := s.GetContext()
@@ -119,8 +123,8 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	log.Debug("Transaction feed client connected", "remote", cc.remoteAddr)
 
-	go s.clientReader(ctx, cc)
-	s.clientWriter(ctx, cc)
+	readCtx := cc.conn.CloseRead(ctx)
+	s.clientWriter(ctx, readCtx, cc)
 
 	log.Debug("Transaction feed client disconnected", "remote", cc.remoteAddr)
 
@@ -128,24 +132,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	s.sendUnregister(cc)
 }
 
-func (s *Server) clientReader(ctx context.Context, cc *clientConn) {
-	defer close(cc.done)
-	for {
-		readCtx, cancel := context.WithTimeout(ctx, s.config.ReadTimeout)
-		_, reader, err := cc.conn.Reader(readCtx)
-		if err != nil {
-			cancel()
-			return
-		}
-		if _, err := io.Copy(io.Discard, reader); err != nil {
-			cancel()
-			return
-		}
-		cancel()
-	}
-}
-
-func (s *Server) clientWriter(ctx context.Context, cc *clientConn) {
+func (s *Server) clientWriter(ctx context.Context, readCtx context.Context, cc *clientConn) {
 	ticker := time.NewTicker(s.config.PingInterval)
 	defer ticker.Stop()
 
@@ -159,6 +146,7 @@ func (s *Server) clientWriter(ctx context.Context, cc *clientConn) {
 			err := cc.conn.Write(wctx, websocket.MessageBinary, data)
 			cancel()
 			if err != nil {
+				log.Debug("Transaction feed client write failed", "err", err, "remote", cc.remoteAddr)
 				return
 			}
 
@@ -167,10 +155,11 @@ func (s *Server) clientWriter(ctx context.Context, cc *clientConn) {
 			err := cc.conn.Ping(pctx)
 			cancel()
 			if err != nil {
+				log.Debug("Transaction feed client ping failed", "err", err, "remote", cc.remoteAddr)
 				return
 			}
 
-		case <-cc.done:
+		case <-readCtx.Done():
 			return
 
 		case <-ctx.Done():

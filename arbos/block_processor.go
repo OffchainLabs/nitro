@@ -380,16 +380,18 @@ func ProduceBlockAdvanced(
 		activeGroupCP:        nil,
 	}
 
-	emitGroupAccepted := func(s *blockBuildState) {
+	emitGroupAccepted := func() {
 		if runCtx.IsDelayedSequencing() {
 			return
 		}
-		if s.activeGroupCP == nil {
+		if buildState.activeGroupCP == nil {
 			log.Warn("emitGroupAccepted was called with no active group checkpoint")
 			return
 		}
-		for i := s.activeGroupCP.completeLen; i < len(s.complete); i++ {
-			sequencingHooks.TxAccepted(header, s.complete[i], s.receipts[i])
+		// activeGroupCP.completeLen is the index in complete of the group's
+		// first tx
+		for i := buildState.activeGroupCP.completeLen; i < len(buildState.complete); i++ {
+			sequencingHooks.TxAccepted(header, buildState.complete[i], buildState.receipts[i])
 		}
 	}
 
@@ -419,7 +421,7 @@ func ProduceBlockAdvanced(
 			// Previous group (if any) completed successfully
 			if buildState.activeGroupCP != nil {
 				sequencingHooks.TxSucceeded()
-				emitGroupAccepted(buildState)
+				emitGroupAccepted()
 			}
 			buildState.clearGroupCheckpoint()
 			var conditionalOptions *arbitrum_types.ConditionalOptions
@@ -698,7 +700,7 @@ func ProduceBlockAdvanced(
 			buildState.userTxsProcessed++
 		} else if buildState.activeGroupCP != nil && len(buildState.redeems) == 0 {
 			sequencingHooks.TxSucceeded()
-			emitGroupAccepted(buildState)
+			emitGroupAccepted()
 			buildState.clearGroupCheckpoint()
 		}
 	}

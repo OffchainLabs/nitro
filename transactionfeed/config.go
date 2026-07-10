@@ -18,7 +18,6 @@ type ServerConfig struct {
 	BroadcastBuf     int           `koanf:"broadcast-buf"`
 	WriteTimeout     time.Duration `koanf:"write-timeout"`
 	PingInterval     time.Duration `koanf:"ping-interval"`
-	ReadTimeout      time.Duration `koanf:"read-timeout"`
 	HandshakeTimeout time.Duration `koanf:"handshake-timeout"`
 }
 
@@ -28,7 +27,6 @@ var DefaultServerConfig = ServerConfig{
 	Port:             "9646",
 	ClientBuf:        256,
 	BroadcastBuf:     4096,
-	ReadTimeout:      2 * time.Second,
 	WriteTimeout:     2 * time.Second,
 	PingInterval:     30 * time.Second,
 	HandshakeTimeout: 5 * time.Second,
@@ -40,7 +38,6 @@ func ServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".port", DefaultServerConfig.Port, "port for transaction feed server")
 	f.Int(prefix+".client-buf", DefaultServerConfig.ClientBuf, "per-client send buffer size")
 	f.Int(prefix+".broadcast-buf", DefaultServerConfig.BroadcastBuf, "broadcast channel buffer size")
-	f.Duration(prefix+".read-timeout", DefaultServerConfig.ReadTimeout, "read timeout per client")
 	f.Duration(prefix+".write-timeout", DefaultServerConfig.WriteTimeout, "write timeout per client")
 	f.Duration(prefix+".ping-interval", DefaultServerConfig.PingInterval, "websocket ping interval")
 	f.Duration(prefix+".handshake-timeout", DefaultServerConfig.HandshakeTimeout, "websocket handshake timeout")
@@ -58,9 +55,6 @@ func (c *ServerConfig) Validate() error {
 	}
 	if c.BroadcastBuf <= 0 {
 		return fmt.Errorf("transactionfeed: broadcast-buf must be > 0 (got %d)", c.BroadcastBuf)
-	}
-	if c.ReadTimeout <= 0 {
-		return fmt.Errorf("transactionfeed: read-timeout must be > 0 (got %s)", c.ReadTimeout)
 	}
 	if c.WriteTimeout <= 0 {
 		return fmt.Errorf("transactionfeed: write-timeout must be > 0 (got %s)", c.WriteTimeout)
