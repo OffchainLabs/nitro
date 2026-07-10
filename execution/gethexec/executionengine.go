@@ -732,9 +732,18 @@ func MessageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes []TxResult
 		if err != nil {
 			return nil, err
 		}
+		l2Message = make([]byte, 0, 1+len(txBytes))
 		l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
 		l2Message = append(l2Message, txBytes...)
 	} else {
+		msgSize := 1
+		for _, res := range txes {
+			if res.Err == nil {
+				// #nosec G115
+				msgSize += 9 + int(res.Tx.Size())
+			}
+		}
+		l2Message = make([]byte, 0, msgSize)
 		l2Message = append(l2Message, arbos.L2MessageKind_Batch)
 		sizeBuf := make([]byte, 8)
 		for _, res := range txes {
