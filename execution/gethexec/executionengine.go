@@ -15,6 +15,7 @@ import "C"
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"runtime/debug"
 	"runtime/pprof"
 	"runtime/trace"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -712,13 +714,54 @@ func (s *ExecutionEngine) ResequenceReorgedMessage(msg *arbostypes.MessageWithMe
 	return sequencedMsg, nil
 }
 
+// TxResult pairs an attempted tx with its sequencing error (nil if it made it into the block).
+type TxResult struct {
+	Tx  *types.Transaction
+	Err error
+}
+
 // BlockSequencingHooks is the per-block hooks view the execution engine uses to sequence transactions.
 type BlockSequencingHooks interface {
 	arbos.SequencingHooks
-	// MessageFromTxes builds the L2 message from the block's sequenced txs.
-	MessageFromTxes(header *arbostypes.L1IncomingMessageHeader) (*arbostypes.L1IncomingMessage, error)
-	// AllTxsErrored reports whether no attempted tx made it into the block.
-	AllTxsErrored() bool
+	// SequencedTxes returns one entry per attempted tx, in order.
+	SequencedTxes() ([]TxResult, error)
+}
+
+// MessageFromTxes builds the L2 message from the txs that made it into the block.
+func MessageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes []TxResult) (*arbostypes.L1IncomingMessage, error) {
+	var l2Message []byte
+	if len(txes) == 1 && txes[0].Err == nil {
+		txBytes, err := txes[0].Tx.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
+		l2Message = append(l2Message, txBytes...)
+	} else {
+		l2Message = append(l2Message, arbos.L2MessageKind_Batch)
+		sizeBuf := make([]byte, 8)
+		for _, res := range txes {
+			if res.Err != nil {
+				continue
+			}
+			txBytes, err := res.Tx.MarshalBinary()
+			if err != nil {
+				return nil, err
+			}
+			// #nosec G115
+			binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes)+1))
+			l2Message = append(l2Message, sizeBuf...)
+			l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
+			l2Message = append(l2Message, txBytes...)
+		}
+	}
+	if len(l2Message) > arbostypes.MaxL2MessageSize {
+		return nil, errors.New("l2message too long")
+	}
+	return &arbostypes.L1IncomingMessage{
+		Header: header,
+		L2msg:  l2Message,
+	}, nil
 }
 
 func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, hooks BlockSequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*execution.SequencedMsg, *types.Block, error) {
@@ -844,11 +887,16 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, nil, nil
 	}
 
-	if hooks.AllTxsErrored() {
+	sequencedTxes, err := hooks.SequencedTxes()
+	if err != nil {
+		return nil, nil, err
+	}
+	allTxsErrored := !slices.ContainsFunc(sequencedTxes, func(res TxResult) bool { return res.Err == nil })
+	if allTxsErrored {
 		return nil, nil, nil
 	}
 
-	msg, err := hooks.MessageFromTxes(header)
+	msg, err := MessageFromTxes(header, sequencedTxes)
 	if err != nil {
 		return nil, nil, err
 	}

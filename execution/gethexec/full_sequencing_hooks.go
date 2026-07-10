@@ -4,8 +4,6 @@
 package gethexec
 
 import (
-	"encoding/binary"
-	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/arbitrum_types"
@@ -18,7 +16,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
 
 // TxFilter rejects individual txs before and after execution.
@@ -86,61 +83,20 @@ func MakeZeroTxSizeSequencingHooksForTesting(
 	)
 }
 
-func (s *FullSequencingHooks) MessageFromTxes(header *arbostypes.L1IncomingMessageHeader) (*arbostypes.L1IncomingMessage, error) {
-	var l2Message []byte
-	if len(s.txErrors) == 1 && s.txErrors[0] == nil {
-		tx, err := s.SequencedTx(0)
+func (s *FullSequencingHooks) SequencedTxes() ([]TxResult, error) {
+	res := make([]TxResult, 0, len(s.txErrors))
+	for i, txErr := range s.txErrors {
+		tx, err := s.SequencedTx(i)
 		if err != nil {
 			return nil, err
 		}
-		txBytes, err := tx.MarshalBinary()
-		if err != nil {
-			return nil, err
-		}
-		l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
-		l2Message = append(l2Message, txBytes...)
-	} else {
-		l2Message = append(l2Message, arbos.L2MessageKind_Batch)
-		sizeBuf := make([]byte, 8)
-		for i := 0; i < len(s.txErrors); i++ {
-			if s.txErrors[i] != nil {
-				continue
-			}
-			tx, err := s.SequencedTx(i)
-			if err != nil {
-				return nil, err
-			}
-			txBytes, err := tx.MarshalBinary()
-			if err != nil {
-				return nil, err
-			}
-			// #nosec G115
-			binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes)+1))
-			l2Message = append(l2Message, sizeBuf...)
-			l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
-			l2Message = append(l2Message, txBytes...)
-		}
+		res = append(res, TxResult{Tx: tx, Err: txErr})
 	}
-	if len(l2Message) > arbostypes.MaxL2MessageSize {
-		return nil, errors.New("l2message too long")
-	}
-	return &arbostypes.L1IncomingMessage{
-		Header: header,
-		L2msg:  l2Message,
-	}, nil
+	return res, nil
 }
 
 func (s *FullSequencingHooks) GetTxErrors() []error {
 	return s.txErrors
-}
-
-func (s *FullSequencingHooks) AllTxsErrored() bool {
-	for _, err := range s.txErrors {
-		if err == nil {
-			return false
-		}
-	}
-	return true
 }
 
 func (s *FullSequencingHooks) TxSucceeded() {

@@ -389,7 +389,9 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 	_, _, err = hooks.NextTxToSequence()
 	Require(t, err)
 	hooks.TxSucceeded()
-	l1IncomingMsg, err := hooks.MessageFromTxes(&l1IncomingMsgHeader)
+	sequencedTxes, err := hooks.SequencedTxes()
+	Require(t, err)
+	l1IncomingMsg, err := gethexec.MessageFromTxes(&l1IncomingMsgHeader, sequencedTxes)
 	Require(t, err)
 
 	broadcastMessage := message.BroadcastMessage{
