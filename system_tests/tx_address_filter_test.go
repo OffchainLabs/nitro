@@ -385,7 +385,7 @@ func TestAddressFilterEventRuleReport(t *testing.T) {
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
 
 	// Emit Transfer event with filtered address as recipient (topic[2])
-	// This triggers postTxFilter via the event filter path
+	// This triggers PostTxFilter via the event filter path
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	tx, err := contract.EmitTransfer(&auth, auth.From, filteredAddr)
 	if err == nil {
