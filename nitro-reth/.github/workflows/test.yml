@@ -20,7 +20,7 @@ jobs:
     runs-on: ocl-16cpu-64ram
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
       - name: Install build deps
@@ -38,7 +38,7 @@ jobs:
     runs-on: ocl-16cpu-64ram
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
       - name: Install build deps

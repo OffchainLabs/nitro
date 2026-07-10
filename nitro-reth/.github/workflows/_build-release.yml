@@ -32,7 +32,7 @@ jobs:
     runs-on: ocl-16cpu-64ram
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
           submodules: recursive
