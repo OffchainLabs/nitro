@@ -5,7 +5,6 @@ package gethexec
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -789,7 +788,7 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 	return nil
 }
 
-func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address, l1Info *arbos.L1Info, positionInBlock int) error {
+func (s *Sequencer) PreTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address, l1Info *arbos.L1Info, positionInBlock int) error {
 	if s.nonceCache.Caching() {
 		stateNonce := s.nonceCache.Get(header, statedb, sender)
 		err := MakeNonceError(sender, tx.Nonce(), stateNonce)
@@ -820,7 +819,7 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 	return nil
 }
 
-func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult, positionInBlock int) error {
+func (s *Sequencer) PostTxFilter(header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult, positionInBlock int) error {
 	if s.eventFilter != nil {
 		logs := statedb.GetCurrentTxLogs()
 		for _, l := range logs {
@@ -988,181 +987,6 @@ func (s *Sequencer) handleInactive(forwarder *TxForwarder, queueItems []txQueueI
 }
 
 var sequencerInternalError = errors.New("sequencer internal error")
-
-type FullSequencingHooks struct {
-	queueItems               []txQueueItem
-	sequencedQueueItemsCount int
-	sequencedTxsSizeSoFar    int
-	maxSequencedTxsSize      int
-	txErrors                 []error
-	preTxFilter              func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info, int) error
-	postTxFilter             func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error
-	blockFilter              func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
-	txSizeLimitReached       bool
-}
-
-func (s *FullSequencingHooks) MessageFromTxes(header *arbostypes.L1IncomingMessageHeader) (*arbostypes.L1IncomingMessage, error) {
-	var l2Message []byte
-	if len(s.txErrors) == 1 && s.txErrors[0] == nil {
-		tx, err := s.SequencedTx(0)
-		if err != nil {
-			return nil, err
-		}
-		txBytes, err := tx.MarshalBinary()
-		if err != nil {
-			return nil, err
-		}
-		l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
-		l2Message = append(l2Message, txBytes...)
-	} else {
-		l2Message = append(l2Message, arbos.L2MessageKind_Batch)
-		sizeBuf := make([]byte, 8)
-		for i := 0; i < len(s.txErrors); i++ {
-			if s.txErrors[i] != nil {
-				continue
-			}
-			tx, err := s.SequencedTx(i)
-			if err != nil {
-				return nil, err
-			}
-			txBytes, err := tx.MarshalBinary()
-			if err != nil {
-				return nil, err
-			}
-			// #nosec G115
-			binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes)+1))
-			l2Message = append(l2Message, sizeBuf...)
-			l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
-			l2Message = append(l2Message, txBytes...)
-		}
-	}
-	if len(l2Message) > arbostypes.MaxL2MessageSize {
-		return nil, errors.New("l2message too long")
-	}
-	return &arbostypes.L1IncomingMessage{
-		Header: header,
-		L2msg:  l2Message,
-	}, nil
-}
-
-func (s *FullSequencingHooks) GetTxErrors() []error {
-	return s.txErrors
-}
-
-func (s *FullSequencingHooks) TxSucceeded() {
-	s.txErrors = append(s.txErrors, nil)
-}
-
-func (s *FullSequencingHooks) TxFailed(err error) {
-	if len(s.txErrors) >= s.sequencedQueueItemsCount {
-		log.Error("TxFailed called but entry already exists", "existingErr", s.txErrors[len(s.txErrors)-1], "newErr", err)
-	}
-	s.txErrors = append(s.txErrors, err)
-}
-
-// NextTxToSequence returns the next transaction to be included in the block, or nil if there are no more transactions to include.
-// It will skip transactions that would cause the total size of included transactions to exceed maxSequencedTxsSize.
-func (s *FullSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error) {
-	for {
-		// This is not supposed to happen, if so we have a bug
-		if len(s.txErrors) != s.sequencedQueueItemsCount {
-			return nil, nil, fmt.Errorf("FullSequencingHooks: GetNextTx detected out of order request to sequence tx. hookTxErrors: %d, nextTxIdToBeSequenced: %d", len(s.txErrors), s.sequencedQueueItemsCount)
-		}
-		if s.sequencedQueueItemsCount > 0 && s.txErrors[s.sequencedQueueItemsCount-1] == nil {
-			s.sequencedTxsSizeSoFar += s.queueItems[s.sequencedQueueItemsCount-1].txSize
-		}
-		if s.sequencedQueueItemsCount >= len(s.queueItems) {
-			return nil, nil, nil
-		}
-		if s.sequencedTxsSizeSoFar+s.queueItems[s.sequencedQueueItemsCount].txSize > s.maxSequencedTxsSize {
-			s.sequencedQueueItemsCount += 1
-			s.TxFailed(core.ErrGasLimitReached)
-			s.txSizeLimitReached = true
-		} else {
-			s.sequencedQueueItemsCount += 1
-			break
-		}
-	}
-	return s.queueItems[s.sequencedQueueItemsCount-1].tx, s.queueItems[s.sequencedQueueItemsCount-1].options, nil
-}
-
-func (s *FullSequencingHooks) CanDiscardTx() bool { return true }
-
-func (s *FullSequencingHooks) SupportsGroupRollback() bool { return true }
-
-func (s *FullSequencingHooks) SequencedTx(txId int) (*types.Transaction, error) {
-	// This is not supposed to happen, if so we have a bug
-	if txId > s.sequencedQueueItemsCount {
-		return nil, fmt.Errorf("transaction queried for was not scheduled by the FullSequencingHooks. txId: %d, sequencedCount: %d", txId, s.sequencedQueueItemsCount)
-	}
-	return s.queueItems[txId].tx, nil
-}
-
-func (s *FullSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *arbos.L1Info, positionInBlock int) error {
-	if s.preTxFilter != nil {
-		return s.preTxFilter(config, header, db, a, transaction, options, address, info, positionInBlock)
-	}
-	return nil
-}
-
-func (s *FullSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult, positionInBlock int) error {
-	if transaction.Type() == types.ArbitrumInternalTxType {
-		return nil
-	}
-	if s.postTxFilter != nil {
-		return s.postTxFilter(header, db, a, transaction, address, u, result, positionInBlock)
-	}
-	return nil
-}
-
-func (s *FullSequencingHooks) BlockFilter(header *types.Header, db *state.StateDB, transactions types.Transactions, receipts types.Receipts) error {
-	if s.blockFilter != nil {
-		return s.blockFilter(header, db, transactions, receipts)
-	}
-	return nil
-}
-
-func MakeSequencingHooks(
-	items []txQueueItem,
-	maxSequencedTxsSize int,
-	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info, int) error,
-	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error,
-	blockFilter func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error,
-) *FullSequencingHooks {
-	res := &FullSequencingHooks{
-		queueItems:               items,
-		sequencedQueueItemsCount: 0,
-		sequencedTxsSizeSoFar:    0,
-		maxSequencedTxsSize:      maxSequencedTxsSize,
-		preTxFilter:              preTxFilter,
-		postTxFilter:             postTxFilter,
-		blockFilter:              blockFilter,
-	}
-	return res
-}
-
-// MakeZeroTxSizeSequencingHooksForTesting creates sequencing hooks for testing with tx size always zero.
-// This allows all transactions to be included in a block regardless of size.
-func MakeZeroTxSizeSequencingHooksForTesting(
-	txes types.Transactions,
-	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info, int) error,
-	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error,
-	blockFilter func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error,
-) *FullSequencingHooks {
-	var items []txQueueItem
-	for _, tx := range txes {
-		items = append(items, txQueueItem{
-			tx: tx,
-		})
-	}
-	return MakeSequencingHooks(
-		items,
-		0,
-		preTxFilter,
-		postTxFilter,
-		blockFilter,
-	)
-}
 
 func (s *Sequencer) expireNonceFailures() {
 	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
@@ -1428,8 +1252,7 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 	hooks := MakeSequencingHooks(
 		queueItems,
 		maxTxDataSize,
-		s.preTxFilter,
-		s.postTxFilter,
+		s,
 		nil,
 	)
 
@@ -2005,7 +1828,7 @@ func (s *Sequencer) StopAndWait() {
 
 func (s *Sequencer) MakeSameBlockSequencingHooksAndHeaderForTest(t *testing.T, txes types.Transactions) (*arbostypes.L1IncomingMessageHeader, *FullSequencingHooks) {
 	t.Helper()
-	hooks := MakeZeroTxSizeSequencingHooksForTesting(txes, s.preTxFilter, s.postTxFilter, nil)
+	hooks := MakeZeroTxSizeSequencingHooksForTesting(txes, s, nil)
 
 	s.L1BlockAndTimeMutex.Lock()
 	l1Block := s.l1BlockNumber.Load()

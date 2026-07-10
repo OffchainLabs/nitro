@@ -713,7 +713,7 @@ func warpL1Time(t *testing.T, builder *NodeBuilder, ctx context.Context, current
 		L1BaseFee:   nil,
 	}
 	tx := builder.L2Info.PrepareTx("Faucet", "User2", 300000, big.NewInt(1), nil)
-	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(types.Transactions{tx}, nil, nil, nil)
+	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(types.Transactions{tx}, nil, nil)
 	sequenceTransactions(t, builder, timeWarpHeader, hooks, nil)
 	return newL1Timestamp
 }
