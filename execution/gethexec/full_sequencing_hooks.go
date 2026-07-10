@@ -98,7 +98,7 @@ func (s *FullSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_
 	for {
 		// This is not supposed to happen, if so we have a bug
 		if len(s.txErrors) != s.sequencedQueueItemsCount {
-			return nil, nil, fmt.Errorf("FullSequencingHooks: GetNextTx detected out of order request to sequence tx. hookTxErrors: %d, nextTxIdToBeSequenced: %d", len(s.txErrors), s.sequencedQueueItemsCount)
+			return nil, nil, fmt.Errorf("FullSequencingHooks: NextTxToSequence detected out of order request to sequence tx. txErrors: %d, sequencedQueueItemsCount: %d", len(s.txErrors), s.sequencedQueueItemsCount)
 		}
 		if s.sequencedQueueItemsCount > 0 && s.txErrors[s.sequencedQueueItemsCount-1] == nil {
 			s.sequencedTxsSizeSoFar += s.queueItems[s.sequencedQueueItemsCount-1].txSize
