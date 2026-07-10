@@ -140,9 +140,6 @@ func touchAddresses(db *state.StateDB, tx *types.Transaction, sender common.Addr
 // For redeems, returns ErrSeqFilter without a report (originating tx is
 // collected in TxFailed after group rollback).
 func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult, positionInBlock int) error {
-	if tx.Type() == types.ArbitrumInternalTxType {
-		return nil
-	}
 	touchAddresses(db, tx, sender)
 	applyEventFilter(f.eventFilter, db)
 

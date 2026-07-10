@@ -160,9 +160,6 @@ func (s *FullSequencingHooks) PreTxFilter(config *params.ChainConfig, header *ty
 }
 
 func (s *FullSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult, positionInBlock int) error {
-	if transaction.Type() == types.ArbitrumInternalTxType {
-		return nil
-	}
 	if s.txFilter != nil {
 		return s.txFilter.PostTxFilter(header, db, a, transaction, address, u, result, positionInBlock)
 	}

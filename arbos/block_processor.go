@@ -238,9 +238,9 @@ type SequencingHooks interface {
 	// SupportsGroupRollback returns whether the hooks support checkpointing and
 	// rolling back a group of transactions (user tx + its scheduled redeems).
 	SupportsGroupRollback() bool
-	// PreTxFilter rejects a tx before execution.
+	// PreTxFilter rejects a tx before execution. Only called for user txs.
 	PreTxFilter(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info, int) error
-	// PostTxFilter rejects a tx after execution.
+	// PostTxFilter rejects a tx after execution. Not called for internal txs.
 	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error
 	// BlockFilter rejects an entire block after all txs have been applied.
 	BlockFilter(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
@@ -528,8 +528,10 @@ func ProduceBlockAdvanced(
 				&header.GasUsed,
 				runCtx,
 				func(result *core.ExecutionResult) error {
-					if err := sequencingHooks.PostTxFilter(header, buildState.statedb, buildState.arbState, tx, sender, dataGas, result, len(buildState.receipts)); err != nil {
-						return err
+					if tx.Type() != types.ArbitrumInternalTxType {
+						if err := sequencingHooks.PostTxFilter(header, buildState.statedb, buildState.arbState, tx, sender, dataGas, result, len(buildState.receipts)); err != nil {
+							return err
+						}
 					}
 					// Additional post-transaction validity check
 					if err = extraPostTxFilter(chainConfig, header, buildState.statedb, buildState.arbState, tx, options, sender, l1Info, result); err != nil {
