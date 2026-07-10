@@ -20,6 +20,9 @@ on:
         type: string
         default: ""
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -27,15 +30,12 @@ jobs:
   build:
     name: build release binaries
     runs-on: ocl-16cpu-64ram
-    timeout-minutes: 60
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
-          submodules: false
-      - name: Init submodules
-        shell: bash
-        run: git submodule update --init --recursive --depth 1
+          submodules: recursive
       - name: Install build deps
         run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
       - uses: dtolnay/rust-toolchain@1.93

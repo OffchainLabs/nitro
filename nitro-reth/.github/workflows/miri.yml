@@ -3,6 +3,9 @@ name: miri
 on:
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}-${{ github.ref }}
   cancel-in-progress: true
@@ -17,13 +20,11 @@ jobs:
   miri:
     name: miri aliasing
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
         with:
-          submodules: false
-      - name: Init submodules
-        shell: bash
-        run: git submodule update --init --recursive --depth 1
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
