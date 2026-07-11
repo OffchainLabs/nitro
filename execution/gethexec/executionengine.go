@@ -703,7 +703,7 @@ func (s *ExecutionEngine) ResequenceReorgedMessage(msg *arbostypes.MessageWithMe
 		log.Warn("failed to parse sequencer message found from reorg", "err", err)
 		return nil, nil
 	}
-	hooks := MakeZeroTxSizeSequencingHooksForTesting(txes, nil, nil)
+	hooks := MakeResequencingHooks(txes)
 	sequencedMsg, _, err := s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to re-sequence old sequencer message removed by reorg: %w", err)

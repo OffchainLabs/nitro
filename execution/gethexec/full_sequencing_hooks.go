@@ -47,9 +47,9 @@ func MakeSequencingHooks(
 	return res
 }
 
-// MakeZeroTxSizeSequencingHooksForTesting creates sequencing hooks for testing with tx size always zero.
-// This allows all transactions to be included in a block regardless of size.
-func MakeZeroTxSizeSequencingHooksForTesting(
+// makeZeroTxSizeSequencingHooks creates hooks with tx size always zero, so all
+// transactions are included in a block regardless of size.
+func makeZeroTxSizeSequencingHooks(
 	txes types.Transactions,
 	txFilter arbos.TxFilter,
 	blockFilter arbos.BlockFilter,
@@ -63,6 +63,21 @@ func MakeZeroTxSizeSequencingHooksForTesting(
 	hooks := MakeSequencingHooks(items, 0, txFilter)
 	hooks.blockFilter = blockFilter
 	return hooks
+}
+
+// MakeResequencingHooks creates filterless, size-unlimited hooks for re-sequencing reorged txs.
+func MakeResequencingHooks(txes types.Transactions) BlockSequencingHooks {
+	return makeZeroTxSizeSequencingHooks(txes, nil, nil)
+}
+
+// MakeZeroTxSizeSequencingHooksForTesting creates sequencing hooks for testing with tx size always zero.
+// This allows all transactions to be included in a block regardless of size.
+func MakeZeroTxSizeSequencingHooksForTesting(
+	txes types.Transactions,
+	txFilter arbos.TxFilter,
+	blockFilter arbos.BlockFilter,
+) *FullSequencingHooks {
+	return makeZeroTxSizeSequencingHooks(txes, txFilter, blockFilter)
 }
 
 func (s *FullSequencingHooks) SequencedTxes() ([]TxResult, error) {
