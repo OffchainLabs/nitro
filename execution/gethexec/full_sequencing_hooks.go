@@ -87,7 +87,7 @@ func (s *FullSequencingHooks) SequencedTxes() ([]TxResult, error) {
 		if err != nil {
 			return nil, err
 		}
-		res = append(res, TxResult{Tx: tx, Err: txErr})
+		res = append(res, TxResult{Tx: tx, Err: txErr, Timeboosted: s.queueItems[i].isTimeboosted})
 	}
 	return res, nil
 }

@@ -11,13 +11,46 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 var ErrBlockMetadataApiBlocksLimitExceeded = errors.New("number of blocks requested for blockMetadata exceeded")
+
+// emptyBlockMetadata returns metadata for a block with no timeboosted txs: a version byte followed by one zero bit per
+// tx in the block.
+func emptyBlockMetadata(block *types.Block) common.BlockMetadata {
+	return make(common.BlockMetadata, 1+arbmath.DivCeil(uint64(len(block.Transactions())), 8))
+}
+
+// blockMetadataFromSequencedTxes returns the timeboosted byte array which says whether a transaction in the block was
+// timeboosted or not. The first byte of blockMetadata byte array is reserved to indicate the version, starting from the
+// second byte, (N)th bit would represent if (N)th tx is timeboosted or not, 1 means yes and 0 means no
+// blockMetadata[index / 8 + 1] & (1 << (index % 8)) != 0; where index = (N - 1), implies whether (N)th tx in a block is
+// timeboosted note that number of txs in a block will always lag behind (len(blockMetadata) - 1) * 8 but it won't lag
+// more than a value of 7
+func blockMetadataFromSequencedTxes(block *types.Block, txes []TxResult) common.BlockMetadata {
+	bits := emptyBlockMetadata(block)
+	timeboostedTxs := make(map[common.Hash]struct{})
+	for _, res := range txes {
+		if res.Err == nil && res.Timeboosted {
+			timeboostedTxs[res.Tx.Hash()] = struct{}{}
+		}
+	}
+	if len(timeboostedTxs) == 0 {
+		return bits
+	}
+	for i, tx := range block.Transactions() {
+		if _, ok := timeboostedTxs[tx.Hash()]; ok {
+			bits[1+i/8] |= 1 << (i % 8)
+		}
+	}
+	return bits
+}
 
 type BlockMetadataFetcher interface {
 	BlockMetadataAtMessageIndex(ctx context.Context, msgIdx arbutil.MessageIndex) (common.BlockMetadata, error)

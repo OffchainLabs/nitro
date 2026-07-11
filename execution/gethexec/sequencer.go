@@ -1247,19 +1247,12 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
 	s.nonceCache.BeginNewBlock()
 	queueItems = s.precheckNonces(queueItems)
-	timeboostedTxs := make(map[common.Hash]struct{})
 	maxTxDataSize := s.config().MaxTxDataSize
 	hooks := MakeSequencingHooks(
 		queueItems,
 		maxTxDataSize,
 		s,
 	)
-
-	for _, queueItem := range queueItems {
-		if queueItem.isTimeboosted {
-			timeboostedTxs[queueItem.tx.Hash()] = struct{}{}
-		}
-	}
 
 	timestamp := time.Now().Unix()
 	s.L1BlockAndTimeMutex.Lock()
@@ -1298,9 +1291,9 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 		err   error
 	)
 	if config.EnableProfiling {
-		sequencedMsg, block, err = s.execEngine.SequenceTransactionsWithProfiling(header, hooks, timeboostedTxs)
+		sequencedMsg, block, err = s.execEngine.SequenceTransactionsWithProfiling(header, hooks)
 	} else {
-		sequencedMsg, block, err = s.execEngine.SequenceTransactions(header, hooks, timeboostedTxs)
+		sequencedMsg, block, err = s.execEngine.SequenceTransactions(header, hooks)
 	}
 
 	if len(s.pendingFilteredTxReports) > 0 && s.execEngine.filteringReportRPCClient != nil {

@@ -17,6 +17,8 @@ import (
 type TxResult struct {
 	Tx  *types.Transaction
 	Err error
+	// Timeboosted reports whether the tx was sequenced through the express lane.
+	Timeboosted bool
 }
 
 // BlockSequencingHooks is the per-block hooks view the execution engine uses to sequence transactions.

@@ -3014,9 +3014,8 @@ func sequenceTransactions(
 	builder *NodeBuilder,
 	header *arbostypes.L1IncomingMessageHeader,
 	hooks *gethexec.FullSequencingHooks,
-	timeboostedTxs map[common.Hash]struct{},
 ) (*types.Block, []error) {
-	sequencedMsg, block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, timeboostedTxs)
+	sequencedMsg, block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks)
 	Require(t, err)
 	if sequencedMsg == nil {
 		Fatal(t, "sequencedMsg is nil")
@@ -3040,7 +3039,7 @@ func sequenceTransactionsInTheSameBlock(
 	sequencer.Pause()
 	defer sequencer.Activate()
 	header, hooks := sequencer.MakeSameBlockSequencingHooksAndHeaderForTest(t, txes)
-	block, txErrors := sequenceTransactions(t, builder, header, hooks, nil)
+	block, txErrors := sequenceTransactions(t, builder, header, hooks)
 	sequencer.DispatchPendingFilteredTxReportsForTest(t)
 	return block, txErrors
 }
