@@ -15,6 +15,7 @@ import (
 func makeTestBlock(txCount int) (*types.Block, types.Transactions) {
 	txes := make(types.Transactions, 0, txCount)
 	for i := range txCount {
+		// #nosec G115
 		txes = append(txes, types.NewTx(&types.LegacyTx{Nonce: uint64(i)}))
 	}
 	block := types.NewBlockWithHeader(&types.Header{}).WithBody(types.Body{Transactions: txes})

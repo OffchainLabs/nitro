@@ -17,6 +17,7 @@ func makeEncodableTestTxes(count int) types.Transactions {
 	txes := make(types.Transactions, 0, count)
 	for i := range count {
 		txes = append(txes, types.NewTx(&types.LegacyTx{
+			// #nosec G115
 			Nonce:    uint64(i),
 			Gas:      21000,
 			GasPrice: big.NewInt(1),
