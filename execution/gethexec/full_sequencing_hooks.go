@@ -5,6 +5,7 @@ package gethexec
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
@@ -47,8 +48,10 @@ func MakeSequencingHooks(
 	return res
 }
 
-// makeZeroTxSizeSequencingHooks creates hooks with tx size always zero, so all
-// transactions are included in a block regardless of size.
+// makeZeroTxSizeSequencingHooks creates hooks that include all transactions in
+// a block regardless of size: every queue item has tx size zero and the size
+// limit is explicitly unlimited, so the limit check in NextTxToSequence can
+// never trip.
 func makeZeroTxSizeSequencingHooks(
 	txes types.Transactions,
 	txFilter arbos.TxFilter,
@@ -60,7 +63,7 @@ func makeZeroTxSizeSequencingHooks(
 			tx: tx,
 		})
 	}
-	hooks := MakeSequencingHooks(items, 0, txFilter)
+	hooks := MakeSequencingHooks(items, math.MaxInt, txFilter)
 	hooks.blockFilter = blockFilter
 	return hooks
 }
