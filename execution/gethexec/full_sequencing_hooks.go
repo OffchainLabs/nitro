@@ -84,13 +84,17 @@ func MakeZeroTxSizeSequencingHooksForTesting(
 }
 
 func (s *FullSequencingHooks) SequencedTxes() ([]TxResult, error) {
+	// This is not supposed to happen, if so we have a bug
+	if len(s.txErrors) > s.sequencedQueueItemsCount {
+		return nil, fmt.Errorf("FullSequencingHooks: more tx results than sequenced txs. txErrors: %d, sequencedQueueItemsCount: %d", len(s.txErrors), s.sequencedQueueItemsCount)
+	}
 	res := make([]TxResult, 0, len(s.txErrors))
-	for i, txErr := range s.txErrors {
-		tx, err := s.SequencedTx(i)
-		if err != nil {
-			return nil, err
-		}
-		res = append(res, TxResult{Tx: tx, Err: txErr, Timeboosted: s.queueItems[i].isTimeboosted})
+	for i := range s.txErrors {
+		res = append(res, TxResult{
+			Tx:          s.queueItems[i].tx,
+			Err:         s.txErrors[i],
+			Timeboosted: s.queueItems[i].isTimeboosted,
+		})
 	}
 	return res, nil
 }
@@ -142,14 +146,6 @@ func (s *FullSequencingHooks) CanDiscardTx() bool {
 
 func (s *FullSequencingHooks) SupportsGroupRollback() bool {
 	return true
-}
-
-func (s *FullSequencingHooks) SequencedTx(txId int) (*types.Transaction, error) {
-	// This is not supposed to happen, if so we have a bug
-	if txId > s.sequencedQueueItemsCount {
-		return nil, fmt.Errorf("transaction queried for was not scheduled by the FullSequencingHooks. txId: %d, sequencedCount: %d", txId, s.sequencedQueueItemsCount)
-	}
-	return s.queueItems[txId].tx, nil
 }
 
 func (s *FullSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *arbos.L1Info, positionInBlock int) error {
