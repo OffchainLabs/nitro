@@ -40,29 +40,16 @@ func MessageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes []TxResult
 		l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
 		l2Message = append(l2Message, txBytes...)
 	} else {
-		msgSize := 1
+		included := make(types.Transactions, 0, len(txes))
 		for _, res := range txes {
 			if res.Err == nil {
-				// #nosec G115
-				msgSize += 9 + int(res.Tx.Size())
+				included = append(included, res.Tx)
 			}
 		}
-		l2Message = make([]byte, 0, msgSize)
-		l2Message = append(l2Message, arbos.L2MessageKind_Batch)
-		sizeBuf := make([]byte, 8)
-		for _, res := range txes {
-			if res.Err != nil {
-				continue
-			}
-			txBytes, err := res.Tx.MarshalBinary()
-			if err != nil {
-				return nil, err
-			}
-			// #nosec G115
-			binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes)+1))
-			l2Message = append(l2Message, sizeBuf...)
-			l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
-			l2Message = append(l2Message, txBytes...)
+		var err error
+		l2Message, err = L2MessageBatchDataFromTxes(included)
+		if err != nil {
+			return nil, err
 		}
 	}
 	if len(l2Message) > arbostypes.MaxL2MessageSize {
@@ -72,4 +59,31 @@ func MessageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes []TxResult
 		Header: header,
 		L2msg:  l2Message,
 	}, nil
+}
+
+// L2MessageBatchDataFromTxes encodes txes as an L2 batch message: the Batch
+// kind byte followed by one length-prefixed SignedTx frame per tx.
+func L2MessageBatchDataFromTxes(txes types.Transactions) ([]byte, error) {
+	// 1 byte for the Batch kind, then per tx: 8-byte length prefix + SignedTx
+	// kind byte + tx bytes (tx.Size() equals the MarshalBinary length).
+	msgSize := 1
+	for _, tx := range txes {
+		// #nosec G115
+		msgSize += 9 + int(tx.Size())
+	}
+	l2Message := make([]byte, 0, msgSize)
+	l2Message = append(l2Message, arbos.L2MessageKind_Batch)
+	sizeBuf := make([]byte, 8)
+	for _, tx := range txes {
+		txBytes, err := tx.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		// #nosec G115
+		binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes)+1))
+		l2Message = append(l2Message, sizeBuf...)
+		l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
+		l2Message = append(l2Message, txBytes...)
+	}
+	return l2Message, nil
 }
