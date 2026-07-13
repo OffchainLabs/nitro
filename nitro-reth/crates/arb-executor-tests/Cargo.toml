@@ -27,11 +27,8 @@ revm = { workspace = true, features = ["optional_balance_check", "optional_eip35
 
 [dev-dependencies]
 arb-context = { workspace = true }
-arb-node = { workspace = true }
 reth-db-api = { workspace = true }
 reth-primitives-traits = { workspace = true }
-reth-revm = { workspace = true }
-reth-storage-api = { workspace = true }
 revm-database-interface = { workspace = true }
 revm-state = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
