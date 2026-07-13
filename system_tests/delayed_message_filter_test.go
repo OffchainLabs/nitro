@@ -1636,6 +1636,48 @@ func submitRetryableViaL1WithGasLimit(
 	return l1Receipt, l2Tx.Hash()
 }
 
+// submitUnsafeRetryableViaL1 submits a retryable ticket via the L1 delayed inbox
+// using unsafeCreateRetryableTicket, which skips the L1-side funding checks so
+// tests can craft underfunded submissions. Returns the L1 receipt and the L2
+// submission tx.
+func submitUnsafeRetryableViaL1(
+	t *testing.T,
+	p *retryableFilterTestParams,
+	l1Sender string,
+	destAddr common.Address,
+	deposit *big.Int,
+	callValue *big.Int,
+	maxSubmissionCost *big.Int,
+	beneficiary common.Address,
+	feeRefundAddr common.Address,
+) (*types.Receipt, *types.Transaction) {
+	t.Helper()
+
+	gasLimit := big.NewInt(100000)
+	maxFeePerGas := big.NewInt(l2pricing.InitialBaseFeeWei * 2)
+
+	l1opts := p.builder.L1Info.GetDefaultTransactOpts(l1Sender, p.ctx)
+	l1opts.Value = deposit
+	l1tx, err := p.delayedInbox.UnsafeCreateRetryableTicket(
+		&l1opts,
+		destAddr,
+		callValue,
+		maxSubmissionCost,
+		feeRefundAddr,
+		beneficiary,
+		gasLimit,
+		maxFeePerGas,
+		nil,
+	)
+	require.NoError(t, err)
+
+	l1Receipt, err := p.builder.L1.EnsureTxSucceeded(l1tx)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusSuccessful, l1Receipt.Status)
+
+	return l1Receipt, lookupRetryableSubmissionTx(t, p, l1Receipt)
+}
+
 func TestFilteredRetryableRedirectWithExplicitRecipient(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1665,7 +1707,8 @@ func TestFilteredRetryableRedirectWithExplicitRecipient(t *testing.T) {
 	// Advance L1 to trigger delayed message processing
 	advanceL1ForDelayed(t, ctx, builder)
 
-	// Sequencer should halt because PostTxFilter touches beneficiary/feeRefundAddr
+	// Sequencer should halt because the STF touches beneficiary/feeRefundAddr
+	// when funds move to them / the retryable is created
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{ticketId}, 10*time.Second)
 
 	// Verify filtered address balance did not change while halted
@@ -3086,4 +3129,215 @@ func TestDelayedMessageFilterAliasedSender(t *testing.T) {
 	finalBalance, err := builder.L2.Client.BalanceAt(ctx, recipientAddr, nil)
 	require.NoError(t, err)
 	require.Equal(t, initialBalance, finalBalance, "recipient balance should not change - sender is filtered")
+}
+
+// An underfunded retryable submission (deposit below the max submission fee)
+// fails before any funds can move to the beneficiary or fee refund address, so
+// filtering those addresses must not halt the delayed sequencer.
+func TestUnderfundedRetryableFilteredBeneficiaryDoesNotHalt(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("Destination")
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	destAddr := builder.L2Info.GetAddress("Destination")
+
+	filter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+
+	// Deposit far below maxSubmissionCost, so the submission fails its
+	// max-submission-fee balance check before creating the retryable
+	_, l2Tx := submitUnsafeRetryableViaL1(t, p, "Faucet", destAddr, big.NewInt(1), common.Big0, big.NewInt(1e16), filteredAddr, filteredAddr)
+	ticketId := l2Tx.Hash()
+
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// The submission fails without halting the delayed sequencer: the receipt
+	// only lands if the delayed message was sequenced despite the filtered
+	// beneficiary/feeRefundAddr
+	receipt, err := WaitForTx(ctx, builder.L2.Client, ticketId, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status)
+
+	_, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
+	require.False(t, waiting, "underfunded retryable should not halt the delayed sequencer")
+
+	// No retryable was created
+	arbRetryable, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
+	require.NoError(t, err)
+	_, err = arbRetryable.GetTimeout(&bind.CallOpts{}, ticketId)
+	require.Error(t, err, "retryable ticket should not exist")
+
+	filteredBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
+	require.NoError(t, err)
+	require.True(t, arbmath.BigEquals(filteredBalance, common.Big0), "filtered address should not receive any funds")
+}
+
+// A retryable already in the onchain filter must resolve with ErrFilteredOnChain
+// even when its submission fails early (e.g. underfunded max submission fee),
+// otherwise the delayed sequencer re-halts on the same hash forever.
+func TestOnchainFilteredUnderfundedRetryableResolves(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L1Info.GenerateAccount("RetryableSender")
+	builder.L1.TransferBalance(t, "Faucet", "RetryableSender", big.NewInt(1e18), builder.L1Info)
+	senderAddr := builder.L1Info.GetAddress("RetryableSender")
+
+	builder.L2Info.GenerateAccount("Destination")
+	destAddr := builder.L2Info.GetAddress("Destination")
+
+	// Filter the sender (raw and aliased): the sender is touched
+	// unconditionally, so the underfunded submission still halts the delayed
+	// sequencer even though no retryable-field address is filtered
+	filter := newHashedChecker([]common.Address{senderAddr, arbosutil.RemapL1Address(senderAddr)})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+
+	_, l2Tx := submitUnsafeRetryableViaL1(t, p, "RetryableSender", destAddr, big.NewInt(1), common.Big0, big.NewInt(1e16), destAddr, destAddr)
+	ticketId := l2Tx.Hash()
+
+	advanceL1ForDelayed(t, ctx, builder)
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{ticketId}, 10*time.Second)
+
+	addTxHashToOnChainFilter(t, ctx, builder, ticketId, p.filtererName)
+
+	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
+	advanceL1ForDelayed(t, ctx, builder)
+
+	receipt, err := WaitForTx(ctx, builder.L2.Client, ticketId, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status)
+
+	_, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
+	require.False(t, waiting, "sequencer should not re-halt after onchain filter entry")
+}
+
+// When retryable creation aborts at the callvalue-escrow step, part of the
+// submission fee has already been refunded to the fee refund address, so a
+// filtered FeeRefundAddr must still halt the delayed sequencer. Once the tx is
+// added to the onchain filter, the refund is redirected and processing resumes.
+func TestEscrowFailureRefundToFilteredFeeRefundAddrHalts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("Destination")
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	destAddr := builder.L2Info.GetAddress("Destination")
+
+	filter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+
+	recipientInitialBalance, err := builder.L2.Client.BalanceAt(ctx, p.fundsRecipientAddr, nil)
+	require.NoError(t, err)
+	require.True(t, arbmath.BigEquals(recipientInitialBalance, common.Big0), "redirect address should start with zero balance")
+
+	// Constraints on deposit:
+	//  - at least maxSubmissionCost, to pass the max-submission-fee balance check
+	//  - more than callValue, so the withheld submission fee refunded to
+	//    FeeRefundAddr on escrow failure is nonzero
+	//  - less than callValue + the actual submission fee, so the escrow transfer
+	//    fails (ArbOS withholds the callvalue from the refundable pool, so with
+	//    any larger deposit the refunds are clamped and the sender retains the
+	//    callvalue)
+	// The actual submission fee (1400 * l1BaseFee) is not known in advance, so
+	// deposit = callValue + 1 wei satisfies the last two for any fee > 1 wei.
+	callValue := big.NewInt(1e16)
+	maxSubmissionCost := big.NewInt(1e16)
+	deposit := new(big.Int).Add(callValue, big.NewInt(1))
+	_, l2Tx := submitUnsafeRetryableViaL1(t, p, "Faucet", destAddr, deposit, callValue, maxSubmissionCost, destAddr, filteredAddr)
+	ticketId := l2Tx.Hash()
+
+	advanceL1ForDelayed(t, ctx, builder)
+
+	// Funds actually flow to the filtered FeeRefundAddr, so the sequencer halts
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{ticketId}, 10*time.Second)
+
+	addTxHashToOnChainFilter(t, ctx, builder, ticketId, p.filtererName)
+	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
+	advanceL1ForDelayed(t, ctx, builder)
+
+	receipt, err := WaitForTx(ctx, builder.L2.Client, ticketId, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status)
+
+	// The refund was redirected to the filtered-funds recipient
+	filteredBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
+	require.NoError(t, err)
+	require.True(t, arbmath.BigEquals(filteredBalance, common.Big0), "filtered address should not receive any funds")
+
+	recipientBalance, err := builder.L2.Client.BalanceAt(ctx, p.fundsRecipientAddr, nil)
+	require.NoError(t, err)
+	require.True(t, recipientBalance.Sign() > 0, "redirect address should have received the refund")
+
+	_, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
+	require.False(t, waiting, "sequencer should not be re-halted")
+}
+
+// A well-funded retryable with only the beneficiary filtered halts the delayed
+// sequencer: the beneficiary can receive the escrowed callvalue on cancel, so
+// it is touched when the retryable is created.
+func TestWellFundedRetryableFilteredBeneficiaryOnlyHalts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("Destination")
+	builder.L2Info.GenerateAccount("CleanRefund")
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+	destAddr := builder.L2Info.GetAddress("Destination")
+	cleanRefundAddr := builder.L2Info.GetAddress("CleanRefund")
+
+	filter := newHashedChecker([]common.Address{filteredAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+
+	// FeeRefundAddr is clean, so the halt can only come from the beneficiary
+	// touch at retryable creation
+	_, ticketId := submitRetryableViaL1(t, p, "Faucet", destAddr, common.Big0, filteredAddr, cleanRefundAddr, nil)
+
+	advanceL1ForDelayed(t, ctx, builder)
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{ticketId}, 10*time.Second)
+
+	addTxHashToOnChainFilter(t, ctx, builder, ticketId, p.filtererName)
+	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
+	advanceL1ForDelayed(t, ctx, builder)
+
+	receipt, err := WaitForTx(ctx, builder.L2.Client, ticketId, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status)
+
+	// Retryable created with redirected beneficiary
+	arbRetryable, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
+	require.NoError(t, err)
+	beneficiary, err := arbRetryable.GetBeneficiary(&bind.CallOpts{}, ticketId)
+	require.NoError(t, err)
+	require.Equal(t, p.fundsRecipientAddr, beneficiary, "retryable beneficiary should be redirected to FundsRecipient")
+
+	filteredBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
+	require.NoError(t, err)
+	require.True(t, arbmath.BigEquals(filteredBalance, common.Big0), "filtered address should not receive any funds")
+
+	_, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
+	require.False(t, waiting, "sequencer should not be re-halted")
 }

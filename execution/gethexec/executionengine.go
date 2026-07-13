@@ -129,7 +129,6 @@ func touchAddresses(db *state.StateDB, tx *types.Transaction, sender common.Addr
 	if arbosutil.DoesTxTypeAlias(&txType) {
 		db.TouchAddress(&filter.FilteredAddressWithReason{Address: arbosutil.InverseRemapL1Address(sender), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedFrom, EventRuleMatch: nil}})
 	}
-	touchRetryableAddresses(db, tx)
 }
 
 // PostTxFilter touches To/From addresses and checks IsAddressFiltered.
@@ -229,22 +228,6 @@ func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
 		for _, touched := range ef.AddressesForFiltering(l.Topics, l.Data, l.Address) {
 			db.TouchAddress(&touched)
 		}
-	}
-}
-
-// touchRetryableAddresses touches addresses from retryable inner fields
-// (Beneficiary, FeeRefundAddr, RetryTo) so the address filter can detect them.
-// Also touches de-aliased versions to catch L1 contract addresses that were
-// aliased by the Inbox contract.
-func touchRetryableAddresses(db *state.StateDB, tx *types.Transaction) {
-	if inner, ok := tx.GetInner().(*types.ArbitrumSubmitRetryableTx); ok {
-		db.TouchAddress(&filter.FilteredAddressWithReason{Address: inner.Beneficiary, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableBeneficiary, EventRuleMatch: nil}})
-		db.TouchAddress(&filter.FilteredAddressWithReason{Address: inner.FeeRefundAddr, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableFeeRefund, EventRuleMatch: nil}})
-		if inner.RetryTo != nil {
-			db.TouchAddress(&filter.FilteredAddressWithReason{Address: *inner.RetryTo, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableTo, EventRuleMatch: nil}})
-		}
-		db.TouchAddress(&filter.FilteredAddressWithReason{Address: arbosutil.InverseRemapL1Address(inner.Beneficiary), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedRetryableBeneficiary, EventRuleMatch: nil}})
-		db.TouchAddress(&filter.FilteredAddressWithReason{Address: arbosutil.InverseRemapL1Address(inner.FeeRefundAddr), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedRetryableFeeRefund, EventRuleMatch: nil}})
 	}
 }
 
