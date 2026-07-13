@@ -9,6 +9,6 @@
     "preview": "vocs preview"
   },
   "dependencies": {
-    "vocs": "^1.4.1"
+    "vocs": "^2.5.3"
   }
 }
