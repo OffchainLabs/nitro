@@ -1,3 +1,14 @@
+// `extract_batch_messages` and its helpers are a work-in-progress port of the
+// `arbstate` batch decoder. The timestamp/block cursors, the delayed-message
+// loop, and several parameters are already wired up but not yet consumed by the
+// stubbed-out body; allow the resulting lints until the logic is filled in.
+#![allow(
+    unused_imports,
+    unused_variables,
+    unused_assignments,
+    clippy::unnecessary_unwrap,
+    clippy::while_immutable_condition
+)]
 use arbos::{arbos_state, arbos_types::MessageWithMetadata};
 
 use crate::{DelayedMessageDB, MelError, MelResult, MelState, SequencerMessage};
