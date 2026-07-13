@@ -12,6 +12,9 @@ on:
       - ".github/workflows/bench-pr.yml"
       - ".github/workflows/_build-release.yml"
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}-${{ github.ref }}
   cancel-in-progress: true
@@ -36,18 +39,15 @@ jobs:
     name: abba pr-gate
     needs: [build-feature, build-baseline]
     runs-on: ocl-8cpu-32ram
-    timeout-minutes: 60
+    timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          submodules: false
-      - name: Init submodules
-        shell: bash
-        run: git submodule update --init --recursive --depth 1
+          submodules: recursive
       - uses: actions/download-artifact@v8
         with:
           name: bench-pr-feature-binaries
@@ -94,9 +94,28 @@ jobs:
             }
             const body = fs.readFileSync(path, 'utf8');
             const issue_number = context.payload.pull_request.number;
-            await github.rest.issues.createComment({
+            const marker = '<!-- arb-bench-abba-summary -->';
+            const commentBody = `${marker}\n### arb-bench (PR-gate ABBA: \`${context.payload.pull_request.base.ref}\` vs PR)\n\n${body}`;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number,
-              body: `### arb-bench (PR-gate ABBA: \`${context.payload.pull_request.base.ref}\` vs PR)\n\n${body}`,
             });
+            const existing = comments.find((c) => c.body?.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: commentBody,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+                body: commentBody,
+              });
+            }
