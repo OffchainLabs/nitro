@@ -8,11 +8,11 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-arb-primitives = { workspace = true }
-alloy-primitives = { workspace = true, features = ["std"] }
 alloy-eips = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std"] }
 alloy-rlp = { workspace = true, features = ["derive"] }
 alloy-rpc-types-engine = { workspace = true }
+arb-primitives = { workspace = true }
 reth-engine-primitives = { workspace = true }
 reth-payload-primitives = { workspace = true }
 reth-primitives-traits = { workspace = true }

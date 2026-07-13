@@ -8,9 +8,9 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-arb-storage-errors = { workspace = true }
 alloy-evm = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std", "map-foldhash"] }
+arb-storage-errors = { workspace = true }
 revm = { workspace = true }
 revm-database = { workspace = true }
 revm-state = { workspace = true }

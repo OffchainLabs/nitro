@@ -8,41 +8,31 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-# Internal
-arbos = { workspace = true }
+alloy-primitives = { workspace = true }
 arb-chainspec = { workspace = true }
 arb-primitives = { workspace = true }
-
-# Alloy
-alloy-primitives = { workspace = true }
-
-# Wasmer
+arbos = { workspace = true }
+eyre = { workspace = true }
+lazy_static = { workspace = true }
+nitro-arbutil = { workspace = true }
+nitro-brotli = { workspace = true, features = ["cc_brotli"] }
+nitro-prover = { workspace = true }
+parking_lot = { workspace = true }
+revm = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
 wasmer = { workspace = true, features = ["sys", "cranelift"] }
 wasmer-compiler = { workspace = true }
 wasmer-types = { workspace = true }
 wasmparser = { workspace = true }
-
-nitro-prover = { workspace = true }
-nitro-arbutil = { workspace = true }
-nitro-brotli = { workspace = true, features = ["cc_brotli"] }
-
-# Revm
-revm = { workspace = true }
-
-# Common
-thiserror = { workspace = true }
-tracing = { workspace = true }
-parking_lot = { workspace = true }
-lazy_static = { workspace = true }
-eyre = { workspace = true }
 
 [build-dependencies]
 cc = { workspace = true }
 
 [dev-dependencies]
 arb-context = { workspace = true }
-wat = { workspace = true }
 proptest = { workspace = true }
+wat = { workspace = true }
 
 [lints]
 workspace = true

@@ -13,51 +13,41 @@ name = "arbreth-bench"
 path = "src/bin/arbreth_bench.rs"
 
 [dependencies]
-arb-evm = { workspace = true }
-arb-primitives = { workspace = true }
-arb-test-utils = { workspace = true }
-arb-executor-tests = { workspace = true }
-
 alloy-eips = { workspace = true }
 alloy-evm = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std", "k256", "serde"] }
-
-reth-chainspec = { workspace = true }
-reth-evm = { workspace = true }
-revm = { workspace = true, features = ["optional_balance_check", "optional_eip3541", "optional_eip3607", "optional_priority_fee_check", "optional_eip7623", "optional_no_base_fee"] }
-
+arb-evm = { workspace = true }
+arb-executor-tests = { workspace = true }
+arb-primitives = { workspace = true }
+arb-test-utils = { workspace = true }
+# Subprocess runner
+base64 = { workspace = true }
+brotli = { workspace = true, features = ["std"] }
+chrono = { workspace = true, features = ["clock", "serde"] }
 clap = { workspace = true, features = ["derive"] }
+# Reporting
+csv = { workspace = true }
 eyre = { workspace = true }
 hex = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
-
+# CPU time syscalls
+libc = { workspace = true }
 # Bootstrap CI + synthetic generators + prewarm alloc
 rand = { workspace = true, features = ["std", "std_rng"] }
 rand_chacha = { workspace = true }
-
-# Process info for RSS
-sysinfo = { workspace = true, features = ["system"] }
-
-# CPU time syscalls
-libc = { workspace = true }
-
-# Reporting
-csv = { workspace = true }
-chrono = { workspace = true, features = ["clock", "serde"] }
-
 # Frozen-corpus fetcher
 reqwest = { workspace = true, features = ["rustls-tls", "blocking", "stream", "json"] }
-
-# Subprocess runner
-base64 = { workspace = true }
-
+reth-chainspec = { workspace = true }
+reth-evm = { workspace = true }
+revm = { workspace = true, features = ["optional_balance_check", "optional_eip3541", "optional_eip3607", "optional_priority_fee_check", "optional_eip7623", "optional_no_base_fee"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+# Process info for RSS
+sysinfo = { workspace = true, features = ["system"] }
+tiny-keccak = { workspace = true, features = ["keccak"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 # Stylus WASM assembly at generate-time
 wat = { workspace = true }
-brotli = { workspace = true, features = ["std"] }
-tiny-keccak = { workspace = true, features = ["keccak"] }
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }

@@ -13,15 +13,14 @@ name = "arb-test"
 path = "src/main.rs"
 
 [dependencies]
-arb-test-harness = { workspace = true }
-arb-spec-tests = { workspace = true }
-
 alloy-primitives = { workspace = true, features = ["std", "serde"] }
+anyhow = { workspace = true }
+arb-spec-tests = { workspace = true }
+arb-test-harness = { workspace = true }
 clap = { workspace = true, features = ["env", "derive"] }
+hex = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-anyhow = { workspace = true }
-hex = { workspace = true }
 ureq = { workspace = true, features = ["json", "tls"] }
 
 [lints]
