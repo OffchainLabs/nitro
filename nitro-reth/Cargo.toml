@@ -42,7 +42,6 @@ arb-primitives = { path = "crates/arb-primitives" }
 arb-chainspec = { path = "crates/arb-chainspec" }
 arb-context = { path = "crates/arb-context" }
 arb-math = { path = "crates/arb-math" }
-arb-parent-chain-client = { path = "crates/arb-parent-chain-client" }
 arb-storage = { path = "crates/arb-storage" }
 arb-storage-errors = { path = "crates/arb-storage-errors" }
 arb-errors = { path = "crates/arb-errors" }
@@ -57,9 +56,7 @@ arb-stylus = { path = "crates/arb-stylus" }
 arb-executor-tests = { path = "crates/arb-executor-tests" }
 arb-test-utils = { path = "crates/arb-test-utils" }
 arb-test-harness = { path = "crates/arb-test-harness" }
-arb-fuzz = { path = "crates/arb-fuzz" }
 arb-spec-tests = { path = "crates/arb-spec-tests" }
-arb-bench = { path = "crates/arb-bench" }
 arbos = { path = "crates/arbos" }
 
 # Reth SDK (official)
@@ -67,8 +64,6 @@ reth = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-chainspec = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-consensus = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-evm = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
-reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
-reth-execution-errors = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-execution-types = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-network = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-node-api = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
@@ -78,7 +73,6 @@ reth-node-types = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cf
 reth-payload-builder = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-chain-state = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-payload-builder-primitives = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
-reth-primitives = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-primitives-traits = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-provider = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-revm = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
@@ -89,11 +83,8 @@ reth-trie-common = { git = "https://github.com/paradigmxyz/reth.git", rev = "20c
 reth-db = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-db-api = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-rpc = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
-reth-rpc-api = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
-reth-rpc-builder = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-rpc-eth-api = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-rpc-eth-types = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
-reth-rpc-types-compat = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-transaction-pool = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-engine-primitives = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-engine-tree = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
@@ -102,13 +93,10 @@ reth-cli = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517"
 reth-cli-commands = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-cli-util = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-tracing = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
-reth-ethereum = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
-reth-node-ethereum = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-ethereum-cli = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-codecs = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-rpc-convert = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
-reth-rpc-server-types = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-tasks = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-engine-util = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-exex = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
@@ -123,7 +111,6 @@ reth-static-file = { git = "https://github.com/paradigmxyz/reth.git", rev = "20c
 reth-config = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-trie-db = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-trie-parallel = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
-reth-trie-sparse = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 reth-metrics = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 
 # Alloy
@@ -137,14 +124,11 @@ alloy-network = { version = "1.7" }
 alloy-provider = { version = "1.7", default-features = false, features = ["reqwest"] }
 alloy-rlp = { version = "0.3", features = ["derive"] }
 alloy-rpc-client = { version = "1.7" }
-alloy-rpc-types = { version = "1.7" }
 alloy-rpc-types-engine = { version = "1.7" }
 alloy-rpc-types-trace = { version = "1.7" }
 alloy-serde = { version = "1.7" }
 alloy-sol-types = { version = "1.5" }
 alloy-transport = { version = "1.7" }
-alloy-trie = { version = "0.9" }
-alloy-hardforks = { version = "0.4" }
 
 # Revm
 revm = { version = "34.0", features = [
@@ -158,15 +142,10 @@ revm = { version = "34.0", features = [
 revm-database = { version = "10.0" }
 revm-database-interface = { version = "9.0" }
 revm-state = { version = "9.0" }
-revm-primitives = { version = "23.0" }
-revm-interpreter = { version = "32.0" }
-revm-context = { version = "12.0" }
-revm-bytecode = { version = "8.0" }
 
 # Arb-alloy
 arb-alloy-consensus = { version = "0.1.2" }
 arb-alloy-predeploys = { version = "0.1.2" }
-arb-alloy-util = { version = "0.1.2" }
 
 # Common
 crossbeam-channel = { version = "0.5" }
@@ -177,7 +156,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 tokio = { version = "1", features = ["full"] }
 tracing = { version = "0.1" }
-once_cell = { version = "1.21" }
 rustc-hash = { version = "2.1" }
 rayon = { version = "1.11" }
 clap = { version = "4", features = ["derive"] }
@@ -185,24 +163,19 @@ async-trait = { version = "0.1.68" }
 eyre = { version = "0.6" }
 anyhow = { version = "1" }
 derive_more = { version = "2", features = ["full"] }
-auto_impl = { version = "1" }
 bytes = { version = "1" }
 parking_lot = { version = "0.12" }
 lazy_static = { version = "1" }
-num = { version = "0.4" }
 hex = { version = "0.4" }
 cc = { version = "1" }
 sha2 = { version = "0.11" }
 base64 = { version = "0.22" }
 jsonrpsee = { version = "0.26.0", features = ["macros", "server"] }
-jsonrpsee-types = { version = "0.26.0" }
 jsonrpsee-http-client = { version = "0.26.0" }
-dyn-clone = { version = "1" }
 brotli = { version = "8", default-features = false, features = ["std"] }
 wasmer = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca", default-features = false, features = ["sys", "cranelift"] }
 wasmer-compiler = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca" }
 wasmer-types = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca" }
-schnellru = { version = "0.2" }
 axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 csv = { version = "1" }
@@ -213,14 +186,11 @@ rand = { version = "0.8", default-features = false, features = ["std", "std_rng"
 rand_chacha = { version = "0.3" }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking", "stream"] }
 sysinfo = { version = "0.32", default-features = false, features = ["system"] }
-tar = { version = "0.4" }
 tokio-stream = { version = "0.1" }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ureq = { version = "2", default-features = false }
-url = { version = "2" }
 walkdir = { version = "2" }
 wat = { version = "1" }
-zstd = { version = "0.13" }
 
 nitro-prover = { package = "prover", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b", default-features = false }
 nitro-arbutil = { package = "arbutil", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b" }
@@ -229,7 +199,6 @@ nitro-brotli = { package = "brotli", git = "https://github.com/OffchainLabs/nitr
 # Transitive deps for Nitro crates
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 wasmparser = { version = "0.121" }
-ruint2 = { version = "1.9.0" }
 
 # Test deps
 rstest = { version = "0.26" }

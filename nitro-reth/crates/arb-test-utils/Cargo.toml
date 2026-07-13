@@ -9,8 +9,6 @@ version.workspace = true
 description = "Test fixtures and harness for arbreth crates"
 
 [dependencies]
-arb-chainspec = { workspace = true }
-arb-primitives = { workspace = true }
 arb-storage = { workspace = true }
 arbos = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std"] }

@@ -13,21 +13,14 @@ name = "arbreth-bench"
 path = "src/bin/arbreth_bench.rs"
 
 [dependencies]
-arb-chainspec = { workspace = true }
 arb-evm = { workspace = true }
-arb-precompiles = { workspace = true }
 arb-primitives = { workspace = true }
-arb-storage = { workspace = true }
-arb-stylus = { workspace = true }
 arb-test-utils = { workspace = true }
-arbos = { workspace = true }
 arb-executor-tests = { workspace = true }
 
-alloy-consensus = { workspace = true, features = ["k256"] }
 alloy-eips = { workspace = true }
 alloy-evm = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std", "k256", "serde"] }
-alloy-rlp = { workspace = true }
 
 reth-chainspec = { workspace = true }
 reth-evm = { workspace = true }
@@ -38,7 +31,6 @@ eyre = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
@@ -58,12 +50,6 @@ chrono = { workspace = true }
 
 # Frozen-corpus fetcher
 reqwest = { workspace = true }
-tar = { workspace = true }
-zstd = { workspace = true }
-url = { workspace = true }
-
-# RPC capture
-tokio = { workspace = true }
 
 # Subprocess runner
 base64 = { workspace = true }

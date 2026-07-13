@@ -1011,32 +1011,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "arb-alloy-util"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe4194538d8214b5d00881a40eda169d0414bf4c5e69c49930791f10fc8286b4"
-dependencies = [
- "alloy-primitives",
-]
-
-[[package]]
 name = "arb-bench"
 version = "0.1.5"
 dependencies = [
- "alloy-consensus",
  "alloy-eips",
  "alloy-evm",
  "alloy-primitives",
- "alloy-rlp",
- "arb-chainspec",
  "arb-evm",
  "arb-executor-tests",
- "arb-precompiles",
  "arb-primitives",
- "arb-storage",
- "arb-stylus",
  "arb-test-utils",
- "arbos",
  "base64 0.22.1",
  "brotli 8.0.2",
  "chrono",
@@ -1055,31 +1039,19 @@ dependencies = [
  "serde",
  "serde_json",
  "sysinfo 0.32.1",
- "tar",
  "tempfile",
- "thiserror 2.0.18",
  "tiny-keccak",
- "tokio",
  "tracing",
  "tracing-subscriber 0.3.23",
- "url",
  "wat",
- "zstd",
 ]
 
 [[package]]
 name = "arb-chainspec"
 version = "0.1.5"
 dependencies = [
- "alloy-genesis",
- "alloy-hardforks",
- "alloy-primitives",
- "arb-primitives",
- "once_cell",
  "reth-chainspec",
- "reth-primitives-traits",
  "revm",
- "serde",
 ]
 
 [[package]]
@@ -1111,7 +1083,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-rlp",
  "alloy-rpc-types-engine",
- "alloy-rpc-types-eth",
  "arb-alloy-consensus",
  "arb-chainspec",
  "arb-context",
@@ -1125,16 +1096,11 @@ dependencies = [
  "reth-chainspec",
  "reth-ethereum-primitives",
  "reth-evm",
- "reth-evm-ethereum",
- "reth-execution-types",
  "reth-primitives-traits",
- "reth-revm",
- "reth-rpc-eth-api",
  "reth-storage-api",
  "reth-storage-errors",
  "revm",
  "revm-database",
- "revm-primitives 23.0.0",
  "revm-state",
  "rustc-hash",
  "thiserror 2.0.18",
@@ -1149,13 +1115,10 @@ dependencies = [
  "alloy-eips",
  "alloy-evm",
  "alloy-primitives",
- "alloy-rlp",
  "arb-alloy-consensus",
- "arb-chainspec",
  "arb-context",
  "arb-evm",
  "arb-node",
- "arb-precompiles",
  "arb-primitives",
  "arb-storage",
  "arb-stylus",
@@ -1189,7 +1152,6 @@ dependencies = [
  "arbos",
  "hex",
  "libfuzzer-sys",
- "proptest",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -1210,14 +1172,12 @@ dependencies = [
  "alloy-evm",
  "alloy-genesis",
  "alloy-primitives",
- "alloy-rlp",
  "alloy-rpc-types-engine",
  "alloy-rpc-types-eth",
  "arb-chainspec",
  "arb-errors",
  "arb-evm",
  "arb-payload",
- "arb-precompiles",
  "arb-primitives",
  "arb-rpc",
  "arb-storage",
@@ -1238,7 +1198,6 @@ dependencies = [
  "reth-cli",
  "reth-consensus",
  "reth-db",
- "reth-db-api",
  "reth-engine-primitives",
  "reth-engine-tree",
  "reth-engine-util",
@@ -1253,7 +1212,6 @@ dependencies = [
  "reth-node-api",
  "reth-node-builder",
  "reth-node-core",
- "reth-node-ethereum",
  "reth-node-events",
  "reth-node-types",
  "reth-payload-builder",
@@ -1305,7 +1263,6 @@ dependencies = [
 name = "arb-payload"
 version = "0.1.5"
 dependencies = [
- "alloy-consensus",
  "alloy-eips",
  "alloy-primitives",
  "alloy-rlp",
@@ -1328,12 +1285,9 @@ dependencies = [
  "alloy-eips",
  "alloy-evm",
  "alloy-primitives",
- "alloy-rlp",
  "alloy-sol-types",
- "arb-alloy-predeploys",
  "arb-chainspec",
  "arb-context",
- "arb-math",
  "arb-primitives",
  "arb-storage",
  "arb-storage-errors",
@@ -1342,11 +1296,9 @@ dependencies = [
  "hex",
  "parking_lot",
  "revm",
- "revm-primitives 23.0.0",
  "rstest",
  "thiserror 2.0.18",
  "tiny-keccak",
- "tracing",
 ]
 
 [[package]]
@@ -1355,20 +1307,16 @@ version = "0.1.5"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
- "alloy-genesis",
  "alloy-primitives",
  "alloy-rlp",
  "arb-alloy-consensus",
  "arb-alloy-predeploys",
- "arb-alloy-util",
  "bytes",
- "derive_more 2.1.1",
  "proptest",
  "reth-codecs",
  "reth-db-api",
  "reth-primitives-traits",
  "serde",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1387,7 +1335,6 @@ dependencies = [
  "reth-config",
  "reth-consensus",
  "reth-engine-tree",
- "reth-ethereum-cli",
  "reth-evm",
  "reth-primitives-traits",
  "reth-provider",
@@ -1417,7 +1364,6 @@ dependencies = [
  "arb-chainspec",
  "arb-errors",
  "arb-evm",
- "arb-payload",
  "arb-precompiles",
  "arb-primitives",
  "arb-storage",
@@ -1428,7 +1374,6 @@ dependencies = [
  "eyre",
  "jsonrpsee",
  "jsonrpsee-http-client",
- "jsonrpsee-types",
  "parking_lot",
  "reth-chainspec",
  "reth-evm",
@@ -1441,12 +1386,10 @@ dependencies = [
  "reth-rpc-convert",
  "reth-rpc-eth-api",
  "reth-rpc-eth-types",
- "reth-rpc-server-types",
  "reth-storage-api",
  "reth-storage-errors",
  "reth-tasks",
  "reth-transaction-pool",
- "revm",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -1459,7 +1402,6 @@ name = "arb-spec-tests"
 version = "0.1.5"
 dependencies = [
  "alloy-primitives",
- "arb-storage",
  "arb-test-harness",
  "arb-test-utils",
  "arbos",
@@ -1477,17 +1419,12 @@ version = "0.1.5"
 dependencies = [
  "alloy-evm",
  "alloy-primitives",
- "arb-primitives",
  "arb-storage-errors",
  "arb-test-utils",
- "reth-db-api",
- "reth-provider",
- "reth-storage-api",
  "revm",
  "revm-database",
  "revm-database-interface",
  "revm-state",
- "thiserror 2.0.18",
  "tracing",
 ]
 
@@ -1547,10 +1484,7 @@ version = "0.1.5"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
- "alloy-genesis",
  "alloy-primitives",
- "alloy-rlp",
- "arb-chainspec",
  "arb-node",
  "arb-primitives",
  "arbos",
@@ -1558,8 +1492,6 @@ dependencies = [
  "base64 0.22.1",
  "hex",
  "k256",
- "revm",
- "revm-database",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -1572,8 +1504,6 @@ name = "arb-test-utils"
 version = "0.1.5"
 dependencies = [
  "alloy-primitives",
- "arb-chainspec",
- "arb-primitives",
  "arb-storage",
  "arbos",
  "revm",
@@ -1591,7 +1521,6 @@ dependencies = [
  "derive_more 2.1.1",
  "reth-primitives-traits",
  "reth-transaction-pool",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -8444,7 +8373,7 @@ dependencies = [
  "reth-trie-parallel",
  "reth-trie-sparse",
  "revm",
- "revm-primitives 22.1.0",
+ "revm-primitives",
  "schnellru",
  "thiserror 2.0.18",
  "tokio",
@@ -9469,7 +9398,7 @@ dependencies = [
  "rayon",
  "reth-codecs",
  "revm-bytecode",
- "revm-primitives 22.1.0",
+ "revm-primitives",
  "revm-state",
  "secp256k1 0.30.0",
  "serde",
@@ -9642,7 +9571,7 @@ dependencies = [
  "reth-trie-common",
  "revm",
  "revm-inspectors",
- "revm-primitives 22.1.0",
+ "revm-primitives",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -10161,7 +10090,7 @@ dependencies = [
  "reth-tasks",
  "revm",
  "revm-interpreter",
- "revm-primitives 22.1.0",
+ "revm-primitives",
  "rustc-hash",
  "schnellru",
  "serde",
@@ -10310,7 +10239,7 @@ dependencies = [
  "revm-inspector",
  "revm-interpreter",
  "revm-precompile",
- "revm-primitives 22.1.0",
+ "revm-primitives",
  "revm-state",
 ]
 
@@ -10322,7 +10251,7 @@ checksum = "74d1e5c1eaa44d39d537f668bc5c3409dc01e5c8be954da6c83370bbdf006457"
 dependencies = [
  "bitvec",
  "phf",
- "revm-primitives 22.1.0",
+ "revm-primitives",
  "serde",
 ]
 
@@ -10338,7 +10267,7 @@ dependencies = [
  "revm-bytecode",
  "revm-context-interface",
  "revm-database-interface",
- "revm-primitives 22.1.0",
+ "revm-primitives",
  "revm-state",
  "serde",
 ]
@@ -10354,7 +10283,7 @@ dependencies = [
  "auto_impl",
  "either",
  "revm-database-interface",
- "revm-primitives 22.1.0",
+ "revm-primitives",
  "revm-state",
  "serde",
 ]
@@ -10368,7 +10297,7 @@ dependencies = [
  "alloy-eips",
  "revm-bytecode",
  "revm-database-interface",
- "revm-primitives 22.1.0",
+ "revm-primitives",
  "revm-state",
  "serde",
 ]
@@ -10381,7 +10310,7 @@ checksum = "b7bf93ac5b91347c057610c0d96e923db8c62807e03f036762d03e981feddc1d"
 dependencies = [
  "auto_impl",
  "either",
- "revm-primitives 22.1.0",
+ "revm-primitives",
  "revm-state",
  "serde",
  "thiserror 2.0.18",
@@ -10401,7 +10330,7 @@ dependencies = [
  "revm-database-interface",
  "revm-interpreter",
  "revm-precompile",
- "revm-primitives 22.1.0",
+ "revm-primitives",
  "revm-state",
  "serde",
 ]
@@ -10418,7 +10347,7 @@ dependencies = [
  "revm-database-interface",
  "revm-handler",
  "revm-interpreter",
- "revm-primitives 22.1.0",
+ "revm-primitives",
  "revm-state",
  "serde",
  "serde_json",
@@ -10452,7 +10381,7 @@ checksum = "11406408597bc249392d39295831c4b641b3a6f5c471a7c41104a7a1e3564c07"
 dependencies = [
  "revm-bytecode",
  "revm-context-interface",
- "revm-primitives 22.1.0",
+ "revm-primitives",
  "revm-state",
  "serde",
 ]
@@ -10475,7 +10404,7 @@ dependencies = [
  "cfg-if",
  "k256",
  "p256",
- "revm-primitives 22.1.0",
+ "revm-primitives",
  "ripemd",
  "secp256k1 0.31.1",
  "sha2 0.10.9",
@@ -10494,18 +10423,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "revm-primitives"
-version = "23.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c99bda77d9661521ba0b4bc04558c6692074f01e65dd420fa3b893033d9b8a2"
-dependencies = [
- "alloy-primitives",
- "num_enum",
- "once_cell",
- "serde",
-]
-
-[[package]]
 name = "revm-state"
 version = "9.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10514,7 +10431,7 @@ dependencies = [
  "alloy-eip7928",
  "bitflags 2.11.0",
  "revm-bytecode",
- "revm-primitives 22.1.0",
+ "revm-primitives",
  "serde",
 ]
 

@@ -9,7 +9,6 @@ version.workspace = true
 
 [dependencies]
 arb-primitives = { workspace = true }
-arb-precompiles = { workspace = true }
 arb-chainspec = { workspace = true }
 arb-errors = { workspace = true }
 arb-evm = { workspace = true }
@@ -25,7 +24,6 @@ reth-cli = { workspace = true }
 reth-ethereum-cli = { workspace = true }
 serde_json = { workspace = true }
 alloy-consensus = { workspace = true }
-alloy-rlp = { workspace = true }
 alloy-eips = { workspace = true }
 alloy-evm = { workspace = true }
 alloy-primitives = { workspace = true }
@@ -35,7 +33,6 @@ reth-chainspec = { workspace = true }
 reth-chain-state = { workspace = true }
 reth-consensus = { workspace = true }
 reth-db = { workspace = true }
-reth-db-api = { workspace = true }
 reth-engine-primitives = { workspace = true }
 reth-engine-tree = { workspace = true }
 reth-engine-util = { workspace = true }
@@ -51,7 +48,6 @@ reth-node-core = { workspace = true }
 reth-node-events = { workspace = true }
 reth-provider = { workspace = true }
 reth-rpc-eth-api = { workspace = true }
-reth-node-ethereum = { workspace = true }
 reth-node-types = { workspace = true }
 reth-payload-builder = { workspace = true }
 reth-payload-builder-primitives = { workspace = true }

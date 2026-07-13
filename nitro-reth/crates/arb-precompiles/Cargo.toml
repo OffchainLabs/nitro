@@ -13,7 +13,6 @@ doctest = false
 [dependencies]
 arb-chainspec = { workspace = true }
 arb-context = { workspace = true }
-arb-math = { workspace = true }
 arb-primitives = { workspace = true }
 arb-storage = { workspace = true }
 arb-storage-errors = { workspace = true }
@@ -24,12 +23,8 @@ alloy-sol-types = { workspace = true }
 alloy-evm = { workspace = true }
 alloy-consensus = { workspace = true }
 alloy-eips = { workspace = true }
-alloy-rlp = { workspace = true }
-arb-alloy-predeploys = { workspace = true }
 revm = { workspace = true }
-revm-primitives = { workspace = true }
 thiserror = { workspace = true }
-tracing = { workspace = true }
 
 [dev-dependencies]
 arb-context = { workspace = true }

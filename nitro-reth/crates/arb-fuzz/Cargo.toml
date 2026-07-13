@@ -22,7 +22,6 @@ alloy-primitives = { workspace = true, features = ["arbitrary"] }
 alloy-eips = { workspace = true, default-features = true }
 
 arbitrary = { workspace = true }
-proptest = { workspace = true }
 wasm-smith = { workspace = true }
 
 serde = { workspace = true }
