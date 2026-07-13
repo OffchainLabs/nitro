@@ -1,46 +1,38 @@
 [package]
 name = "arb-stylus"
-version.workspace = true
+authors.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
 
 [dependencies]
-# Internal
-arbos = { workspace = true }
+alloy-primitives = { workspace = true }
 arb-chainspec = { workspace = true }
 arb-primitives = { workspace = true }
-
-# Alloy
-alloy-primitives = { workspace = true }
-
-# Wasmer
-wasmer = { workspace = true }
-wasmer-compiler = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca" }
-wasmer-types = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca" }
-wasmparser = { workspace = true }
-
-nitro-prover = { workspace = true }
+arbos = { workspace = true }
+eyre = { workspace = true }
+lazy_static = { workspace = true }
 nitro-arbutil = { workspace = true }
-nitro-brotli = { package = "brotli", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b", features = ["cc_brotli"] }
-
-# Revm
+nitro-brotli = { workspace = true, features = ["cc_brotli"] }
+nitro-prover = { workspace = true }
+parking_lot = { workspace = true }
 revm = { workspace = true }
-
-# Common
 thiserror = { workspace = true }
 tracing = { workspace = true }
-parking_lot = { workspace = true }
-lazy_static = { workspace = true }
-eyre = { workspace = true }
+wasmer = { workspace = true, features = ["sys", "cranelift"] }
+wasmer-compiler = { workspace = true }
+wasmer-types = { workspace = true }
+wasmparser = { workspace = true }
 
 [build-dependencies]
-cc = "1"
+cc = { workspace = true }
 
 [dev-dependencies]
 arb-context = { workspace = true }
-wat = "1"
 proptest = { workspace = true }
+wat = { workspace = true }
 
 [lints]
 workspace = true

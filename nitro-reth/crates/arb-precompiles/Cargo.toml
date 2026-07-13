@@ -1,42 +1,37 @@
 [package]
 name = "arb-precompiles"
-version.workspace = true
+authors.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
 
 [lib]
 doctest = false
 
 [dependencies]
+alloy-consensus = { workspace = true }
+alloy-eips = { workspace = true }
+alloy-evm = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std"] }
+alloy-sol-types = { workspace = true }
 arb-chainspec = { workspace = true }
 arb-context = { workspace = true }
-arb-math = { workspace = true }
 arb-primitives = { workspace = true }
 arb-storage = { workspace = true }
 arb-storage-errors = { workspace = true }
 arb-stylus = { workspace = true }
 arbos = { workspace = true }
-alloy-primitives = { workspace = true, features = ["std"] }
-alloy-sol-types = { workspace = true }
-alloy-evm = { workspace = true }
-alloy-consensus = { workspace = true }
-alloy-eips = { workspace = true }
-alloy-rlp = { workspace = true }
-arb-alloy-predeploys = { workspace = true }
 revm = { workspace = true }
-revm-primitives = { workspace = true }
 thiserror = { workspace = true }
-tracing = { workspace = true }
 
 [dev-dependencies]
 arb-context = { workspace = true }
 arb-storage-errors = { workspace = true }
-hex = { workspace = true }
 parking_lot = { workspace = true }
-rstest = { workspace = true }
 thiserror = { workspace = true }
-tiny-keccak = { workspace = true }
+tiny-keccak = { workspace = true, features = ["keccak"] }
 
 [lints]
 workspace = true
