@@ -7,10 +7,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/consensus"
-	"github.com/offchainlabs/nitro/execution"
 )
 
 type ConsensusRPCServer struct {
@@ -31,14 +29,4 @@ func (a *ConsensusRPCServer) FindBatchContainingMessage(ctx context.Context, msg
 
 func (a *ConsensusRPCServer) BlockMetadataAtMessageIndex(ctx context.Context, msgIdx arbutil.MessageIndex) (common.BlockMetadata, error) {
 	return a.consensus.BlockMetadataAtMessageIndex(msgIdx).Await(ctx)
-}
-
-func (a *ConsensusRPCServer) WriteMessageFromSequencer(ctx context.Context, msgIdx arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) error {
-	_, err := a.consensus.WriteMessageFromSequencer(msgIdx, msgWithMeta, msgResult, blockMetadata).Await(ctx)
-	return err
-}
-
-func (a *ConsensusRPCServer) ExpectChosenSequencer(ctx context.Context) error {
-	_, err := a.consensus.ExpectChosenSequencer().Await(ctx)
-	return err
 }

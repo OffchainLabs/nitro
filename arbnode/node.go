@@ -34,7 +34,6 @@ import (
 	nitroversionalerter "github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
@@ -1150,13 +1149,14 @@ func getTransactionStreamer(
 	ctx context.Context,
 	consensusDB ethdb.Database,
 	l2Config *params.ChainConfig,
-	exec execution.ExecutionClient,
+	execClient execution.ExecutionClient,
+	execSequencer containers.Option[execution.ExecutionSequencer],
 	broadcastServer *broadcaster.Broadcaster,
 	configFetcher ConfigFetcher,
 	fatalErrChan chan error,
 ) (*TransactionStreamer, error) {
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
-	txStreamer, err := NewTransactionStreamer(ctx, consensusDB, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
+	txStreamer, err := NewTransactionStreamer(ctx, consensusDB, l2Config, execClient, execSequencer, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
 	if err != nil {
 		return nil, err
 	}
@@ -1412,7 +1412,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	txStreamer, err := getTransactionStreamer(ctx, consensusDB, l2Config, executionClient, broadcastServer, configFetcher, fatalErrChan)
+	txStreamer, err := getTransactionStreamer(ctx, consensusDB, l2Config, executionClient, executionSequencer, broadcastServer, configFetcher, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1935,16 +1935,6 @@ func (n *Node) StopAndWait() {
 			n.ExecutionClient.StopAndWait()
 		}
 	}
-}
-
-func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}] {
-	err := n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult, blockMetadata)
-	return containers.NewReadyPromise(struct{}{}, err)
-}
-
-func (n *Node) ExpectChosenSequencer() containers.PromiseInterface[struct{}] {
-	err := n.TxStreamer.ExpectChosenSequencer()
-	return containers.NewReadyPromise(struct{}{}, err)
 }
 
 func (n *Node) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata] {

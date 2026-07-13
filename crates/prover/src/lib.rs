@@ -7,7 +7,7 @@ pub mod binary;
 pub mod cbytes;
 mod host;
 pub(crate) mod internal_func;
-#[cfg(feature = "native")]
+#[cfg(feature = "kzg")]
 mod kzg;
 pub mod machine;
 /// cbindgen:ignore

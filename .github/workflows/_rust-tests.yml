@@ -73,8 +73,8 @@ jobs:
       - name: Prepare replay.wasm env
         run: make build-replay-env
 
-      - name: Clippy check
-        run: cargo clippy --all -- -D warnings
+      - name: Clippy check (non-SP1)
+        run: cargo clippy --workspace --exclude stylus-compiler-program --exclude stylus-compiler-runner -- -D warnings
 
       - name: Run rust tests
         id: run-rust-tests

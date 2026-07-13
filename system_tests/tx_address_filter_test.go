@@ -290,13 +290,10 @@ func TestAddressFilterMultipleTxsInBlock(t *testing.T) {
 	badB := builder.L2Info.PrepareTx("Sender4", "FilteredUserB", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	clean5 := builder.L2Info.PrepareTx("Sender5", "CleanReceiver5", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 
-	sequencer := builder.L2.ExecNode.Sequencer
-	// SequenceTransactionsForTest bypasses the tx queue and sequences every
+	// sequenceTransactionsInTheSameBlock bypasses the tx queue and sequences every
 	// tx into a single block.
-	sequencer.Pause()
-	defer sequencer.Activate()
-	block, txErrors := sequencer.SequenceTransactionsForTest(
-		t, types.Transactions{clean1, badA, clean3, badB, clean5},
+	block, txErrors := sequenceTransactionsInTheSameBlock(
+		t, builder, types.Transactions{clean1, badA, clean3, badB, clean5},
 	)
 	require.NotNil(t, block, "block should have been produced")
 	require.Len(t, txErrors, 5)
@@ -388,7 +385,7 @@ func TestAddressFilterEventRuleReport(t *testing.T) {
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
 
 	// Emit Transfer event with filtered address as recipient (topic[2])
-	// This triggers postTxFilter via the event filter path
+	// This triggers PostTxFilter via the event filter path
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	tx, err := contract.EmitTransfer(&auth, auth.From, filteredAddr)
 	if err == nil {
@@ -761,11 +758,7 @@ func TestAddressFilterStylusCacheNoLeak(t *testing.T) {
 	txB := builder.L2Info.PrepareTxTo("SenderB", &multicallAddr, 1e7, nil, multicallEmptyArgs())
 	txC := builder.L2Info.PrepareTxTo("SenderC", &multicallAddr, 1e7, nil, multicallEmptyArgs())
 
-	sequencer := builder.L2.ExecNode.Sequencer
-	sequencer.Pause()
-	defer sequencer.Activate()
-
-	block, txErrors := sequencer.SequenceTransactionsForTest(t, types.Transactions{txA, txB, txC})
+	block, txErrors := sequenceTransactionsInTheSameBlock(t, builder, types.Transactions{txA, txB, txC})
 	require.NotNil(t, block, "block should have been created")
 	require.Len(t, txErrors, 3)
 	require.Error(t, txErrors[0], "txA should be dropped by the filter")
@@ -840,11 +833,7 @@ func TestStylusWarmStartCacheSurvivesRevert(t *testing.T) {
 	txW1 := builder.L2Info.PrepareTxTo("SenderW1", &multicallAddr, 1e7, nil, multicallEmptyArgs())
 	txW2 := builder.L2Info.PrepareTxTo("SenderW2", &multicallAddr, 1e7, nil, multicallEmptyArgs())
 
-	sequencer := builder.L2.ExecNode.Sequencer
-	sequencer.Pause()
-	defer sequencer.Activate()
-
-	block, txErrors := sequencer.SequenceTransactionsForTest(t, types.Transactions{txRevert, txW1, txW2})
+	block, txErrors := sequenceTransactionsInTheSameBlock(t, builder, types.Transactions{txRevert, txW1, txW2})
 	require.NotNil(t, block)
 	require.Len(t, txErrors, 3)
 	// A reverted tx is still included (not a sequencing drop), so no error here.

@@ -25,6 +25,14 @@ func (q *Queue[T]) shrink() {
 	}
 }
 
+func (q *Queue[T]) Peek() T {
+	var empty T
+	if len(q.slice) == 0 {
+		return empty
+	}
+	return q.slice[0]
+}
+
 func (q *Queue[T]) Pop() T {
 	var empty T
 	if len(q.slice) == 0 {
@@ -39,4 +47,12 @@ func (q *Queue[T]) Pop() T {
 
 func (q *Queue[T]) Len() int {
 	return len(q.slice)
+}
+
+func (q *Queue[T]) Tail() T {
+	var empty T
+	if len(q.slice) == 0 {
+		return empty
+	}
+	return q.slice[len(q.slice)-1]
 }

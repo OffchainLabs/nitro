@@ -387,7 +387,11 @@ func (c *SeqCoordinator) acquireLockoutAndWriteMessage(ctx context.Context, msgC
 		c.reportedWantsLockout = true
 	}
 	isActiveSequencer.Update(1)
-	atomicTimeWrite(&c.lockoutUntil, lockoutUntil.Add(-c.config.LockoutSpare))
+	activeUntil := lockoutUntil.Add(-c.config.LockoutSpare)
+	atomicTimeWrite(&c.lockoutUntil, activeUntil)
+	if c.sequencer != nil {
+		c.sequencer.SetActiveUntil(activeUntil)
+	}
 	return nil
 }
 
@@ -452,6 +456,9 @@ func (c *SeqCoordinator) CurrentChosenSequencer(ctx context.Context) (string, er
 
 func (c *SeqCoordinator) chosenOneRelease(ctx context.Context) error {
 	atomicTimeWrite(&c.lockoutUntil, time.Time{})
+	if c.sequencer != nil {
+		c.sequencer.SetActiveUntil(time.Time{})
+	}
 	isActiveSequencer.Update(0)
 	releaseErr := c.RedisCoordinator().Client.Watch(ctx, func(tx *redis.Tx) error {
 		current, err := tx.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
@@ -830,9 +837,9 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 			}
 			log.Info("caught chosen-coordinator lock", "myUrl", c.config.Url())
 			if c.delayedSequencer != nil {
-				err = c.delayedSequencer.ForceSequenceDelayed(ctx)
+				err = c.delayedSequencer.ForceEnqueue(ctx)
 				if err != nil {
-					log.Warn("failed sequencing delayed messages after catching lock", "err", err)
+					log.Warn("failed enqueueing delayed messages after catching lock", "err", err)
 				}
 			}
 			// This should be redundant now that even non-primary sequencers broadcast over the feed,

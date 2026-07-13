@@ -25,8 +25,8 @@ func (c *Server) DigestMessage(ctx context.Context, msgIdx arbutil.MessageIndex,
 	return c.executionClient.DigestMessage(msgIdx, msg, msgForPrefetch).Await(ctx)
 }
 
-func (c *Server) Reorg(ctx context.Context, msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
-	return c.executionClient.Reorg(msgIdxOfFirstMsgToAdd, newMessages, oldMessages).Await(ctx)
+func (c *Server) Reorg(ctx context.Context, msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) ([]*execution.MessageResult, error) {
+	return c.executionClient.Reorg(msgIdxOfFirstMsgToAdd, newMessages).Await(ctx)
 }
 
 func (c *Server) HeadMessageIndex(ctx context.Context) (arbutil.MessageIndex, error) {

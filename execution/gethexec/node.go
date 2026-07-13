@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"sync/atomic"
+	"testing"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -151,6 +152,7 @@ type TransactionFilteringConfig struct {
 	AddressFilter                  addressfilter.Config          `koanf:"address-filter" reload:"hot"`
 	TransactionFiltererRPCClient   rpcclient.ClientConfig        `koanf:"transaction-filterer-rpc-client" reload:"hot"`
 	FilteringReportRPCClient       rpcclient.ClientConfig        `koanf:"filtering-report-rpc-client" reload:"hot"`
+	FilteredTxFullRetryInterval    time.Duration                 `koanf:"filtered-tx-full-retry-interval"`
 }
 
 func (c *TransactionFilteringConfig) Validate() error {
@@ -169,6 +171,9 @@ func (c *TransactionFilteringConfig) Validate() error {
 	if err := c.FilteringReportRPCClient.Validate(); err != nil {
 		return fmt.Errorf("error validating filtering-report-rpc-client config: %w", err)
 	}
+	if c.FilteredTxFullRetryInterval <= 0 {
+		return fmt.Errorf("filtered-tx-full-retry-interval must be positive, got %v", c.FilteredTxFullRetryInterval)
+	}
 	return nil
 }
 
@@ -180,6 +185,18 @@ var DefaultTransactionFilteringConfig = TransactionFilteringConfig{
 	AddressFilter:                  addressfilter.DefaultConfig,
 	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
 	FilteringReportRPCClient:       DefaultFilteringReportRPCClientConfig,
+	FilteredTxFullRetryInterval:    30 * time.Second,
+}
+
+var TestTransactionFilteringConfig = TransactionFilteringConfig{
+	Enable:                         false,
+	DisableDelayedSequencingFilter: false,
+	EnableETHCallFilter:            false,
+	EventFilter:                    eventfilter.DefaultEventFilterConfig,
+	AddressFilter:                  addressfilter.DefaultConfig,
+	TransactionFiltererRPCClient:   DefaultTransactionFiltererRPCClientConfig,
+	FilteringReportRPCClient:       DefaultFilteringReportRPCClientConfig,
+	FilteredTxFullRetryInterval:    time.Second,
 }
 
 func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -190,6 +207,7 @@ func TransactionFilteringConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	addressfilter.ConfigAddOptions(prefix+".address-filter", f)
 	rpcclient.RPCClientAddOptions(prefix+".transaction-filterer-rpc-client", f, &DefaultTransactionFilteringConfig.TransactionFiltererRPCClient)
 	rpcclient.RPCClientAddOptions(prefix+".filtering-report-rpc-client", f, &DefaultTransactionFilteringConfig.FilteringReportRPCClient)
+	f.Duration(prefix+".filtered-tx-full-retry-interval", DefaultTransactionFilteringConfig.FilteredTxFullRetryInterval, "how often to do a full re-execution when halted on a filtered delayed message")
 }
 
 type Config struct {
@@ -395,7 +413,7 @@ func CreateExecutionNode(
 		filteringReportRPCClient = NewFilteringReportRPCClient(filteringReportConfigFetcher)
 	}
 
-	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, config.TransactionFiltering.DisableDelayedSequencingFilter, addressChecker, filteringReportRPCClient)
+	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, config.TransactionFiltering.DisableDelayedSequencingFilter, addressChecker, filteringReportRPCClient, config.TransactionFiltering.FilteredTxFullRetryInterval)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
@@ -720,8 +738,23 @@ func (n *ExecutionNode) StopAndWait() {
 func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
 	return containers.NewReadyPromise(n.ExecEngine.DigestMessage(num, msg, msgForPrefetch))
 }
-func (n *ExecutionNode) Reorg(newHeadMsgIdx arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
-	return containers.NewReadyPromise(n.ExecEngine.Reorg(newHeadMsgIdx, newMessages, oldMessages))
+func (n *ExecutionNode) Reorg(newHeadMsgIdx arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) containers.PromiseInterface[[]*execution.MessageResult] {
+	return containers.NewReadyPromise(n.ExecEngine.Reorg(newHeadMsgIdx, newMessages))
+}
+func (n *ExecutionNode) ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*execution.SequencedMsg, error) {
+	return n.ExecEngine.ResequenceReorgedMessage(msg)
+}
+func (n *ExecutionNode) StartSequencing(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
+	if n.Sequencer == nil {
+		return nil, time.Hour
+	}
+	return n.Sequencer.StartSequencing(ctx)
+}
+func (n *ExecutionNode) EndSequencing(ctx context.Context, errWhileSequencing error) {
+	if n.Sequencer == nil {
+		return
+	}
+	n.Sequencer.EndSequencing(ctx, errWhileSequencing)
 }
 func (n *ExecutionNode) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
 	return containers.NewReadyPromise(n.ExecEngine.HeadMessageIndex())
@@ -729,11 +762,14 @@ func (n *ExecutionNode) HeadMessageIndex() containers.PromiseInterface[arbutil.M
 func (n *ExecutionNode) NextDelayedMessageNumber() (uint64, error) {
 	return n.ExecEngine.NextDelayedMessageNumber()
 }
-func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
-	return n.ExecEngine.SequenceDelayedMessage(message, delayedSeqNum)
+func (n *ExecutionNode) EnqueueDelayedMessages(msgs []*arbostypes.L1IncomingMessage, firstMsgIdx uint64) {
+	if n.Sequencer == nil {
+		return
+	}
+	n.ExecEngine.EnqueueDelayedMessages(msgs, firstMsgIdx)
 }
-func (n *ExecutionNode) IsTxHashInOnchainFilter(txHash common.Hash) (bool, error) {
-	return n.ExecEngine.IsTxHashInOnchainFilter(txHash)
+func (n *ExecutionNode) AppendLastSequencedBlock() error {
+	return n.ExecEngine.AppendLastSequencedBlock()
 }
 func (n *ExecutionNode) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
 	return containers.NewReadyPromise(n.ExecEngine.ResultAtMessageIndex(msgIdx))
@@ -776,6 +812,19 @@ func (n *ExecutionNode) Pause() {
 func (n *ExecutionNode) Activate() {
 	if n.Sequencer != nil {
 		n.Sequencer.Activate()
+	}
+}
+
+func (n *ExecutionNode) IsActive() bool {
+	if n.Sequencer != nil {
+		return n.Sequencer.IsActive()
+	}
+	return false
+}
+
+func (n *ExecutionNode) SetActiveUntil(deadline time.Time) {
+	if n.Sequencer != nil {
+		n.Sequencer.SetActiveUntil(deadline)
 	}
 }
 
@@ -867,9 +916,9 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 
 		var isActiveFunc func() bool
 		if n.Sequencer != nil {
+			s := n.Sequencer
 			isActiveFunc = func() bool {
-				pause, forwarder := n.Sequencer.GetPauseAndForwarder()
-				return pause == nil && forwarder == nil
+				return s.IsActive()
 			}
 		}
 
@@ -905,4 +954,8 @@ func (n *ExecutionNode) InitializeTimeboost(ctx context.Context, chainConfig *pa
 	}
 
 	return nil
+}
+
+func (n *ExecutionNode) WaitingForFilteredTx(t *testing.T) ([]common.Hash, bool) {
+	return n.ExecEngine.WaitingForFilteredTx(t)
 }

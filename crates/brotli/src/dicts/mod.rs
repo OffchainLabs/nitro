@@ -29,15 +29,21 @@ unsafe extern "C" {
     ) -> usize;
 }
 
-/// Forces a type to implement [`Sync`].
-struct ForceSync<T>(T);
+/// Forces a type to implement [`Sync`] and [`Send`].
+/// Only used to wrap static dictionary pointers (`*const EncoderPreparedDictionary`)
+/// which point to immutable, process-lifetime data initialized once via `lazy_static`.
+struct ForceSyncSend<T>(T);
 
-unsafe impl<T> Sync for ForceSync<T> {}
+// SAFETY: ForceSyncSend only wraps raw pointers to immutable, static dictionary data.
+// The data is initialized once (via lazy_static) and never mutated or freed,
+// so sharing across threads is safe.
+unsafe impl<T> Sync for ForceSyncSend<T> {}
+unsafe impl<T> Send for ForceSyncSend<T> {}
 
 lazy_static! {
     /// Memoizes dictionary preperation.
-    static ref STYLUS_PROGRAM_DICT: ForceSync<*const EncoderPreparedDictionary> =
-        ForceSync(unsafe {
+    static ref STYLUS_PROGRAM_DICT: ForceSyncSend<*const EncoderPreparedDictionary> =
+        ForceSyncSend(unsafe {
             let data = Dictionary::StylusProgram.slice().unwrap();
             let dict = BrotliEncoderPrepareDictionary(
                 BrotliSharedDictionaryType::Raw,
