@@ -16,10 +16,10 @@ arb-storage = { workspace = true }
 alloy-primitives = { workspace = true, features = ["std", "serde"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-walkdir = "2"
+walkdir = { workspace = true }
 thiserror = { workspace = true }
 hex = { workspace = true }
-ureq = { version = "2", default-features = false }
+ureq = { workspace = true }
 
 [features]
 # Opt-in feature for fixtures that drive a release `arb-reth` binary

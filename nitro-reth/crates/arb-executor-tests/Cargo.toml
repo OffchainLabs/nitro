@@ -26,7 +26,7 @@ alloy-rlp = { workspace = true }
 reth-evm = { workspace = true }
 reth-chainspec = { workspace = true }
 revm = { workspace = true }
-k256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+k256 = { workspace = true }
 
 [dev-dependencies]
 arb-context = { workspace = true }

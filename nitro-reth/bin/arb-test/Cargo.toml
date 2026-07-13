@@ -22,7 +22,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 hex = { workspace = true }
-ureq = { version = "2", default-features = false, features = ["json", "tls"] }
+ureq = { workspace = true, features = ["json", "tls"] }
 
 [lints]
 workspace = true

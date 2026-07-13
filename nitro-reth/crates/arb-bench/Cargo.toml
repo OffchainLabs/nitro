@@ -21,7 +21,7 @@ arb-storage = { workspace = true }
 arb-stylus = { workspace = true }
 arb-test-utils = { workspace = true }
 arbos = { workspace = true }
-arb-executor-tests = { path = "../arb-executor-tests" }
+arb-executor-tests = { workspace = true }
 
 alloy-consensus = { workspace = true, features = ["k256"] }
 alloy-eips = { workspace = true }
@@ -37,31 +37,30 @@ clap = { workspace = true }
 eyre = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true }
-serde_json = "1"
-sha2 = "0.10"
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { workspace = true }
 
 # Bootstrap CI + synthetic generators + prewarm alloc
-rand = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
-rand_chacha = "0.3"
+rand = { workspace = true }
+rand_chacha = { workspace = true }
 
 # Process info for RSS
-sysinfo = { version = "0.32", default-features = false, features = ["system"] }
+sysinfo = { workspace = true }
 
 # CPU time syscalls
-libc = "0.2"
+libc = { workspace = true }
 
 # Reporting
-csv = "1"
-chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+csv = { workspace = true }
+chrono = { workspace = true }
 
 # Frozen-corpus fetcher
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking", "stream"] }
-tar = "0.4"
-zstd = "0.13"
-url = "2"
+reqwest = { workspace = true }
+tar = { workspace = true }
+zstd = { workspace = true }
+url = { workspace = true }
 
 # RPC capture
 tokio = { workspace = true }
@@ -70,13 +69,13 @@ tokio = { workspace = true }
 base64 = { workspace = true }
 
 # Stylus WASM assembly at generate-time
-wat = "1.0"
-brotli = { version = "7", default-features = false, features = ["std"] }
+wat = { workspace = true }
+brotli = { workspace = true }
 tiny-keccak = { workspace = true }
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
-tempfile = "3"
+criterion = { workspace = true }
+tempfile = { workspace = true }
 
 [[bench]]
 name = "block_executor"

@@ -76,7 +76,7 @@ crossbeam-channel = { workspace = true }
 eyre = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
-futures-util = "0.3"
+futures-util = { workspace = true }
 parking_lot = { workspace = true }
 rayon = { workspace = true }
 rustc-hash = { workspace = true }
@@ -84,7 +84,7 @@ revm = { workspace = true }
 revm-database = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tokio-stream = "0.1"
+tokio-stream = { workspace = true }
 tracing = { workspace = true }
 
 [lints]

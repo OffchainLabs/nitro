@@ -23,7 +23,7 @@ alloy-rlp = { workspace = true }
 revm = { workspace = true }
 revm-database = { workspace = true }
 
-k256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+k256 = { workspace = true }
 
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -31,12 +31,12 @@ thiserror = { workspace = true }
 hex = { workspace = true }
 
 # Sync JSON-RPC client (no async dep here; mirrors arb-spec-tests choice)
-ureq = { version = "2", default-features = false, features = ["json"] }
+ureq = { workspace = true, features = ["json"] }
 
 # Mock L1 server backend (kept lightweight; reused by spec tests)
-axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio"] }
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "net", "sync", "time"] }
-base64 = "0.22"
+axum = { workspace = true }
+tokio = { workspace = true }
+base64 = { workspace = true }
 
 [lints]
 workspace = true
