@@ -3179,6 +3179,10 @@ func TestUnderfundedRetryableFilteredBeneficiaryDoesNotHalt(t *testing.T) {
 	require.True(t, arbmath.BigEquals(filteredBalance, common.Big0), "filtered address should not receive any funds")
 }
 
+// retryableSenderAccount is a dedicated L1 account used by tests that filter
+// the retryable submission's L1 sender.
+const retryableSenderAccount = "RetryableSender"
+
 // A retryable already in the onchain filter must resolve with ErrFilteredOnChain
 // even when its submission fails early (e.g. underfunded max submission fee),
 // otherwise the delayed sequencer re-halts on the same hash forever.
@@ -3191,9 +3195,9 @@ func TestOnchainFilteredUnderfundedRetryableResolves(t *testing.T) {
 
 	builder := p.builder
 
-	builder.L1Info.GenerateAccount("RetryableSender")
-	builder.L1.TransferBalance(t, "Faucet", "RetryableSender", big.NewInt(1e18), builder.L1Info)
-	senderAddr := builder.L1Info.GetAddress("RetryableSender")
+	builder.L1Info.GenerateAccount(retryableSenderAccount)
+	builder.L1.TransferBalance(t, "Faucet", retryableSenderAccount, big.NewInt(1e18), builder.L1Info)
+	senderAddr := builder.L1Info.GetAddress(retryableSenderAccount)
 
 	builder.L2Info.GenerateAccount("Destination")
 	destAddr := builder.L2Info.GetAddress("Destination")
@@ -3204,7 +3208,7 @@ func TestOnchainFilteredUnderfundedRetryableResolves(t *testing.T) {
 	filter := newHashedChecker([]common.Address{senderAddr, arbosutil.RemapL1Address(senderAddr)})
 	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
 
-	_, l2Tx := submitUnsafeRetryableViaL1(t, p, "RetryableSender", destAddr, big.NewInt(1), common.Big0, big.NewInt(1e16), destAddr, destAddr)
+	_, l2Tx := submitUnsafeRetryableViaL1(t, p, retryableSenderAccount, destAddr, big.NewInt(1), common.Big0, big.NewInt(1e16), destAddr, destAddr)
 	ticketId := l2Tx.Hash()
 
 	advanceL1ForDelayed(t, ctx, builder)
@@ -3352,10 +3356,10 @@ func setupFilteredL1SenderRetryableTest(t *testing.T, ctx context.Context) (*ret
 	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
 	builder := p.builder
 
-	builder.L1Info.GenerateAccount("RetryableSender")
+	builder.L1Info.GenerateAccount(retryableSenderAccount)
 	// submitRetryableViaL1 deposits 1e24 wei, so fund the sender beyond that
-	builder.L1.TransferBalance(t, "Faucet", "RetryableSender", arbmath.BigMul(big.NewInt(2e12), big.NewInt(1e12)), builder.L1Info)
-	senderAddr := builder.L1Info.GetAddress("RetryableSender")
+	builder.L1.TransferBalance(t, "Faucet", retryableSenderAccount, arbmath.BigMul(big.NewInt(2e12), big.NewInt(1e12)), builder.L1Info)
+	senderAddr := builder.L1Info.GetAddress(retryableSenderAccount)
 
 	builder.L2Info.GenerateAccount("Destination")
 	destAddr := builder.L2Info.GetAddress("Destination")
@@ -3381,7 +3385,7 @@ func TestRetryableSubmissionFilteredL1SenderHalts(t *testing.T) {
 
 	builder := p.builder
 
-	_, ticketId := submitRetryableViaL1WithGasLimit(t, p, "RetryableSender", destAddr, common.Big0, destAddr, destAddr, nil, common.Big0)
+	_, ticketId := submitRetryableViaL1WithGasLimit(t, p, retryableSenderAccount, destAddr, common.Big0, destAddr, destAddr, nil, common.Big0)
 
 	advanceL1ForDelayed(t, ctx, builder)
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{ticketId}, 10*time.Second)
@@ -3411,7 +3415,7 @@ func TestRetryableWithAutoRedeemFilteredL1SenderHaltsOnce(t *testing.T) {
 
 	builder := p.builder
 
-	_, ticketId := submitRetryableViaL1(t, p, "RetryableSender", destAddr, common.Big0, destAddr, destAddr, nil)
+	_, ticketId := submitRetryableViaL1(t, p, retryableSenderAccount, destAddr, common.Big0, destAddr, destAddr, nil)
 
 	advanceL1ForDelayed(t, ctx, builder)
 	// waitForDelayedSequencerHaltOnHashes requires the halt state to be exactly
