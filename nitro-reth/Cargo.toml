@@ -26,7 +26,7 @@ members = [
     "bin/arb-test",
 ]
 exclude = ["brotli"]
-resolver = "2"
+resolver = "3"
 
 [workspace.package]
 authors = ["0xBloctopus", "Offchain Labs"]
