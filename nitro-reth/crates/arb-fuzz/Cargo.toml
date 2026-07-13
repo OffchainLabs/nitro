@@ -1,11 +1,13 @@
 [package]
 name = "arb-fuzz"
-version.workspace = true
+authors.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
-publish = false
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
 description = "Fuzz targets for arbreth: tx/receipt decoding plus differential vs Nitro reference."
+publish = false
 
 [package.metadata]
 cargo-fuzz = true

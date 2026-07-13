@@ -1,9 +1,11 @@
 [package]
 name = "arbos"
-version.workspace = true
+authors.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
 
 [dependencies]
 arb-alloy-consensus = { workspace = true }

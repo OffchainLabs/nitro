@@ -1,9 +1,11 @@
 [package]
 name = "arb-executor-tests"
-version.workspace = true
+authors.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
 description = "Internal-API tests for the Arbitrum block executor and supporting components."
 
 [dependencies]

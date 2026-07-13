@@ -1,9 +1,11 @@
 [package]
 name = "arb-parent-chain-client"
-version.workspace = true
+authors.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
 
 [dependencies]
 async-trait.workspace = true

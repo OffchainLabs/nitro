@@ -29,10 +29,12 @@ exclude = ["brotli"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.5"
+authors = ["0xBloctopus", "Offchain Labs"]
 edition = "2024"
-rust-version = "1.93"
 license = "BUSL-1.1"
+repository = "https://github.com/OffchainLabs/arbitrum-reth"
+rust-version = "1.93"
+version = "0.1.5"
 
 [workspace.dependencies]
 # Internal crates

@@ -1,9 +1,11 @@
 [package]
 name = "arb-test-utils"
-version.workspace = true
+authors.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
 description = "Test fixtures and harness for arbreth crates"
 
 [dependencies]

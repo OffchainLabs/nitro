@@ -1,9 +1,11 @@
 [package]
 name = "arb-test-harness"
-version.workspace = true
+authors.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
 description = "Shared test orchestration for arbreth: spawn nodes, build L1 messages, capture state, diff dual-exec runs against Nitro reference."
 
 [dependencies]
