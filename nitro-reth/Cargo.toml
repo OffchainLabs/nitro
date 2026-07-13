@@ -3,6 +3,7 @@ members = [
     "crates/arb-primitives",
     "crates/arb-chainspec",
     "crates/arb-context",
+    "crates/arb-da-provider-client",
     "crates/arb-math",
     "crates/arb-parent-chain-client",
     "crates/arb-storage",
@@ -41,6 +42,7 @@ version = "0.1.5"
 arb-primitives = { path = "crates/arb-primitives" }
 arb-chainspec = { path = "crates/arb-chainspec" }
 arb-context = { path = "crates/arb-context" }
+arb-da-provider-client = { path = "crates/arb-da-provider-client" }
 arb-math = { path = "crates/arb-math" }
 arb-storage = { path = "crates/arb-storage" }
 arb-storage-errors = { path = "crates/arb-storage-errors" }
