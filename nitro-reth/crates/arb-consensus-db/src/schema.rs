@@ -3,20 +3,64 @@ use alloy_rlp::{RlpDecodable, RlpDecodableWrapper, RlpEncodable, RlpEncodableWra
 
 use crate::{
     ConsensusDbError, Result,
-    kv::KeyBuf,
+    kv::{self, KeyBuf},
     rlp::{NilList, NilString},
 };
 
 pub const CURRENT_VERSION: u64 = 2;
 
-/// Stored value in the key-value store.
+/// Describes where a value lives in the key-value store and which value type is
+/// stored there. Positional keys carry a `u64` position; fixed keys carry none.
+pub trait ConsensusDbKey {
+    type StoredValue: ConsensusDbValue;
+    fn key(&self) -> kv::KeyBuf;
+}
+
+/// A value stored in the key-value store, along with how it (de)serializes.
 ///
 /// RLP encoding may be implemented using the [`rlp_value`] macro.
-pub trait StoredValue: Sized {
-    const PREFIX: &[u8];
+pub trait ConsensusDbValue: Sized {
     fn encode(&self) -> Vec<u8>;
     fn decode(bytes: &[u8]) -> Result<Self>;
 }
+
+/// Implements [`ConsensusDbKey`] for a positional key: `prefix ++ big-endian(pos)`,
+/// where `pos` is the key's single `u64` field.
+macro_rules! prefix_key {
+    ($key:ty[$prefix:expr] => $val:ty) => {
+        impl ConsensusDbKey for $key {
+            type StoredValue = $val;
+
+            fn key(&self) -> kv::KeyBuf {
+                let prefix = $prefix;
+                let pos_bytes = self.0.to_be_bytes();
+                let mut key = Vec::with_capacity(prefix.len() + pos_bytes.len());
+                key.extend_from_slice(prefix);
+                key.extend_from_slice(&pos_bytes);
+                key
+            }
+        }
+    };
+}
+
+/// Implements [`ConsensusDbValue`] via RLP (the default encoding).
+macro_rules! rlp_value {
+    ($ty:ty) => {
+        impl ConsensusDbValue for $ty {
+            fn encode(&self) -> Vec<u8> {
+                alloy_rlp::encode(self)
+            }
+
+            fn decode(bytes: &[u8]) -> Result<Self> {
+                Ok(alloy_rlp::decode_exact(bytes)?)
+            }
+        }
+    };
+}
+
+// `s`: sequencer batch metadata.
+#[derive(Debug)]
+pub struct BatchMetadataAt(pub u64);
 
 #[derive(Debug, RlpEncodable, RlpDecodable)]
 pub struct BatchMetadata {
@@ -26,11 +70,21 @@ pub struct BatchMetadata {
     pub parent_chain_block: u64,
 }
 
+prefix_key!(BatchMetadataAt[SEQUENCER_BATCH_META_PREFIX] => BatchMetadata);
+rlp_value!(BatchMetadata);
+
+// `m`: L2 message.
+#[derive(Debug)]
+pub struct MessageWithMetadataAt(pub u64);
+
 #[derive(Debug, RlpEncodable, RlpDecodable)]
 pub struct MessageWithMetadata {
     pub message: L1IncomingMessage,
     pub delayed_messages_read: u64,
 }
+
+prefix_key!(MessageWithMetadataAt[MESSAGE_PREFIX] => MessageWithMetadata);
+rlp_value!(MessageWithMetadata);
 
 #[derive(Debug, RlpEncodable, RlpDecodable)]
 #[rlp(trailing)]
@@ -47,7 +101,8 @@ pub struct L1IncomingMessageHeader {
     pub poster: Address,
     pub block_number: u64,
     pub timestamp: u64,
-    // TODO: can omit NilList if byte-compatibility is not needed
+    // go stores this with `rlp:"nilList"`; it is nil for every sequencer L2 message,
+    // so `NilList` is required for byte-compatibility (do not replace with `B256`).
     pub request_id: NilList<B256>,
     pub l1_base_fee: U256,
 }
@@ -58,23 +113,41 @@ pub struct BatchDataStats {
     pub non_zeros: u64,
 }
 
+// `r`: message execution result.
+#[derive(Debug)]
+pub struct MessageResultAt(pub u64);
+
 #[derive(Debug, RlpEncodable, RlpDecodable)]
 pub struct MessageResult {
     pub block_hash: B256,
     pub send_root: B256,
 }
 
+prefix_key!(MessageResultAt[MESSAGE_RESULT_PREFIX] => MessageResult);
+rlp_value!(MessageResult);
+
+// `b`: block hash received through the input feed.
+#[derive(Debug)]
+pub struct BlockHashDbValueAt(pub u64);
+
 #[derive(Debug, RlpEncodable, RlpDecodable)]
 pub struct BlockHashDbValue {
     pub block_hash: NilString<B256>,
 }
 
+prefix_key!(BlockHashDbValueAt[BLOCK_HASH_INPUT_FEED_PREFIX] => BlockHashDbValue);
+rlp_value!(BlockHashDbValue);
+
+// `t`: block metadata byte array, stored verbatim (no RLP).
+#[derive(Debug)]
+pub struct BlockMetadataAt(pub u64);
+
 #[derive(Debug)]
 pub struct BlockMetadata(pub Vec<u8>);
 
-impl StoredValue for BlockMetadata {
-    const PREFIX: &[u8] = BLOCK_METADATA_INPUT_FEED_PREFIX;
+prefix_key!(BlockMetadataAt[BLOCK_METADATA_INPUT_FEED_PREFIX] => BlockMetadata);
 
+impl ConsensusDbValue for BlockMetadata {
     fn encode(&self) -> Vec<u8> {
         self.0.clone()
     }
@@ -84,12 +157,16 @@ impl StoredValue for BlockMetadata {
     }
 }
 
+// `x`: presence marker for a message whose block metadata is missing (empty value).
+#[derive(Debug)]
+pub struct MissingBlockMetadataAt(pub u64);
+
 #[derive(Debug)]
 pub struct MissingBlockMetadata;
 
-impl StoredValue for MissingBlockMetadata {
-    const PREFIX: &[u8] = MISSING_BLOCK_METADATA_INPUT_FEED_PREFIX;
+prefix_key!(MissingBlockMetadataAt[MISSING_BLOCK_METADATA_INPUT_FEED_PREFIX] => MissingBlockMetadata);
 
+impl ConsensusDbValue for MissingBlockMetadata {
     fn encode(&self) -> Vec<u8> {
         Vec::new()
     }
@@ -99,14 +176,20 @@ impl StoredValue for MissingBlockMetadata {
     }
 }
 
+// `p`: parent chain block number, stored as raw big-endian u64 (not RLP).
+#[derive(Debug)]
+pub struct ParentChainBlockAt(pub u64);
+
 #[derive(Debug)]
 pub struct ParentChainBlock(pub u64);
 
-impl StoredValue for ParentChainBlock {
-    const PREFIX: &[u8] = PARENT_CHAIN_BLOCK_NUMBER_PREFIX;
+prefix_key!(ParentChainBlockAt[PARENT_CHAIN_BLOCK_NUMBER_PREFIX] => ParentChainBlock);
+
+impl ConsensusDbValue for ParentChainBlock {
     fn encode(&self) -> Vec<u8> {
         self.0.to_be_bytes().to_vec()
     }
+
     fn decode(bytes: &[u8]) -> Result<Self> {
         Ok(Self(u64::from_be_bytes(
             bytes
@@ -115,28 +198,16 @@ impl StoredValue for ParentChainBlock {
         )))
     }
 }
+
+// `a`: first sequencer batch sequence number at a given delayed count (RLP u64).
+#[derive(Debug)]
+pub struct DelayedSequencedAt(pub u64);
+
 #[derive(Debug, RlpEncodableWrapper, RlpDecodableWrapper)]
 pub struct DelayedSequenced(pub u64);
 
-macro_rules! rlp_value {
-    ($ty:ty => $prefix:expr) => {
-        impl StoredValue for $ty {
-            const PREFIX: &[u8] = $prefix;
-            fn encode(&self) -> Vec<u8> {
-                alloy_rlp::encode(self)
-            }
-            fn decode(bytes: &[u8]) -> Result<Self> {
-                Ok(alloy_rlp::decode_exact(bytes)?)
-            }
-        }
-    };
-}
-
-rlp_value!(BatchMetadata => SEQUENCER_BATCH_META_PREFIX);
-rlp_value!(MessageWithMetadata => MESSAGE_PREFIX);
-rlp_value!(MessageResult => MESSAGE_RESULT_PREFIX);
-rlp_value!(BlockHashDbValue => BLOCK_HASH_INPUT_FEED_PREFIX);
-rlp_value!(DelayedSequenced => DELAYED_SEQUENCED_PREFIX);
+prefix_key!(DelayedSequencedAt[DELAYED_SEQUENCED_PREFIX] => DelayedSequenced);
+rlp_value!(DelayedSequenced);
 
 /// Maps a message sequence number to a message
 pub const MESSAGE_PREFIX: &[u8] = b"m";

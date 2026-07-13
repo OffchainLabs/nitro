@@ -17,8 +17,13 @@ impl<S: kv::KvStore> MelDb<S> {
         })
     }
 
-    pub fn get<T: schema::MelStoredValue>(&self, pos: u64) -> Result<Option<T>> {
+    pub fn get<K: schema::MelDbKey>(&self, key: K) -> Result<Option<K::StoredValue>> {
         self.consensus_db
-            .get_at_key(&schema::key::<T>(pos, self.initial_batch_count))
+            .get_at_key(&key.mel_key(self.initial_batch_count))
+    }
+
+    pub fn put<K: schema::MelDbKey>(&mut self, key: K, value: &K::StoredValue) -> Result<()> {
+        self.consensus_db
+            .put_at_key(&key.mel_key(self.initial_batch_count), value)
     }
 }

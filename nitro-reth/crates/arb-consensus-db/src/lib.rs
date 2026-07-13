@@ -2,6 +2,8 @@ pub mod kv;
 pub mod rlp;
 pub mod schema;
 
+use schema::ConsensusDbValue;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ConsensusDbError {
     #[error("rlp decode error: {0}")]
@@ -38,13 +40,12 @@ impl<S: kv::KvStore> ConsensusDb<S> {
         Ok(db)
     }
 
-    pub fn get<T: schema::StoredValue>(&self, pos: u64) -> Result<Option<T>> {
-        self.get_at_key(&schema::key(T::PREFIX, pos))
+    pub fn get<K: schema::ConsensusDbKey>(&self, key: K) -> Result<Option<K::StoredValue>> {
+        self.get_at_key(&key.key())
     }
 
-    pub fn put<T: schema::StoredValue>(&mut self, pos: u64, value: &T) -> Result<()> {
-        let bytes = value.encode();
-        self.put_raw(&schema::key(T::PREFIX, pos), bytes)
+    pub fn put<K: schema::ConsensusDbKey>(&mut self, key: K, value: &K::StoredValue) -> Result<()> {
+        self.put_raw(&key.key(), value.encode())
     }
 
     pub fn message_count(&self) -> Result<Option<u64>> {
@@ -111,9 +112,13 @@ impl<S: kv::KvStore> ConsensusDb<S> {
         Ok(())
     }
 
-    pub fn get_at_key<T: schema::StoredValue>(&self, key: kv::Key) -> Result<Option<T>> {
+    pub fn get_at_key<V: schema::ConsensusDbValue>(&self, key: kv::Key) -> Result<Option<V>> {
         let bytes = self.get_raw(key)?;
-        bytes.as_deref().map(T::decode).transpose()
+        bytes.as_deref().map(V::decode).transpose()
+    }
+
+    pub fn put_at_key<V: schema::ConsensusDbValue>(&mut self, key: kv::Key, value: &V) -> Result<()> {
+        self.put_raw(key, value.encode())
     }
 
     /// Get raw bytes from the key-value store.

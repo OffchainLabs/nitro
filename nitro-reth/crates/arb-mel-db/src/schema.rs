@@ -1,14 +1,33 @@
 use arb_consensus_db::{
-    kv,
-    schema::{BatchMetadata, StoredValue},
+    kv::KeyBuf,
+    schema::{self, BatchMetadataAt, ConsensusDbKey},
 };
 
-pub trait MelStoredValue: StoredValue {
-    const MEL_PREFIX: Option<&[u8]> = None;
+/// A key accessible through [`MelDb`](crate::MelDb).
+///
+/// Extends [`ConsensusDbKey`] with boundary-aware key construction: values that
+/// have a legacy/MEL split override [`MelDbKey::mel_key`] to dispatch on the
+/// boundary; everything else uses the default, which forwards straight through to
+/// the underlying consensus-db key.
+pub trait MelDbKey: ConsensusDbKey {
+    /// Build the key, given the legacy/MEL boundary (`initial batch/delayed count`).
+    /// Default: pass straight through to the base [`ConsensusDbKey::key`].
+    fn mel_key(&self, _init: u64) -> KeyBuf {
+        self.key()
+    }
 }
 
-impl MelStoredValue for BatchMetadata {
-    const MEL_PREFIX: Option<&[u8]> = Some(MEL_SEQUENCER_BATCH_META_PREFIX);
+/// `s`/`q`: batch metadata is stored under the legacy prefix below the boundary
+/// and the MEL prefix at or above it.
+impl MelDbKey for BatchMetadataAt {
+    fn mel_key(&self, init: u64) -> KeyBuf {
+        let prefix = if self.0 < init {
+            schema::SEQUENCER_BATCH_META_PREFIX
+        } else {
+            MEL_SEQUENCER_BATCH_META_PREFIX
+        };
+        schema::key(prefix, self.0)
+    }
 }
 
 /// Maps a parent chain block number to its computed MEL state
@@ -22,12 +41,3 @@ pub const MEL_SEQUENCER_BATCH_META_PREFIX: &[u8] = b"q";
 pub const HEAD_MEL_STATE_BLOCK_NUM_KEY: &[u8] = b"_headMelStateBlockNum";
 /// Contains the initial MEL state's parent chain block number (legacy/MEL boundary)
 pub const INITIAL_MEL_STATE_BLOCK_NUM_KEY: &[u8] = b"_initialMelStateBlockNum";
-
-pub fn key<T: MelStoredValue>(pos: u64, init: u64) -> kv::KeyBuf {
-    let prefix = if pos < init {
-        T::PREFIX
-    } else {
-        T::MEL_PREFIX.unwrap_or(T::PREFIX)
-    };
-    arb_consensus_db::schema::key(prefix, pos)
-}
