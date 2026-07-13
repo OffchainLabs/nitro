@@ -21,7 +21,7 @@ func TestSequenceTransactionsMutexReleasedOnPanic(t *testing.T) {
 				t.Error("expected a panic but got none")
 			}
 		}()
-		_, _, _ = engine.SequenceTransactions(nil, nil, nil)
+		_, _, _ = engine.SequenceTransactions(nil, nil)
 	}()
 
 	// The mutex must be unlocked after the panic is recovered upstream.

@@ -6,7 +6,6 @@ package arbtest
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
@@ -1510,7 +1509,7 @@ func SendSignedTxesInBatchViaL1(
 	Require(t, err)
 	usertxopts := l1info.GetDefaultTransactOpts("User", ctx)
 
-	wraped, err := l2MessageBatchDataFromTxes(delayedTxes)
+	wraped, err := gethexec.L2MessageBatchDataFromTxes(delayedTxes)
 	Require(t, err)
 	l1tx, err := delayedInboxContract.SendL2Message(&usertxopts, wraped)
 	Require(t, err)
@@ -1525,23 +1524,6 @@ func SendSignedTxesInBatchViaL1(
 		receipts = append(receipts, receipt)
 	}
 	return receipts
-}
-
-func l2MessageBatchDataFromTxes(txes types.Transactions) ([]byte, error) {
-	var l2Message []byte
-	l2Message = append(l2Message, arbos.L2MessageKind_Batch)
-	sizeBuf := make([]byte, 8)
-	for _, tx := range txes {
-		txBytes, err := tx.MarshalBinary()
-		if err != nil {
-			return nil, err
-		}
-		binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes))+1)
-		l2Message = append(l2Message, sizeBuf...)
-		l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
-		l2Message = append(l2Message, txBytes...)
-	}
-	return l2Message, nil
 }
 
 func SendSignedTxViaL1(
@@ -3014,9 +2996,8 @@ func sequenceTransactions(
 	builder *NodeBuilder,
 	header *arbostypes.L1IncomingMessageHeader,
 	hooks *gethexec.FullSequencingHooks,
-	timeboostedTxs map[common.Hash]struct{},
 ) (*types.Block, []error) {
-	sequencedMsg, block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks, timeboostedTxs)
+	sequencedMsg, block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks)
 	Require(t, err)
 	if sequencedMsg == nil {
 		Fatal(t, "sequencedMsg is nil")
@@ -3040,7 +3021,7 @@ func sequenceTransactionsInTheSameBlock(
 	sequencer.Pause()
 	defer sequencer.Activate()
 	header, hooks := sequencer.MakeSameBlockSequencingHooksAndHeaderForTest(t, txes)
-	block, txErrors := sequenceTransactions(t, builder, header, hooks, nil)
+	block, txErrors := sequenceTransactions(t, builder, header, hooks)
 	sequencer.DispatchPendingFilteredTxReportsForTest(t)
 	return block, txErrors
 }

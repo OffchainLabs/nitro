@@ -201,7 +201,7 @@ func checkPrecheckerReportFields(t *testing.T, ctx context.Context, builder *Nod
 }
 
 // TestPrecheckerFilterDirectAddress verifies the forwarder's prechecker rejects txs sent to/from a
-// filtered address (Scenario 1: preTxFilter via from/to) AND emits a matching report.
+// filtered address (Scenario 1: PreTxFilter via from/to) AND emits a matching report.
 func TestPrecheckerFilterDirectAddress(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -305,7 +305,7 @@ func TestPrecheckerFilterDisabled(t *testing.T) {
 }
 
 // TestPrecheckerFilterEvents verifies the forwarder's prechecker catches txs whose execution emits
-// events referencing filtered addresses (Scenario 2: postTxFilter via EventFilter rule) AND emits a
+// events referencing filtered addresses (Scenario 2: PostTxFilter via EventFilter rule) AND emits a
 // matching report.
 func TestPrecheckerFilterEvents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
