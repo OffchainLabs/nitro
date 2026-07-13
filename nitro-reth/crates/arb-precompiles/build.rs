@@ -1,4 +1,4 @@
-use std::{env, fs, path::PathBuf};
+use std::{env, fs, io, path::PathBuf};
 
 const INTERFACES: &str = "nitro-precompile-interfaces";
 const SHARED_TYPES: &str = "ArbMultiGasConstraintsTypes.sol";
@@ -61,31 +61,35 @@ const FILES: &[(&str, &str)] = &[
 // shared library types into the two files that reference them.
 const IMPORTERS: &[&str] = &["ArbGasInfo.sol", "ArbOwner.sol"];
 
-fn main() {
-    let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let manifest =
+        PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, "CARGO_MANIFEST_DIR is not set")
+        })?);
     let gen_root = manifest.join(GEN_DIR);
-    fs::create_dir_all(&gen_root).unwrap();
+    fs::create_dir_all(&gen_root)?;
 
     for (src_rel, dest_name) in FILES {
         let src = manifest.join(src_rel);
         println!("cargo:rerun-if-changed={}", src.display());
-        fs::write(gen_root.join(dest_name), strip_natspec(&read(&src))).unwrap();
+        fs::write(
+            gen_root.join(dest_name),
+            strip_natspec(&fs::read_to_string(&src)?),
+        )?;
     }
 
     let shared = manifest.join(INTERFACES).join(SHARED_TYPES);
     println!("cargo:rerun-if-changed={}", shared.display());
-    let shared_body = strip_natspec(&strip_header(&read(&shared)));
+    let shared_body = strip_natspec(&strip_header(&fs::read_to_string(&shared)?));
 
     for f in IMPORTERS {
         let src = manifest.join(INTERFACES).join(f);
         println!("cargo:rerun-if-changed={}", src.display());
-        let body = strip_natspec(&strip_import(&read(&src), SHARED_TYPES));
-        fs::write(gen_root.join(f), format!("{body}\n\n{shared_body}\n")).unwrap();
+        let body = strip_natspec(&strip_import(&fs::read_to_string(&src)?, SHARED_TYPES));
+        fs::write(gen_root.join(f), format!("{body}\n\n{shared_body}\n"))?;
     }
-}
 
-fn read(p: &PathBuf) -> String {
-    fs::read_to_string(p).unwrap_or_else(|e| panic!("read {p:?}: {e}"))
+    Ok(())
 }
 
 fn strip_header(src: &str) -> String {

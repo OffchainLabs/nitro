@@ -19,7 +19,7 @@ use std::{
 
 use alloy_consensus::{BlockHeader, TxReceipt, transaction::TxHashRef};
 use clap::Parser;
-use eyre::WrapErr;
+use eyre::{WrapErr, ensure};
 use reth_chainspec::{EthChainSpec, EthereumHardforks, Hardforks};
 use reth_cli::chainspec::ChainSpecParser;
 use reth_cli_commands::common::{
@@ -84,6 +84,7 @@ impl<C: ChainSpecParser<ChainSpec: EthChainSpec + Hardforks + EthereumHardforks>
         let components = components(provider_factory.chain_spec());
 
         let min_block = self.from;
+        ensure!(min_block > 0, "--from must be at least 1");
         let best_block = DatabaseProviderFactory::database_provider_ro(&provider_factory)?
             .best_block_number()?;
         let mut max_block = best_block;
@@ -114,17 +115,6 @@ impl<C: ChainSpecParser<ChainSpec: EthChainSpec + Hardforks + EthereumHardforks>
                 .sum::<u64>()
         };
 
-        let db_at = {
-            let provider_factory = provider_factory.clone();
-            move |block_number: u64| {
-                StateProviderDatabase(
-                    provider_factory
-                        .history_by_block_number(block_number)
-                        .unwrap(),
-                )
-            }
-        };
-
         let skip_invalid_blocks = self.skip_invalid_blocks;
         let blocks_per_chunk = self.blocks_per_chunk;
         let (stats_tx, mut stats_rx) = mpsc::unbounded_channel();
@@ -140,7 +130,6 @@ impl<C: ChainSpecParser<ChainSpec: EthChainSpec + Hardforks + EthereumHardforks>
             let provider_factory = provider_factory.clone();
             let evm_config = components.evm_config().clone();
             let consensus = components.consensus().clone();
-            let db_at = db_at.clone();
             let stats_tx = stats_tx.clone();
             let info_tx = info_tx.clone();
             let cancellation = cancellation.clone();
@@ -158,8 +147,12 @@ impl<C: ChainSpecParser<ChainSpec: EthChainSpec + Hardforks + EthereumHardforks>
                     }
                     let chunk_end = (chunk_start + blocks_per_chunk).min(max_block);
 
+                    let state_block = chunk_start - 1;
+                    let state_provider = provider_factory
+                        .history_by_block_number(state_block)
+                        .wrap_err_with(|| format!("failed to load state at block {state_block}"))?;
                     let mut state = State::builder()
-                        .with_database(db_at(chunk_start - 1))
+                        .with_database(StateProviderDatabase(state_provider))
                         .with_bundle_update()
                         .build();
 
@@ -201,7 +194,12 @@ impl<C: ChainSpecParser<ChainSpec: EthChainSpec + Hardforks + EthereumHardforks>
                         {
                             let correct_receipts = provider_factory
                                 .receipts_by_block(block.number().into())?
-                                .unwrap();
+                                .ok_or_else(|| {
+                                    eyre::eyre!(
+                                        "receipts for block {} are missing from the local DB",
+                                        block.number()
+                                    )
+                                })?;
 
                             for (i, (receipt, correct_receipt)) in
                                 result.receipts.iter().zip(correct_receipts.iter()).enumerate()
