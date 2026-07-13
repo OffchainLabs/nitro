@@ -33,7 +33,7 @@ jobs:
         arbos: [30, 40, 50, 60]
         config: [default, aggressive-flush, with-pruner, large-cache]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
           submodules: recursive

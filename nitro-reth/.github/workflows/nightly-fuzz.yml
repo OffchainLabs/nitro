@@ -18,7 +18,7 @@ jobs:
     env:
       PROPTEST_CASES: "10000"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
       - name: Install build deps
@@ -42,7 +42,7 @@ jobs:
           - decode_arb_tx_envelope
           - decode_internal_tx
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@nightly
