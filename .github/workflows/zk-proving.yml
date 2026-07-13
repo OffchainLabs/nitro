@@ -1,0 +1,57 @@
+name: ZK CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zk-proving:
+    name: Run tests for ZK-related components and pipelines
+    runs-on: arbitrator-ci
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
+
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
+          pat: ${{ secrets.PRIVATE_REPO_PAT }}
+
+      - name: Setup CI
+        uses: ./.github/actions/ci-setup
+
+      - name: Setup LLVM
+        uses: ZhongRuoyu/setup-llvm@v0
+        with:
+          llvm-version: 21
+
+      - name: Install SP1 toolchain
+        run: make -C crates/sp1 install-sp1
+
+      - name: Build
+        run: make -C crates/sp1 build
+
+      # Clippy runs after build because sp1-builder uses include_elf!(), which requires the SP1 ELF to exist at compile time.
+      - name: Clippy check (SP1 crates)
+        run: cargo clippy -p stylus-compiler-program -p stylus-compiler-runner -- -D warnings -A static_mut_refs -A clippy::too_many_arguments
+
+      - name: Run stylus-compiler-runner compare
+        # Compare compilation consistency between running it natively and in the SP1 execution mode.
+        run: cargo run -p stylus-compiler-runner --release -- compare
+
+      - name: Run stylus-compiler-runner proving
+        # Generate and verify a proof of correct Stylus compilation.
+        run: cargo run -p stylus-compiler-runner --release -- prove

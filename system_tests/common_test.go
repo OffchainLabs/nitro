@@ -6,7 +6,6 @@ package arbtest
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
@@ -118,6 +117,9 @@ type SecondNodeParams struct {
 	initData               *statetransfer.ArbosInitializationInfo
 	addresses              *chaininfo.RollupAddresses
 	useExecutionClientOnly bool
+	// fatalErrChan, when non-nil, replaces the default fatalErrChan and also
+	// suppresses StartWatchChanErr, so the caller owns the channel and must drain it.
+	fatalErrChan chan error
 }
 
 type TestClient struct {
@@ -253,6 +255,7 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	ReadFromTxQueueTimeout:       time.Second, // Dont want this to affect tests
 	MaxRevertGasReject:           params.TxGas + 10000,
 	MaxAcceptableTimestampDelta:  time.Hour,
+	PollInterval:                 50 * time.Millisecond,
 	SenderWhitelist:              []string{},
 	Forwarder:                    DefaultTestForwarderConfig,
 	QueueSize:                    128,
@@ -265,6 +268,7 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
+	ExperimentalPGA:              gethexec.DefaultPGAConfig,
 }
 
 func ExecConfigDefaultNonSequencerTest(t *testing.T, stateScheme string) *gethexec.Config {
@@ -289,7 +293,7 @@ func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 	config.ForwardingTarget = "null"
 	config.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessNone
 	config.ExposeMultiGas = true
-	config.TransactionFiltering.EnableETHCallFilter = false
+	config.TransactionFiltering = gethexec.TestTransactionFilteringConfig
 
 	Require(t, config.Validate())
 
@@ -1258,7 +1262,7 @@ func build2ndNode(
 	var cleanup func()
 	testClient := NewTestClient(ctx)
 	testClient.Client, testClient.ConsensusNode, testClient.ExecNode, cleanup, testClient.ConsensusConfigFetcher, testClient.ExecutionConfigFetcher =
-		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, firstNodeTestClient.ExecNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, parentChainTestClient.L1BlobReader, firstNodeTestClient.ConsensusNode.ParentChain)
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, firstNodeTestClient.ExecNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, parentChainTestClient.L1BlobReader, firstNodeTestClient.ConsensusNode.ParentChain, params.fatalErrChan)
 	testClient.cleanup = cleanup
 
 	testClient.L1BlobReader = parentChainTestClient.L1BlobReader
@@ -1505,7 +1509,7 @@ func SendSignedTxesInBatchViaL1(
 	Require(t, err)
 	usertxopts := l1info.GetDefaultTransactOpts("User", ctx)
 
-	wraped, err := l2MessageBatchDataFromTxes(delayedTxes)
+	wraped, err := gethexec.L2MessageBatchDataFromTxes(delayedTxes)
 	Require(t, err)
 	l1tx, err := delayedInboxContract.SendL2Message(&usertxopts, wraped)
 	Require(t, err)
@@ -1520,23 +1524,6 @@ func SendSignedTxesInBatchViaL1(
 		receipts = append(receipts, receipt)
 	}
 	return receipts
-}
-
-func l2MessageBatchDataFromTxes(txes types.Transactions) ([]byte, error) {
-	var l2Message []byte
-	l2Message = append(l2Message, arbos.L2MessageKind_Batch)
-	sizeBuf := make([]byte, 8)
-	for _, tx := range txes {
-		txBytes, err := tx.MarshalBinary()
-		if err != nil {
-			return nil, err
-		}
-		binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes))+1)
-		l2Message = append(l2Message, sizeBuf...)
-		l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
-		l2Message = append(l2Message, txBytes...)
-	}
-	return l2Message, nil
 }
 
 func SendSignedTxViaL1(
@@ -2424,6 +2411,7 @@ func Create2ndNodeWithConfig(
 	useExecutionClientOnly bool,
 	blobReader containers.Option[daprovider.BlobReader],
 	parentChain *parent.ParentChain,
+	customFatalErrChan chan error,
 ) (*ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, func(), ConfigFetcher[arbnode.Config], ConfigFetcher[gethexec.Config]) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
@@ -2433,7 +2421,10 @@ func Create2ndNodeWithConfig(
 	}
 	Require(t, execConfig.Validate())
 
-	feedErrChan := make(chan error, 10)
+	feedErrChan := customFatalErrChan
+	if feedErrChan == nil {
+		feedErrChan = make(chan error, 10)
+	}
 	parentChainRpcClient := parentChainStack.Attach()
 	parentChainClient := ethclient.NewClient(parentChainRpcClient)
 
@@ -2496,10 +2487,33 @@ func Create2ndNodeWithConfig(
 	Require(t, err)
 
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, chainStack, currentExec, currentNode)
-	Require(t, err)
+	if err != nil {
+		// With a caller-owned fatalErrChan, surface init failure on the channel instead of failing here.
+		if customFatalErrChan != nil {
+			select {
+			case customFatalErrChan <- err:
+			default:
+				t.Fatalf("custom fatal channel full, dropping init error: %v", err)
+			}
+			return nil, currentNode, currentExec, func() {
+				if currentNode != nil {
+					currentNode.StopAndWait()
+				}
+				if currentExec != nil {
+					currentExec.StopAndWait()
+				}
+				if err := chainStack.Close(); err != nil {
+					t.Logf("failed-init cleanup: stack close error: %v", err)
+				}
+			}, consensusConfigFetcher, execConfigFetcher
+		}
+		Require(t, err)
+	}
 	chainClient := ClientForStack(t, chainStack, clientForStackUseHTTP(stackConfig))
 
-	StartWatchChanErr(t, ctx, feedErrChan, currentNode)
+	if customFatalErrChan == nil {
+		StartWatchChanErr(t, ctx, feedErrChan, currentNode)
+	}
 
 	return chainClient, currentNode, currentExec, cleanup, consensusConfigFetcher, execConfigFetcher
 }
@@ -2976,6 +2990,40 @@ func populateMachineDir(t *testing.T, cr *github.ConsensusRelease) string {
 	_, err = io.Copy(replayFile, replayResp.Body)
 	Require(t, err)
 	return machineDir
+}
+func sequenceTransactions(
+	t *testing.T,
+	builder *NodeBuilder,
+	header *arbostypes.L1IncomingMessageHeader,
+	hooks *gethexec.FullSequencingHooks,
+) (*types.Block, []error) {
+	sequencedMsg, block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks)
+	Require(t, err)
+	if sequencedMsg == nil {
+		Fatal(t, "sequencedMsg is nil")
+	}
+	err = builder.L2.ConsensusNode.TxStreamer.WriteSequencedMsg(sequencedMsg)
+	Require(t, err)
+	err = builder.L2.ExecNode.AppendLastSequencedBlock()
+	Require(t, err)
+	return block, hooks.GetTxErrors()
+}
+
+// sequenceTransactionsInTheSameBlock sequences all the given transactions into a
+// single block, using the sequencer's real pre/post tx filters and bypassing the
+// txQueue. It returns the produced block and the per-transaction errors.
+func sequenceTransactionsInTheSameBlock(
+	t *testing.T,
+	builder *NodeBuilder,
+	txes types.Transactions,
+) (*types.Block, []error) {
+	sequencer := builder.L2.ExecNode.Sequencer
+	sequencer.Pause()
+	defer sequencer.Activate()
+	header, hooks := sequencer.MakeSameBlockSequencingHooksAndHeaderForTest(t, txes)
+	block, txErrors := sequenceTransactions(t, builder, header, hooks)
+	sequencer.DispatchPendingFilteredTxReportsForTest(t)
+	return block, txErrors
 }
 
 func waitForTCP(t *testing.T, addr string, timeout time.Duration) {

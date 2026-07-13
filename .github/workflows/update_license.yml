@@ -8,6 +8,7 @@ on:
 jobs:
   update-licenses:
     runs-on: ubuntu-4
+    if: github.event_name != 'schedule' || github.repository == 'OffchainLabs/nitro-private'
     permissions:
       contents: write
       pull-requests: write
@@ -48,7 +49,7 @@ jobs:
           private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
 
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1  # v8.1.1
         with:
           branch: automation/update-licenses
           commit-message: "Update license headers for ${{ github.event.schedule || 'manual trigger' }}"

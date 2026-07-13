@@ -9,7 +9,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/node"
 
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
@@ -45,8 +44,8 @@ func convertError(err error) error {
 		return nil
 	}
 	errStr := err.Error()
-	if strings.Contains(errStr, execution.ErrSequencerInsertLockTaken.Error()) {
-		return execution.ErrSequencerInsertLockTaken
+	if strings.Contains(errStr, execution.ErrRetrySequencer.Error()) {
+		return execution.ErrRetrySequencer
 	}
 	return err
 }
@@ -71,22 +70,6 @@ func (c *ConsensusRPCClient) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageI
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (common.BlockMetadata, error) {
 		var res common.BlockMetadata
 		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_blockMetadataAtMessageIndex", msgIdx)
-		return res, convertError(err)
-	})
-}
-
-func (c *ConsensusRPCClient) WriteMessageFromSequencer(msgIdx arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
-		var res struct{}
-		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_writeMessageFromSequencer", msgIdx, msgWithMeta, msgResult, blockMetadata)
-		return res, convertError(err)
-	})
-}
-
-func (c *ConsensusRPCClient) ExpectChosenSequencer() containers.PromiseInterface[struct{}] {
-	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
-		var res struct{}
-		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_expectChosenSequencer")
 		return res, convertError(err)
 	})
 }
