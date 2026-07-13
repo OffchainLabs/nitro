@@ -121,12 +121,14 @@ func touchAddresses(db *state.StateDB, tx *types.Transaction, sender common.Addr
 	if tx.To() != nil {
 		db.TouchAddress(&filter.FilteredAddressWithReason{Address: *tx.To(), FilterReason: filter.FilterReason{Reason: filter.ReasonTo, EventRuleMatch: nil}})
 	}
-	// For tx types that alias the sender (unsigned contract txs, retryables),
-	// also check the original L1 address. The sender in the tx is already
-	// aliased by the L1 bridge, but the restricted address list contains
-	// original (non-aliased) addresses.
+	// For tx types whose sender is aliased by the L1 bridge, also check the
+	// original L1 address, since the restricted address list contains original
+	// (non-aliased) addresses. Submit retryables and deposits are aliased
+	// unconditionally by the Inbox but are special-cased here rather than added
+	// to DoesTxTypeAlias, which ArbSys.WasMyCallersAddressAliased also relies
+	// on.
 	txType := tx.Type()
-	if arbosutil.DoesTxTypeAlias(&txType) {
+	if arbosutil.DoesTxTypeAlias(&txType) || txType == types.ArbitrumSubmitRetryableTxType || txType == types.ArbitrumDepositTxType {
 		db.TouchAddress(&filter.FilteredAddressWithReason{Address: arbosutil.InverseRemapL1Address(sender), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedFrom, EventRuleMatch: nil}})
 	}
 }
@@ -196,6 +198,12 @@ func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
 		return
 	}
 	originatingTxHash := cascadingErr.OriginatingTx.Hash()
+	// The originating tx may already have been flagged by PostTxFilter (e.g. a
+	// filtered sender is touched by both the submission and its auto-redeem);
+	// don't record it twice.
+	if slices.Contains(f.filteredTxHashes, originatingTxHash) {
+		return
+	}
 	f.filteredTxHashes = append(f.filteredTxHashes, originatingTxHash)
 
 	txRLP, marshalErr := cascadingErr.OriginatingTx.MarshalBinary()

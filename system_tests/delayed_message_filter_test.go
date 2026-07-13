@@ -3341,3 +3341,91 @@ func TestWellFundedRetryableFilteredBeneficiaryOnlyHalts(t *testing.T) {
 	_, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
 	require.False(t, waiting, "sequencer should not be re-halted")
 }
+
+// setupFilteredL1SenderRetryableTest prepares a retryable filter test where
+// only the ORIGINAL L1 sender address is filtered. The submission tx's From is
+// RemapL1Address(sender) (the Inbox aliases retryable senders unconditionally),
+// so the sender can only be caught through de-aliased touches.
+func setupFilteredL1SenderRetryableTest(t *testing.T, ctx context.Context) (*retryableFilterTestParams, common.Address, func()) {
+	t.Helper()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	builder := p.builder
+
+	builder.L1Info.GenerateAccount("RetryableSender")
+	// submitRetryableViaL1 deposits 1e24 wei, so fund the sender beyond that
+	builder.L1.TransferBalance(t, "Faucet", "RetryableSender", arbmath.BigMul(big.NewInt(2e12), big.NewInt(1e12)), builder.L1Info)
+	senderAddr := builder.L1Info.GetAddress("RetryableSender")
+
+	builder.L2Info.GenerateAccount("Destination")
+	destAddr := builder.L2Info.GetAddress("Destination")
+
+	filter := newHashedChecker([]common.Address{senderAddr})
+	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+
+	return p, destAddr, cleanup
+}
+
+// A retryable submitted by a filtered L1 sender halts the delayed sequencer
+// even though the submission tx's From is the aliased address: the filter list
+// contains original L1 addresses, so the de-aliased sender must be touched.
+// Gas limit 0 skips the auto-redeem, whose ArbitrumRetryTx would otherwise
+// also catch the sender (DoesTxTypeAlias covers retry txs); the halt can only
+// come from the submission tx's own de-aliased touch.
+func TestRetryableSubmissionFilteredL1SenderHalts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, destAddr, cleanup := setupFilteredL1SenderRetryableTest(t, ctx)
+	defer cleanup()
+
+	builder := p.builder
+
+	_, ticketId := submitRetryableViaL1WithGasLimit(t, p, "RetryableSender", destAddr, common.Big0, destAddr, destAddr, nil, common.Big0)
+
+	advanceL1ForDelayed(t, ctx, builder)
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{ticketId}, 10*time.Second)
+
+	addTxHashToOnChainFilter(t, ctx, builder, ticketId, p.filtererName)
+	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
+	advanceL1ForDelayed(t, ctx, builder)
+
+	receipt, err := WaitForTx(ctx, builder.L2.Client, ticketId, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status)
+
+	_, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
+	require.False(t, waiting, "sequencer should not be re-halted")
+}
+
+// A well-funded retryable from a filtered L1 sender is flagged by both the
+// submission tx (de-aliased sender touch) and its auto-redeem (cascading
+// rollback), but the delayed sequencer must halt on the ticket hash exactly
+// once, not with a duplicated entry.
+func TestRetryableWithAutoRedeemFilteredL1SenderHaltsOnce(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, destAddr, cleanup := setupFilteredL1SenderRetryableTest(t, ctx)
+	defer cleanup()
+
+	builder := p.builder
+
+	_, ticketId := submitRetryableViaL1(t, p, "RetryableSender", destAddr, common.Big0, destAddr, destAddr, nil)
+
+	advanceL1ForDelayed(t, ctx, builder)
+	// waitForDelayedSequencerHaltOnHashes requires the halt state to be exactly
+	// [ticketId]: a duplicated hash entry fails the length check
+	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{ticketId}, 10*time.Second)
+
+	addTxHashToOnChainFilter(t, ctx, builder, ticketId, p.filtererName)
+	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
+	advanceL1ForDelayed(t, ctx, builder)
+
+	receipt, err := WaitForTx(ctx, builder.L2.Client, ticketId, time.Second*10)
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, receipt.Status)
+
+	_, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
+	require.False(t, waiting, "sequencer should not be re-halted")
+}
