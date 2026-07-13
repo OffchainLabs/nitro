@@ -60,6 +60,9 @@ pub enum MelError {
     #[error("failed to decompress batch payload")]
     BatchDecompressionFailed,
 
+    #[error("failed to parse batch advancing segment")]
+    ParsingAdvancingSegmentFailed,
+
     #[error("unknown error")]
     Unknown,
 }

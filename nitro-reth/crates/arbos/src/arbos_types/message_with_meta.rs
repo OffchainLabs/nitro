@@ -3,7 +3,7 @@ use alloy_primitives::{B256, keccak256};
 use super::incoming_message::L1IncomingMessage;
 
 /// An L1 incoming message with additional metadata.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MessageWithMetadata {
     pub message: L1IncomingMessage,
     pub delayed_messages_read: u64,

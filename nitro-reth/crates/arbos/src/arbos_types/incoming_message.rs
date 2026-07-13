@@ -26,7 +26,7 @@ pub const MAX_L2_MESSAGE_SIZE: usize = 256 * 1024;
 pub const DEFAULT_INITIAL_L1_BASE_FEE: u64 = 50_000_000_000; // 50 Gwei
 
 /// Header of an L1 incoming message.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct L1IncomingMessageHeader {
     pub kind: u8,
     pub poster: Address,
@@ -44,7 +44,7 @@ pub struct BatchDataStats {
 }
 
 /// An L1 incoming message containing the header and L2 payload.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct L1IncomingMessage {
     pub header: L1IncomingMessageHeader,
     pub l2_msg: Vec<u8>,
