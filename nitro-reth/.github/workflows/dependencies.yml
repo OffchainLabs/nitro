@@ -3,6 +3,11 @@ name: dependencies
 on:
   pull_request:
 
+permissions:
+  contents: read
+  # rustsec/audit-check posts its findings as a check run.
+  checks: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}-${{ github.ref }}
   cancel-in-progress: true
@@ -13,16 +18,17 @@ env:
 jobs:
   deny-and-audit:
     name: cargo deny & audit
-    runs-on: ocl-2cpu-8ram-dind
+    runs-on: ocl-8cpu-32ram
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
-      # The dind runner doesn't have cargo installed
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.93
+      - uses: taiki-e/install-action@0abfcd587b70a713fdaa7fb502c885e2112acb15 # v2.75.7
+        with:
+          tool: cargo-deny
       # Advisories are checked separately below via rustsec/audit-check, so
       # this only runs the categories cargo-deny uniquely covers.
-      - uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          command: check bans licenses sources
+      - run: cargo deny check bans licenses sources
       # The ignore list lives in .cargo/audit.toml.
       - uses: rustsec/audit-check@v2
         with:

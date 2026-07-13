@@ -8,6 +8,9 @@ on:
         required: true
         default: "main"
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -30,13 +33,10 @@ jobs:
         arbos: [30, 40, 50, 60]
         config: [default, aggressive-flush, with-pruner, large-cache]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
-          submodules: false
-      - name: Init submodules
-        shell: bash
-        run: git submodule update --init --recursive --depth 1
+          submodules: recursive
       - uses: actions/download-artifact@v8
         with:
           name: bench-release-gate-binaries
