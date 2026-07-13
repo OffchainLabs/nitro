@@ -5,22 +5,24 @@ on:
     - cron: "0 6 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   proptest-heavy:
     name: proptest @ 10000 cases
-    runs-on: ubuntu-latest
+    runs-on: ocl-16cpu-64ram
     env:
       PROPTEST_CASES: "10000"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
-          submodules: false
-      - name: Init submodules
-        shell: bash
-        run: git submodule update --init --recursive --depth 1
+          submodules: recursive
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
       - uses: dtolnay/rust-toolchain@1.93
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -40,19 +42,16 @@ jobs:
           - decode_arb_tx_envelope
           - decode_internal_tx
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
-          submodules: false
-      - name: Init submodules
-        shell: bash
-        run: git submodule update --init --recursive --depth 1
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: fuzz
+          workspaces: crates/arb-fuzz
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-fuzz
       - name: Run fuzz target for 5 minutes
-        working-directory: fuzz
-        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=300
+        working-directory: crates/arb-fuzz
+        run: cargo +nightly fuzz run ${{ matrix.target }} --fuzz-dir . -- -max_total_time=300
