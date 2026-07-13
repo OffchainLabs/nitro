@@ -11,7 +11,6 @@
 //! ```
 //!
 //! The payload's first byte selects an encoding / data-availability strategy.
-//!
 // The parser and its header-byte helpers are a complete, tested port that is not
 // yet wired into a caller; allow dead code until the MEL pipeline consumes it.
 #![allow(dead_code)]
