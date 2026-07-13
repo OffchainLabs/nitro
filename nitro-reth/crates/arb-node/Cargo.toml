@@ -25,7 +25,7 @@ reth-ethereum-cli = { workspace = true }
 serde_json = { workspace = true }
 alloy-consensus = { workspace = true }
 alloy-eips = { workspace = true }
-alloy-evm = { workspace = true, features = ["rpc"] }
+alloy-evm = { workspace = true }
 alloy-primitives = { workspace = true, features = ["map-foldhash"] }
 alloy-rpc-types-engine = { workspace = true }
 alloy-rpc-types-eth = { workspace = true }
@@ -76,10 +76,10 @@ futures-util = { workspace = true }
 parking_lot = { workspace = true }
 rayon = { workspace = true }
 rustc-hash = { workspace = true }
-revm = { workspace = true, features = ["optional_balance_check", "optional_eip3541", "optional_eip3607", "optional_priority_fee_check", "optional_eip7623", "optional_no_base_fee"] }
+revm = { workspace = true }
 revm-database = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["macros", "sync", "time"] }
 tokio-stream = { workspace = true }
 tracing = { workspace = true }
 

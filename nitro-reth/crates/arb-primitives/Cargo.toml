@@ -8,7 +8,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-alloy-primitives = { workspace = true, features = ["std", "rlp", "serde", "map-foldhash"] }
+alloy-primitives = { workspace = true, features = ["std", "rlp", "serde"] }
 alloy-consensus = { workspace = true, features = ["std"] }
 alloy-eips = { workspace = true, features = ["std"] }
 alloy-rlp = { workspace = true, features = ["derive"] }

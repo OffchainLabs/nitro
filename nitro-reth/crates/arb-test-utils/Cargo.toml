@@ -11,8 +11,8 @@ description = "Test fixtures and harness for arbreth crates"
 [dependencies]
 arb-storage = { workspace = true }
 arbos = { workspace = true }
-alloy-primitives = { workspace = true, features = ["std", "map-foldhash"] }
-revm = { workspace = true, features = ["optional_balance_check", "optional_eip3541", "optional_eip3607", "optional_priority_fee_check", "optional_eip7623", "optional_no_base_fee"] }
+alloy-primitives = { workspace = true, features = ["std"] }
+revm = { workspace = true }
 
 [lints]
 workspace = true

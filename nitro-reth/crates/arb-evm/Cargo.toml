@@ -17,10 +17,10 @@ arb-stylus = { workspace = true }
 arb-alloy-consensus = { workspace = true }
 arbos = { workspace = true }
 alloy-rlp = { workspace = true, features = ["derive"] }
-alloy-primitives = { workspace = true, features = ["std", "map-foldhash"] }
+alloy-primitives = { workspace = true, features = ["std"] }
 alloy-consensus = { workspace = true, features = ["std"] }
 alloy-eips = { workspace = true }
-alloy-evm = { workspace = true, features = ["rpc"] }
+alloy-evm = { workspace = true }
 reth-evm = { workspace = true }
 reth-ethereum-primitives = { workspace = true }
 reth-primitives-traits = { workspace = true }

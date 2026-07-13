@@ -12,7 +12,7 @@ description = "JSON-fixture conformance tests for arbreth"
 arb-test-utils = { workspace = true }
 arb-test-harness = { workspace = true }
 arbos = { workspace = true }
-alloy-primitives = { workspace = true, features = ["std", "serde", "map-foldhash"] }
+alloy-primitives = { workspace = true, features = ["std", "serde"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 walkdir = { workspace = true }

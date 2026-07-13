@@ -19,8 +19,8 @@ arb-test-utils = { workspace = true }
 arb-executor-tests = { workspace = true }
 
 alloy-eips = { workspace = true }
-alloy-evm = { workspace = true, features = ["rpc"] }
-alloy-primitives = { workspace = true, features = ["std", "k256", "serde", "map-foldhash"] }
+alloy-evm = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std", "k256", "serde"] }
 
 reth-chainspec = { workspace = true }
 reth-evm = { workspace = true }
@@ -49,7 +49,7 @@ csv = { workspace = true }
 chrono = { workspace = true, features = ["clock", "serde"] }
 
 # Frozen-corpus fetcher
-reqwest = { workspace = true, features = ["rustls-tls", "blocking", "stream"] }
+reqwest = { workspace = true, features = ["rustls-tls", "blocking", "stream", "json"] }
 
 # Subprocess runner
 base64 = { workspace = true }

@@ -9,7 +9,7 @@ version.workspace = true
 
 [dependencies]
 arb-primitives = { workspace = true }
-alloy-primitives = { workspace = true, features = ["std", "map-foldhash"] }
+alloy-primitives = { workspace = true, features = ["std"] }
 alloy-eips = { workspace = true }
 alloy-rlp = { workspace = true, features = ["derive"] }
 alloy-rpc-types-engine = { workspace = true }

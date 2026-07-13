@@ -13,7 +13,7 @@ arb-node = { workspace = true }
 arb-primitives = { workspace = true }
 arbos = { workspace = true }
 
-alloy-primitives = { workspace = true, features = ["std", "serde", "k256", "map-foldhash"] }
+alloy-primitives = { workspace = true, features = ["std", "serde", "k256"] }
 alloy-consensus = { workspace = true, features = ["std", "k256"] }
 alloy-eips = { workspace = true, features = ["std"] }
 
@@ -30,7 +30,7 @@ ureq = { workspace = true, features = ["json"] }
 
 # Mock L1 server backend (kept lightweight; reused by spec tests)
 axum = { workspace = true, features = ["http1", "json", "tokio"] }
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["net", "rt-multi-thread", "sync"] }
 base64 = { workspace = true }
 
 [lints]

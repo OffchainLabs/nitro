@@ -18,7 +18,7 @@ arbos = { workspace = true }
 arb-primitives = { workspace = true }
 arb-test-harness = { workspace = true }
 arb-alloy-consensus = { workspace = true }
-alloy-primitives = { workspace = true, features = ["arbitrary", "map-foldhash"] }
+alloy-primitives = { workspace = true, features = ["arbitrary"] }
 alloy-eips = { workspace = true, default-features = true }
 
 arbitrary = { workspace = true, features = ["derive"] }
