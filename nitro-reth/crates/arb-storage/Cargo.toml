@@ -9,9 +9,9 @@ version.workspace = true
 
 [dependencies]
 arb-storage-errors = { workspace = true }
-alloy-evm = { workspace = true }
-alloy-primitives = { workspace = true, features = ["std"] }
-revm = { workspace = true }
+alloy-evm = { workspace = true, features = ["rpc"] }
+alloy-primitives = { workspace = true, features = ["std", "map-foldhash"] }
+revm = { workspace = true, features = ["optional_balance_check", "optional_eip3541", "optional_eip3607", "optional_priority_fee_check", "optional_eip7623", "optional_no_base_fee"] }
 revm-database = { workspace = true }
 revm-state = { workspace = true }
 tracing = { workspace = true }

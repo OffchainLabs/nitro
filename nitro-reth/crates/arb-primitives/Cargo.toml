@@ -8,16 +8,16 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-alloy-primitives = { workspace = true, features = ["std", "rlp", "serde"] }
+alloy-primitives = { workspace = true, features = ["std", "rlp", "serde", "map-foldhash"] }
 alloy-consensus = { workspace = true, features = ["std"] }
 alloy-eips = { workspace = true, features = ["std"] }
-alloy-rlp = { workspace = true }
+alloy-rlp = { workspace = true, features = ["derive"] }
 arb-alloy-consensus = { workspace = true }
 arb-alloy-predeploys = { workspace = true }
 reth-primitives-traits = { workspace = true, features = ["serde-bincode-compat"] }
 reth-codecs = { workspace = true }
 reth-db-api = { workspace = true }
-serde = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 bytes = { workspace = true }
 
 [dev-dependencies]

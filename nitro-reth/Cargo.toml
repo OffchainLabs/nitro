@@ -114,15 +114,15 @@ reth-trie-parallel = { git = "https://github.com/paradigmxyz/reth.git", rev = "2
 reth-metrics = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
 
 # Alloy
-alloy-primitives = { version = "1.5", default-features = false, features = ["map-foldhash"] }
+alloy-primitives = { version = "1.5", default-features = false }
 alloy-consensus = { version = "1.7", default-features = false }
 alloy-eips = { version = "1.7", default-features = false }
-alloy-evm = { version = "0.27", features = ["rpc"] }
+alloy-evm = { version = "0.27" }
 alloy-rpc-types-eth = { version = "1.7" }
 alloy-genesis = { version = "1.7" }
 alloy-network = { version = "1.7" }
-alloy-provider = { version = "1.7", default-features = false, features = ["reqwest"] }
-alloy-rlp = { version = "0.3", features = ["derive"] }
+alloy-provider = { version = "1.7", default-features = false }
+alloy-rlp = { version = "0.3" }
 alloy-rpc-client = { version = "1.7" }
 alloy-rpc-types-engine = { version = "1.7" }
 alloy-rpc-types-trace = { version = "1.7" }
@@ -131,14 +131,7 @@ alloy-sol-types = { version = "1.5" }
 alloy-transport = { version = "1.7" }
 
 # Revm
-revm = { version = "34.0", features = [
-    "optional_balance_check",
-    "optional_eip3541",
-    "optional_eip3607",
-    "optional_priority_fee_check",
-    "optional_eip7623",
-    "optional_no_base_fee",
-] }
+revm = { version = "34.0" }
 revm-database = { version = "10.0" }
 revm-database-interface = { version = "9.0" }
 revm-state = { version = "9.0" }
@@ -152,17 +145,17 @@ crossbeam-channel = { version = "0.5" }
 futures = { version = "0.3" }
 c-kzg = { version = "2.1.7" }
 thiserror = { version = "2" }
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1" }
 serde_json = { version = "1" }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1" }
 tracing = { version = "0.1" }
 rustc-hash = { version = "2.1" }
 rayon = { version = "1.11" }
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4" }
 async-trait = { version = "0.1.68" }
 eyre = { version = "0.6" }
 anyhow = { version = "1" }
-derive_more = { version = "2", features = ["full"] }
+derive_more = { version = "2" }
 bytes = { version = "1" }
 parking_lot = { version = "0.12" }
 lazy_static = { version = "1" }
@@ -170,44 +163,44 @@ hex = { version = "0.4" }
 cc = { version = "1" }
 sha2 = { version = "0.11" }
 base64 = { version = "0.22" }
-jsonrpsee = { version = "0.26.0", features = ["macros", "server"] }
+jsonrpsee = { version = "0.26.0" }
 jsonrpsee-http-client = { version = "0.26.0" }
-brotli = { version = "8", default-features = false, features = ["std"] }
-wasmer = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca", default-features = false, features = ["sys", "cranelift"] }
+brotli = { version = "8", default-features = false }
+wasmer = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca", default-features = false }
 wasmer-compiler = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca" }
 wasmer-types = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca" }
-axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio"] }
-chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+axum = { version = "0.7", default-features = false }
+chrono = { version = "0.4", default-features = false }
 csv = { version = "1" }
 futures-util = { version = "0.3" }
-k256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+k256 = { version = "0.13", default-features = false }
 libc = { version = "0.2" }
-rand = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
+rand = { version = "0.8", default-features = false }
 rand_chacha = { version = "0.3" }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking", "stream"] }
-sysinfo = { version = "0.32", default-features = false, features = ["system"] }
+reqwest = { version = "0.12", default-features = false }
+sysinfo = { version = "0.32", default-features = false }
 tokio-stream = { version = "0.1" }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3" }
 ureq = { version = "2", default-features = false }
 walkdir = { version = "2" }
 wat = { version = "1" }
 
 nitro-prover = { package = "prover", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b", default-features = false }
 nitro-arbutil = { package = "arbutil", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b" }
-nitro-brotli = { package = "brotli", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b", features = ["cc_brotli"] }
+nitro-brotli = { package = "brotli", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b" }
 
 # Transitive deps for Nitro crates
-tiny-keccak = { version = "2.0.2", features = ["keccak"] }
+tiny-keccak = { version = "2.0.2" }
 wasmparser = { version = "0.121" }
 
 # Test deps
 rstest = { version = "0.26" }
 proptest = { version = "1" }
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.5" }
 tempfile = { version = "3" }
 
 # Fuzzing
-arbitrary = { version = "1", features = ["derive"] }
+arbitrary = { version = "1" }
 libfuzzer-sys = { version = "0.4" }
 wasm-smith = { version = "0.227" }
 

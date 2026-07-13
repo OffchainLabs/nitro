@@ -14,20 +14,20 @@ arb-chainspec = { workspace = true }
 arb-primitives = { workspace = true }
 
 # Alloy
-alloy-primitives = { workspace = true }
+alloy-primitives = { workspace = true, features = ["map-foldhash"] }
 
 # Wasmer
-wasmer = { workspace = true }
+wasmer = { workspace = true, features = ["sys", "cranelift"] }
 wasmer-compiler = { workspace = true }
 wasmer-types = { workspace = true }
 wasmparser = { workspace = true }
 
 nitro-prover = { workspace = true }
 nitro-arbutil = { workspace = true }
-nitro-brotli = { workspace = true }
+nitro-brotli = { workspace = true, features = ["cc_brotli"] }
 
 # Revm
-revm = { workspace = true }
+revm = { workspace = true, features = ["optional_balance_check", "optional_eip3541", "optional_eip3607", "optional_priority_fee_check", "optional_eip7623", "optional_no_base_fee"] }
 
 # Common
 thiserror = { workspace = true }

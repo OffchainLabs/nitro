@@ -16,17 +16,17 @@ arb-precompiles = { workspace = true }
 arb-stylus = { workspace = true }
 arb-alloy-consensus = { workspace = true }
 arbos = { workspace = true }
-alloy-rlp = { workspace = true }
-alloy-primitives = { workspace = true, features = ["std"] }
+alloy-rlp = { workspace = true, features = ["derive"] }
+alloy-primitives = { workspace = true, features = ["std", "map-foldhash"] }
 alloy-consensus = { workspace = true, features = ["std"] }
 alloy-eips = { workspace = true }
-alloy-evm = { workspace = true }
+alloy-evm = { workspace = true, features = ["rpc"] }
 reth-evm = { workspace = true }
 reth-ethereum-primitives = { workspace = true }
 reth-primitives-traits = { workspace = true }
 reth-chainspec = { workspace = true }
 reth-storage-api = { workspace = true }
-revm = { workspace = true }
+revm = { workspace = true, features = ["optional_balance_check", "optional_eip3541", "optional_eip3607", "optional_priority_fee_check", "optional_eip7623", "optional_no_base_fee"] }
 revm-database = { workspace = true }
 revm-state = { workspace = true }
 alloy-rpc-types-engine = { workspace = true }

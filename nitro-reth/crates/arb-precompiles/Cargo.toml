@@ -18,12 +18,12 @@ arb-storage = { workspace = true }
 arb-storage-errors = { workspace = true }
 arb-stylus = { workspace = true }
 arbos = { workspace = true }
-alloy-primitives = { workspace = true, features = ["std"] }
+alloy-primitives = { workspace = true, features = ["std", "map-foldhash"] }
 alloy-sol-types = { workspace = true }
-alloy-evm = { workspace = true }
+alloy-evm = { workspace = true, features = ["rpc"] }
 alloy-consensus = { workspace = true }
 alloy-eips = { workspace = true }
-revm = { workspace = true }
+revm = { workspace = true, features = ["optional_balance_check", "optional_eip3541", "optional_eip3607", "optional_priority_fee_check", "optional_eip7623", "optional_no_base_fee"] }
 thiserror = { workspace = true }
 
 [dev-dependencies]
@@ -33,7 +33,7 @@ hex = { workspace = true }
 parking_lot = { workspace = true }
 rstest = { workspace = true }
 thiserror = { workspace = true }
-tiny-keccak = { workspace = true }
+tiny-keccak = { workspace = true, features = ["keccak"] }
 
 [lints]
 workspace = true

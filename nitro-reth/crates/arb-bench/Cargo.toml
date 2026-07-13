@@ -19,48 +19,48 @@ arb-test-utils = { workspace = true }
 arb-executor-tests = { workspace = true }
 
 alloy-eips = { workspace = true }
-alloy-evm = { workspace = true }
-alloy-primitives = { workspace = true, features = ["std", "k256", "serde"] }
+alloy-evm = { workspace = true, features = ["rpc"] }
+alloy-primitives = { workspace = true, features = ["std", "k256", "serde", "map-foldhash"] }
 
 reth-chainspec = { workspace = true }
 reth-evm = { workspace = true }
-revm = { workspace = true }
+revm = { workspace = true, features = ["optional_balance_check", "optional_eip3541", "optional_eip3607", "optional_priority_fee_check", "optional_eip7623", "optional_no_base_fee"] }
 
-clap = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
 eyre = { workspace = true }
 hex = { workspace = true }
-serde = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 # Bootstrap CI + synthetic generators + prewarm alloc
-rand = { workspace = true }
+rand = { workspace = true, features = ["std", "std_rng"] }
 rand_chacha = { workspace = true }
 
 # Process info for RSS
-sysinfo = { workspace = true }
+sysinfo = { workspace = true, features = ["system"] }
 
 # CPU time syscalls
 libc = { workspace = true }
 
 # Reporting
 csv = { workspace = true }
-chrono = { workspace = true }
+chrono = { workspace = true, features = ["clock", "serde"] }
 
 # Frozen-corpus fetcher
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["rustls-tls", "blocking", "stream"] }
 
 # Subprocess runner
 base64 = { workspace = true }
 
 # Stylus WASM assembly at generate-time
 wat = { workspace = true }
-brotli = { workspace = true }
-tiny-keccak = { workspace = true }
+brotli = { workspace = true, features = ["std"] }
+tiny-keccak = { workspace = true, features = ["keccak"] }
 
 [dev-dependencies]
-criterion = { workspace = true }
+criterion = { workspace = true, features = ["html_reports"] }
 tempfile = { workspace = true }
 
 [[bench]]

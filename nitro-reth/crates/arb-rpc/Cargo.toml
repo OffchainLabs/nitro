@@ -21,12 +21,12 @@ arbos = { workspace = true }
 arb-evm = { workspace = true }
 alloy-consensus = { workspace = true }
 alloy-eips = { workspace = true }
-alloy-primitives = { workspace = true }
+alloy-primitives = { workspace = true, features = ["map-foldhash"] }
 alloy-rpc-types-eth = { workspace = true }
 alloy-rpc-types-trace = { workspace = true }
 alloy-network = { workspace = true }
 alloy-serde = { workspace = true }
-alloy-evm = { workspace = true }
+alloy-evm = { workspace = true, features = ["rpc"] }
 reth-chainspec = { workspace = true }
 reth-evm = { workspace = true }
 reth-metrics = { workspace = true }
@@ -42,12 +42,12 @@ reth-tasks = { workspace = true }
 reth-storage-api = { workspace = true }
 reth-storage-errors = { workspace = true }
 reth-transaction-pool = { workspace = true }
-jsonrpsee = { workspace = true }
+jsonrpsee = { workspace = true, features = ["macros", "server"] }
 jsonrpsee-http-client = { workspace = true }
 parking_lot = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
 eyre = { workspace = true }
-serde = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }

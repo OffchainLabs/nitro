@@ -13,7 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 arb-node = { workspace = true }
-clap = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
 reth = { workspace = true }
 reth-cli = { workspace = true }
 reth-cli-commands = { workspace = true }
@@ -33,7 +33,7 @@ reth-tracing = { workspace = true }
 alloy-consensus = { workspace = true }
 revm-database = { workspace = true }
 eyre = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
 
 [lints]

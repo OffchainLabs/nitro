@@ -11,9 +11,9 @@ version.workspace = true
 arb-primitives = { workspace = true }
 alloy-consensus = { workspace = true }
 alloy-eips = { workspace = true }
-alloy-primitives = { workspace = true }
+alloy-primitives = { workspace = true, features = ["map-foldhash"] }
 c-kzg = { workspace = true }
-derive_more = { workspace = true }
+derive_more = { workspace = true, features = ["full"] }
 reth-transaction-pool = { workspace = true }
 reth-primitives-traits = { workspace = true }
 

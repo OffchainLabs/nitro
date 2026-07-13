@@ -11,7 +11,7 @@ version.workspace = true
 doctest = false
 
 [dependencies]
-alloy-primitives = { workspace = true, features = ["std"] }
+alloy-primitives = { workspace = true, features = ["std", "map-foldhash"] }
 arb-primitives = { workspace = true }
 arb-storage = { workspace = true }
 arbos = { workspace = true }

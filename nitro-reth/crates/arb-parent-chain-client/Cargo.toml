@@ -18,7 +18,7 @@ alloy-rpc-types-eth.workspace = true
 alloy-transport.workspace = true
 
 [dev-dependencies]
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
 alloy-consensus = { workspace = true }
 alloy-rpc-client = { workspace = true }
 
