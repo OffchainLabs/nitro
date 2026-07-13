@@ -48,48 +48,6 @@ impl<S: kv::KvStore> ConsensusDb<S> {
         self.put_raw(&key.key(), value.encode())
     }
 
-    pub fn message_count(&self) -> Result<Option<u64>> {
-        self.get_rlp(schema::MESSAGE_COUNT_KEY)
-    }
-
-    pub fn set_message_count(&mut self, n: u64) -> Result<()> {
-        self.put_rlp(schema::MESSAGE_COUNT_KEY, n)
-    }
-
-    pub fn delayed_message_count(&self) -> Result<Option<u64>> {
-        self.get_rlp(schema::DELAYED_MESSAGE_COUNT_KEY)
-    }
-
-    pub fn set_delayed_message_count(&mut self, n: u64) -> Result<()> {
-        self.put_rlp(schema::DELAYED_MESSAGE_COUNT_KEY, n)
-    }
-
-    pub fn sequencer_batch_count(&self) -> Result<Option<u64>> {
-        self.get_rlp(schema::SEQUENCER_BATCH_COUNT_KEY)
-    }
-
-    pub fn set_sequencer_batch_count(&mut self, n: u64) -> Result<()> {
-        self.put_rlp(schema::SEQUENCER_BATCH_COUNT_KEY, n)
-    }
-
-    pub fn last_pruned_message(&self) -> Result<u64> {
-        Ok(self.get_rlp(schema::LAST_PRUNED_MESSAGE_KEY)?.unwrap_or(0))
-    }
-
-    pub fn set_last_pruned_message(&mut self, n: u64) -> Result<()> {
-        self.put_rlp(schema::LAST_PRUNED_MESSAGE_KEY, n)
-    }
-
-    pub fn last_pruned_delayed_message(&self) -> Result<u64> {
-        Ok(self
-            .get_rlp(schema::LAST_PRUNED_DELAYED_MESSAGE_KEY)?
-            .unwrap_or(0))
-    }
-
-    pub fn set_last_pruned_delayed_message(&mut self, n: u64) -> Result<()> {
-        self.put_rlp(schema::LAST_PRUNED_DELAYED_MESSAGE_KEY, n)
-    }
-
     /// Check stored schema version, and perform migration to current version.
     fn check_schema_version(&mut self) -> Result<()> {
         let mut version = self.get_schema_version()?;

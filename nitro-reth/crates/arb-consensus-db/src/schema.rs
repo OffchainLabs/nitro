@@ -43,6 +43,19 @@ macro_rules! prefix_key {
     };
 }
 
+/// Implements [`ConsensusDbKey`] for a fixed (non-positional) key.
+macro_rules! fixed_key {
+    ($key:ty[$const_key:expr] => $val:ty) => {
+        impl ConsensusDbKey for $key {
+            type StoredValue = $val;
+
+            fn key(&self) -> kv::KeyBuf {
+                $const_key.to_vec()
+            }
+        }
+    };
+}
+
 /// Implements [`ConsensusDbValue`] via RLP (the default encoding).
 macro_rules! rlp_value {
     ($ty:ty) => {
@@ -101,8 +114,6 @@ pub struct L1IncomingMessageHeader {
     pub poster: Address,
     pub block_number: u64,
     pub timestamp: u64,
-    // go stores this with `rlp:"nilList"`; it is nil for every sequencer L2 message,
-    // so `NilList` is required for byte-compatibility (do not replace with `B256`).
     pub request_id: NilList<B256>,
     pub l1_base_fee: U256,
 }
@@ -208,6 +219,25 @@ pub struct DelayedSequenced(pub u64);
 
 prefix_key!(DelayedSequencedAt[DELAYED_SEQUENCED_PREFIX] => DelayedSequenced);
 rlp_value!(DelayedSequenced);
+
+// Fixed (non-positional) keys. All store an RLP-encoded `u64`.
+#[derive(Debug)]
+pub struct MessageCount;
+#[derive(Debug)]
+pub struct DelayedMessageCount;
+#[derive(Debug)]
+pub struct SequencerBatchCount;
+#[derive(Debug)]
+pub struct LastPrunedMessage;
+#[derive(Debug)]
+pub struct LastPrunedDelayedMessage;
+
+fixed_key!(MessageCount[MESSAGE_COUNT_KEY] => u64);
+fixed_key!(DelayedMessageCount[DELAYED_MESSAGE_COUNT_KEY] => u64);
+fixed_key!(SequencerBatchCount[SEQUENCER_BATCH_COUNT_KEY] => u64);
+fixed_key!(LastPrunedMessage[LAST_PRUNED_MESSAGE_KEY] => u64);
+fixed_key!(LastPrunedDelayedMessage[LAST_PRUNED_DELAYED_MESSAGE_KEY] => u64);
+rlp_value!(u64);
 
 /// Maps a message sequence number to a message
 pub const MESSAGE_PREFIX: &[u8] = b"m";
