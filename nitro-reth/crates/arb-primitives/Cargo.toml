@@ -1,26 +1,24 @@
 [package]
 name = "arb-primitives"
-version.workspace = true
+authors.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
 
 [dependencies]
-alloy-primitives = { workspace = true, features = ["std", "rlp", "serde"] }
 alloy-consensus = { workspace = true, features = ["std"] }
 alloy-eips = { workspace = true, features = ["std"] }
-alloy-rlp = { workspace = true }
-alloy-genesis = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std", "rlp", "serde"] }
+alloy-rlp = { workspace = true, features = ["derive"] }
 arb-alloy-consensus = { workspace = true }
 arb-alloy-predeploys = { workspace = true }
-arb-alloy-util = { workspace = true }
-reth-primitives-traits = { workspace = true, features = ["serde-bincode-compat"] }
+bytes = { workspace = true }
 reth-codecs = { workspace = true }
 reth-db-api = { workspace = true }
-serde = { workspace = true }
-thiserror = { workspace = true }
-derive_more = { workspace = true }
-bytes = { workspace = true }
+reth-primitives-traits = { workspace = true, features = ["serde-bincode-compat"] }
+serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 proptest = { workspace = true }

@@ -1,24 +1,25 @@
 [package]
 name = "arb-parent-chain-client"
-version.workspace = true
+authors.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
 
 [dependencies]
-async-trait.workspace = true
-thiserror.workspace = true
-
-alloy-eips.workspace = true
-alloy-primitives.workspace = true
-alloy-provider.workspace = true
-alloy-rpc-types-eth.workspace = true
-alloy-transport.workspace = true
+alloy-eips = { workspace = true }
+alloy-primitives = { workspace = true }
+alloy-provider = { workspace = true }
+alloy-rpc-types-eth = { workspace = true }
+alloy-transport = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true }
 alloy-consensus = { workspace = true }
 alloy-rpc-client = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [lints]
 workspace = true

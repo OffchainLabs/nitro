@@ -1,20 +1,21 @@
 [package]
 name = "arb-txpool"
-version.workspace = true
+authors.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
 
 [dependencies]
-arb-primitives = { workspace = true }
 alloy-consensus = { workspace = true }
 alloy-eips = { workspace = true }
 alloy-primitives = { workspace = true }
+arb-primitives = { workspace = true }
 c-kzg = { workspace = true }
-derive_more = { workspace = true }
-reth-transaction-pool = { workspace = true }
+derive_more = { workspace = true, features = ["deref"] }
 reth-primitives-traits = { workspace = true }
-thiserror = { workspace = true }
+reth-transaction-pool = { workspace = true }
 
 [lints]
 workspace = true
