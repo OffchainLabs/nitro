@@ -3165,7 +3165,7 @@ func TestUnderfundedRetryableFilteredBeneficiaryDoesNotHalt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, types.ReceiptStatusFailed, receipt.Status)
 
-	_, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
+	_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
 	require.False(t, waiting, "underfunded retryable should not halt the delayed sequencer")
 
 	// No retryable was created
@@ -3223,7 +3223,7 @@ func TestOnchainFilteredUnderfundedRetryableResolves(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, types.ReceiptStatusFailed, receipt.Status)
 
-	_, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
+	_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
 	require.False(t, waiting, "sequencer should not re-halt after onchain filter entry")
 }
 
@@ -3290,7 +3290,7 @@ func TestEscrowFailureRefundToFilteredFeeRefundAddrHalts(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, recipientBalance.Sign() > 0, "redirect address should have received the refund")
 
-	_, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
+	_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
 	require.False(t, waiting, "sequencer should not be re-halted")
 }
 
@@ -3342,7 +3342,7 @@ func TestWellFundedRetryableFilteredBeneficiaryOnlyHalts(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, arbmath.BigEquals(filteredBalance, common.Big0), "filtered address should not receive any funds")
 
-	_, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
+	_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
 	require.False(t, waiting, "sequencer should not be re-halted")
 }
 
@@ -3398,7 +3398,7 @@ func TestRetryableSubmissionFilteredL1SenderHalts(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, types.ReceiptStatusFailed, receipt.Status)
 
-	_, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
+	_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
 	require.False(t, waiting, "sequencer should not be re-halted")
 }
 
@@ -3430,6 +3430,6 @@ func TestRetryableWithAutoRedeemFilteredL1SenderHaltsOnce(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, types.ReceiptStatusFailed, receipt.Status)
 
-	_, waiting := builder.L2.ExecNode.WaitingForFilteredTx(t)
+	_, waiting := builder.L2.ConsensusNode.DelayedSequencer.WaitingForFilteredTx(t)
 	require.False(t, waiting, "sequencer should not be re-halted")
 }
