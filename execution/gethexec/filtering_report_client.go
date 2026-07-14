@@ -6,6 +6,7 @@ package gethexec
 import (
 	"context"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
@@ -15,6 +16,13 @@ import (
 )
 
 const FilteringReportNamespace = "filteringreport"
+
+type ReportProducer string
+
+const (
+	ReportProducerPrechecker ReportProducer = "prechecker"
+	ReportProducerSequencer  ReportProducer = "sequencer"
+)
 
 var (
 	reportFilteredTransactionsCallFailuresCounter = metrics.NewRegisteredCounter(
@@ -56,8 +64,11 @@ func (c *FilteringReportRPCClient) StopAndWait() {
 	c.client.Close()
 }
 
-func (c *FilteringReportRPCClient) ReportFilteredTransactions(reports []addressfilter.FilteredTxReport) containers.PromiseInterface[struct{}] {
+func (c *FilteringReportRPCClient) ReportFilteredTransactions(producer ReportProducer, reports []addressfilter.FilteredTxReport) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
+		for i := range reports {
+			log.Info("filtered tx report", "producer", producer, "report", &reports[i])
+		}
 		err := c.client.CallContext(ctx, nil, FilteringReportNamespace+"_reportFilteredTransactions", reports)
 		if err != nil {
 			reportFilteredTransactionsCallFailuresCounter.Inc(1)
