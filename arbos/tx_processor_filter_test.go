@@ -22,29 +22,8 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
-
-type recordingCheckerState struct {
-	touched []filter.FilteredAddressWithReason
-}
-
-func (r *recordingCheckerState) TouchAddress(t *filter.FilteredAddressWithReason) {
-	r.touched = append(r.touched, *t)
-}
-
-func (r *recordingCheckerState) IsFiltered() (bool, []filter.FilteredAddressRecord) {
-	return false, nil
-}
-
-func (r *recordingCheckerState) countTouches(addr common.Address, reason filter.FilterReasonType) int {
-	count := 0
-	for _, t := range r.touched {
-		if t.Address == addr && t.Reason == reason {
-			count++
-		}
-	}
-	return count
-}
 
 // TestEndTxHookTouchesRefundTo verifies that a redeem's RefundTo address is
 // reported to the address filter exactly once when it receives a refund, and
@@ -101,7 +80,7 @@ func TestEndTxHookTouchesRefundTo(t *testing.T) {
 			_, statedb := arbosState.NewArbosMemoryBackedArbOSStateWithConfig(chainConfig)
 			evm := vm.NewEVM(vm.BlockContext{BaseFee: baseFee}, statedb, chainConfig, vm.Config{})
 
-			checker := &recordingCheckerState{}
+			checker := &testhelpers.RecordingCheckerState{}
 			statedb.SetAddressCheckerState(checker)
 
 			msg := &core.Message{
@@ -142,7 +121,7 @@ func TestEndTxHookTouchesRefundTo(t *testing.T) {
 
 			txProcessor.EndTxHook(gasLeft, multigas.ZeroGas(), tc.success)
 
-			require.Equal(t, tc.expectTouches, checker.countTouches(refundTo, filter.ReasonRetryableRefundTo),
+			require.Equal(t, tc.expectTouches, checker.CountTouches(refundTo, filter.ReasonRetryableRefundTo),
 				"unexpected number of RefundTo touches")
 		})
 	}
