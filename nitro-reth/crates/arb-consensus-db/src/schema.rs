@@ -3,8 +3,12 @@ use alloy_rlp::{RlpDecodable, RlpDecodableWrapper, RlpEncodable, RlpEncodableWra
 
 use crate::{
     ConsensusDbError, Result,
+    codecs::{
+        legacy::{decode_l1_message_wire, encode_l1_message_wire},
+        rlp::{NilList, NilString},
+        strip_accumulator,
+    },
     kv::KeyBuf,
-    rlp::{NilList, NilString},
 };
 
 pub const CURRENT_VERSION: u64 = 2;
@@ -226,8 +230,8 @@ pub struct DelayedSequenced(pub u64);
 prefix_key!(DelayedSequencedAt[DELAYED_SEQUENCED_PREFIX] => DelayedSequenced);
 rlp_value!(DelayedSequenced);
 
-// `e`: legacy delayed message — 32-byte accumulator (AfterInboxAcc) followed by an
-// RLP-encoded L1 message.
+// `e`: delayed message — 32-byte accumulator (AfterInboxAcc) followed by an
+// RLP-encoded L1 message. This is the current format (`d` is the legacy predecessor).
 #[derive(Debug)]
 pub struct RlpDelayedMessageAt(pub u64);
 
@@ -247,9 +251,38 @@ impl ConsensusDbValue for RlpDelayedMessage {
     }
 
     fn decode(bytes: &[u8]) -> Result<Self> {
-        let accumulator =
-            B256::from_slice(bytes.get(..32).ok_or(ConsensusDbError::InvalidStoredValue)?);
-        let message = alloy_rlp::decode_exact(&bytes[32..])?;
+        let (accumulator, rest) = strip_accumulator(bytes)?;
+        let message = alloy_rlp::decode_exact(rest)?;
+        Ok(Self {
+            accumulator,
+            message,
+        })
+    }
+}
+
+// `d`: legacy delayed message — 32-byte accumulator (AfterInboxAcc) followed by the
+// message in Arbitrum's L1 incoming-message wire format (predates the RLP `e` format).
+#[derive(Debug)]
+pub struct LegacyDelayedMessageAt(pub u64);
+
+#[derive(Debug)]
+pub struct LegacyDelayedMessage {
+    pub accumulator: B256,
+    pub message: L1IncomingMessage,
+}
+
+prefix_key!(LegacyDelayedMessageAt[LEGACY_DELAYED_MESSAGE_PREFIX] => LegacyDelayedMessage);
+
+impl ConsensusDbValue for LegacyDelayedMessage {
+    fn encode(&self) -> Vec<u8> {
+        let mut bytes = self.accumulator.to_vec();
+        bytes.extend_from_slice(&encode_l1_message_wire(&self.message));
+        bytes
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        let (accumulator, rest) = strip_accumulator(bytes)?;
+        let message = decode_l1_message_wire(rest)?;
         Ok(Self {
             accumulator,
             message,
