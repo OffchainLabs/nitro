@@ -31,6 +31,27 @@ pub struct ConsensusDb<S> {
     store: S,
 }
 
+/// A batch of typed writes, applied atomically via [`ConsensusDb::write_batch`].
+#[derive(Debug, Default)]
+pub struct ConsensusDbBatch {
+    inner: kv::Batch,
+}
+
+impl ConsensusDbBatch {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn put<K: schema::ConsensusDbKey>(&mut self, key: K, value: &K::StoredValue) {
+        self.inner
+            .put(schema::key(&key), schema::ConsensusDbValue::encode(value));
+    }
+
+    pub fn delete<K: schema::ConsensusDbKey>(&mut self, key: K) {
+        self.inner.delete(schema::key(&key));
+    }
+}
+
 impl<S: kv::KvStore> ConsensusDb<S> {
     pub fn open(store: S) -> Result<Self> {
         let mut db = ConsensusDb { store };
@@ -44,6 +65,11 @@ impl<S: kv::KvStore> ConsensusDb<S> {
 
     pub fn put<K: schema::ConsensusDbKey>(&mut self, key: K, value: &K::StoredValue) -> Result<()> {
         self.put_at_key(&schema::key(&key), value)
+    }
+
+    /// Apply a batch of typed writes atomically.
+    pub fn write_batch(&mut self, batch: ConsensusDbBatch) -> Result<()> {
+        self.write_kv_batch(batch.inner)
     }
 
     /// Iterate all entries under a positional key's prefix, in ascending position order.
