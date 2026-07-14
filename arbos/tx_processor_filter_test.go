@@ -19,6 +19,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -125,4 +126,55 @@ func TestEndTxHookTouchesRefundTo(t *testing.T) {
 				"unexpected number of RefundTo touches")
 		})
 	}
+}
+
+// TestStartTxHookTouchesFeeRefundAddrOnce verifies that a submit-retryable's
+// FeeRefundAddr is reported to the address filter exactly once even when both
+// the submission fee refund transfer and the post-creation touch fire.
+func TestStartTxHookTouchesFeeRefundAddrOnce(t *testing.T) {
+	from := common.HexToAddress("0x1111")
+	feeRefundAddr := common.HexToAddress("0x2222")
+	beneficiary := common.HexToAddress("0x3333")
+	retryValue := big.NewInt(1000)
+	baseFee := big.NewInt(l2pricing.InitialBaseFeeWei)
+	submissionFee := retryables.RetryableSubmissionFee(0, baseFee)
+
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	_, statedb := arbosState.NewArbosMemoryBackedArbOSStateWithConfig(chainConfig)
+	evm := vm.NewEVM(vm.BlockContext{BaseFee: baseFee}, statedb, chainConfig, vm.Config{})
+
+	checker := &testhelpers.RecordingCheckerState{}
+	statedb.SetAddressCheckerState(checker)
+
+	// DepositValue covers retryValue + submissionFee with 1 wei to spare, so
+	// there's a nonzero submissionFeeRefund and the escrow transfer succeeds.
+	depositValue := arbmath.BigAdd(retryValue, arbmath.BigAdd(submissionFee, common.Big1))
+
+	msg := &core.Message{
+		TxRunContext: core.NewMessageReplayContext(),
+		From:         from,
+		GasFeeCap:    baseFee,
+		GasTipCap:    big.NewInt(0),
+	}
+	inner := &types.ArbitrumSubmitRetryableTx{
+		From:             from,
+		L1BaseFee:        baseFee,
+		DepositValue:     depositValue,
+		RetryValue:       retryValue,
+		Beneficiary:      beneficiary,
+		MaxSubmissionFee: arbmath.BigAdd(submissionFee, big.NewInt(5)),
+		FeeRefundAddr:    feeRefundAddr,
+	}
+	msg.Tx = types.NewTx(inner)
+	txProcessor := NewTxProcessor(evm, msg)
+
+	savedEmitTicketCreatedEvent := EmitTicketCreatedEvent
+	EmitTicketCreatedEvent = func(*vm.EVM, [32]byte) error { return nil }
+	defer func() { EmitTicketCreatedEvent = savedEmitTicketCreatedEvent }()
+	_, _, _, _ = txProcessor.StartTxHook()
+
+	require.Equal(t, 1, checker.CountTouches(feeRefundAddr, filter.ReasonRetryableFeeRefund),
+		"unexpected number of FeeRefundAddr touches")
+	require.Equal(t, 1, checker.CountTouches(util.InverseRemapL1Address(feeRefundAddr), filter.ReasonDealiasedRetryableFeeRefund),
+		"unexpected number of de-aliased FeeRefundAddr touches")
 }

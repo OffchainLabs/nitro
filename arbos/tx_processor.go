@@ -335,8 +335,13 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 			statedb.TouchAddress(&filter.FilteredAddressWithReason{Address: addr, FilterReason: filter.FilterReason{Reason: reason, EventRuleMatch: nil}})
 			statedb.TouchAddress(&filter.FilteredAddressWithReason{Address: util.InverseRemapL1Address(addr), FilterReason: filter.FilterReason{Reason: dealiasedReason, EventRuleMatch: nil}})
 		}
+		touchedFeeRefundAddr := false
 		touchFeeRefundAddr := func() {
+			if touchedFeeRefundAddr {
+				return
+			}
 			touch(tx.FeeRefundAddr, filter.ReasonRetryableFeeRefund, filter.ReasonDealiasedRetryableFeeRefund)
+			touchedFeeRefundAddr = true
 		}
 
 		// check that the user has enough balance to pay for the max submission fee
