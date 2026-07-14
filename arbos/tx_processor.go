@@ -753,6 +753,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 			effectiveBaseFee.Cmp(p.evm.Context.BaseFee) == 0 // don't refund retryable estimation
 
 		maxRefund := new(big.Int).Set(inner.MaxRefund)
+		touchedRefundTo := false
 		refund := func(refundFrom common.Address, amount *big.Int, reason tracing.BalanceChangeReason) {
 			const errLog = "fee address doesn't have enough funds to give user refund"
 
@@ -778,6 +779,11 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 				// However, in theory, they could've been transferred out during the redeem attempt.
 				// If the network fee address doesn't have the necessary balance, log an error and don't give a refund.
 				logMissingRefund(err)
+			} else if toRefundAddr.Sign() > 0 && !touchedRefundTo {
+				// Report the refund recipient to the address filter once funds actually
+				// flow to it; the guard keeps duplicate records out of filter reports.
+				p.evm.StateDB.TouchAddress(&filter.FilteredAddressWithReason{Address: inner.RefundTo, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableRefundTo, EventRuleMatch: nil}})
+				touchedRefundTo = true
 			}
 			// Any extra refund can't be given to the fee refund address if it didn't come from the L1 deposit.
 			// Instead, give the refund to the retryable from address.
