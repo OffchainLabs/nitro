@@ -54,4 +54,13 @@ impl KvStore for MemoryKvStore {
             .take_while(move |(k, _)| k.starts_with(prefix))
             .map(|(k, v)| Ok((k.clone(), v.clone())))
     }
+
+    fn delete_range(&mut self, start: Key, end: Key) -> Result<(), Self::Error> {
+        // `extract_if` walks only `[start, end)` and removes in place; it is lazy,
+        // so it must be consumed to take effect.
+        self.values
+            .extract_if(start.to_vec()..end.to_vec(), |_, _| true)
+            .for_each(drop);
+        Ok(())
+    }
 }

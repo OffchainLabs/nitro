@@ -71,6 +71,13 @@ impl<S: kv::KvStore> ConsensusDb<S> {
         self.delete_at_key(&schema::key(&key))
     }
 
+    /// Delete every entry from `from` (inclusive) to `to` (exclusive).
+    pub fn delete_range<K: schema::PositionalKey>(&mut self, from: K, to: K) -> Result<()> {
+        self.store
+            .delete_range(&schema::key(&from), &schema::key(&to))
+            .map_err(ConsensusDbError::from_store)
+    }
+
     /// Apply a batch of typed writes atomically.
     pub fn write_batch(&mut self, batch: ConsensusDbBatch) -> Result<()> {
         self.write_kv_batch(batch.inner)
@@ -80,15 +87,26 @@ impl<S: kv::KvStore> ConsensusDb<S> {
     pub fn iter<K: schema::PositionalKey>(
         &self,
     ) -> impl Iterator<Item = Result<(u64, K::StoredValue)>> + '_ {
-        self.iter_from::<K>(0)
+        self.iter_decoded::<K>(kv::KeyBuf::new())
     }
 
-    /// Iterate entries under a positional key's prefix starting at `start_pos`.
+    /// Iterate entries under a positional key's prefix starting at `from`.
     pub fn iter_from<K: schema::PositionalKey>(
         &self,
-        start_pos: u64,
+        from: K,
     ) -> impl Iterator<Item = Result<(u64, K::StoredValue)>> + '_ {
-        self.store.iter_prefix(K::PREFIX, start_pos.to_be_bytes()).map(|res| {
+        let start = schema::ConsensusDbKey::position(&from)
+            .expect("positional key has a position")
+            .to_be_bytes()
+            .to_vec();
+        self.iter_decoded::<K>(start)
+    }
+
+    fn iter_decoded<K: schema::PositionalKey>(
+        &self,
+        start: kv::KeyBuf,
+    ) -> impl Iterator<Item = Result<(u64, K::StoredValue)>> + '_ {
+        self.store.iter_prefix(K::PREFIX, start).map(|res| {
             let (k, v) = res.map_err(ConsensusDbError::from_store)?;
             let pos = u64::from_be_bytes(
                 k[K::PREFIX.len()..]

@@ -22,6 +22,9 @@ pub trait KvStore {
         prefix: Key,
         start: impl AsRef<[u8]>,
     ) -> impl Iterator<Item = Result<(KeyBuf, Value), Self::Error>>;
+
+    /// Delete every key in the range `[start, end)`.
+    fn delete_range(&mut self, start: Key, end: Key) -> Result<(), Self::Error>;
 }
 
 #[derive(Debug, Default)]
