@@ -6,6 +6,8 @@ package gethexec
 import (
 	"context"
 
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
@@ -16,6 +18,8 @@ import (
 )
 
 const FilteringReportNamespace = "filteringreport"
+
+const maxLoggedReportBytesLen = 256
 
 type ReportProducer string
 
@@ -67,7 +71,7 @@ func (c *FilteringReportRPCClient) StopAndWait() {
 func (c *FilteringReportRPCClient) ReportFilteredTransactions(producer ReportProducer, reports []addressfilter.FilteredTxReport) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
 		for i := range reports {
-			log.Info("filtered tx report", "producer", producer, "report", &reports[i])
+			log.Info("filtered tx report", "producer", producer, "report", reportForLog(&reports[i]))
 		}
 		err := c.client.CallContext(ctx, nil, FilteringReportNamespace+"_reportFilteredTransactions", reports)
 		if err != nil {
@@ -77,4 +81,32 @@ func (c *FilteringReportRPCClient) ReportFilteredTransactions(producer ReportPro
 		}
 		return struct{}{}, err
 	})
+}
+
+func reportForLog(report *addressfilter.FilteredTxReport) addressfilter.FilteredTxReport {
+	logged := *report
+	logged.TxRLP = truncateLoggedBytes(logged.TxRLP)
+	if len(report.FilteredAddresses) > 0 {
+		addresses := make([]filter.FilteredAddressRecord, len(report.FilteredAddresses))
+		copy(addresses, report.FilteredAddresses)
+		for i := range addresses {
+			if addresses[i].EventRuleMatch == nil || addresses[i].EventRuleMatch.RawLog == nil {
+				continue
+			}
+			rawLog := *addresses[i].EventRuleMatch.RawLog
+			rawLog.Data = truncateLoggedBytes(rawLog.Data)
+			eventRuleMatch := *addresses[i].EventRuleMatch
+			eventRuleMatch.RawLog = &rawLog
+			addresses[i].EventRuleMatch = &eventRuleMatch
+		}
+		logged.FilteredAddresses = addresses
+	}
+	return logged
+}
+
+func truncateLoggedBytes(b hexutil.Bytes) hexutil.Bytes {
+	if len(b) > maxLoggedReportBytesLen {
+		return b[:maxLoggedReportBytesLen]
+	}
+	return b
 }
