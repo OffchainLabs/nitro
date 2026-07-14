@@ -18,7 +18,7 @@ use crate::{
     kv::KeyBuf,
 };
 
-pub const CURRENT_VERSION: u64 = 2;
+pub(crate) const CURRENT_VERSION: u64 = 2;
 
 /// Describes where a value lives in the key-value store and which value type is
 /// stored there. Positional keys carry a `u64` position; fixed keys carry none.
@@ -340,39 +340,39 @@ fixed_key!(LastPrunedDelayedMessage[LAST_PRUNED_DELAYED_MESSAGE_KEY] => u64);
 rlp_value!(u64);
 
 /// Maps a message sequence number to a message
-pub const MESSAGE_PREFIX: &[u8] = b"m";
+const MESSAGE_PREFIX: &[u8] = b"m";
 /// Maps a message sequence number to a block hash received through the input feed
-pub const BLOCK_HASH_INPUT_FEED_PREFIX: &[u8] = b"b";
+const BLOCK_HASH_INPUT_FEED_PREFIX: &[u8] = b"b";
 /// Maps a message sequence number to a blockMetaData byte array received through the input feed
-pub const BLOCK_METADATA_INPUT_FEED_PREFIX: &[u8] = b"t";
+const BLOCK_METADATA_INPUT_FEED_PREFIX: &[u8] = b"t";
 /// Maps a message sequence number whose blockMetaData byte array is missing to nil
-pub const MISSING_BLOCK_METADATA_INPUT_FEED_PREFIX: &[u8] = b"x";
+const MISSING_BLOCK_METADATA_INPUT_FEED_PREFIX: &[u8] = b"x";
 /// Maps a message sequence number to a message result
-pub const MESSAGE_RESULT_PREFIX: &[u8] = b"r";
+const MESSAGE_RESULT_PREFIX: &[u8] = b"r";
 /// Maps a delayed sequence number to an accumulator and a message as serialized on L1
-pub const LEGACY_DELAYED_MESSAGE_PREFIX: &[u8] = b"d";
+const LEGACY_DELAYED_MESSAGE_PREFIX: &[u8] = b"d";
 /// Maps a delayed sequence number to an accumulator and an RLP encoded message
-pub const RLP_DELAYED_MESSAGE_PREFIX: &[u8] = b"e";
+const RLP_DELAYED_MESSAGE_PREFIX: &[u8] = b"e";
 /// Maps a delayed sequence number to a parent chain block number
-pub const PARENT_CHAIN_BLOCK_NUMBER_PREFIX: &[u8] = b"p";
+const PARENT_CHAIN_BLOCK_NUMBER_PREFIX: &[u8] = b"p";
 /// Maps a batch sequence number to BatchMetadata
-pub const SEQUENCER_BATCH_META_PREFIX: &[u8] = b"s";
+const SEQUENCER_BATCH_META_PREFIX: &[u8] = b"s";
 /// Maps a delayed message count to the first sequencer batch sequence number with this delayed
 /// count
-pub const DELAYED_SEQUENCED_PREFIX: &[u8] = b"a";
+const DELAYED_SEQUENCED_PREFIX: &[u8] = b"a";
 
 /// Contains the current message count
-pub const MESSAGE_COUNT_KEY: &[u8] = b"_messageCount";
+const MESSAGE_COUNT_KEY: &[u8] = b"_messageCount";
 /// Contains the last pruned message key
-pub const LAST_PRUNED_MESSAGE_KEY: &[u8] = b"_lastPrunedMessageKey";
+const LAST_PRUNED_MESSAGE_KEY: &[u8] = b"_lastPrunedMessageKey";
 /// Contains the last pruned RLP delayed message key
-pub const LAST_PRUNED_DELAYED_MESSAGE_KEY: &[u8] = b"_lastPrunedDelayedMessageKey";
+const LAST_PRUNED_DELAYED_MESSAGE_KEY: &[u8] = b"_lastPrunedDelayedMessageKey";
 /// Contains the current delayed message count
-pub const DELAYED_MESSAGE_COUNT_KEY: &[u8] = b"_delayedMessageCount";
+const DELAYED_MESSAGE_COUNT_KEY: &[u8] = b"_delayedMessageCount";
 /// Contains the current sequencer message count
-pub const SEQUENCER_BATCH_COUNT_KEY: &[u8] = b"_sequencerBatchCount";
+const SEQUENCER_BATCH_COUNT_KEY: &[u8] = b"_sequencerBatchCount";
 /// Contains a uint64 representing the database schema version
-pub const DB_SCHEMA_VERSION: &[u8] = b"_schemaVersion";
+pub(crate) const DB_SCHEMA_VERSION: &[u8] = b"_schemaVersion";
 
 /// Build the full key for `key`: its [`ConsensusDbKey::PREFIX`] followed by its
 /// position as 8 big-endian bytes (or nothing for a fixed key).
@@ -382,4 +382,224 @@ pub fn key<K: ConsensusDbKey>(key: &K) -> KeyBuf {
         keybuf.extend_from_slice(&pos.to_be_bytes());
     }
     keybuf
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::{Address, B256, U256};
+
+    use super::*;
+    use crate::codecs::rlp::{NilList, NilString};
+
+    fn sample_message(
+        request_id: NilList<B256>,
+        legacy_gas: Option<u64>,
+        stats: Option<BatchDataStats>,
+    ) -> L1IncomingMessage {
+        L1IncomingMessage {
+            header: L1IncomingMessageHeader {
+                kind: 3,
+                poster: Address::from([0xAB; 20]),
+                block_number: 10,
+                timestamp: 20,
+                request_id,
+                l1_base_fee: U256::from(50u64),
+            },
+            l2msg: vec![1, 2, 3, 4].into(),
+            legacy_batch_gas_cost: legacy_gas,
+            batch_data_stats: stats,
+        }
+    }
+
+    /// Encode, decode, and re-encode; assert the bytes are stable across the round-trip.
+    fn roundtrip<V: ConsensusDbValue>(v: &V) -> Vec<u8> {
+        let bytes = v.encode();
+        let decoded = V::decode(&bytes).expect("decode");
+        assert_eq!(decoded.encode(), bytes, "re-encode mismatch");
+        bytes
+    }
+
+    /// The key prefix for `K`, callable as `get_prefix::<K>()`.
+    fn get_prefix<K: ConsensusDbKey>() -> &'static [u8] {
+        K::PREFIX
+    }
+
+    /// RLP round-trip for a type that is an RLP field but not a stored value in its own
+    /// right (e.g. [`L1IncomingMessage`], which only appears nested in other values).
+    fn rlp_roundtrip<T: alloy_rlp::Encodable + alloy_rlp::Decodable>(v: &T) {
+        let bytes = alloy_rlp::encode(v);
+        let decoded = alloy_rlp::decode_exact::<T>(&bytes).expect("decode");
+        assert_eq!(alloy_rlp::encode(&decoded), bytes, "re-encode mismatch");
+    }
+
+    #[test]
+    fn current_version_is_two() {
+        assert_eq!(CURRENT_VERSION, 2);
+    }
+
+    #[test]
+    fn positional_prefixes_match_nitro() {
+        assert_eq!(get_prefix::<BatchMetadataAt>(), b"s");
+        assert_eq!(get_prefix::<MessageWithMetadataAt>(), b"m");
+        assert_eq!(get_prefix::<MessageResultAt>(), b"r");
+        assert_eq!(get_prefix::<BlockHashDbValueAt>(), b"b");
+        assert_eq!(get_prefix::<BlockMetadataAt>(), b"t");
+        assert_eq!(get_prefix::<MissingBlockMetadataAt>(), b"x");
+        assert_eq!(get_prefix::<ParentChainBlockAt>(), b"p");
+        assert_eq!(get_prefix::<DelayedSequencedAt>(), b"a");
+        assert_eq!(get_prefix::<RlpDelayedMessageAt>(), b"e");
+        assert_eq!(get_prefix::<LegacyDelayedMessageAt>(), b"d");
+    }
+
+    #[test]
+    fn fixed_key_prefixes_match_nitro() {
+        assert_eq!(get_prefix::<MessageCount>(), b"_messageCount");
+        assert_eq!(get_prefix::<DelayedMessageCount>(), b"_delayedMessageCount");
+        assert_eq!(get_prefix::<SequencerBatchCount>(), b"_sequencerBatchCount");
+        assert_eq!(get_prefix::<LastPrunedMessage>(), b"_lastPrunedMessageKey");
+        assert_eq!(
+            get_prefix::<LastPrunedDelayedMessage>(),
+            b"_lastPrunedDelayedMessageKey"
+        );
+    }
+
+    #[test]
+    fn positional_key_layout() {
+        assert_eq!(
+            key(&MessageWithMetadataAt(0)),
+            [b"m".as_slice(), &[0u8; 8][..]].concat()
+        );
+        assert_eq!(
+            key(&MessageWithMetadataAt(u64::MAX)),
+            [b"m".as_slice(), &[0xffu8; 8][..]].concat()
+        );
+        assert_eq!(
+            key(&BatchMetadataAt(1)),
+            [b"s".as_slice(), &1u64.to_be_bytes()[..]].concat()
+        );
+    }
+
+    #[test]
+    fn fixed_key_layout_has_no_suffix() {
+        assert_eq!(
+            key(&MessageCount),
+            <MessageCount as ConsensusDbKey>::PREFIX
+        );
+    }
+
+    #[test]
+    fn batch_metadata_roundtrips() {
+        roundtrip(&BatchMetadata {
+            accumulator: B256::repeat_byte(1),
+            message_count: 10,
+            delayed_message_count: 3,
+            parent_chain_block: 99,
+        });
+    }
+
+    #[test]
+    fn message_result_roundtrips() {
+        roundtrip(&MessageResult {
+            block_hash: B256::repeat_byte(2),
+            send_root: B256::repeat_byte(3),
+        });
+    }
+
+    #[test]
+    fn block_hash_value_roundtrips_both_variants() {
+        roundtrip(&BlockHashDbValue {
+            block_hash: NilString(Some(B256::repeat_byte(4))),
+        });
+        roundtrip(&BlockHashDbValue {
+            block_hash: NilString(None),
+        });
+    }
+
+    #[test]
+    fn delayed_sequenced_roundtrips() {
+        roundtrip(&DelayedSequenced(7));
+    }
+
+    #[test]
+    fn u64_value_roundtrips() {
+        roundtrip(&0u64);
+        roundtrip(&1u64);
+        roundtrip(&u64::MAX);
+    }
+
+    #[test]
+    fn message_with_metadata_roundtrips() {
+        roundtrip(&MessageWithMetadata {
+            message: sample_message(NilList(Some(B256::repeat_byte(9))), None, None),
+            delayed_messages_read: 5,
+        });
+    }
+
+    #[test]
+    fn l1_message_trailing_optional_combinations() {
+        let id = NilList(Some(B256::repeat_byte(1)));
+        // Valid trailing combos (a later optional cannot be present if an earlier is absent).
+        rlp_roundtrip(&sample_message(id.clone(), None, None));
+        rlp_roundtrip(&sample_message(id.clone(), Some(42), None));
+        rlp_roundtrip(&sample_message(
+            id,
+            Some(42),
+            Some(BatchDataStats {
+                length: 100,
+                non_zeros: 50,
+            }),
+        ));
+    }
+
+    #[test]
+    fn l1_message_nil_request_id_roundtrips() {
+        rlp_roundtrip(&sample_message(NilList(None), None, None));
+    }
+
+    #[test]
+    fn parent_chain_block_is_raw_be8() {
+        let v = ParentChainBlock(0x1122);
+        assert_eq!(v.encode(), 0x1122u64.to_be_bytes().to_vec());
+        roundtrip(&v);
+    }
+
+    #[test]
+    fn parent_chain_block_rejects_wrong_length() {
+        assert!(matches!(
+            ParentChainBlock::decode(&[0u8; 7]),
+            Err(ConsensusDbError::InvalidStoredValue)
+        ));
+    }
+
+    #[test]
+    fn block_metadata_is_verbatim() {
+        let v = BlockMetadata(vec![9, 8, 7]);
+        assert_eq!(v.encode(), vec![9, 8, 7]);
+        roundtrip(&v);
+    }
+
+    #[test]
+    fn missing_block_metadata_is_empty_marker() {
+        assert!(MissingBlockMetadata.encode().is_empty());
+        // decode ignores its input.
+        assert!(MissingBlockMetadata::decode(&[1, 2, 3]).is_ok());
+    }
+
+    #[test]
+    fn rlp_delayed_message_roundtrips() {
+        let bytes = roundtrip(&RlpDelayedMessage {
+            accumulator: B256::repeat_byte(7),
+            message: sample_message(NilList(Some(B256::repeat_byte(9))), None, None),
+        });
+        assert_eq!(&bytes[..32], B256::repeat_byte(7).as_slice());
+    }
+
+    #[test]
+    fn legacy_delayed_message_roundtrips() {
+        let bytes = roundtrip(&LegacyDelayedMessage {
+            accumulator: B256::repeat_byte(8),
+            message: sample_message(NilList(Some(B256::repeat_byte(9))), None, None),
+        });
+        assert_eq!(&bytes[..32], B256::repeat_byte(8).as_slice());
+    }
 }

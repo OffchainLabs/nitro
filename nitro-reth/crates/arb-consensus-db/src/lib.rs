@@ -226,3 +226,146 @@ fn decode_schema_version(bytes: kv::Value) -> Result<u64> {
 fn encode_schema_version(version: u64) -> kv::Value {
     version.to_be_bytes().to_vec()
 }
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::B256;
+
+    use super::*;
+    use crate::{
+        kv::{KvStore, MemoryKvStore},
+        schema::{
+            DB_SCHEMA_VERSION, DelayedMessageCount, MessageCount, MessageResult, MessageResultAt,
+        },
+    };
+
+    fn with_version(version: u64) -> MemoryKvStore {
+        let mut store = MemoryKvStore::new();
+        store
+            .put(DB_SCHEMA_VERSION, version.to_be_bytes().to_vec())
+            .unwrap();
+        store
+    }
+
+    fn result_at(pos: u64) -> MessageResult {
+        MessageResult {
+            block_hash: B256::repeat_byte(pos as u8),
+            send_root: B256::ZERO,
+        }
+    }
+
+    #[test]
+    fn fresh_open_persists_version_two_as_be8() {
+        let db = ConsensusDb::open(MemoryKvStore::new()).unwrap();
+        assert_eq!(
+            db.store.get(DB_SCHEMA_VERSION).unwrap(),
+            Some(2u64.to_be_bytes().to_vec())
+        );
+    }
+
+    #[test]
+    fn open_ratchets_old_versions_to_current() {
+        for seed in [0u64, 1] {
+            let db = ConsensusDb::open(with_version(seed)).unwrap();
+            assert_eq!(
+                db.store.get(DB_SCHEMA_VERSION).unwrap(),
+                Some(2u64.to_be_bytes().to_vec())
+            );
+        }
+    }
+
+    #[test]
+    fn open_current_version_is_noop() {
+        let db = ConsensusDb::open(with_version(2)).unwrap();
+        assert_eq!(
+            db.store.get(DB_SCHEMA_VERSION).unwrap(),
+            Some(2u64.to_be_bytes().to_vec())
+        );
+    }
+
+    #[test]
+    fn open_rejects_unknown_version() {
+        assert!(matches!(
+            ConsensusDb::open(with_version(3)),
+            Err(ConsensusDbError::SchemaVersionMismatch {
+                found: 3,
+                expected: 2
+            })
+        ));
+    }
+
+    #[test]
+    fn open_rejects_malformed_version() {
+        let mut store = MemoryKvStore::new();
+        store.put(DB_SCHEMA_VERSION, vec![1, 2, 3]).unwrap(); // not 8 bytes
+        assert!(matches!(
+            ConsensusDb::open(store),
+            Err(ConsensusDbError::MalformedSchemaVersion)
+        ));
+    }
+
+    #[test]
+    fn typed_put_get_has_delete() {
+        let mut db = ConsensusDb::open(MemoryKvStore::new()).unwrap();
+        assert_eq!(db.get(MessageCount).unwrap(), None);
+        assert!(!db.has(MessageCount).unwrap());
+
+        db.put(MessageCount, &42u64).unwrap();
+        assert_eq!(db.get(MessageCount).unwrap(), Some(42));
+        assert!(db.has(MessageCount).unwrap());
+
+        db.delete(MessageCount).unwrap();
+        assert_eq!(db.get(MessageCount).unwrap(), None);
+    }
+
+    #[test]
+    fn iter_returns_entries_in_position_order() {
+        let mut db = ConsensusDb::open(MemoryKvStore::new()).unwrap();
+        for pos in [2u64, 0, 1] {
+            db.put(MessageResultAt(pos), &result_at(pos)).unwrap();
+        }
+        let got: Vec<(u64, B256)> = db
+            .iter::<MessageResultAt>()
+            .map(|r| {
+                let (pos, v) = r.unwrap();
+                (pos, v.block_hash)
+            })
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (0, B256::repeat_byte(0)),
+                (1, B256::repeat_byte(1)),
+                (2, B256::repeat_byte(2)),
+            ]
+        );
+    }
+
+    #[test]
+    fn iter_from_starts_at_position() {
+        let mut db = ConsensusDb::open(MemoryKvStore::new()).unwrap();
+        for pos in 0u64..4 {
+            db.put(MessageResultAt(pos), &result_at(pos)).unwrap();
+        }
+        let positions: Vec<u64> = db
+            .iter_from::<MessageResultAt>(MessageResultAt(2))
+            .map(|r| r.unwrap().0)
+            .collect();
+        assert_eq!(positions, vec![2, 3]);
+    }
+
+    #[test]
+    fn batch_applies_writes_in_order() {
+        let mut db = ConsensusDb::open(MemoryKvStore::new()).unwrap();
+        db.put(MessageCount, &1u64).unwrap();
+
+        let mut batch = ConsensusDbBatch::new();
+        batch.put(MessageCount, &7u64);
+        batch.put(DelayedMessageCount, &3u64);
+        batch.delete(MessageCount); // put then delete the same key within one batch -> gone
+        db.write_batch(batch).unwrap();
+
+        assert_eq!(db.get(MessageCount).unwrap(), None);
+        assert_eq!(db.get(DelayedMessageCount).unwrap(), Some(3));
+    }
+}

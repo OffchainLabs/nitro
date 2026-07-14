@@ -63,3 +63,53 @@ impl<T: Decodable> Decodable for NilString<T> {
         Ok(Self(Some(T::decode(buf)?)))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::B256;
+    use alloy_rlp::{Decodable, Encodable};
+
+    use super::*;
+
+    fn enc<T: Encodable>(v: &T) -> Vec<u8> {
+        let mut b = Vec::new();
+        v.encode(&mut b);
+        b
+    }
+
+    #[test]
+    fn nil_list_none_is_empty_list_code() {
+        let none: NilList<B256> = NilList(None);
+        assert_eq!(enc(&none), [EMPTY_LIST_CODE]);
+        assert_eq!(NilList::<B256>::decode(&mut &enc(&none)[..]).unwrap(), none);
+    }
+
+    #[test]
+    fn nil_list_some_roundtrips() {
+        let some = NilList(Some(B256::repeat_byte(0xAB)));
+        let bytes = enc(&some);
+        // 32-byte string: 0xa0 header followed by the raw hash.
+        assert_eq!(bytes[0], 0xa0);
+        assert_eq!(&bytes[1..], B256::repeat_byte(0xAB).as_slice());
+        assert_eq!(NilList::<B256>::decode(&mut &bytes[..]).unwrap(), some);
+    }
+
+    #[test]
+    fn nil_string_none_is_empty_string_code() {
+        let none: NilString<B256> = NilString(None);
+        assert_eq!(enc(&none), [EMPTY_STRING_CODE]);
+        assert_eq!(
+            NilString::<B256>::decode(&mut &enc(&none)[..]).unwrap(),
+            none
+        );
+    }
+
+    #[test]
+    fn nil_string_some_roundtrips() {
+        let some = NilString(Some(B256::repeat_byte(0x11)));
+        assert_eq!(
+            NilString::<B256>::decode(&mut &enc(&some)[..]).unwrap(),
+            some
+        );
+    }
+}

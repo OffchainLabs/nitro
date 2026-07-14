@@ -66,3 +66,73 @@ pub fn decode_l1_message_wire(bytes: &[u8]) -> Result<L1IncomingMessage> {
         batch_data_stats: None,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::{Address, B256, U256};
+
+    use super::{WIRE_HEADER_LEN, decode_l1_message_wire, encode_l1_message_wire};
+    use crate::{
+        ConsensusDbError,
+        codecs::rlp::NilList,
+        schema::{L1IncomingMessage, L1IncomingMessageHeader},
+    };
+
+    fn sample() -> L1IncomingMessage {
+        L1IncomingMessage {
+            header: L1IncomingMessageHeader {
+                kind: 3,
+                poster: Address::from([0xAB; 20]),
+                block_number: 0x1122,
+                timestamp: 0x3344,
+                request_id: NilList(Some(B256::repeat_byte(0xCC))),
+                l1_base_fee: U256::from(0x55u64),
+            },
+            l2msg: vec![9, 8, 7].into(),
+            legacy_batch_gas_cost: None,
+            batch_data_stats: None,
+        }
+    }
+
+    #[test]
+    fn wire_layout() {
+        let b = encode_l1_message_wire(&sample());
+        assert_eq!(b.len(), WIRE_HEADER_LEN + 3);
+        assert_eq!(b[0], 3);
+        // poster left-padded into a 32-byte word (address in the low 20 bytes).
+        assert_eq!(&b[1..13], &[0u8; 12][..]);
+        assert_eq!(&b[13..33], &[0xAB; 20][..]);
+        assert_eq!(&b[33..41], &0x1122u64.to_be_bytes()[..]);
+        assert_eq!(&b[41..49], &0x3344u64.to_be_bytes()[..]);
+        assert_eq!(&b[49..81], &[0xCC; 32][..]);
+        assert_eq!(&b[81..113], &U256::from(0x55u64).to_be_bytes::<32>()[..]);
+        assert_eq!(&b[113..], &[9u8, 8, 7][..]);
+    }
+
+    #[test]
+    fn wire_roundtrips() {
+        let bytes = encode_l1_message_wire(&sample());
+        let back = decode_l1_message_wire(&bytes).unwrap();
+        assert_eq!(encode_l1_message_wire(&back), bytes);
+    }
+
+    #[test]
+    fn decode_short_input_errors() {
+        let short = [0u8; WIRE_HEADER_LEN - 1];
+        assert!(matches!(
+            decode_l1_message_wire(&short),
+            Err(ConsensusDbError::InvalidStoredValue)
+        ));
+    }
+
+    #[test]
+    fn decode_populates_zero_request_id_and_base_fee() {
+        // Mirrors Go: parse always sets request_id / l1_base_fee, even when zero
+        // (unlike arbos, which maps zero to None).
+        let bytes = [0u8; WIRE_HEADER_LEN];
+        let msg = decode_l1_message_wire(&bytes).unwrap();
+        assert_eq!(msg.header.request_id, NilList(Some(B256::ZERO)));
+        assert_eq!(msg.header.l1_base_fee, U256::ZERO);
+        assert!(msg.l2msg.is_empty());
+    }
+}

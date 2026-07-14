@@ -18,3 +18,34 @@ pub fn strip_accumulator(bytes: &[u8]) -> Result<(B256, &[u8])> {
     );
     Ok((accumulator, &bytes[32..]))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn splits_accumulator_from_payload() {
+        let mut bytes = vec![0xAA; 32];
+        bytes.extend_from_slice(&[1, 2, 3]);
+        let (acc, rest) = strip_accumulator(&bytes).unwrap();
+        assert_eq!(acc, B256::repeat_byte(0xAA));
+        assert_eq!(rest, &[1, 2, 3]);
+    }
+
+    #[test]
+    fn empty_payload_is_allowed() {
+        let bytes = [0xBB; 32];
+        let (acc, rest) = strip_accumulator(&bytes).unwrap();
+        assert_eq!(acc, B256::repeat_byte(0xBB));
+        assert!(rest.is_empty());
+    }
+
+    #[test]
+    fn short_input_errors() {
+        let bytes = [0u8; 31];
+        assert!(matches!(
+            strip_accumulator(&bytes),
+            Err(ConsensusDbError::InvalidStoredValue)
+        ));
+    }
+}
