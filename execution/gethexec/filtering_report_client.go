@@ -83,6 +83,8 @@ func (c *FilteringReportRPCClient) ReportFilteredTransactions(producer ReportPro
 	})
 }
 
+// reportForLog returns a copy of the report with its unbounded byte fields (the
+// raw transaction and event log data) truncated so log entries stay compact.
 func reportForLog(report *addressfilter.FilteredTxReport) addressfilter.FilteredTxReport {
 	logged := *report
 	logged.TxRLP = truncateLoggedBytes(logged.TxRLP)
