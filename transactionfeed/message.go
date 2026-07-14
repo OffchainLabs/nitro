@@ -53,7 +53,7 @@ type Log struct {
 	Data    string   `json:"data"`
 }
 
-func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *types.Receipt) (*TransactionFeedMessage, error) {
+func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *types.Receipt, collectTips bool) (*TransactionFeedMessage, error) {
 	if tx == nil {
 		return nil, errors.New("nil transaction")
 	}
@@ -72,9 +72,9 @@ func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *type
 		return nil, fmt.Errorf("MarshalBinary for tx %s: %w", tx.Hash().Hex(), err)
 	}
 
-	effectiveGasPrice := receipt.EffectiveGasPrice
-	if effectiveGasPrice == nil {
-		effectiveGasPrice = header.BaseFee
+	effectiveGasPrice := header.BaseFee
+	if collectTips {
+		effectiveGasPrice = tx.EffectiveGasPrice(header.BaseFee)
 	}
 
 	var contractAddress string

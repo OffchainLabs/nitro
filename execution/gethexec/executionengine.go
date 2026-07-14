@@ -233,7 +233,7 @@ func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
 // TxAccepted deliberately does NOT broadcast to the transaction feed. A
 // delayed block is produced atomically from one inbox message and discarded
 // completly if any of its txs is filtered. It's broadcast is handled after block production.
-func (f *DelayedFilteringSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt) {
+func (f *DelayedFilteringSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt, collectTips bool) {
 }
 
 func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
@@ -721,7 +721,7 @@ func (s *ExecutionEngine) ResequenceReorgedMessage(msg *arbostypes.MessageWithMe
 		log.Warn("failed to parse sequencer message found from reorg", "err", err)
 		return nil, nil
 	}
-	hooks := MakeResequencingHooks(txes)
+	hooks := MakeResequencingHooks(txes, s.transactionBroadcaster)
 	sequencedMsg, _, err := s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks)
 	if err != nil {
 		return nil, fmt.Errorf("failed to re-sequence old sequencer message removed by reorg: %w", err)
@@ -1108,8 +1108,10 @@ func (s *ExecutionEngine) broadcastBlockTxs(block *types.Block, receipts types.R
 		return
 	}
 	header := block.Header()
+
+	collectTips := types.DeserializeHeaderExtraInformation(header).CollectTips
 	for i, tx := range block.Transactions() {
-		msg, err := transactionfeed.BuildFeedMessage(header, tx, receipts[i])
+		msg, err := transactionfeed.BuildFeedMessage(header, tx, receipts[i], collectTips)
 		if err != nil {
 			log.Error("Transaction feed: failed to build message", "block", header.Number, "err", err)
 			continue

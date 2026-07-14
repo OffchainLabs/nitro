@@ -707,6 +707,21 @@ func (state *ArbosState) SetCollectTips(collect bool) error {
 	return state.collectTips.Set(val)
 }
 
+func (state *ArbosState) ShouldCollectTips(coinbase common.Address) (bool, error) {
+	if state.arbosVersion == types.ArbosVersionCollectTipsOld {
+		return true, nil
+	}
+
+	collectTips, err := state.CollectTips()
+	if err != nil {
+		return false, err
+	}
+
+	// Delayed-message blocks never collect tips, regardless of the chain-wide setting.
+	// All transactions in a block share the same Coinbase, so this is a block-level property.
+	return collectTips && coinbase == l1pricing.BatchPosterAddress, nil
+}
+
 func (state *ArbosState) Keccak(data ...[]byte) ([]byte, error) {
 	return state.backingStorage.Keccak(data...)
 }

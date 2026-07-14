@@ -17,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -51,21 +50,19 @@ type Server struct {
 	config              ServerConfig
 	listener            net.Listener
 	httpServer          *http.Server
-	register            chan *clientConn
-	unregister          chan *clientConn
-	broadcast           chan []byte
-	clientCount         atomic.Int32
-	wsUpgradeErrHandler *util.EphemeralErrorHandler
-	lastDropLogNanos    atomic.Int64
+	register         chan *clientConn
+	unregister       chan *clientConn
+	broadcast        chan []byte
+	clientCount      atomic.Int32
+	lastDropLogNanos atomic.Int64
 }
 
 func NewServer(config ServerConfig) *Server {
 	return &Server{
-		config:              config,
-		register:            make(chan *clientConn, registerChanBuf),
-		unregister:          make(chan *clientConn, unregisterChanBuf),
-		broadcast:           make(chan []byte, config.BroadcastBuf),
-		wsUpgradeErrHandler: util.NewEphemeralErrorHandler(time.Minute, "", 0),
+		config:     config,
+		register:   make(chan *clientConn, registerChanBuf),
+		unregister: make(chan *clientConn, unregisterChanBuf),
+		broadcast:  make(chan []byte, config.BroadcastBuf),
 	}
 }
 
@@ -101,10 +98,9 @@ func (s *Server) Start(ctx context.Context) error {
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
 	if err != nil {
-		s.wsUpgradeErrHandler.LogLevel(err, log.Warn)("Transaction feed ws upgrade error", "err", err, "remote", r.RemoteAddr)
+		log.Warn("Transaction feed ws upgrade error", "err", err, "remote", r.RemoteAddr)
 		return
 	}
-	s.wsUpgradeErrHandler.Reset()
 
 	cc := &clientConn{
 		conn:       conn,
@@ -173,7 +169,7 @@ func (s *Server) run(ctx context.Context) {
 	defer func() {
 		for cc := range clients {
 			close(cc.out)
-			_ = cc.conn.Close(websocket.StatusGoingAway, "shutting down")
+			_ = cc.conn.CloseNow()
 		}
 		s.clientCount.Store(0)
 		clientsCurrentGauge.Update(0)
@@ -203,7 +199,7 @@ func (s *Server) run(ctx context.Context) {
 					clientsDisconnectedSlow.Inc(1)
 					delete(clients, cc)
 					close(cc.out)
-					_ = cc.conn.Close(websocket.StatusPolicyViolation, "slow consumer")
+					_ = cc.conn.CloseNow()
 					s.clientCount.Add(-1)
 					clientsCurrentGauge.Update(int64(s.clientCount.Load()))
 				}

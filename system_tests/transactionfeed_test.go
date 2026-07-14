@@ -189,6 +189,9 @@ type transactionFeedTestOpts struct {
 	// transaction-filtering machinery: ArbOS v60 and a Filterer /
 	// FundsRecipient registered through ArbOwner.
 	enableFiltering bool
+	// arbosVersion pins the chain's initial ArbOS version when nonzero.
+	// Ignored when enableFiltering is set (which already pins v60).
+	arbosVersion uint64
 	// feedConfig overrides the default test feed config when non-nil. Used by
 	// tests that need a tighter ClientBuf (slow-consumer eviction) etc.
 	feedConfig *transactionfeed.ServerConfig
@@ -238,13 +241,19 @@ func (env *transactionFeedTestEnv) assertFeedExactly(t *testing.T, want map[comm
 	}
 
 	got := env.recorder.counts()
-	// ArbOS internal txs handling
+
 	for h := range got {
 		if _, ok := expected[h]; ok {
 			continue
 		}
-		tx, _, err := builder.L2.Client.TransactionByHash(env.ctx, h)
-		if err == nil && tx.Type() == types.ArbitrumInternalTxType {
+		msgs := env.recorder.messagesFor(h)
+		if len(msgs) == 0 {
+			continue
+		}
+		rawBytes, err := hexutil.Decode(msgs[0].Transaction.RawTx)
+		Require(t, err, "raw_tx hex decode for", h.Hex())
+
+		if len(rawBytes) > 0 && rawBytes[0] == types.ArbitrumInternalTxType {
 			delete(got, h)
 		}
 	}
@@ -285,6 +294,8 @@ func setupTransactionFeedTest(t *testing.T, ctx context.Context, opts transactio
 		builderChain = builderChain.
 			WithArbOSVersion(params.ArbosVersion_60).
 			WithArbOSInit(&params.ArbOSInit{TransactionFilteringEnabled: true})
+	} else if opts.arbosVersion != 0 {
+		builderChain = builderChain.WithArbOSVersion(opts.arbosVersion)
 	}
 	builder := builderChain.DontParalellise()
 
@@ -779,6 +790,82 @@ func TestTransactionFeedDynamicFeeTx(t *testing.T) {
 	}
 
 	env.assertFeedExactly(t, map[common.Hash]int{tx.Hash(): 1})
+}
+
+// TestTransactionFeedEffectiveGasPriceWithTips checks that the feed reports
+// the same effective gas price the RPC receipt derives: the block base fee by
+// default, and base fee plus tip once the chain collects tips.
+func TestTransactionFeedEffectiveGasPriceWithTips(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	env := setupTransactionFeedTest(t, ctx, transactionFeedTestOpts{arbosVersion: params.ArbosVersion_60})
+	defer env.cleanup()
+	builder := env.builder
+
+	tip := big.NewInt(1e9)
+	sendTippedTransfer := func() (*types.Transaction, *types.Receipt) {
+		t.Helper()
+		info := builder.L2Info.GetInfoWithPrivKey("Faucet")
+		baseFee := builder.L2.GetBaseFee(t)
+		gasFeeCap := new(big.Int).Add(new(big.Int).Mul(baseFee, big.NewInt(2)), tip)
+		tx := builder.L2Info.SignTxAs("Faucet", &types.DynamicFeeTx{
+			To:        &info.Address,
+			Gas:       builder.L2Info.TransferGas,
+			GasTipCap: tip,
+			GasFeeCap: gasFeeCap,
+			Value:     big.NewInt(1),
+			Nonce:     info.Nonce.Add(1) - 1,
+		})
+		Require(t, builder.L2.Client.SendTransaction(ctx, tx))
+		receipt, err := builder.L2.EnsureTxSucceeded(tx)
+		Require(t, err)
+		return tx, receipt
+	}
+
+	assertFeedPriceMatchesReceipt := func(tx *types.Transaction, receipt *types.Receipt) *transactionfeed.TransactionFeedMessage {
+		t.Helper()
+		m := env.awaitFeedMessageFor(t, tx.Hash(), 5*time.Second)
+		if want := hexutil.EncodeBig(receipt.EffectiveGasPrice); m.Transaction.Receipt.EffectiveGasPrice != want {
+			t.Fatalf("effective_gas_price mismatch: feed=%s rpc=%s", m.Transaction.Receipt.EffectiveGasPrice, want)
+		}
+		return m
+	}
+
+	// The test node builder enables tip collection at ArbOS v60+, so the
+	// effective price includes the tip.
+	tippedTx, tippedReceipt := sendTippedTransfer()
+	m := assertFeedPriceMatchesReceipt(tippedTx, tippedReceipt)
+	feedPrice, err := hexutil.DecodeBig(m.Transaction.Receipt.EffectiveGasPrice)
+	Require(t, err)
+	feedBaseFee, err := hexutil.DecodeBig(m.Transaction.Receipt.BaseFee)
+	Require(t, err)
+	if want := new(big.Int).Add(feedBaseFee, tip); feedPrice.Cmp(want) != 0 {
+		t.Fatalf("expected base fee + tip = %s with tips enabled, got %s", want, feedPrice)
+	}
+
+	ownerAuth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	collectTipsTx, err := arbOwner.SetCollectTips(&ownerAuth, false)
+	Require(t, err)
+	collectTipsReceipt, err := builder.L2.EnsureTxSucceeded(collectTipsTx)
+	Require(t, err)
+
+	assertFeedPriceMatchesReceipt(collectTipsTx, collectTipsReceipt)
+
+	// With tips dropped, the effective price is the block base fee.
+	untippedPriceTx, untippedReceipt := sendTippedTransfer()
+	m = assertFeedPriceMatchesReceipt(untippedPriceTx, untippedReceipt)
+	if m.Transaction.Receipt.EffectiveGasPrice != m.Transaction.Receipt.BaseFee {
+		t.Fatalf("expected base fee %s with tips disabled, got %s", m.Transaction.Receipt.BaseFee, m.Transaction.Receipt.EffectiveGasPrice)
+	}
+
+	env.assertFeedExactly(t, map[common.Hash]int{
+		tippedTx.Hash():        1,
+		collectTipsTx.Hash():   1,
+		untippedPriceTx.Hash(): 1,
+	})
 }
 
 func TestTransactionFeedSlowConsumerEviction(t *testing.T) {

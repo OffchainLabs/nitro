@@ -60,6 +60,7 @@ func makeZeroTxSizeSequencingHooks(
 	txes types.Transactions,
 	txFilter arbos.TxFilter,
 	blockFilter arbos.BlockFilter,
+	transactionFeedServer transactionBroadcaster,
 ) *FullSequencingHooks {
 	var items []txQueueItem
 	for _, tx := range txes {
@@ -67,14 +68,14 @@ func makeZeroTxSizeSequencingHooks(
 			tx: tx,
 		})
 	}
-	hooks := MakeSequencingHooks(items, math.MaxInt, txFilter, nil)
+	hooks := MakeSequencingHooks(items, math.MaxInt, txFilter, transactionFeedServer)
 	hooks.blockFilter = blockFilter
 	return hooks
 }
 
 // MakeResequencingHooks creates filterless, size-unlimited hooks for re-sequencing reorged txs.
-func MakeResequencingHooks(txes types.Transactions) BlockSequencingHooks {
-	return makeZeroTxSizeSequencingHooks(txes, nil, nil)
+func MakeResequencingHooks(txes types.Transactions, transactionFeedServer transactionBroadcaster) BlockSequencingHooks {
+	return makeZeroTxSizeSequencingHooks(txes, nil, nil, transactionFeedServer)
 }
 
 // MakeZeroTxSizeSequencingHooksForTesting creates sequencing hooks for testing with tx size always zero.
@@ -84,7 +85,7 @@ func MakeZeroTxSizeSequencingHooksForTesting(
 	txFilter arbos.TxFilter,
 	blockFilter arbos.BlockFilter,
 ) *FullSequencingHooks {
-	return makeZeroTxSizeSequencingHooks(txes, txFilter, blockFilter)
+	return makeZeroTxSizeSequencingHooks(txes, txFilter, blockFilter, nil)
 }
 
 func (s *FullSequencingHooks) SequencedTxes() ([]TxResult, error) {
@@ -118,11 +119,11 @@ func (s *FullSequencingHooks) TxFailed(err error) {
 	s.txErrors = append(s.txErrors, err)
 }
 
-func (s *FullSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt) {
+func (s *FullSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt, collectTips bool) {
 	if s.transactionFeedServer == nil {
 		return
 	}
-	msg, err := transactionfeed.BuildFeedMessage(header, tx, receipt)
+	msg, err := transactionfeed.BuildFeedMessage(header, tx, receipt, collectTips)
 	if err != nil {
 		log.Error("Transaction feed: failed to build message", "block", header.Number, "err", err)
 		return
