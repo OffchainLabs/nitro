@@ -1,7 +1,14 @@
+//! Typed access to Nitro's consensus database — the classic (non-MEL) `arbitrumdata`
+//! schema — layered over a generic [`kv::KvStore`] backend.
+//!
+//! [`ConsensusDb`] offers typed reads and writes keyed by [`schema`] descriptors. On-disk
+//! key and value encodings are byte-compatible with Nitro, so the two can share a schema.
+
 pub mod codecs;
 pub mod kv;
 pub mod schema;
 
+/// Errors returned by [`ConsensusDb`] operations.
 #[derive(Debug, thiserror::Error)]
 pub enum ConsensusDbError {
     #[error("rlp decode error: {0}")]
@@ -24,53 +31,39 @@ impl ConsensusDbError {
     }
 }
 
+/// Result alias defaulting the error type to [`ConsensusDbError`].
 pub type Result<T, E = ConsensusDbError> = std::result::Result<T, E>;
 
+/// A typed handle to the consensus database, backed by a [`kv::KvStore`].
 #[derive(Debug)]
 pub struct ConsensusDb<S> {
     store: S,
 }
 
-/// A batch of typed writes, applied atomically via [`ConsensusDb::write_batch`].
-#[derive(Debug, Default)]
-pub struct ConsensusDbBatch {
-    inner: kv::Batch,
-}
-
-impl ConsensusDbBatch {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn put<K: schema::ConsensusDbKey>(&mut self, key: K, value: &K::StoredValue) {
-        self.inner
-            .put(schema::key(&key), schema::ConsensusDbValue::encode(value));
-    }
-
-    pub fn delete<K: schema::ConsensusDbKey>(&mut self, key: K) {
-        self.inner.delete(schema::key(&key));
-    }
-}
-
 impl<S: kv::KvStore> ConsensusDb<S> {
+    /// Open the database over `store`, checking (and migrating) the schema version.
     pub fn open(store: S) -> Result<Self> {
         let mut db = ConsensusDb { store };
         db.check_schema_version()?;
         Ok(db)
     }
 
+    /// Read the typed value stored at `key`, or `None` if absent.
     pub fn get<K: schema::ConsensusDbKey>(&self, key: K) -> Result<Option<K::StoredValue>> {
         self.get_at_key(&schema::key(&key))
     }
 
+    /// Return whether a value is stored at `key`.
     pub fn has<K: schema::ConsensusDbKey>(&self, key: K) -> Result<bool> {
         self.has_at_key(&schema::key(&key))
     }
 
+    /// Write `value` at `key`, overwriting any existing value.
     pub fn put<K: schema::ConsensusDbKey>(&mut self, key: K, value: &K::StoredValue) -> Result<()> {
         self.put_at_key(&schema::key(&key), value)
     }
 
+    /// Delete `key` if present (a no-op otherwise).
     pub fn delete<K: schema::ConsensusDbKey>(&mut self, key: K) -> Result<()> {
         self.delete_at_key(&schema::key(&key))
     }
@@ -106,6 +99,7 @@ impl<S: kv::KvStore> ConsensusDb<S> {
         self.iter_decoded::<K>(start)
     }
 
+    /// Iterate a prefix from `start`, decoding each entry into its position and value.
     fn iter_decoded<K: schema::PositionalKey>(
         &self,
         start: kv::KeyBuf,
@@ -143,15 +137,18 @@ impl<S: kv::KvStore> ConsensusDb<S> {
         Ok(())
     }
 
+    /// Read and decode the value at a raw, pre-built key, or `None` if absent.
     pub fn get_at_key<V: schema::ConsensusDbValue>(&self, key: kv::Key) -> Result<Option<V>> {
         let bytes = self.get_raw(key)?;
         bytes.as_deref().map(V::decode).transpose()
     }
 
+    /// Return whether a value is stored at a raw, pre-built key.
     pub fn has_at_key(&self, key: kv::Key) -> Result<bool> {
         self.store.has(key).map_err(ConsensusDbError::from_store)
     }
 
+    /// Encode and write `value` at a raw, pre-built key.
     pub fn put_at_key<V: schema::ConsensusDbValue>(
         &mut self,
         key: kv::Key,
@@ -160,6 +157,7 @@ impl<S: kv::KvStore> ConsensusDb<S> {
         self.put_raw(key, value.encode())
     }
 
+    /// Delete a raw, pre-built key if present.
     pub fn delete_at_key(&mut self, key: kv::Key) -> Result<()> {
         self.store.delete(key).map_err(ConsensusDbError::from_store)
     }
@@ -187,6 +185,30 @@ impl<S: kv::KvStore> ConsensusDb<S> {
     fn get_schema_version(&self) -> Result<u64> {
         self.get_raw(schema::DB_SCHEMA_VERSION)?
             .map_or(Ok(0), decode_schema_version)
+    }
+}
+
+/// A batch of typed writes, applied atomically via [`ConsensusDb::write_batch`].
+#[derive(Debug, Default)]
+pub struct ConsensusDbBatch {
+    inner: kv::Batch,
+}
+
+impl ConsensusDbBatch {
+    /// Create an empty batch.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Stage a typed write of `value` at `key`.
+    pub fn put<K: schema::ConsensusDbKey>(&mut self, key: K, value: &K::StoredValue) {
+        self.inner
+            .put(schema::key(&key), schema::ConsensusDbValue::encode(value));
+    }
+
+    /// Stage a deletion of `key`.
+    pub fn delete<K: schema::ConsensusDbKey>(&mut self, key: K) {
+        self.inner.delete(schema::key(&key));
     }
 }
 

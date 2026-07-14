@@ -1,5 +1,9 @@
-//! L1 incoming-message wire codec, used only by the legacy `d` table. Mirrors nitro's
+//! L1 incoming-message wire codec, used only by the legacy `d` prefix. Mirrors nitro's
 //! `arbostypes.ParseIncomingL1Message` / `L1IncomingMessage.Serialize` byte-for-byte.
+
+// TODO: Duplicated parsing logic from `arbos::arbos_types::incomming_message`. Since we don't want
+// to introduce that as a dependency here, we may consider consolidating within the `arb-primitives`
+// crate.
 
 use alloy_primitives::{Address, B256, Bytes, U256};
 
@@ -9,9 +13,11 @@ use crate::{
     schema::{L1IncomingMessage, L1IncomingMessageHeader},
 };
 
-/// Fixed wire-header size: kind(1) + poster(32) + block(8) + timestamp(8) + requestId(32) + baseFee(32).
+/// Fixed wire-header size: kind(1) + poster(32) + block(8) + timestamp(8) + requestId(32) +
+/// baseFee(32).
 const WIRE_HEADER_LEN: usize = 1 + 32 + 8 + 8 + 32 + 32;
 
+/// Serialize `msg` into the L1 incoming-message wire format.
 pub fn encode_l1_message_wire(msg: &L1IncomingMessage) -> Vec<u8> {
     let header = &msg.header;
     let mut buf = Vec::with_capacity(WIRE_HEADER_LEN + msg.l2msg.len());
@@ -29,6 +35,10 @@ pub fn encode_l1_message_wire(msg: &L1IncomingMessage) -> Vec<u8> {
     buf
 }
 
+/// Parse an L1 incoming message from its wire format.
+///
+/// Errors with [`ConsensusDbError::InvalidStoredValue`] if `bytes` is shorter than the
+/// fixed header.
 pub fn decode_l1_message_wire(bytes: &[u8]) -> Result<L1IncomingMessage> {
     if bytes.len() < WIRE_HEADER_LEN {
         return Err(ConsensusDbError::InvalidStoredValue);

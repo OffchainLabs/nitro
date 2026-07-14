@@ -9,9 +9,12 @@ use alloy_primitives::B256;
 use crate::{ConsensusDbError, Result};
 
 /// Split a stored value into its leading 32-byte accumulator and the remaining
-/// payload bytes. Both delayed-message tables (`d`/`e`) store `accumulator ++ message`.
+/// payload bytes. Both delayed-message prefixes (`d`/`e`) store `accumulator ++ message`.
 pub fn strip_accumulator(bytes: &[u8]) -> Result<(B256, &[u8])> {
-    let accumulator =
-        B256::from_slice(bytes.get(..32).ok_or(ConsensusDbError::InvalidStoredValue)?);
+    let accumulator = B256::from_slice(
+        bytes
+            .get(..32)
+            .ok_or(ConsensusDbError::InvalidStoredValue)?,
+    );
     Ok((accumulator, &bytes[32..]))
 }

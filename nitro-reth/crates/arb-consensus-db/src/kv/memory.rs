@@ -1,13 +1,19 @@
+//! An in-memory [`KvStore`], backed by a [`BTreeMap`]. Useful for tests and as the
+//! reference implementation of the backend contract.
+
 use std::collections::BTreeMap;
 
 use crate::kv::{Batch, Key, KeyBuf, KvStore, Op, Value};
 
+/// A [`KvStore`] backed by an in-memory [`BTreeMap`]. Its ordered keys give prefix
+/// iteration and range deletion for free; operations are infallible.
 #[derive(Debug, Default)]
 pub struct MemoryKvStore {
     values: BTreeMap<KeyBuf, Value>,
 }
 
 impl MemoryKvStore {
+    /// Create an empty store.
     pub fn new() -> Self {
         Self::default()
     }

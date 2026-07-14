@@ -1,3 +1,10 @@
+//! The consensus DB schema: key prefixes, fixed keys, and the typed value stored under
+//! each prefix, byte-compatible with Nitro's `arbnode/db/schema`.
+//!
+//! Each entry is described by a [`ConsensusDbKey`] descriptor (a prefix plus, for
+//! positional keys, a `u64` position) whose associated [`ConsensusDbValue`] defines the
+//! on-disk encoding. Keys are laid out as `prefix ++ big-endian(position)` (see [`key`]).
+
 use alloy_primitives::{Address, B256, Bytes, U256};
 use alloy_rlp::{RlpDecodable, RlpDecodableWrapper, RlpEncodable, RlpEncodableWrapper};
 
@@ -81,10 +88,11 @@ macro_rules! rlp_value {
     };
 }
 
-// `s`: sequencer batch metadata.
+/// Key under the `s` prefix: sequencer batch metadata by batch number.
 #[derive(Debug)]
 pub struct BatchMetadataAt(pub u64);
 
+/// Metadata for a sequencer batch: its accumulator and message/delayed/parent-chain counts.
 #[derive(Debug, RlpEncodable, RlpDecodable)]
 pub struct BatchMetadata {
     pub accumulator: B256,
@@ -96,10 +104,11 @@ pub struct BatchMetadata {
 prefix_key!(BatchMetadataAt[SEQUENCER_BATCH_META_PREFIX] => BatchMetadata);
 rlp_value!(BatchMetadata);
 
-// `m`: L2 message.
+/// Key under the `m` prefix: an L2 message by sequence number.
 #[derive(Debug)]
 pub struct MessageWithMetadataAt(pub u64);
 
+/// An L2 message together with the count of delayed messages read before it.
 #[derive(Debug, RlpEncodable, RlpDecodable)]
 pub struct MessageWithMetadata {
     pub message: L1IncomingMessage,
@@ -109,6 +118,7 @@ pub struct MessageWithMetadata {
 prefix_key!(MessageWithMetadataAt[MESSAGE_PREFIX] => MessageWithMetadata);
 rlp_value!(MessageWithMetadata);
 
+/// A message posted to the inbox on the parent chain, plus its L2 payload.
 #[derive(Debug, RlpEncodable, RlpDecodable)]
 #[rlp(trailing)]
 pub struct L1IncomingMessage {
@@ -118,6 +128,7 @@ pub struct L1IncomingMessage {
     pub batch_data_stats: Option<BatchDataStats>,
 }
 
+/// Header of an [`L1IncomingMessage`].
 #[derive(Debug, RlpEncodable, RlpDecodable)]
 pub struct L1IncomingMessageHeader {
     pub kind: u8,
@@ -128,16 +139,18 @@ pub struct L1IncomingMessageHeader {
     pub l1_base_fee: U256,
 }
 
+/// Size statistics for batch data, used in L1 cost accounting.
 #[derive(Debug, RlpEncodable, RlpDecodable)]
 pub struct BatchDataStats {
     pub length: u64,
     pub non_zeros: u64,
 }
 
-// `r`: message execution result.
+/// Key under the `r` prefix: the execution result of a message.
 #[derive(Debug)]
 pub struct MessageResultAt(pub u64);
 
+/// The execution result of a message: the resulting block hash and send root.
 #[derive(Debug, RlpEncodable, RlpDecodable)]
 pub struct MessageResult {
     pub block_hash: B256,
@@ -147,10 +160,11 @@ pub struct MessageResult {
 prefix_key!(MessageResultAt[MESSAGE_RESULT_PREFIX] => MessageResult);
 rlp_value!(MessageResult);
 
-// `b`: block hash received through the input feed.
+/// Key under the `b` prefix: a block hash received through the input feed.
 #[derive(Debug)]
 pub struct BlockHashDbValueAt(pub u64);
 
+/// A block hash received through the input feed (absent hashes encode as an empty string).
 #[derive(Debug, RlpEncodable, RlpDecodable)]
 pub struct BlockHashDbValue {
     pub block_hash: NilString<B256>,
@@ -159,10 +173,11 @@ pub struct BlockHashDbValue {
 prefix_key!(BlockHashDbValueAt[BLOCK_HASH_INPUT_FEED_PREFIX] => BlockHashDbValue);
 rlp_value!(BlockHashDbValue);
 
-// `t`: block metadata byte array, stored verbatim (no RLP).
+/// Key under the `t` prefix: a block-metadata byte array from the input feed.
 #[derive(Debug)]
 pub struct BlockMetadataAt(pub u64);
 
+/// A block-metadata byte array, stored verbatim (no RLP).
 #[derive(Debug)]
 pub struct BlockMetadata(pub Vec<u8>);
 
@@ -178,10 +193,11 @@ impl ConsensusDbValue for BlockMetadata {
     }
 }
 
-// `x`: presence marker for a message whose block metadata is missing (empty value).
+/// Key under the `x` prefix: marks a message whose block metadata is missing.
 #[derive(Debug)]
 pub struct MissingBlockMetadataAt(pub u64);
 
+/// Presence marker for a message with missing block metadata (stored as an empty value).
 #[derive(Debug)]
 pub struct MissingBlockMetadata;
 
@@ -197,10 +213,11 @@ impl ConsensusDbValue for MissingBlockMetadata {
     }
 }
 
-// `p`: parent chain block number, stored as raw big-endian u64 (not RLP).
+/// Key under the `p` prefix: the parent chain block number for a delayed message.
 #[derive(Debug)]
 pub struct ParentChainBlockAt(pub u64);
 
+/// A parent chain block number, stored as a raw big-endian `u64` (not RLP).
 #[derive(Debug)]
 pub struct ParentChainBlock(pub u64);
 
@@ -220,21 +237,23 @@ impl ConsensusDbValue for ParentChainBlock {
     }
 }
 
-// `a`: first sequencer batch sequence number at a given delayed count (RLP u64).
+/// Key under the `a` prefix, indexed by delayed message count.
 #[derive(Debug)]
 pub struct DelayedSequencedAt(pub u64);
 
+/// The first sequencer batch sequence number at a given delayed count (RLP `u64`).
 #[derive(Debug, RlpEncodableWrapper, RlpDecodableWrapper)]
 pub struct DelayedSequenced(pub u64);
 
 prefix_key!(DelayedSequencedAt[DELAYED_SEQUENCED_PREFIX] => DelayedSequenced);
 rlp_value!(DelayedSequenced);
 
-// `e`: delayed message — 32-byte accumulator (AfterInboxAcc) followed by an
-// RLP-encoded L1 message. This is the current format (`d` is the legacy predecessor).
+/// Key under the `e` prefix: a delayed message by delayed sequence number.
 #[derive(Debug)]
 pub struct RlpDelayedMessageAt(pub u64);
 
+/// A delayed message: a 32-byte accumulator (AfterInboxAcc) followed by an RLP-encoded
+/// L1 message. This is the current format (`d` is the legacy predecessor).
 #[derive(Debug)]
 pub struct RlpDelayedMessage {
     pub accumulator: B256,
@@ -260,11 +279,12 @@ impl ConsensusDbValue for RlpDelayedMessage {
     }
 }
 
-// `d`: legacy delayed message — 32-byte accumulator (AfterInboxAcc) followed by the
-// message in Arbitrum's L1 incoming-message wire format (predates the RLP `e` format).
+/// Key under the `d` prefix: a legacy delayed message by delayed sequence number.
 #[derive(Debug)]
 pub struct LegacyDelayedMessageAt(pub u64);
 
+/// A legacy delayed message: a 32-byte accumulator (AfterInboxAcc) followed by the
+/// message in Arbitrum's L1 incoming-message wire format (predates the RLP `e` format).
 #[derive(Debug)]
 pub struct LegacyDelayedMessage {
     pub accumulator: B256,
@@ -290,15 +310,25 @@ impl ConsensusDbValue for LegacyDelayedMessage {
     }
 }
 
-// Fixed (non-positional) keys. All store an RLP-encoded `u64`.
+// Fixed (non-positional) keys. Each stores an RLP-encoded `u64`.
+
+/// Fixed key for the current message count.
 #[derive(Debug)]
 pub struct MessageCount;
+
+/// Fixed key for the current delayed message count.
 #[derive(Debug)]
 pub struct DelayedMessageCount;
+
+/// Fixed key for the current sequencer batch count.
 #[derive(Debug)]
 pub struct SequencerBatchCount;
+
+/// Fixed key for the last pruned message.
 #[derive(Debug)]
 pub struct LastPrunedMessage;
+
+/// Fixed key for the last pruned delayed message.
 #[derive(Debug)]
 pub struct LastPrunedDelayedMessage;
 
@@ -327,7 +357,8 @@ pub const RLP_DELAYED_MESSAGE_PREFIX: &[u8] = b"e";
 pub const PARENT_CHAIN_BLOCK_NUMBER_PREFIX: &[u8] = b"p";
 /// Maps a batch sequence number to BatchMetadata
 pub const SEQUENCER_BATCH_META_PREFIX: &[u8] = b"s";
-/// Maps a delayed message count to the first sequencer batch sequence number with this delayed count
+/// Maps a delayed message count to the first sequencer batch sequence number with this delayed
+/// count
 pub const DELAYED_SEQUENCED_PREFIX: &[u8] = b"a";
 
 /// Contains the current message count
