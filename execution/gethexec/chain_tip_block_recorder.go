@@ -117,30 +117,40 @@ func (r *ChainTipBlockRecorder) loadCodePreimages(record *execution.RecordResult
 	return nil
 }
 
-func (r *ChainTipBlockRecorder) loadUserWasms(record *execution.RecordResult, keys []wasmKey) error {
-	if len(keys) == 0 {
+func (r *ChainTipBlockRecorder) loadUserWasms(record *execution.RecordResult, keys []wasmKey, wasmTargets []rawdb.WasmTarget) error {
+	if len(keys) == 0 || len(wasmTargets) == 0 {
 		return nil
 	}
-	if record.UserWasms == nil {
-		record.UserWasms = make(state.UserWasms)
-	}
-	stateCache := r.execEngine.bc.StateCache()
+	recordedTargets := make(map[common.Hash]map[rawdb.WasmTarget]struct{}, len(keys))
 	for _, key := range keys {
-		asmMap := record.UserWasms[key.moduleHash]
-		if asmMap == nil {
-			asmMap = make(state.ActivatedWasm)
-			record.UserWasms[key.moduleHash] = asmMap
+		targets := recordedTargets[key.moduleHash]
+		if targets == nil {
+			targets = make(map[rawdb.WasmTarget]struct{})
+			recordedTargets[key.moduleHash] = targets
 		}
-		asm := stateCache.ActivatedAsm(key.target, key.moduleHash)
-		if len(asm) == 0 {
-			return fmt.Errorf("chain-tip recording missing user wasm for module %s target %s", key.moduleHash, key.target)
-		}
-		asmMap[key.target] = asm
+		targets[key.target] = struct{}{}
 	}
+	userWasms := make(state.UserWasms, len(recordedTargets))
+	stateCache := r.execEngine.bc.StateCache()
+	for moduleHash, recorded := range recordedTargets {
+		asmMap := make(state.ActivatedWasm, len(wasmTargets))
+		for _, target := range wasmTargets {
+			if _, ok := recorded[target]; !ok {
+				return fmt.Errorf("chain-tip recording for module %s missing requested target %s", moduleHash, target)
+			}
+			asm := stateCache.ActivatedAsm(target, moduleHash)
+			if len(asm) == 0 {
+				return fmt.Errorf("chain-tip recording missing user wasm for module %s target %s", moduleHash, target)
+			}
+			asmMap[target] = asm
+		}
+		userWasms[moduleHash] = asmMap
+	}
+	record.UserWasms = userWasms
 	return nil
 }
 
-func (r *ChainTipBlockRecorder) Recording(pos arbutil.MessageIndex) (*execution.RecordResult, error) {
+func (r *ChainTipBlockRecorder) Recording(pos arbutil.MessageIndex, wasmTargets []rawdb.WasmTarget) (*execution.RecordResult, error) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	recording := r.lastRecording
@@ -156,7 +166,7 @@ func (r *ChainTipBlockRecorder) Recording(pos arbutil.MessageIndex) (*execution.
 	if err := r.loadRecentHeaderPreimages(recording.record, recording.blockNumber, recording.parentHash, recording.firstHeaderNumber); err != nil {
 		return nil, err
 	}
-	if err := r.loadUserWasms(recording.record, recording.wasmKeys); err != nil {
+	if err := r.loadUserWasms(recording.record, recording.wasmKeys, wasmTargets); err != nil {
 		return nil, err
 	}
 	r.servedTipRecordings.Add(1)

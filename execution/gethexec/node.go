@@ -785,7 +785,7 @@ func (n *ExecutionNode) RecordBlockCreation(
 ) containers.PromiseInterface[*execution.RecordResult] {
 	return stopwaiter.LaunchPromiseThread(n, func(ctx context.Context) (*execution.RecordResult, error) {
 		if n.ChainTipRecorder != nil {
-			return n.ChainTipRecorder.Recording(pos)
+			return n.ChainTipRecorder.Recording(pos, wasmTargets)
 		}
 		if n.Recorder != nil {
 			return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)

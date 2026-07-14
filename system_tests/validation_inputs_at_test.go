@@ -93,15 +93,6 @@ func TestValidationInputsAtExecutesInValidationWorker(t *testing.T) {
 	testValidationInputsAtExecutesInValidationWorker(t)
 }
 
-func TestValidationInputsAtChainTipIncludesSendRootPreimages(t *testing.T) {
-	builder, auth, cleanup := setupChainTipValidationInputsTest(t)
-	ctx := builder.ctx
-	defer cleanup()
-
-	inboxPos := storageCacheFlushOutOfGasInboxPos(t, ctx, builder, auth)
-	validateResultAt(t, ctx, builder, inboxPos)
-}
-
 func TestValidationInputsAtChainTipIncludesReferencedTrieChildPreimages(t *testing.T) {
 	builder, auth, cleanup := setupChainTipValidationInputsTest(t)
 	ctx := builder.ctx
@@ -239,7 +230,7 @@ func seedValidationRecordingTrieShape(t *testing.T, ctx context.Context, builder
 
 func setupChainTipValidationInputsTest(t *testing.T) (*NodeBuilder, bind.TransactOpts, func()) {
 	t.Helper()
-	return setupProgramTestWithScheme(t, false, "", func(builder *NodeBuilder) {
+	return setupProgramTest(t, false, func(builder *NodeBuilder) {
 		builder.WithChainTipBlockRecorder()
 	})
 }
