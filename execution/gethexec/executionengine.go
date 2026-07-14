@@ -232,7 +232,7 @@ func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
 
 // TxAccepted deliberately does NOT broadcast to the transaction feed. A
 // delayed block is produced atomically from one inbox message and discarded
-// completly if any of its txs is filtered. It's broadcast is handled after block production.
+// completely if any of its txs is filtered. Its broadcast is handled after block production.
 func (f *DelayedFilteringSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt, collectTips bool) {
 }
 

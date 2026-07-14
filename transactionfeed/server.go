@@ -47,9 +47,9 @@ type clientConn struct {
 
 type Server struct {
 	stopwaiter.StopWaiter
-	config              ServerConfig
-	listener            net.Listener
-	httpServer          *http.Server
+	config           ServerConfig
+	listener         net.Listener
+	httpServer       *http.Server
 	register         chan *clientConn
 	unregister       chan *clientConn
 	broadcast        chan []byte

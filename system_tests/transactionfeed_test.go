@@ -222,7 +222,7 @@ func (env *transactionFeedTestEnv) assertFeedExactly(t *testing.T, want map[comm
 	t.Helper()
 	builder := env.builder
 	env.sentinelCount++
-	// We use a sentinel tx to ensure that the feed has delivered all prior txs before we check the counts.F
+	// We use a sentinel tx to ensure that the feed has delivered all prior txs before we check the counts.
 	sentinelAccount := fmt.Sprintf("FeedSentinel%d", env.sentinelCount)
 	builder.L2Info.GenerateAccount(sentinelAccount)
 	sentinelTx := builder.L2Info.PrepareTx("Owner", sentinelAccount, builder.L2Info.TransferGas, big.NewInt(1e6), nil)
