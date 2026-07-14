@@ -445,7 +445,7 @@ func CreateExecutionNode(
 		if err != nil {
 			return nil, fmt.Errorf("failed to open chain-tip block records freezer: %w", err)
 		}
-		recorder = NewChainTipBlockRecorder(execEngine, newBlockRecordsDatabase(chainTipBlockRecordsFreezer))
+		recorder = NewChainTipBlockRecorder(execEngine, newBlockRecordsFreezer(chainTipBlockRecordsFreezer))
 	default:
 		return nil, fmt.Errorf("unknown block recorder mode %q", config.RecordingDatabase.Mode)
 	}
@@ -738,11 +738,6 @@ func (n *ExecutionNode) StopAndWait() {
 	if n.Recorder != nil {
 		n.Recorder.OrderlyShutdown()
 	}
-	if n.Recorder != nil {
-		if err := n.Recorder.Close(); err != nil {
-			log.Error("failed to close block recorder", "err", err)
-		}
-	}
 	if n.ParentChain != nil && n.ParentChain.Started() {
 		n.ParentChain.StopAndWait()
 	}
@@ -751,6 +746,11 @@ func (n *ExecutionNode) StopAndWait() {
 	}
 	if n.ExecEngine.Started() {
 		n.ExecEngine.StopAndWait()
+	}
+	if n.Recorder != nil {
+		if err := n.Recorder.Close(); err != nil {
+			log.Error("failed to close block recorder", "err", err)
+		}
 	}
 	if n.consensusRPCClient != nil {
 		n.consensusRPCClient.StopAndWait()

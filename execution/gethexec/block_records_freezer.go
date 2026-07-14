@@ -16,19 +16,17 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 )
 
-type freezerBlockRecordsDatabase struct {
+type blockRecordsFreezer struct {
 	freezer ethdb.ResettableAncientStore
 
-	lock                     sync.Mutex
-	firstRecordedMsgIdx      uint64
-	firstRecordedMsgIdxKnown bool
+	lock sync.Mutex
 }
 
-func newBlockRecordsDatabase(freezer ethdb.ResettableAncientStore) *freezerBlockRecordsDatabase {
+func newBlockRecordsFreezer(freezer ethdb.ResettableAncientStore) *blockRecordsFreezer {
 	if freezer == nil {
 		return nil
 	}
-	return &freezerBlockRecordsDatabase{freezer: freezer}
+	return &blockRecordsFreezer{freezer: freezer}
 }
 
 type persistedChainTipRecording struct {
@@ -109,7 +107,7 @@ func decodeChainTipRecording(encoded []byte) (*persistedChainTipRecording, error
 	return &persisted, nil
 }
 
-func (d *freezerBlockRecordsDatabase) freezerBounds() (uint64, uint64, error) {
+func (d *blockRecordsFreezer) freezerBounds() (uint64, uint64, error) {
 	tail, err := d.freezer.Tail()
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to read chain-tip block records freezer tail: %w", err)
@@ -124,37 +122,7 @@ func (d *freezerBlockRecordsDatabase) freezerBounds() (uint64, uint64, error) {
 	return tail, head, nil
 }
 
-func (d *freezerBlockRecordsDatabase) loadFirstRecordedMsgIdxLocked() (uint64, bool, error) {
-	if d.firstRecordedMsgIdxKnown {
-		return d.firstRecordedMsgIdx, true, nil
-	}
-	tail, head, err := d.freezerBounds()
-	if err != nil {
-		return 0, false, err
-	}
-	for item := tail; item < head; item++ {
-		encoded, err := d.readFreezerItem(item)
-		if err != nil {
-			log.Error("Skipping unreadable chain-tip block record during recovery", "item", item, "err", err)
-			continue
-		}
-		persisted, err := decodeChainTipRecording(encoded)
-		if err != nil {
-			log.Error("Skipping undecodable chain-tip block record during recovery", "item", item, "err", err)
-			continue
-		}
-		if persisted.Pos < item {
-			log.Error("Skipping inconsistent chain-tip block record during recovery", "item", item, "pos", persisted.Pos)
-			continue
-		}
-		d.firstRecordedMsgIdx = persisted.Pos - item
-		d.firstRecordedMsgIdxKnown = true
-		return d.firstRecordedMsgIdx, true, nil
-	}
-	return 0, false, nil
-}
-
-func (d *freezerBlockRecordsDatabase) readFreezerItem(item uint64) ([]byte, error) {
+func (d *blockRecordsFreezer) readFreezerItem(item uint64) ([]byte, error) {
 	var encoded []byte
 	if err := d.freezer.ReadAncients(func(reader ethdb.AncientReaderOp) error {
 		var err error
@@ -166,7 +134,7 @@ func (d *freezerBlockRecordsDatabase) readFreezerItem(item uint64) ([]byte, erro
 	return encoded, nil
 }
 
-func (d *freezerBlockRecordsDatabase) writeRecording(recording *chainTipRecording) error {
+func (d *blockRecordsFreezer) writeRecording(recording *chainTipRecording) error {
 	persisted, err := persistableChainTipRecording(recording)
 	if err != nil {
 		return err
@@ -180,34 +148,40 @@ func (d *freezerBlockRecordsDatabase) writeRecording(recording *chainTipRecordin
 	defer d.lock.Unlock()
 
 	pos := uint64(recording.record.Pos)
-	firstRecordedMsgIdx, known, err := d.loadFirstRecordedMsgIdxLocked()
-	if err != nil {
-		return err
-	}
 	tail, head, err := d.freezerBounds()
 	if err != nil {
 		return err
 	}
 	switch {
-	case known && pos == firstRecordedMsgIdx+head:
+	case pos == head:
 		// Continuous append
-	case known && pos >= firstRecordedMsgIdx+tail && pos < firstRecordedMsgIdx+head:
+	case pos >= tail && pos < head:
 		// The position is already recorded, messages are being replayed is rewriting history
-		if _, err := d.freezer.TruncateHead(pos - firstRecordedMsgIdx); err != nil {
+		if _, err := d.freezer.TruncateHead(pos); err != nil {
 			return fmt.Errorf("failed to roll back chain-tip block records freezer to message index %d: %w", pos, err)
 		}
+	case pos > head && head == tail:
+		// The freezer is empty and behind pos advance the empty window so the next append lands at pos.
+		if _, err := d.freezer.TruncateTail(pos); err != nil {
+			return fmt.Errorf("failed to advance chain-tip block records freezer to message index %d: %w", pos, err)
+		}
+	case pos > head:
+		// Recordings for [head, pos) were lost refuse to record so the stored recordings survive and the operator can recover.
+		return fmt.Errorf("chain-tip block records freezer is missing recordings for message indexes %d to %d and refuses to record message index %d; reorg the node to message index %d or below to re-record the gap, or remove the chain-tip block records ancient database to restart recording from the chain head", head, pos-1, pos, head)
 	default:
-		if head > 0 {
-			log.Warn("Resetting chain-tip block records freezer to restart recording", "pos", pos, "tail", tail, "head", head)
-			d.firstRecordedMsgIdxKnown = false
-			if err := d.freezer.Reset(); err != nil {
-				return fmt.Errorf("failed to reset chain-tip block records freezer: %w", err)
+		// pos is below the pruned tail everything stored is stale after the reorg, restart recording at pos.
+		log.Warn("Resetting chain-tip block records freezer to restart recording", "pos", pos, "tail", tail, "head", head)
+		if err := d.freezer.Reset(); err != nil {
+			return fmt.Errorf("failed to reset chain-tip block records freezer: %w", err)
+		}
+		if pos > 0 {
+			if _, err := d.freezer.TruncateTail(pos); err != nil {
+				return fmt.Errorf("failed to advance chain-tip block records freezer to message index %d: %w", pos, err)
 			}
 		}
-		firstRecordedMsgIdx = pos
 	}
 	if _, err := d.freezer.ModifyAncients(func(writer ethdb.AncientWriteOp) error {
-		return writer.AppendRaw(rawdb.ChainTipBlockRecordsFreezerTable, pos-firstRecordedMsgIdx, encoded)
+		return writer.AppendRaw(rawdb.ChainTipBlockRecordsFreezerTable, pos, encoded)
 	}); err != nil {
 		return fmt.Errorf("failed to append chain-tip block record to freezer: %w", err)
 	}
@@ -215,46 +189,37 @@ func (d *freezerBlockRecordsDatabase) writeRecording(recording *chainTipRecordin
 	if err := d.freezer.SyncAncient(); err != nil {
 		return fmt.Errorf("failed to sync chain-tip block records freezer: %w", err)
 	}
-	d.firstRecordedMsgIdx = firstRecordedMsgIdx
-	d.firstRecordedMsgIdxKnown = true
 	return nil
 }
 
-func (d *freezerBlockRecordsDatabase) readRecording(pos arbutil.MessageIndex) (*chainTipRecording, bool, error) {
+func (d *blockRecordsFreezer) readRecording(pos arbutil.MessageIndex) (*chainTipRecording, error) {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 
-	firstRecordedMsgIdx, known, err := d.loadFirstRecordedMsgIdxLocked()
-	if err != nil {
-		return nil, false, err
-	}
-	if !known {
-		return nil, false, nil
-	}
 	tail, head, err := d.freezerBounds()
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	if uint64(pos) < firstRecordedMsgIdx+tail || uint64(pos) >= firstRecordedMsgIdx+head {
-		return nil, false, nil
+	if uint64(pos) < tail || uint64(pos) >= head {
+		return nil, nil
 	}
-	encoded, err := d.readFreezerItem(uint64(pos) - firstRecordedMsgIdx)
+	encoded, err := d.readFreezerItem(uint64(pos))
 	if err != nil {
 		log.Error("Treating unreadable chain-tip block record as missing", "pos", pos, "err", err)
-		return nil, false, nil
+		return nil, nil
 	}
 	persisted, err := decodeChainTipRecording(encoded)
 	if err != nil {
 		log.Error("Treating undecodable chain-tip block record as missing", "pos", pos, "err", err)
-		return nil, false, nil
+		return nil, nil
 	}
 	if persisted.Pos != uint64(pos) {
-		return nil, false, fmt.Errorf("chain-tip block record at freezer item %d has message index %d, expected %d", uint64(pos)-firstRecordedMsgIdx, persisted.Pos, pos)
+		return nil, fmt.Errorf("chain-tip block record at freezer item %d has message index %d, expected %d", uint64(pos), persisted.Pos, pos)
 	}
-	return chainTipRecordingFromPersisted(persisted), true, nil
+	return chainTipRecordingFromPersisted(persisted), nil
 }
 
-func (d *freezerBlockRecordsDatabase) Close() error {
+func (d *blockRecordsFreezer) Close() error {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 	return d.freezer.Close()

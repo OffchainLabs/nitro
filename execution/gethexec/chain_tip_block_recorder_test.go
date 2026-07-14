@@ -23,24 +23,9 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
-func newTestRecorderEngine(t *testing.T, blocks int) *ExecutionEngine {
-	t.Helper()
-	gspec := &core.Genesis{Config: params.TestChainConfig}
-	_, generated, _ := core.GenerateChainWithGenesis(gspec, ethash.NewFaker(), blocks, nil)
-	bc, err := core.NewBlockChain(rawdb.NewMemoryDatabase(), nil, gspec, ethash.NewFaker(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { bc.Stop() })
-	if _, err := bc.InsertChain(generated); err != nil {
-		t.Fatal(err)
-	}
-	return &ExecutionEngine{bc: bc}
-}
-
 func TestChainTipRecorderMissesUnrecordedPositions(t *testing.T) {
 	engine := newTestRecorderEngine(t, 3)
-	store := newBlockRecordsDatabase(newTestBlockRecordsFreezer(t, ""))
+	store := newBlockRecordsFreezer(newTestBlockRecordsFreezer(t, ""))
 	recorder := NewChainTipBlockRecorder(engine, store)
 
 	if _, err := recorder.Recording(2, nil); err == nil || !strings.Contains(err.Error(), "unavailable") {
@@ -76,7 +61,7 @@ func TestChainTipRecorderMissesUnrecordedPositions(t *testing.T) {
 
 func TestChainTipRecorderLoadFailuresAreErrors(t *testing.T) {
 	engine := newTestRecorderEngine(t, 3)
-	store := newBlockRecordsDatabase(newTestBlockRecordsFreezer(t, ""))
+	store := newBlockRecordsFreezer(newTestBlockRecordsFreezer(t, ""))
 	recorder := NewChainTipBlockRecorder(engine, store)
 
 	block := engine.bc.GetBlockByNumber(2)
@@ -91,8 +76,6 @@ func TestChainTipRecorderLoadFailuresAreErrors(t *testing.T) {
 				Pos:       pos,
 				BlockHash: block.Hash(),
 			},
-			blockNumber:       block.NumberU64(),
-			parentHash:        block.ParentHash(),
 			firstHeaderNumber: block.NumberU64(),
 			codeHashes:        codeHashes,
 			wasmKeys:          wasmKeys,
@@ -123,7 +106,7 @@ func TestChainTipRecorderLoadFailuresAreErrors(t *testing.T) {
 
 func TestChainTipRecorderRejectsStaleRecording(t *testing.T) {
 	engine := newTestRecorderEngine(t, 3)
-	store := newBlockRecordsDatabase(newTestBlockRecordsFreezer(t, ""))
+	store := newBlockRecordsFreezer(newTestBlockRecordsFreezer(t, ""))
 	recorder := NewChainTipBlockRecorder(engine, store)
 
 	header := engine.bc.GetBlockByNumber(2).Header()
@@ -178,17 +161,32 @@ func newTestBlockRecordsFreezer(t *testing.T, ancientDir string) ethdb.Resettabl
 	return freezer
 }
 
+func newTestRecorderEngine(t *testing.T, blocks int) *ExecutionEngine {
+	t.Helper()
+	gspec := &core.Genesis{Config: params.TestChainConfig}
+	_, generated, _ := core.GenerateChainWithGenesis(gspec, ethash.NewFaker(), blocks, nil)
+	bc, err := core.NewBlockChain(rawdb.NewMemoryDatabase(), nil, gspec, ethash.NewFaker(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { bc.Stop() })
+	if _, err := bc.InsertChain(generated); err != nil {
+		t.Fatal(err)
+	}
+	return &ExecutionEngine{bc: bc}
+}
+
 func testChainTipRecording(pos arbutil.MessageIndex) *chainTipRecording {
 	return &chainTipRecording{
 		record: &execution.RecordResult{
-			Pos:       pos,
+			Pos: pos,
+			// #nosec G115
 			BlockHash: testHash(byte(pos + 1)),
 			Preimages: map[common.Hash][]byte{
+				// #nosec G115
 				testHash(1): {byte(pos)},
 			},
 		},
-		blockNumber:       uint64(pos + 100),
-		parentHash:        testHash(byte(pos + 2)),
 		firstHeaderNumber: uint64(pos + 99),
 	}
 }
@@ -276,7 +274,7 @@ func TestRecentHeaderPreimageCacheRetainsRecentEntries(t *testing.T) {
 }
 
 func TestBlockRecordsDatabaseRoundTrip(t *testing.T) {
-	store := newBlockRecordsDatabase(newTestBlockRecordsFreezer(t, ""))
+	store := newBlockRecordsFreezer(newTestBlockRecordsFreezer(t, ""))
 	pos := arbutil.MessageIndex(42)
 	preimageHash := testHash(1)
 	preimage := []byte{1, 2, 3}
@@ -288,8 +286,6 @@ func TestBlockRecordsDatabaseRoundTrip(t *testing.T) {
 				preimageHash: preimage,
 			},
 		},
-		blockNumber:       100,
-		parentHash:        testHash(3),
 		firstHeaderNumber: 99,
 		codeHashes:        []common.Hash{testHash(4)},
 		wasmKeys: []wasmKey{{
@@ -303,11 +299,11 @@ func TestBlockRecordsDatabaseRoundTrip(t *testing.T) {
 	}
 	preimage[0] = 9
 
-	loaded, ok, err := store.readRecording(pos)
+	loaded, err := store.readRecording(pos)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ok {
+	if loaded == nil {
 		t.Fatal("expected persisted recording")
 	}
 	if loaded.record.Pos != pos {
@@ -319,8 +315,8 @@ func TestBlockRecordsDatabaseRoundTrip(t *testing.T) {
 	if !bytes.Equal(loaded.record.Preimages[preimageHash], []byte{1, 2, 3}) {
 		t.Fatalf("unexpected preimage: %v", loaded.record.Preimages[preimageHash])
 	}
-	if loaded.blockNumber != 0 || loaded.parentHash != (common.Hash{}) || loaded.firstHeaderNumber != recording.firstHeaderNumber {
-		t.Fatalf("unexpected persisted metadata: block %d parent %s first header %d", loaded.blockNumber, loaded.parentHash, loaded.firstHeaderNumber)
+	if loaded.firstHeaderNumber != recording.firstHeaderNumber {
+		t.Fatalf("unexpected persisted first header number: %d", loaded.firstHeaderNumber)
 	}
 	if len(loaded.codeHashes) != 1 || loaded.codeHashes[0] != recording.codeHashes[0] {
 		t.Fatalf("unexpected code hashes: %v", loaded.codeHashes)
@@ -330,11 +326,11 @@ func TestBlockRecordsDatabaseRoundTrip(t *testing.T) {
 	}
 
 	loaded.record.Preimages[preimageHash][0] = 8
-	loaded, ok, err = store.readRecording(pos)
+	loaded, err = store.readRecording(pos)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ok {
+	if loaded == nil {
 		t.Fatal("expected persisted recording after caller mutation")
 	}
 	if !bytes.Equal(loaded.record.Preimages[preimageHash], []byte{1, 2, 3}) {
@@ -344,7 +340,7 @@ func TestBlockRecordsDatabaseRoundTrip(t *testing.T) {
 
 func TestBlockRecordsDatabaseWritesStraightToFreezer(t *testing.T) {
 	freezer := newTestBlockRecordsFreezer(t, "")
-	store := newBlockRecordsDatabase(freezer)
+	store := newBlockRecordsFreezer(freezer)
 	firstPos := arbutil.MessageIndex(1)
 	latestPos := arbutil.MessageIndex(10)
 	for pos := firstPos; pos <= latestPos; pos++ {
@@ -357,23 +353,30 @@ func TestBlockRecordsDatabaseWritesStraightToFreezer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if frozen != uint64(latestPos-firstPos+1) {
-		t.Fatalf("expected %d frozen recordings, got %d", latestPos-firstPos+1, frozen)
+	if frozen != uint64(latestPos)+1 {
+		t.Fatalf("expected freezer head at %d, got %d", uint64(latestPos)+1, frozen)
+	}
+	tail, err := freezer.Tail()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tail != uint64(firstPos) {
+		t.Fatalf("expected freezer tail at %d, got %d", firstPos, tail)
 	}
 	for pos := firstPos; pos <= latestPos; pos++ {
-		loaded, ok, err := store.readRecording(pos)
+		loaded, err := store.readRecording(pos)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !ok || loaded.record.Pos != pos || loaded.record.BlockHash != testChainTipRecording(pos).record.BlockHash {
-			t.Fatalf("unexpected frozen recording for pos %d: ok=%t loaded=%+v", pos, ok, loaded)
+		if loaded == nil || loaded.record.Pos != pos || loaded.record.BlockHash != testChainTipRecording(pos).record.BlockHash {
+			t.Fatalf("unexpected frozen recording for pos %d: loaded=%+v", pos, loaded)
 		}
 	}
 }
 
 func TestBlockRecordsDatabasePersistsAcrossReopen(t *testing.T) {
 	dir := t.TempDir()
-	store := newBlockRecordsDatabase(newTestBlockRecordsFreezer(t, dir))
+	store := newBlockRecordsFreezer(newTestBlockRecordsFreezer(t, dir))
 	firstPos := arbutil.MessageIndex(1000)
 	latestPos := arbutil.MessageIndex(1009)
 	for pos := firstPos; pos <= latestPos; pos++ {
@@ -385,14 +388,14 @@ func TestBlockRecordsDatabasePersistsAcrossReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store = newBlockRecordsDatabase(newTestBlockRecordsFreezer(t, dir))
+	store = newBlockRecordsFreezer(newTestBlockRecordsFreezer(t, dir))
 	defer store.Close()
 	for _, pos := range []arbutil.MessageIndex{firstPos, latestPos} {
-		loaded, ok, err := store.readRecording(pos)
+		loaded, err := store.readRecording(pos)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !ok {
+		if loaded == nil {
 			t.Fatalf("expected persisted recording for pos %d after reopening database", pos)
 		}
 		if loaded.record.Pos != pos || loaded.record.BlockHash != testChainTipRecording(pos).record.BlockHash {
@@ -402,42 +405,42 @@ func TestBlockRecordsDatabasePersistsAcrossReopen(t *testing.T) {
 	if err := store.writeRecording(testChainTipRecording(latestPos + 1)); err != nil {
 		t.Fatal(err)
 	}
-	loaded, ok, err := store.readRecording(latestPos + 1)
+	loaded, err := store.readRecording(latestPos + 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ok || loaded.record.Pos != latestPos+1 {
-		t.Fatalf("expected recording appended after reopen, got ok=%t loaded=%+v", ok, loaded)
+	if loaded == nil || loaded.record.Pos != latestPos+1 {
+		t.Fatalf("expected recording appended after reopen, got loaded=%+v", loaded)
 	}
 }
 
 func TestBlockRecordsDatabaseReadMissing(t *testing.T) {
-	store := newBlockRecordsDatabase(newTestBlockRecordsFreezer(t, ""))
-	loaded, ok, err := store.readRecording(arbutil.MessageIndex(42))
+	store := newBlockRecordsFreezer(newTestBlockRecordsFreezer(t, ""))
+	loaded, err := store.readRecording(arbutil.MessageIndex(42))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ok || loaded != nil {
-		t.Fatalf("expected missing recording, got ok=%t loaded=%+v", ok, loaded)
+	if loaded != nil {
+		t.Fatalf("expected missing recording, got loaded=%+v", loaded)
 	}
 
 	if err := store.writeRecording(testChainTipRecording(10)); err != nil {
 		t.Fatal(err)
 	}
 	for _, pos := range []arbutil.MessageIndex{9, 11} {
-		loaded, ok, err = store.readRecording(pos)
+		loaded, err = store.readRecording(pos)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if ok || loaded != nil {
-			t.Fatalf("expected missing recording for pos %d, got ok=%t loaded=%+v", pos, ok, loaded)
+		if loaded != nil {
+			t.Fatalf("expected missing recording for pos %d, got loaded=%+v", pos, loaded)
 		}
 	}
 }
 
 func TestBlockRecordsDatabaseReorgTruncatesHead(t *testing.T) {
 	freezer := newTestBlockRecordsFreezer(t, "")
-	store := newBlockRecordsDatabase(freezer)
+	store := newBlockRecordsFreezer(freezer)
 	firstPos := arbutil.MessageIndex(1)
 	latestPos := arbutil.MessageIndex(10)
 	for pos := firstPos; pos <= latestPos; pos++ {
@@ -457,40 +460,40 @@ func TestBlockRecordsDatabaseReorgTruncatesHead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if frozen != uint64(reorgPos-firstPos+1) {
-		t.Fatalf("expected freezer head at %d after reorg, got %d", reorgPos-firstPos+1, frozen)
+	if frozen != uint64(reorgPos)+1 {
+		t.Fatalf("expected freezer head at %d after reorg, got %d", uint64(reorgPos)+1, frozen)
 	}
-	loaded, ok, err := store.readRecording(reorgPos)
+	loaded, err := store.readRecording(reorgPos)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ok || loaded.record.BlockHash != reorged.record.BlockHash {
-		t.Fatalf("expected reorged recording, got ok=%t loaded=%+v", ok, loaded)
+	if loaded == nil || loaded.record.BlockHash != reorged.record.BlockHash {
+		t.Fatalf("expected reorged recording, got loaded=%+v", loaded)
 	}
-	loaded, ok, err = store.readRecording(reorgPos - 1)
+	loaded, err = store.readRecording(reorgPos - 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ok || loaded.record.BlockHash != testChainTipRecording(reorgPos-1).record.BlockHash {
-		t.Fatalf("expected recording below reorg point to survive, got ok=%t loaded=%+v", ok, loaded)
+	if loaded == nil || loaded.record.BlockHash != testChainTipRecording(reorgPos-1).record.BlockHash {
+		t.Fatalf("expected recording below reorg point to survive, got loaded=%+v", loaded)
 	}
-	loaded, ok, err = store.readRecording(reorgPos + 1)
+	loaded, err = store.readRecording(reorgPos + 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ok || loaded != nil {
-		t.Fatalf("expected recording above reorg point to be truncated, got ok=%t loaded=%+v", ok, loaded)
+	if loaded != nil {
+		t.Fatalf("expected recording above reorg point to be truncated, got loaded=%+v", loaded)
 	}
 
 	if err := store.writeRecording(testChainTipRecording(reorgPos + 1)); err != nil {
 		t.Fatal(err)
 	}
-	loaded, ok, err = store.readRecording(reorgPos + 1)
+	loaded, err = store.readRecording(reorgPos + 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ok || loaded.record.Pos != reorgPos+1 {
-		t.Fatalf("expected recording appended after reorg, got ok=%t loaded=%+v", ok, loaded)
+	if loaded == nil || loaded.record.Pos != reorgPos+1 {
+		t.Fatalf("expected recording appended after reorg, got loaded=%+v", loaded)
 	}
 }
 
@@ -506,7 +509,7 @@ func (f *syncCountingFreezer) SyncAncient() error {
 
 func TestBlockRecordsDatabaseSyncsEveryWrite(t *testing.T) {
 	freezer := &syncCountingFreezer{ResettableAncientStore: newTestBlockRecordsFreezer(t, "")}
-	store := newBlockRecordsDatabase(freezer)
+	store := newBlockRecordsFreezer(freezer)
 	for pos := arbutil.MessageIndex(1); pos <= 5; pos++ {
 		if err := store.writeRecording(testChainTipRecording(pos)); err != nil {
 			t.Fatal(err)
@@ -514,6 +517,38 @@ func TestBlockRecordsDatabaseSyncsEveryWrite(t *testing.T) {
 	}
 	if freezer.syncs != 5 {
 		t.Fatalf("expected 5 freezer syncs, got %d", freezer.syncs)
+	}
+}
+
+func TestBlockRecordsDatabaseRefusesToRecordOverGap(t *testing.T) {
+	freezer := newTestBlockRecordsFreezer(t, "")
+	store := newBlockRecordsFreezer(freezer)
+	for pos := arbutil.MessageIndex(1000); pos <= 1009; pos++ {
+		if err := store.writeRecording(testChainTipRecording(pos)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := store.writeRecording(testChainTipRecording(2000)); err == nil {
+		t.Fatal("expected recording over a gap to fail")
+	}
+
+	loaded, err := store.readRecording(1005)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded == nil || loaded.record.Pos != 1005 {
+		t.Fatalf("expected stored recordings to survive the refused write, got loaded=%+v", loaded)
+	}
+	if err := store.writeRecording(testChainTipRecording(1010)); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = store.readRecording(1010)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded == nil || loaded.record.Pos != 1010 {
+		t.Fatalf("expected contiguous recording to continue after refused write, got loaded=%+v", loaded)
 	}
 }
 
@@ -525,20 +560,17 @@ func TestBlockRecordsDatabaseResetsForUnrepresentablePositions(t *testing.T) {
 		prune    uint64 // freezer tail truncation before the write, if non-zero
 		writePos arbutil.MessageIndex
 	}{
-		// The recorder was disabled for a while, leaving a gap that can never
-		// be backfilled.
-		{name: "AheadOfHead", writePos: 2000},
 		// A reorg below the first stored recording makes everything stored
 		// stale.
 		{name: "BelowFirstRecording", writePos: 500},
 		// A reorg below the pruned tail is not representable in the freezer
 		// at all and must not halt recording.
-		{name: "BelowPrunedTail", prune: 5, writePos: 3},
+		{name: "BelowPrunedTail", prune: 1005, writePos: 3},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			freezer := newTestBlockRecordsFreezer(t, "")
-			store := newBlockRecordsDatabase(freezer)
+			store := newBlockRecordsFreezer(freezer)
 			for pos := arbutil.MessageIndex(1000); pos <= 1009; pos++ {
 				if err := store.writeRecording(testChainTipRecording(pos)); err != nil {
 					t.Fatal(err)
@@ -558,87 +590,79 @@ func TestBlockRecordsDatabaseResetsForUnrepresentablePositions(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if frozen != 1 {
-				t.Fatalf("expected 1 recording after freezer reset, got %d", frozen)
+			if frozen != uint64(testCase.writePos)+1 {
+				t.Fatalf("expected freezer head at %d after reset, got %d", uint64(testCase.writePos)+1, frozen)
 			}
 			tail, err := freezer.Tail()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if tail != 0 {
-				t.Fatalf("expected freezer tail to reset to 0, got %d", tail)
+			if tail != uint64(testCase.writePos) {
+				t.Fatalf("expected freezer tail at %d after reset, got %d", testCase.writePos, tail)
 			}
-			loaded, ok, err := store.readRecording(1005)
+			loaded, err := store.readRecording(1005)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if ok || loaded != nil {
-				t.Fatalf("expected stale recording to be dropped, got ok=%t loaded=%+v", ok, loaded)
+			if loaded != nil {
+				t.Fatalf("expected stale recording to be dropped, got loaded=%+v", loaded)
 			}
-			loaded, ok, err = store.readRecording(testCase.writePos)
+			loaded, err = store.readRecording(testCase.writePos)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !ok || loaded.record.Pos != testCase.writePos {
-				t.Fatalf("expected recording after reset, got ok=%t loaded=%+v", ok, loaded)
+			if loaded == nil || loaded.record.Pos != testCase.writePos {
+				t.Fatalf("expected recording after reset, got loaded=%+v", loaded)
 			}
 			// Recording continues contiguously from the new position.
 			if err := store.writeRecording(testChainTipRecording(testCase.writePos + 1)); err != nil {
 				t.Fatal(err)
 			}
-			loaded, ok, err = store.readRecording(testCase.writePos + 1)
+			loaded, err = store.readRecording(testCase.writePos + 1)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !ok || loaded.record.Pos != testCase.writePos+1 {
-				t.Fatalf("expected recording appended after reset, got ok=%t loaded=%+v", ok, loaded)
+			if loaded == nil || loaded.record.Pos != testCase.writePos+1 {
+				t.Fatalf("expected recording appended after reset, got loaded=%+v", loaded)
 			}
 		})
 	}
 }
 
-func TestBlockRecordsDatabaseRecoversFromFullyCorruptContents(t *testing.T) {
-	// Corruption surviving the freezer's own repair (e.g. torn writes after a
-	// power loss) must not permanently halt recording: with no decodable
-	// recording left, the store drops the junk and restarts.
+func TestBlockRecordsDatabaseCorruptContentsReadAsMissing(t *testing.T) {
 	freezer := newTestBlockRecordsFreezer(t, "")
 	if _, err := freezer.ModifyAncients(func(writer ethdb.AncientWriteOp) error {
 		return writer.AppendRaw(rawdb.ChainTipBlockRecordsFreezerTable, 0, []byte{0xde, 0xad, 0xbe, 0xef})
 	}); err != nil {
 		t.Fatal(err)
 	}
-	store := newBlockRecordsDatabase(freezer)
+	store := newBlockRecordsFreezer(freezer)
 
-	loaded, ok, err := store.readRecording(0)
+	loaded, err := store.readRecording(0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ok || loaded != nil {
-		t.Fatalf("expected corrupt recording to read as missing, got ok=%t loaded=%+v", ok, loaded)
+	if loaded != nil {
+		t.Fatalf("expected corrupt recording to read as missing, got loaded=%+v", loaded)
 	}
-	pos := arbutil.MessageIndex(42)
-	if err := store.writeRecording(testChainTipRecording(pos)); err != nil {
+	if err := store.writeRecording(testChainTipRecording(42)); err == nil {
+		t.Fatal("expected recording over the gap above corrupt contents to fail")
+	}
+	if err := store.writeRecording(testChainTipRecording(1)); err != nil {
 		t.Fatal(err)
 	}
-	frozen, err := freezer.Ancients()
+	loaded, err = store.readRecording(1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if frozen != 1 {
-		t.Fatalf("expected corrupt contents to be dropped, got %d freezer items", frozen)
-	}
-	loaded, ok, err = store.readRecording(pos)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ok || loaded.record.Pos != pos {
-		t.Fatalf("expected recording after corruption recovery, got ok=%t loaded=%+v", ok, loaded)
+	if loaded == nil || loaded.record.Pos != 1 {
+		t.Fatalf("expected recording after corrupt item, got loaded=%+v", loaded)
 	}
 }
 
 func TestBlockRecordsDatabaseCorruptRecordingReadsAsMissing(t *testing.T) {
 	freezer := newTestBlockRecordsFreezer(t, "")
-	store := newBlockRecordsDatabase(freezer)
+	store := newBlockRecordsFreezer(freezer)
 	if err := store.writeRecording(testChainTipRecording(1)); err != nil {
 		t.Fatal(err)
 	}
@@ -647,37 +671,68 @@ func TestBlockRecordsDatabaseCorruptRecordingReadsAsMissing(t *testing.T) {
 	}
 	// Corrupt item for position 3 behind the decodable recordings.
 	if _, err := freezer.ModifyAncients(func(writer ethdb.AncientWriteOp) error {
-		return writer.AppendRaw(rawdb.ChainTipBlockRecordsFreezerTable, 2, []byte{0xde, 0xad, 0xbe, 0xef})
+		return writer.AppendRaw(rawdb.ChainTipBlockRecordsFreezerTable, 3, []byte{0xde, 0xad, 0xbe, 0xef})
 	}); err != nil {
 		t.Fatal(err)
 	}
-	store = newBlockRecordsDatabase(freezer)
+	store = newBlockRecordsFreezer(freezer)
 
-	loaded, ok, err := store.readRecording(3)
+	loaded, err := store.readRecording(3)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ok || loaded != nil {
-		t.Fatalf("expected corrupt recording to read as missing, got ok=%t loaded=%+v", ok, loaded)
+	if loaded != nil {
+		t.Fatalf("expected corrupt recording to read as missing, got loaded=%+v", loaded)
 	}
 	if err := store.writeRecording(testChainTipRecording(4)); err != nil {
 		t.Fatal(err)
 	}
 	for _, pos := range []arbutil.MessageIndex{1, 2, 4} {
-		loaded, ok, err = store.readRecording(pos)
+		loaded, err = store.readRecording(pos)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !ok || loaded.record.Pos != pos {
-			t.Fatalf("expected recording for pos %d to survive corruption, got ok=%t loaded=%+v", pos, ok, loaded)
+		if loaded == nil || loaded.record.Pos != pos {
+			t.Fatalf("expected recording for pos %d to survive corruption, got loaded=%+v", pos, loaded)
 		}
+	}
+}
+
+func TestBlockRecordsDatabaseAdvancesOverGapWhenEmpty(t *testing.T) {
+	freezer := newTestBlockRecordsFreezer(t, "")
+	store := newBlockRecordsFreezer(freezer)
+	for pos := arbutil.MessageIndex(1000); pos <= 1002; pos++ {
+		if err := store.writeRecording(testChainTipRecording(pos)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := freezer.TruncateTail(1003); err != nil {
+		t.Fatal(err)
+	}
+	pos := arbutil.MessageIndex(2000)
+	if err := store.writeRecording(testChainTipRecording(pos)); err != nil {
+		t.Fatal(err)
+	}
+	tail, err := freezer.Tail()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tail != uint64(pos) {
+		t.Fatalf("expected freezer tail at %d, got %d", pos, tail)
+	}
+	loaded, err := store.readRecording(pos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded == nil || loaded.record.Pos != pos {
+		t.Fatalf("expected recording after gap advance, got loaded=%+v", loaded)
 	}
 }
 
 func TestBlockRecordsDatabaseTailPruning(t *testing.T) {
 	dir := t.TempDir()
 	freezer := newTestBlockRecordsFreezer(t, dir)
-	store := newBlockRecordsDatabase(freezer)
+	store := newBlockRecordsFreezer(freezer)
 	firstPos := arbutil.MessageIndex(1000)
 	latestPos := arbutil.MessageIndex(1009)
 	for pos := firstPos; pos <= latestPos; pos++ {
@@ -686,74 +741,77 @@ func TestBlockRecordsDatabaseTailPruning(t *testing.T) {
 		}
 	}
 
-	if _, err := freezer.TruncateTail(3); err != nil {
+	if _, err := freezer.TruncateTail(uint64(firstPos) + 3); err != nil {
 		t.Fatal(err)
 	}
-	loaded, ok, err := store.readRecording(firstPos + 2)
+	loaded, err := store.readRecording(firstPos + 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ok || loaded != nil {
-		t.Fatalf("expected pruned recording to be missing, got ok=%t loaded=%+v", ok, loaded)
+	if loaded != nil {
+		t.Fatalf("expected pruned recording to be missing, got loaded=%+v", loaded)
 	}
-	loaded, ok, err = store.readRecording(firstPos + 3)
+	loaded, err = store.readRecording(firstPos + 3)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ok || loaded.record.Pos != firstPos+3 {
-		t.Fatalf("expected earliest retained recording, got ok=%t loaded=%+v", ok, loaded)
+	if loaded == nil || loaded.record.Pos != firstPos+3 {
+		t.Fatalf("expected earliest retained recording, got loaded=%+v", loaded)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
 
-	// The message index of freezer item 0 must still be recoverable from the
-	// earliest retained recording after a restart.
-	store = newBlockRecordsDatabase(newTestBlockRecordsFreezer(t, dir))
+	store = newBlockRecordsFreezer(newTestBlockRecordsFreezer(t, dir))
 	defer store.Close()
-	loaded, ok, err = store.readRecording(firstPos + 3)
+	loaded, err = store.readRecording(firstPos + 3)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ok || loaded.record.Pos != firstPos+3 {
-		t.Fatalf("expected earliest retained recording after reopen, got ok=%t loaded=%+v", ok, loaded)
+	if loaded == nil || loaded.record.Pos != firstPos+3 {
+		t.Fatalf("expected earliest retained recording after reopen, got loaded=%+v", loaded)
 	}
-	loaded, ok, err = store.readRecording(firstPos + 2)
+	loaded, err = store.readRecording(firstPos + 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ok || loaded != nil {
-		t.Fatalf("expected pruned recording to stay missing after reopen, got ok=%t loaded=%+v", ok, loaded)
+	if loaded != nil {
+		t.Fatalf("expected pruned recording to stay missing after reopen, got loaded=%+v", loaded)
 	}
 	if err := store.writeRecording(testChainTipRecording(latestPos + 1)); err != nil {
 		t.Fatal(err)
 	}
-	loaded, ok, err = store.readRecording(latestPos + 1)
+	loaded, err = store.readRecording(latestPos + 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ok || loaded.record.Pos != latestPos+1 {
-		t.Fatalf("expected recording appended after pruning, got ok=%t loaded=%+v", ok, loaded)
+	if loaded == nil || loaded.record.Pos != latestPos+1 {
+		t.Fatalf("expected recording appended after pruning, got loaded=%+v", loaded)
 	}
 }
 
 func TestChainTipRecorderReadsPersistedRecording(t *testing.T) {
-	store := newBlockRecordsDatabase(newTestBlockRecordsFreezer(t, ""))
-	pos := arbutil.MessageIndex(42)
+	engine := newTestRecorderEngine(t, 3)
+	store := newBlockRecordsFreezer(newTestBlockRecordsFreezer(t, ""))
+	recorder := NewChainTipBlockRecorder(engine, store)
+
+	block := engine.bc.GetBlockByNumber(2)
+	pos, err := engine.BlockNumberToMessageIndex(block.NumberU64())
+	if err != nil {
+		t.Fatal(err)
+	}
 	preimageHash := testHash(1)
 	if err := store.writeRecording(&chainTipRecording{
 		record: &execution.RecordResult{
 			Pos:       pos,
-			BlockHash: testHash(2),
+			BlockHash: block.Hash(),
 			Preimages: map[common.Hash][]byte{
 				preimageHash: {1, 2, 3},
 			},
 		},
+		firstHeaderNumber: block.NumberU64() - 1,
 	}); err != nil {
 		t.Fatal(err)
-	}
-	recorder := &ChainTipBlockRecorder{
-		recordsDatabase: store,
 	}
 
 	record, err := recorder.Recording(pos, nil)
@@ -766,33 +824,62 @@ func TestChainTipRecorderReadsPersistedRecording(t *testing.T) {
 	if !bytes.Equal(record.Preimages[preimageHash], []byte{1, 2, 3}) {
 		t.Fatalf("unexpected preimage: %v", record.Preimages[preimageHash])
 	}
+	parent := engine.bc.GetHeaderByNumber(block.NumberU64() - 1)
+	if _, ok := record.Preimages[parent.Hash()]; !ok {
+		t.Fatal("expected parent header preimage in served recording")
+	}
 	if recorder.ServedTipRecordings() != 1 {
 		t.Fatalf("expected served count 1, got %d", recorder.ServedTipRecordings())
+	}
+
+	stale := engine.bc.GetBlockByNumber(3)
+	stalePos, err := engine.BlockNumberToMessageIndex(stale.NumberU64())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.writeRecording(&chainTipRecording{
+		record: &execution.RecordResult{
+			Pos:       stalePos,
+			BlockHash: testHash(99),
+		},
+		firstHeaderNumber: stale.NumberU64(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := recorder.Recording(stalePos, nil); err == nil {
+		t.Fatal("expected stale recording to be rejected")
 	}
 }
 
 func TestChainTipRecorderReadsMultiplePersistedRecordings(t *testing.T) {
-	store := newBlockRecordsDatabase(newTestBlockRecordsFreezer(t, ""))
+	engine := newTestRecorderEngine(t, 3)
+	store := newBlockRecordsFreezer(newTestBlockRecordsFreezer(t, ""))
+	recorder := NewChainTipBlockRecorder(engine, store)
+
 	preimageHash := testHash(1)
-	positions := []arbutil.MessageIndex{40, 41, 42}
-	for _, pos := range positions {
+	positions := make([]arbutil.MessageIndex, 0, 3)
+	for number := uint64(1); number <= 3; number++ {
+		block := engine.bc.GetBlockByNumber(number)
+		pos, err := engine.BlockNumberToMessageIndex(number)
+		if err != nil {
+			t.Fatal(err)
+		}
+		positions = append(positions, pos)
 		if err := store.writeRecording(&chainTipRecording{
 			record: &execution.RecordResult{
 				Pos:       pos,
-				BlockHash: testHash(byte(pos)),
+				BlockHash: block.Hash(),
 				Preimages: map[common.Hash][]byte{
-					preimageHash: {byte(pos)},
+					preimageHash: {byte(number)},
 				},
 			},
+			firstHeaderNumber: number,
 		}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	recorder := &ChainTipBlockRecorder{
-		recordsDatabase: store,
-	}
 
-	for _, pos := range positions {
+	for i, pos := range positions {
 		record, err := recorder.Recording(pos, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -800,10 +887,11 @@ func TestChainTipRecorderReadsMultiplePersistedRecordings(t *testing.T) {
 		if record.Pos != pos {
 			t.Fatalf("unexpected pos: %d", record.Pos)
 		}
-		if record.BlockHash != testHash(byte(pos)) {
-			t.Fatalf("unexpected block hash: %s", record.BlockHash)
+		blockNumber := engine.MessageIndexToBlockNumber(pos)
+		if record.BlockHash != engine.bc.GetBlockByNumber(blockNumber).Hash() {
+			t.Fatalf("unexpected block hash for pos %d: %s", pos, record.BlockHash)
 		}
-		if !bytes.Equal(record.Preimages[preimageHash], []byte{byte(pos)}) {
+		if !bytes.Equal(record.Preimages[preimageHash], []byte{byte(i + 1)}) {
 			t.Fatalf("unexpected preimage for pos %d: %v", pos, record.Preimages[preimageHash])
 		}
 	}

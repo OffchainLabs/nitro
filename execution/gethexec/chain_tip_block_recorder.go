@@ -29,8 +29,6 @@ type wasmKey struct {
 
 type chainTipRecording struct {
 	record            *execution.RecordResult
-	blockNumber       uint64
-	parentHash        common.Hash
 	firstHeaderNumber uint64
 	codeHashes        []common.Hash
 	wasmKeys          []wasmKey
@@ -43,15 +41,15 @@ type ChainTipBlockRecorder struct {
 
 	headerPreimageLock  sync.Mutex
 	headerPreimages     *containers.LruCache[common.Hash, arbitrum.RecordedHeaderPreimage]
-	recordsDatabase     *freezerBlockRecordsDatabase
+	recordsFreezer      *blockRecordsFreezer
 	servedTipRecordings atomic.Uint64
 }
 
-func NewChainTipBlockRecorder(execEngine *ExecutionEngine, recordsDatabase *freezerBlockRecordsDatabase) *ChainTipBlockRecorder {
+func NewChainTipBlockRecorder(execEngine *ExecutionEngine, recordsFreezer *blockRecordsFreezer) *ChainTipBlockRecorder {
 	recorder := &ChainTipBlockRecorder{
 		execEngine:      execEngine,
 		headerPreimages: containers.NewLruCache[common.Hash, arbitrum.RecordedHeaderPreimage](recentHeaderPreimageCacheSlots),
-		recordsDatabase: recordsDatabase,
+		recordsFreezer:  recordsFreezer,
 	}
 	execEngine.SetTipRecorder(recorder)
 	return recorder
@@ -74,11 +72,8 @@ func (r *ChainTipBlockRecorder) RecordTip(block *types.Block, preimages map[comm
 	if block == nil {
 		return nil
 	}
-	if r.recordsDatabase == nil {
-		return fmt.Errorf("chain-tip recording database unavailable")
-	}
-	if r.execEngine == nil {
-		return fmt.Errorf("chain-tip recording message index converter unavailable")
+	if r.recordsFreezer == nil {
+		return fmt.Errorf("chain-tip block records freezer not set")
 	}
 	pos, err := r.execEngine.BlockNumberToMessageIndex(block.NumberU64())
 	if err != nil {
@@ -90,13 +85,11 @@ func (r *ChainTipBlockRecorder) RecordTip(block *types.Block, preimages map[comm
 			BlockHash: block.Hash(),
 			Preimages: preimages,
 		},
-		blockNumber:       block.NumberU64(),
-		parentHash:        block.ParentHash(),
 		firstHeaderNumber: firstHeaderNumber,
 		codeHashes:        codeHashes,
 		wasmKeys:          userWasmKeys(userWasms),
 	}
-	if err := r.recordsDatabase.writeRecording(record); err != nil {
+	if err := r.recordsFreezer.writeRecording(record); err != nil {
 		return fmt.Errorf("failed to persist chain-tip recording for pos %d: %w", pos, err)
 	}
 	return nil
@@ -154,14 +147,14 @@ func (r *ChainTipBlockRecorder) loadUserWasms(record *execution.RecordResult, ke
 }
 
 func (r *ChainTipBlockRecorder) Recording(pos arbutil.MessageIndex, wasmTargets []rawdb.WasmTarget) (*execution.RecordResult, error) {
-	if r.recordsDatabase == nil {
+	if r.recordsFreezer == nil {
 		return nil, fmt.Errorf("chain-tip recording unavailable for pos %d", pos)
 	}
-	recording, ok, err := r.recordsDatabase.readRecording(pos)
+	recording, err := r.recordsFreezer.readRecording(pos)
 	if err != nil {
 		return nil, err
 	}
-	if !ok || recording == nil || recording.record == nil || recording.record.Pos != pos {
+	if recording == nil || recording.record == nil || recording.record.Pos != pos {
 		return nil, fmt.Errorf("chain-tip recording unavailable for pos %d", pos)
 	}
 	blockNumber, parentHash, err := r.recordingBlockMetadata(recording)
@@ -208,9 +201,6 @@ func (r *ChainTipBlockRecorder) MarkValid(arbutil.MessageIndex, common.Hash) {}
 func (r *ChainTipBlockRecorder) OrderlyShutdown() {}
 
 func (r *ChainTipBlockRecorder) recordingBlockMetadata(recording *chainTipRecording) (uint64, common.Hash, error) {
-	if r.execEngine == nil {
-		return recording.blockNumber, recording.parentHash, nil
-	}
 	pos := recording.record.Pos
 	blockNumber := r.execEngine.MessageIndexToBlockNumber(pos)
 	header := r.execEngine.bc.GetHeaderByNumber(blockNumber)
@@ -228,10 +218,10 @@ func (r *ChainTipBlockRecorder) ServedTipRecordings() uint64 {
 }
 
 func (r *ChainTipBlockRecorder) Close() error {
-	if r.recordsDatabase == nil {
+	if r.recordsFreezer == nil {
 		return nil
 	}
-	return r.recordsDatabase.Close()
+	return r.recordsFreezer.Close()
 }
 
 func (r *ChainTipBlockRecorder) loadRecentHeaderPreimages(record *execution.RecordResult, blockNumber uint64, parentHash common.Hash, firstHeaderNumber uint64) error {
