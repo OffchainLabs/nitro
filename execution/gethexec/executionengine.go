@@ -200,11 +200,12 @@ func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
 	originatingTxHash := cascadingErr.OriginatingTx.Hash()
 	// The originating tx may already have been flagged by PostTxFilter (e.g. a
 	// filtered sender is touched by both the submission and its auto-redeem);
-	// don't record it twice.
-	if slices.Contains(f.filteredTxHashes, originatingTxHash) {
-		return
+	// don't record the halt hash twice. The report is still emitted below: it
+	// may contain filtered addresses found during redeem execution that are
+	// not in the submission's report.
+	if !slices.Contains(f.filteredTxHashes, originatingTxHash) {
+		f.filteredTxHashes = append(f.filteredTxHashes, originatingTxHash)
 	}
-	f.filteredTxHashes = append(f.filteredTxHashes, originatingTxHash)
 
 	txRLP, marshalErr := cascadingErr.OriginatingTx.MarshalBinary()
 	if marshalErr != nil {
