@@ -43,4 +43,15 @@ impl KvStore for MemoryKvStore {
         }
         Ok(())
     }
+
+    fn iter_prefix(
+        &self,
+        prefix: Key,
+        start: impl AsRef<[u8]>,
+    ) -> impl Iterator<Item = Result<(KeyBuf, Value), Self::Error>> {
+        self.values
+            .range([prefix, start.as_ref()].concat()..)
+            .take_while(move |(k, _)| k.starts_with(prefix))
+            .map(|(k, v)| Ok((k.clone(), v.clone())))
+    }
 }

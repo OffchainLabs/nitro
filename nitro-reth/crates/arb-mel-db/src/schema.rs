@@ -5,29 +5,35 @@ use arb_consensus_db::{
 
 /// A key accessible through [`MelDb`](crate::MelDb).
 ///
-/// Extends [`ConsensusDbKey`] with boundary-aware key construction: values that
-/// have a legacy/MEL split override [`MelDbKey::mel_key`] to dispatch on the
-/// boundary; everything else uses the default, which forwards straight through to
-/// the underlying consensus-db key.
+/// Extends [`ConsensusDbKey`] with boundary-aware key construction. A value with a
+/// legacy/MEL split declares `MEL_PREFIX`; the default `mel_key` then dispatches on
+/// the boundary (legacy prefix below `init`, MEL prefix at/above). Keys without a
+/// split leave `MEL_PREFIX` unset and forward straight through to the base key.
 pub trait MelDbKey: ConsensusDbKey {
-    /// Build the key, given the legacy/MEL boundary (`initial batch/delayed count`).
-    /// Default: pass straight through to the base [`ConsensusDbKey::key`].
-    fn mel_key(&self, _init: u64) -> KeyBuf {
-        self.key()
+    /// The MEL-era prefix, if this value is stored under a legacy/MEL split.
+    const MEL_PREFIX: Option<&[u8]> = None;
+}
+
+/// Build the key for `key` given the legacy/MEL boundary (`initial batch/delayed
+/// count`): the legacy prefix below `init`, the MEL prefix at or above it. Keys
+/// without a MEL split forward straight through to the base [`schema::key`].
+pub fn mel_key<K: MelDbKey>(key: &K, init: u64) -> KeyBuf {
+    match K::MEL_PREFIX {
+        Some(mel) => {
+            let pos = key.position().expect("MEL keys are positional");
+            let prefix = if pos < init { K::PREFIX } else { mel };
+            let mut keybuf = prefix.to_vec();
+            keybuf.extend_from_slice(&pos.to_be_bytes());
+            keybuf
+        }
+        None => schema::key(key),
     }
 }
 
-/// `s`/`q`: batch metadata is stored under the legacy prefix below the boundary
-/// and the MEL prefix at or above it.
+/// `s`/`q`: batch metadata is stored under the legacy prefix below the boundary and
+/// the MEL prefix at or above it.
 impl MelDbKey for BatchMetadataAt {
-    fn mel_key(&self, init: u64) -> KeyBuf {
-        let prefix = if self.0 < init {
-            schema::SEQUENCER_BATCH_META_PREFIX
-        } else {
-            MEL_SEQUENCER_BATCH_META_PREFIX
-        };
-        schema::key(prefix, self.0)
-    }
+    const MEL_PREFIX: Option<&[u8]> = Some(MEL_SEQUENCER_BATCH_META_PREFIX);
 }
 
 /// Maps a parent chain block number to its computed MEL state

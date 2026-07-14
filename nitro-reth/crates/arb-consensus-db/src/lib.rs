@@ -2,8 +2,6 @@ pub mod kv;
 pub mod rlp;
 pub mod schema;
 
-use schema::ConsensusDbValue;
-
 #[derive(Debug, thiserror::Error)]
 pub enum ConsensusDbError {
     #[error("rlp decode error: {0}")]
@@ -41,11 +39,34 @@ impl<S: kv::KvStore> ConsensusDb<S> {
     }
 
     pub fn get<K: schema::ConsensusDbKey>(&self, key: K) -> Result<Option<K::StoredValue>> {
-        self.get_at_key(&key.key())
+        self.get_at_key(&schema::key(&key))
     }
 
     pub fn put<K: schema::ConsensusDbKey>(&mut self, key: K, value: &K::StoredValue) -> Result<()> {
-        self.put_raw(&key.key(), value.encode())
+        self.put_at_key(&schema::key(&key), value)
+    }
+
+    /// Iterate all entries under a positional key's prefix, in ascending position order.
+    pub fn iter<K: schema::PositionalKey>(
+        &self,
+    ) -> impl Iterator<Item = Result<(u64, K::StoredValue)>> + '_ {
+        self.iter_from::<K>(0)
+    }
+
+    /// Iterate entries under a positional key's prefix starting at `start_pos`.
+    pub fn iter_from<K: schema::PositionalKey>(
+        &self,
+        start_pos: u64,
+    ) -> impl Iterator<Item = Result<(u64, K::StoredValue)>> + '_ {
+        self.store.iter_prefix(K::PREFIX, start_pos.to_be_bytes()).map(|res| {
+            let (k, v) = res.map_err(ConsensusDbError::from_store)?;
+            let pos = u64::from_be_bytes(
+                k[K::PREFIX.len()..]
+                    .try_into()
+                    .map_err(|_| ConsensusDbError::InvalidStoredValue)?,
+            );
+            Ok((pos, schema::ConsensusDbValue::decode(&v)?))
+        })
     }
 
     /// Check stored schema version, and perform migration to current version.

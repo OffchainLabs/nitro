@@ -3,7 +3,7 @@ use alloy_rlp::{RlpDecodable, RlpDecodableWrapper, RlpEncodable, RlpEncodableWra
 
 use crate::{
     ConsensusDbError, Result,
-    kv::{self, KeyBuf},
+    kv::KeyBuf,
     rlp::{NilList, NilString},
 };
 
@@ -13,8 +13,14 @@ pub const CURRENT_VERSION: u64 = 2;
 /// stored there. Positional keys carry a `u64` position; fixed keys carry none.
 pub trait ConsensusDbKey {
     type StoredValue: ConsensusDbValue;
-    fn key(&self) -> kv::KeyBuf;
+    const PREFIX: &[u8];
+    /// The position within the prefix, or `None` for a fixed (singleton) key.
+    fn position(&self) -> Option<u64>;
 }
+
+/// Marker for keys that have a position (via [`prefix_key`]), so the whole prefix
+/// can be range-iterated. Fixed (singleton) keys do not implement this.
+pub trait PositionalKey: ConsensusDbKey {}
 
 /// A value stored in the key-value store, along with how it (de)serializes.
 ///
@@ -31,15 +37,13 @@ macro_rules! prefix_key {
         impl ConsensusDbKey for $key {
             type StoredValue = $val;
 
-            fn key(&self) -> kv::KeyBuf {
-                let prefix = $prefix;
-                let pos_bytes = self.0.to_be_bytes();
-                let mut key = Vec::with_capacity(prefix.len() + pos_bytes.len());
-                key.extend_from_slice(prefix);
-                key.extend_from_slice(&pos_bytes);
-                key
+            const PREFIX: &[u8] = $prefix;
+
+            fn position(&self) -> Option<u64> {
+                Some(self.0)
             }
         }
+        impl PositionalKey for $key {}
     };
 }
 
@@ -49,8 +53,10 @@ macro_rules! fixed_key {
         impl ConsensusDbKey for $key {
             type StoredValue = $val;
 
-            fn key(&self) -> kv::KeyBuf {
-                $const_key.to_vec()
+            const PREFIX: &[u8] = $const_key;
+
+            fn position(&self) -> Option<u64> {
+                None
             }
         }
     };
@@ -273,11 +279,12 @@ pub const SEQUENCER_BATCH_COUNT_KEY: &[u8] = b"_sequencerBatchCount";
 /// Contains a uint64 representing the database schema version
 pub const DB_SCHEMA_VERSION: &[u8] = b"_schemaVersion";
 
-/// Build a database key: `prefix` followed by `pos` as 8 big-endian bytes.
-pub fn key(prefix: &[u8], pos: u64) -> KeyBuf {
-    let pos_bytes = pos.to_be_bytes();
-    let mut key = Vec::with_capacity(prefix.len() + pos_bytes.len());
-    key.extend_from_slice(prefix);
-    key.extend_from_slice(&pos_bytes);
-    key
+/// Build the full key for `key`: its [`ConsensusDbKey::PREFIX`] followed by its
+/// position as 8 big-endian bytes (or nothing for a fixed key).
+pub fn key<K: ConsensusDbKey>(key: &K) -> KeyBuf {
+    let mut keybuf = K::PREFIX.to_vec();
+    if let Some(pos) = key.position() {
+        keybuf.extend_from_slice(&pos.to_be_bytes());
+    }
+    keybuf
 }

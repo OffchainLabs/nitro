@@ -17,6 +17,11 @@ pub trait KvStore {
     fn put(&mut self, key: Key, value: Value) -> Result<(), Self::Error>;
     fn delete(&mut self, key: Key) -> Result<(), Self::Error>;
     fn write_batch(&mut self, batch: Batch) -> Result<(), Self::Error>;
+    fn iter_prefix(
+        &self,
+        prefix: Key,
+        start: impl AsRef<[u8]>,
+    ) -> impl Iterator<Item = Result<(KeyBuf, Value), Self::Error>>;
 }
 
 #[derive(Debug, Default)]
