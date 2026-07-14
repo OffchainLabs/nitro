@@ -15,30 +15,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 
 	arbosutil "github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
-
-// recordingCheckerState is a fake state.AddressCheckerState that records every
-// touched address with its reason.
-type recordingCheckerState struct {
-	touched []filter.FilteredAddressWithReason
-}
-
-func (r *recordingCheckerState) TouchAddress(t *filter.FilteredAddressWithReason) {
-	r.touched = append(r.touched, *t)
-}
-
-func (r *recordingCheckerState) IsFiltered() (bool, []filter.FilteredAddressRecord) {
-	return false, nil
-}
-
-func (r *recordingCheckerState) hasTouch(addr common.Address, reason filter.FilterReasonType) bool {
-	for _, t := range r.touched {
-		if t.Address == addr && t.Reason == reason {
-			return true
-		}
-	}
-	return false
-}
 
 // TestTouchAddressesDealiasedFrom verifies that touchAddresses touches the
 // de-aliased sender for every tx type whose sender is aliased by the L1
@@ -117,13 +95,13 @@ func TestTouchAddressesDealiasedFrom(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			db, err := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
 			require.NoError(t, err)
-			checker := &recordingCheckerState{}
+			checker := &testhelpers.RecordingCheckerState{}
 			db.SetAddressCheckerState(checker)
 
 			touchAddresses(db, tc.tx, aliasedSender)
 
-			require.True(t, checker.hasTouch(aliasedSender, filter.ReasonFrom), "sender should be touched")
-			require.Equal(t, tc.expectDealiasedTo, checker.hasTouch(l1Sender, filter.ReasonDealiasedFrom),
+			require.True(t, checker.CountTouches(aliasedSender, filter.ReasonFrom) > 0, "sender should be touched")
+			require.Equal(t, tc.expectDealiasedTo, checker.CountTouches(l1Sender, filter.ReasonDealiasedFrom) > 0,
 				"unexpected de-aliased sender touch state")
 		})
 	}
