@@ -4,6 +4,7 @@ package gethexec
 
 import (
 	"bytes"
+	"reflect"
 	"testing"
 	"time"
 
@@ -114,10 +115,10 @@ func TestReportForLog(t *testing.T) {
 	if len(report.FilteredAddresses[2].EventRuleMatch.RawLog.Data) != maxLoggedReportBytesLen+100 {
 		t.Errorf("original RawLog.Data was mutated, length %d", len(report.FilteredAddresses[2].EventRuleMatch.RawLog.Data))
 	}
-	if logged.FilteredAddresses[2].EventRuleMatch == report.FilteredAddresses[2].EventRuleMatch {
+	if reflect.ValueOf(logged.FilteredAddresses[2].EventRuleMatch).Pointer() == reflect.ValueOf(report.FilteredAddresses[2].EventRuleMatch).Pointer() {
 		t.Error("truncated record should not share EventRuleMatch with the original")
 	}
-	if logged.FilteredAddresses[2].EventRuleMatch.RawLog == report.FilteredAddresses[2].EventRuleMatch.RawLog {
+	if reflect.ValueOf(logged.FilteredAddresses[2].EventRuleMatch.RawLog).Pointer() == reflect.ValueOf(report.FilteredAddresses[2].EventRuleMatch.RawLog).Pointer() {
 		t.Error("truncated record should not share RawLog with the original")
 	}
 }
