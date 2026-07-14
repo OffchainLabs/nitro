@@ -67,6 +67,10 @@ impl<S: kv::KvStore> ConsensusDb<S> {
         self.put_at_key(&schema::key(&key), value)
     }
 
+    pub fn delete<K: schema::ConsensusDbKey>(&mut self, key: K) -> Result<()> {
+        self.delete_at_key(&schema::key(&key))
+    }
+
     /// Apply a batch of typed writes atomically.
     pub fn write_batch(&mut self, batch: ConsensusDbBatch) -> Result<()> {
         self.write_kv_batch(batch.inner)
@@ -124,6 +128,10 @@ impl<S: kv::KvStore> ConsensusDb<S> {
 
     pub fn put_at_key<V: schema::ConsensusDbValue>(&mut self, key: kv::Key, value: &V) -> Result<()> {
         self.put_raw(key, value.encode())
+    }
+
+    pub fn delete_at_key(&mut self, key: kv::Key) -> Result<()> {
+        self.store.delete(key).map_err(ConsensusDbError::from_store)
     }
 
     /// Get raw bytes from the key-value store.
