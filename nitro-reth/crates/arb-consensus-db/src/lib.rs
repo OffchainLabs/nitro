@@ -63,6 +63,10 @@ impl<S: kv::KvStore> ConsensusDb<S> {
         self.get_at_key(&schema::key(&key))
     }
 
+    pub fn has<K: schema::ConsensusDbKey>(&self, key: K) -> Result<bool> {
+        self.has_at_key(&schema::key(&key))
+    }
+
     pub fn put<K: schema::ConsensusDbKey>(&mut self, key: K, value: &K::StoredValue) -> Result<()> {
         self.put_at_key(&schema::key(&key), value)
     }
@@ -142,6 +146,10 @@ impl<S: kv::KvStore> ConsensusDb<S> {
     pub fn get_at_key<V: schema::ConsensusDbValue>(&self, key: kv::Key) -> Result<Option<V>> {
         let bytes = self.get_raw(key)?;
         bytes.as_deref().map(V::decode).transpose()
+    }
+
+    pub fn has_at_key(&self, key: kv::Key) -> Result<bool> {
+        self.store.has(key).map_err(ConsensusDbError::from_store)
     }
 
     pub fn put_at_key<V: schema::ConsensusDbValue>(&mut self, key: kv::Key, value: &V) -> Result<()> {
