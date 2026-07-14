@@ -313,7 +313,6 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		// delayed sequencer can advance past it.
 		filteredErrOr := func(err error) error {
 			if isFiltered {
-				log.Info("onchain-filtered retryable failed during submission", "ticketId", ticketId, "err", err)
 				return filteredErr
 			}
 			return err
