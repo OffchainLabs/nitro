@@ -226,6 +226,37 @@ pub struct DelayedSequenced(pub u64);
 prefix_key!(DelayedSequencedAt[DELAYED_SEQUENCED_PREFIX] => DelayedSequenced);
 rlp_value!(DelayedSequenced);
 
+// `e`: legacy delayed message — 32-byte accumulator (AfterInboxAcc) followed by an
+// RLP-encoded L1 message.
+#[derive(Debug)]
+pub struct RlpDelayedMessageAt(pub u64);
+
+#[derive(Debug)]
+pub struct RlpDelayedMessage {
+    pub accumulator: B256,
+    pub message: L1IncomingMessage,
+}
+
+prefix_key!(RlpDelayedMessageAt[RLP_DELAYED_MESSAGE_PREFIX] => RlpDelayedMessage);
+
+impl ConsensusDbValue for RlpDelayedMessage {
+    fn encode(&self) -> Vec<u8> {
+        let mut bytes = self.accumulator.to_vec();
+        bytes.extend_from_slice(&alloy_rlp::encode(&self.message));
+        bytes
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        let accumulator =
+            B256::from_slice(bytes.get(..32).ok_or(ConsensusDbError::InvalidStoredValue)?);
+        let message = alloy_rlp::decode_exact(&bytes[32..])?;
+        Ok(Self {
+            accumulator,
+            message,
+        })
+    }
+}
+
 // Fixed (non-positional) keys. All store an RLP-encoded `u64`.
 #[derive(Debug)]
 pub struct MessageCount;

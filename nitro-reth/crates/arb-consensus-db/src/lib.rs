@@ -152,7 +152,11 @@ impl<S: kv::KvStore> ConsensusDb<S> {
         self.store.has(key).map_err(ConsensusDbError::from_store)
     }
 
-    pub fn put_at_key<V: schema::ConsensusDbValue>(&mut self, key: kv::Key, value: &V) -> Result<()> {
+    pub fn put_at_key<V: schema::ConsensusDbValue>(
+        &mut self,
+        key: kv::Key,
+        value: &V,
+    ) -> Result<()> {
         self.put_raw(key, value.encode())
     }
 
@@ -183,19 +187,6 @@ impl<S: kv::KvStore> ConsensusDb<S> {
     fn get_schema_version(&self) -> Result<u64> {
         self.get_raw(schema::DB_SCHEMA_VERSION)?
             .map_or(Ok(0), decode_schema_version)
-    }
-
-    /// RLP-decode the value at `key`. Returns `Ok(None)` if the key is absent.
-    pub fn get_rlp<T: alloy_rlp::Decodable>(&self, key: kv::Key) -> Result<Option<T>> {
-        self.get_raw(key)?
-            .map(alloy_rlp::decode_exact)
-            .transpose()
-            .map_err(ConsensusDbError::Rlp)
-    }
-
-    /// RLP-encode `value` and store it at `key` (upsert).
-    pub fn put_rlp(&mut self, key: kv::Key, value: impl alloy_rlp::Encodable) -> Result<()> {
-        self.put_raw(key, alloy_rlp::encode(value))
     }
 }
 
