@@ -5,6 +5,7 @@ package gethexec
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -71,7 +72,13 @@ func (c *FilteringReportRPCClient) StopAndWait() {
 func (c *FilteringReportRPCClient) ReportFilteredTransactions(producer ReportProducer, reports []addressfilter.FilteredTxReport) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
 		for i := range reports {
-			log.Info("filtered tx report", "producer", producer, "report", reportForLog(&reports[i]))
+			logged := reportForLog(&reports[i])
+			reportJSON, err := json.Marshal(logged)
+			if err != nil {
+				log.Info("filtered tx report", "producer", producer, "report", logged, "jsonMarshalErr", err)
+				continue
+			}
+			log.Info("filtered tx report", "producer", producer, "report", string(reportJSON))
 		}
 		err := c.client.CallContext(ctx, nil, FilteringReportNamespace+"_reportFilteredTransactions", reports)
 		if err != nil {
