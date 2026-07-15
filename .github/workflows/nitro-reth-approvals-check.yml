@@ -18,10 +18,6 @@ on:
   pull_request_review:
 
 jobs:
-  # Single source of truth for what counts as a reth-only PR. Note that
-  # pull_request_review isn't in changed-files' documented event list; it
-  # works because the payload carries a full pull_request object. Re-verify
-  # on a test PR when bumping the action's pin.
   changes:
     if: github.event_name != 'merge_group'
     uses: ./.github/workflows/_detect-changes.yml
