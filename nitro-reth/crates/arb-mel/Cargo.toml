@@ -17,7 +17,7 @@ alloy-rlp = { workspace = true }
 alloy-sol-types = { workspace = true }
 
 # Compression
-brotli = { workspace = true }
+brotli = { workspace = true, features = ["std"] }
 
 # Common
 thiserror = { workspace = true }
