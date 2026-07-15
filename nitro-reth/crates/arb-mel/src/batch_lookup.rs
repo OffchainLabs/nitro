@@ -42,6 +42,7 @@ impl From<TimeBoundsAbi> for TimeBounds {
 
 /// Parses all `SequencerBatchDelivered` batches (and their txs) from the logs
 /// of a single parent-chain block.
+#[allow(dead_code)] // Wired into MEL block processing in a later change.
 pub(crate) fn parse_batches_from_block<L, T>(
     mel_state: &MelState,
     parent_chain_header: &Header,

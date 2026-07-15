@@ -44,6 +44,7 @@ sol! {
 }
 
 /// Parses all delayed inbox messages observed in a single parent-chain block.
+#[allow(dead_code)] // Wired into MEL block processing in a later change.
 pub(crate) fn parse_delayed_messages_from_block<L, T>(
     mel_state: &MelState,
     parent_chain_header: &Header,
