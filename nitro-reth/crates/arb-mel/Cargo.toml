@@ -1,0 +1,26 @@
+[package]
+name = "arb-mel"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Internal crates
+arbos = { workspace = true }
+arb-storage-errors = { workspace = true }
+
+# Alloy
+alloy-primitives = { workspace = true, features = ["std"] }
+alloy-rpc-types-eth = { workspace = true }
+alloy-rlp = { workspace = true }
+alloy-sol-types = { workspace = true }
+
+# Compression
+brotli = { workspace = true }
+
+# Common
+thiserror = { workspace = true }
+
+[lints]
+workspace = true
