@@ -12,8 +12,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Skip the suite for PRs that touch no standard code (changelog-only and
+  # nitro-reth-only PRs).
+  changes:
+    uses: ./.github/workflows/_detect-changes.yml
+    secrets: inherit
+
   zk-proving:
     name: Run tests for ZK-related components and pipelines
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.code_changed == 'true'
     runs-on: arbitrator-ci
     defaults:
       run:
