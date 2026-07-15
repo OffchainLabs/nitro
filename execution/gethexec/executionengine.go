@@ -21,6 +21,7 @@ import (
 	"path"
 	"runtime/pprof"
 	"runtime/trace"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -121,15 +122,16 @@ func touchAddresses(db *state.StateDB, tx *types.Transaction, sender common.Addr
 	if tx.To() != nil {
 		db.TouchAddress(&filter.FilteredAddressWithReason{Address: *tx.To(), FilterReason: filter.FilterReason{Reason: filter.ReasonTo, EventRuleMatch: nil}})
 	}
-	// For tx types that alias the sender (unsigned contract txs, retryables),
-	// also check the original L1 address. The sender in the tx is already
-	// aliased by the L1 bridge, but the restricted address list contains
-	// original (non-aliased) addresses.
+	// For tx types whose sender is aliased by the L1 bridge, also check the
+	// original L1 address, since the restricted address list contains original
+	// (non-aliased) addresses. Submit retryables and deposits are aliased
+	// unconditionally by the Inbox but are special-cased here rather than added
+	// to DoesTxTypeAlias, which ArbSys.WasMyCallersAddressAliased also relies
+	// on.
 	txType := tx.Type()
-	if arbosutil.DoesTxTypeAlias(&txType) {
+	if arbosutil.DoesTxTypeAlias(&txType) || txType == types.ArbitrumSubmitRetryableTxType || txType == types.ArbitrumDepositTxType {
 		db.TouchAddress(&filter.FilteredAddressWithReason{Address: arbosutil.InverseRemapL1Address(sender), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedFrom, EventRuleMatch: nil}})
 	}
-	touchRetryableAddresses(db, tx)
 }
 
 // PostTxFilter touches To/From addresses and checks IsAddressFiltered.
@@ -197,7 +199,14 @@ func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
 		return
 	}
 	originatingTxHash := cascadingErr.OriginatingTx.Hash()
-	f.filteredTxHashes = append(f.filteredTxHashes, originatingTxHash)
+	// The originating tx may already have been flagged by PostTxFilter (e.g. a
+	// filtered sender is touched by both the submission and its auto-redeem);
+	// don't record the halt hash twice. The report is still emitted below: it
+	// may contain filtered addresses found during redeem execution that are
+	// not in the submission's report.
+	if !slices.Contains(f.filteredTxHashes, originatingTxHash) {
+		f.filteredTxHashes = append(f.filteredTxHashes, originatingTxHash)
+	}
 
 	txRLP, marshalErr := cascadingErr.OriginatingTx.MarshalBinary()
 	if marshalErr != nil {
@@ -229,22 +238,6 @@ func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
 		for _, touched := range ef.AddressesForFiltering(l.Topics, l.Data, l.Address) {
 			db.TouchAddress(&touched)
 		}
-	}
-}
-
-// touchRetryableAddresses touches addresses from retryable inner fields
-// (Beneficiary, FeeRefundAddr, RetryTo) so the address filter can detect them.
-// Also touches de-aliased versions to catch L1 contract addresses that were
-// aliased by the Inbox contract.
-func touchRetryableAddresses(db *state.StateDB, tx *types.Transaction) {
-	if inner, ok := tx.GetInner().(*types.ArbitrumSubmitRetryableTx); ok {
-		db.TouchAddress(&filter.FilteredAddressWithReason{Address: inner.Beneficiary, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableBeneficiary, EventRuleMatch: nil}})
-		db.TouchAddress(&filter.FilteredAddressWithReason{Address: inner.FeeRefundAddr, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableFeeRefund, EventRuleMatch: nil}})
-		if inner.RetryTo != nil {
-			db.TouchAddress(&filter.FilteredAddressWithReason{Address: *inner.RetryTo, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableTo, EventRuleMatch: nil}})
-		}
-		db.TouchAddress(&filter.FilteredAddressWithReason{Address: arbosutil.InverseRemapL1Address(inner.Beneficiary), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedRetryableBeneficiary, EventRuleMatch: nil}})
-		db.TouchAddress(&filter.FilteredAddressWithReason{Address: arbosutil.InverseRemapL1Address(inner.FeeRefundAddr), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedRetryableFeeRefund, EventRuleMatch: nil}})
 	}
 }
 
