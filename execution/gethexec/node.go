@@ -390,6 +390,7 @@ func CreateExecutionNode(
 	configFetcher ConfigFetcher,
 	syncTillBlock uint64,
 	seqParentChain *parent.ParentChain,
+	fatalErrChan chan error,
 ) (*ExecutionNode, error) {
 	config := configFetcher.Get()
 
@@ -516,7 +517,7 @@ func CreateExecutionNode(
 
 	var transactionFeedServer *transactionfeed.Server
 	if config.TransactionFeed.Enable {
-		transactionFeedServer = transactionfeed.NewServer(config.TransactionFeed)
+		transactionFeedServer = transactionfeed.NewServer(config.TransactionFeed, fatalErrChan)
 		execEngine.SetTransactionBroadcaster(transactionFeedServer)
 	}
 

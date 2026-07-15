@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"sync/atomic"
@@ -32,12 +33,9 @@ var (
 // broadcastDroppedCounter still reflects every drop.
 const broadcastDropLogInterval = time.Minute
 
-// registerChanBuf and unregisterChanBuf absorb bursts of clients connecting
-// or disconnecting while the run loop is busy broadcasting.
-const (
-	registerChanBuf   = 16
-	unregisterChanBuf = 64
-)
+// eventChanBuf absorbs bursts of clients connecting or disconnecting while
+// the run loop is busy broadcasting.
+const eventChanBuf = 64
 
 type clientConn struct {
 	conn       *websocket.Conn
@@ -45,24 +43,29 @@ type clientConn struct {
 	out        chan []byte
 }
 
+type clientEvent struct {
+	cc       *clientConn
+	register bool
+}
+
 type Server struct {
 	stopwaiter.StopWaiter
 	config           ServerConfig
+	fatalErrChan     chan error
 	listener         net.Listener
 	httpServer       *http.Server
-	register         chan *clientConn
-	unregister       chan *clientConn
+	events           chan clientEvent
 	broadcast        chan []byte
 	clientCount      atomic.Int32
 	lastDropLogNanos atomic.Int64
 }
 
-func NewServer(config ServerConfig) *Server {
+func NewServer(config ServerConfig, fatalErrChan chan error) *Server {
 	return &Server{
-		config:     config,
-		register:   make(chan *clientConn, registerChanBuf),
-		unregister: make(chan *clientConn, unregisterChanBuf),
-		broadcast:  make(chan []byte, config.BroadcastBuf),
+		config:       config,
+		fatalErrChan: fatalErrChan,
+		events:       make(chan clientEvent, eventChanBuf),
+		broadcast:    make(chan []byte, config.BroadcastBuf),
 	}
 }
 
@@ -88,7 +91,7 @@ func (s *Server) Start(ctx context.Context) error {
 			return
 		}
 		log.Error("Transaction feed http serve exited unexpectedly", "err", err)
-		s.StopOnly()
+		s.fatalErrChan <- fmt.Errorf("transaction feed server failed: %w", err)
 	})
 	s.LaunchThread(s.run)
 	log.Info("Transaction feed server listening", "addr", addr)
@@ -111,7 +114,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	ctx := s.GetContext()
 
 	select {
-	case s.register <- cc:
+	case s.events <- clientEvent{cc: cc, register: true}:
 	case <-ctx.Done():
 		_ = conn.Close(websocket.StatusGoingAway, "shutting down")
 		return
@@ -177,15 +180,14 @@ func (s *Server) run(ctx context.Context) {
 
 	for {
 		select {
-		case cc := <-s.register:
-			clients[cc] = struct{}{}
-			s.clientCount.Add(1)
-			clientsCurrentGauge.Update(int64(s.clientCount.Load()))
-
-		case cc := <-s.unregister:
-			if _, ok := clients[cc]; ok {
-				delete(clients, cc)
-				close(cc.out)
+		case ev := <-s.events:
+			if ev.register {
+				clients[ev.cc] = struct{}{}
+				s.clientCount.Add(1)
+				clientsCurrentGauge.Update(int64(s.clientCount.Load()))
+			} else if _, ok := clients[ev.cc]; ok {
+				delete(clients, ev.cc)
+				close(ev.cc.out)
 				s.clientCount.Add(-1)
 				clientsCurrentGauge.Update(int64(s.clientCount.Load()))
 			}
@@ -213,7 +215,7 @@ func (s *Server) run(ctx context.Context) {
 
 func (s *Server) sendUnregister(cc *clientConn) {
 	select {
-	case s.unregister <- cc:
+	case s.events <- clientEvent{cc: cc}:
 	case <-s.GetContext().Done():
 	}
 }

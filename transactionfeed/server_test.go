@@ -16,7 +16,7 @@ import (
 func TestBroadcastDroppedCounter(t *testing.T) {
 	cfg := DefaultServerConfig
 	cfg.BroadcastBuf = 1
-	s := NewServer(cfg)
+	s := NewServer(cfg, make(chan error, 1))
 
 	msg := &TransactionFeedMessage{Version: TransactionFeedV1}
 	start := broadcastDroppedCounter.Snapshot().Count()
@@ -40,7 +40,7 @@ func TestServerConcurrentClients(t *testing.T) {
 	cfg := DefaultServerConfig
 	cfg.Addr = "127.0.0.1"
 	cfg.Port = "0"
-	s := NewServer(cfg)
+	s := NewServer(cfg, make(chan error, 1))
 	if err := s.Start(ctx); err != nil {
 		t.Fatalf("failed to start server: %v", err)
 	}
@@ -99,5 +99,39 @@ func TestServerConcurrentClients(t *testing.T) {
 	}
 	if c := s.ClientCount(); c != 0 {
 		t.Fatalf("ClientCount = %d after all clients disconnected, want 0", c)
+	}
+}
+
+// TestServerFatalOnServeFailure verifies that an unexpected http server
+// failure (as opposed to a graceful StopAndWait) is reported on the fatal
+// error channel so the hosting node shuts down instead of running with a
+// silently dead feed.
+func TestServerFatalOnServeFailure(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := DefaultServerConfig
+	cfg.Addr = "127.0.0.1"
+	cfg.Port = "0"
+	fatalErrChan := make(chan error, 1)
+	s := NewServer(cfg, fatalErrChan)
+	if err := s.Start(ctx); err != nil {
+		t.Fatalf("failed to start server: %v", err)
+	}
+	defer s.StopAndWait()
+
+	// Close the listener out from under the http server to make Serve fail
+	// without going through the graceful-shutdown path.
+	if err := s.listener.Close(); err != nil {
+		t.Fatalf("failed to close listener: %v", err)
+	}
+
+	select {
+	case err := <-fatalErrChan:
+		if err == nil {
+			t.Fatal("got nil fatal error, want non-nil")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for fatal error after listener failure")
 	}
 }

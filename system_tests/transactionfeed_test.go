@@ -1076,9 +1076,8 @@ func TestTransactionFeedReorgRebroadcast(t *testing.T) {
 		t.Fatal("head message index is 0; cannot reorg")
 	}
 
-	// Reorg out the message containing tx (and any after). The execution
-	// engine sends popped messages to its resequence channel, which now
-	// re-broadcasts via the wired transactionFeedServer.
+	// Reorg out the message containing tx (and any after). Resequencing the
+	// popped messages re-broadcasts them via the wired transactionFeedServer.
 	reorgFrom := arbutil.MessageIndex(headIdx)
 	Require(t, builder.L2.ConsensusNode.TxStreamer.ReorgAt(reorgFrom))
 

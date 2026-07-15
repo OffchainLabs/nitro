@@ -256,7 +256,8 @@ type SequencingHooks interface {
 	TxSucceeded()
 	// TxFailed records an error for the last user tx from NextTxToSequence.
 	TxFailed(error)
-	// TxAccepted is called after a transaction has been committed to the block.
+	// TxAccepted is called for each transaction appended to the block under construction
+	// (grouped txs are reported once their group completes; the block may still fail afterwards).
 	TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt, collectTips bool)
 }
 
