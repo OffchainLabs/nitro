@@ -27,20 +27,25 @@ type BlockRecordingsPruner struct {
 }
 
 type BlockRecordingsPrunerConfig struct {
-	Enable        bool          `koanf:"enable"`
-	PruneInterval time.Duration `koanf:"prune-interval" reload:"hot"`
+	Enable           bool          `koanf:"enable"`
+	MinPruneInterval time.Duration `koanf:"min-prune-interval" reload:"hot"`
 }
 
 type BlockRecordingsPrunerConfigFetcher func() *BlockRecordingsPrunerConfig
 
 var DefaultBlockRecordingsPrunerConfig = BlockRecordingsPrunerConfig{
-	Enable:        true,
-	PruneInterval: time.Minute,
+	Enable:           true,
+	MinPruneInterval: time.Minute,
+}
+
+var TestBlockRecordingsPrunerConfig = BlockRecordingsPrunerConfig{
+	Enable:           true,
+	MinPruneInterval: 100 * time.Millisecond,
 }
 
 func BlockRecordingsPrunerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockRecordingsPrunerConfig.Enable, "enable pruning of chain-tip block recordings below the latest confirmed message")
-	f.Duration(prefix+".prune-interval", DefaultBlockRecordingsPrunerConfig.PruneInterval, "interval for running the block recordings pruner")
+	f.Duration(prefix+".min-prune-interval", DefaultBlockRecordingsPrunerConfig.MinPruneInterval, "minimum time between runs of the block recordings pruner")
 }
 
 func NewBlockRecordingsPruner(recorder execution.ExecutionRecorder, config BlockRecordingsPrunerConfigFetcher) *BlockRecordingsPruner {
@@ -60,7 +65,7 @@ func (p *BlockRecordingsPruner) UpdateLatestConfirmed(count arbutil.MessageIndex
 		return
 	}
 
-	if p.lastPruneDone.Add(p.config().PruneInterval).After(time.Now()) {
+	if time.Since(p.lastPruneDone) < p.config().MinPruneInterval {
 		p.pruningLock.Unlock()
 		return
 	}
