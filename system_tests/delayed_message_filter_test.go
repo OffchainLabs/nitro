@@ -32,6 +32,7 @@ import (
 	filteringreportapi "github.com/offchainlabs/nitro/cmd/filtering-report/api"
 	"github.com/offchainlabs/nitro/cmd/filtering-report/forwarder"
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -119,7 +120,7 @@ func sendDelayedBatch(t *testing.T, ctx context.Context, builder *NodeBuilder, t
 	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
 	Require(t, err)
 
-	batchData, err := l2MessageBatchDataFromTxes(txes)
+	batchData, err := gethexec.L2MessageBatchDataFromTxes(txes)
 	Require(t, err)
 
 	l1opts := builder.L1Info.GetDefaultTransactOpts("User", ctx)

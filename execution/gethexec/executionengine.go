@@ -22,6 +22,7 @@ import (
 	"runtime/debug"
 	"runtime/pprof"
 	"runtime/trace"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -138,9 +139,6 @@ func touchAddresses(db *state.StateDB, tx *types.Transaction, sender common.Addr
 // For redeems, returns ErrSeqFilter without a report (originating tx is
 // collected in TxFailed after group rollback).
 func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult, positionInBlock int) error {
-	if tx.Type() == types.ArbitrumInternalTxType {
-		return nil
-	}
 	touchAddresses(db, tx, sender)
 	applyEventFilter(f.eventFilter, db)
 
@@ -704,24 +702,24 @@ func (s *ExecutionEngine) ResequenceReorgedMessage(msg *arbostypes.MessageWithMe
 		log.Warn("failed to parse sequencer message found from reorg", "err", err)
 		return nil, nil
 	}
-	hooks := MakeZeroTxSizeSequencingHooksForTesting(txes, nil, nil, nil)
-	sequencedMsg, _, err := s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks, nil)
+	hooks := MakeResequencingHooks(txes)
+	sequencedMsg, _, err := s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks)
 	if err != nil {
 		return nil, fmt.Errorf("failed to re-sequence old sequencer message removed by reorg: %w", err)
 	}
 	return sequencedMsg, nil
 }
 
-func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, hooks *FullSequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*execution.SequencedMsg, *types.Block, error) {
+func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, hooks BlockSequencingHooks) (*execution.SequencedMsg, *types.Block, error) {
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
-	return s.sequenceTransactionsWithBlockMutex(header, hooks, timeboostedTxs)
+	return s.sequenceTransactionsWithBlockMutex(header, hooks)
 }
 
 // SequenceTransactionsWithProfiling runs SequenceTransactions with tracing and
 // CPU profiling enabled. If the block creation takes longer than 2 seconds, it
 // keeps both and prints out filenames in an error log line.
-func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L1IncomingMessageHeader, hooks *FullSequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*execution.SequencedMsg, *types.Block, error) {
+func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L1IncomingMessageHeader, hooks BlockSequencingHooks) (*execution.SequencedMsg, *types.Block, error) {
 	pprofBuf, traceBuf := bytes.NewBuffer(nil), bytes.NewBuffer(nil)
 	if err := pprof.StartCPUProfile(pprofBuf); err != nil {
 		log.Error("Starting CPU profiling", "error", err)
@@ -730,7 +728,7 @@ func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L
 		log.Error("Starting tracing", "error", err)
 	}
 	start := time.Now()
-	sequencedMsg, res, err := s.SequenceTransactions(header, hooks, timeboostedTxs)
+	sequencedMsg, res, err := s.SequenceTransactions(header, hooks)
 	elapsed := time.Since(start)
 	pprof.StopCPUProfile()
 	trace.Stop()
@@ -783,7 +781,7 @@ func (s *ExecutionEngine) AppendLastSequencedBlock() error {
 	return nil
 }
 
-func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, hooks *FullSequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*execution.SequencedMsg, *types.Block, error) {
+func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, hooks BlockSequencingHooks) (*execution.SequencedMsg, *types.Block, error) {
 	lastBlockHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return nil, nil, err
@@ -831,18 +829,16 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, nil, nil
 	}
 
-	allTxsErrored := true
-	for _, err := range hooks.txErrors {
-		if err == nil {
-			allTxsErrored = false
-			break
-		}
+	sequencedTxes, err := hooks.SequencedTxes()
+	if err != nil {
+		return nil, nil, err
 	}
+	allTxsErrored := !slices.ContainsFunc(sequencedTxes, func(res TxResult) bool { return res.Err == nil })
 	if allTxsErrored {
 		return nil, nil, nil
 	}
 
-	msg, err := hooks.MessageFromTxes(header)
+	msg, err := MessageFromTxes(header, sequencedTxes)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -870,7 +866,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		blockBuiltUsingDelayedMessage: false,
 	}
 
-	blockMetadata := s.blockMetadataFromBlock(block, timeboostedTxs)
+	blockMetadata := blockMetadataFromSequencedTxes(block, sequencedTxes)
 	sequencedMsg := &execution.SequencedMsg{
 		MsgIdx:        msgIdx,
 		MsgWithMeta:   msgWithMeta,
@@ -879,24 +875,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	}
 
 	return sequencedMsg, block, nil
-}
-
-// blockMetadataFromBlock returns timeboosted byte array which says whether a transaction in the block was timeboosted
-// or not. The first byte of blockMetadata byte array is reserved to indicate the version,
-// starting from the second byte, (N)th bit would represent if (N)th tx is timeboosted or not, 1 means yes and 0 means no
-// blockMetadata[index / 8 + 1] & (1 << (index % 8)) != 0; where index = (N - 1), implies whether (N)th tx in a block is timeboosted
-// note that number of txs in a block will always lag behind (len(blockMetadata) - 1) * 8 but it won't lag more than a value of 7
-func (s *ExecutionEngine) blockMetadataFromBlock(block *types.Block, timeboostedTxs map[common.Hash]struct{}) common.BlockMetadata {
-	bits := make(common.BlockMetadata, 1+arbmath.DivCeil(uint64(len(block.Transactions())), 8))
-	if len(timeboostedTxs) == 0 {
-		return bits
-	}
-	for i, tx := range block.Transactions() {
-		if _, ok := timeboostedTxs[tx.Hash()]; ok {
-			bits[1+i/8] |= 1 << (i % 8)
-		}
-	}
-	return bits
 }
 
 func (s *ExecutionEngine) hasPendingDelayedMsgs() bool {
@@ -1080,7 +1058,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		MsgIdx:        msgIdx,
 		MsgWithMeta:   messageWithMeta,
 		MsgResult:     msgResult,
-		BlockMetadata: s.blockMetadataFromBlock(block, nil),
+		BlockMetadata: emptyBlockMetadata(block),
 	}
 
 	return sequencedMsg, nil

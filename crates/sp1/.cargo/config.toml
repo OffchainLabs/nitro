@@ -1,0 +1,9 @@
+[env]
+SP1_PATCHES_APPLIED = "1"
+
+[patch.crates-io]
+target-lexicon = { git = "https://github.com/OffchainLabs/target-lexicon", tag = "v0.13.5-sp1" }
+region = { git = "https://github.com/OffchainLabs/region-rs", tag = "v3.0.2-sp1-v6.2.1" }
+corosensei = { git = "https://github.com/OffchainLabs/corosensei", tag = "v0.3.3-sp1-v6.2.1" }
+k256 = { git = "https://github.com/sp1-patches/elliptic-curves", tag = "patch-k256-13.4-sp1-6.2.0" }
+tiny-keccak = { git = "https://github.com/sp1-patches/tiny-keccak", tag = "patch-2.0.2-sp1-6.2.0" }

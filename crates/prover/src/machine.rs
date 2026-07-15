@@ -27,16 +27,16 @@ use smallvec::SmallVec;
 use tiny_keccak::{Hasher, Keccak};
 use wasmer_types::FunctionIndex;
 use wasmparser::{DataKind, ElementItems, ElementKind, Operator, RefType, TableType};
+#[cfg(feature = "kzg")]
+use {crate::kzg::prove_kzg_preimage, c_kzg::BYTES_PER_BLOB};
 #[cfg(feature = "native")]
 use {
     crate::{
-        kzg::prove_kzg_preimage,
         programs::meter::MeteredMachine,
         reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
         value::IntegerValType,
         wavm::{IBinOpType, IRelOpType, IUnOpType, unpack_cross_module_call},
     },
-    c_kzg::BYTES_PER_BLOB,
     num::{Zero, traits::PrimInt},
     std::{num::Wrapping, ops::Add},
 };
@@ -2763,6 +2763,7 @@ impl Machine {
                         self.print_backtrace(true);
                         bail!("missing requested preimage for hash {}", hash);
                     };
+                    #[cfg(feature = "kzg")]
                     if preimage_ty == PreimageType::EthVersionedHash
                         && preimage.len() != BYTES_PER_BLOB
                     {
@@ -3384,9 +3385,14 @@ impl Machine {
                                 // The proofs for these preimage types are just the raw preimages.
                                 data.extend(preimage);
                             }
+                            #[cfg(feature = "kzg")]
                             PreimageType::EthVersionedHash => {
                                 prove_kzg_preimage(hash, &preimage, offset, &mut data)
                                     .expect("Failed to generate KZG preimage proof");
+                            }
+                            #[cfg(not(feature = "kzg"))]
+                            PreimageType::EthVersionedHash => {
+                                panic!("KZG preimage proofs require the 'kzg' feature");
                             }
                             PreimageType::DACertificate => {
                                 // We do something special here; we don't create the final proof.

@@ -189,6 +189,23 @@ impl CompileConfig {
         config
     }
 
+    /// Pushes the standard Stylus middleware stack onto a wasmer compiler config.
+    /// Order must be consistent with the prover.
+    #[cfg(feature = "native")]
+    pub fn push_stylus_middlewares(&self, config: &mut dyn wasmer::sys::CompilerConfig) {
+        let start = MiddlewareWrapper::new(StartMover::new(self.debug.debug_info));
+        let meter = MiddlewareWrapper::new(Meter::new(&self.pricing));
+        let dygas = MiddlewareWrapper::new(DynamicMeter::new(&self.pricing));
+        let depth = MiddlewareWrapper::new(DepthChecker::new(self.bounds));
+        let bound = MiddlewareWrapper::new(HeapBound::new(self.bounds));
+
+        config.push_middleware(Arc::new(start));
+        config.push_middleware(Arc::new(meter));
+        config.push_middleware(Arc::new(dygas));
+        config.push_middleware(Arc::new(depth));
+        config.push_middleware(Arc::new(bound));
+    }
+
     #[cfg(feature = "native")]
     fn engine_type(&self, target: Target, cranelift: bool) -> Engine {
         use wasmer::sys::EngineBuilder;
@@ -204,19 +221,7 @@ impl CompileConfig {
         wasmer_config.canonicalize_nans(true);
         wasmer_config.enable_verifier();
 
-        let start = MiddlewareWrapper::new(StartMover::new(self.debug.debug_info));
-        let meter = MiddlewareWrapper::new(Meter::new(&self.pricing));
-        let dygas = MiddlewareWrapper::new(DynamicMeter::new(&self.pricing));
-        let depth = MiddlewareWrapper::new(DepthChecker::new(self.bounds));
-        let bound = MiddlewareWrapper::new(HeapBound::new(self.bounds));
-
-        // add the instrumentation in the order of application
-        // note: this must be consistent with the prover
-        wasmer_config.push_middleware(Arc::new(start));
-        wasmer_config.push_middleware(Arc::new(meter));
-        wasmer_config.push_middleware(Arc::new(dygas));
-        wasmer_config.push_middleware(Arc::new(depth));
-        wasmer_config.push_middleware(Arc::new(bound));
+        self.push_stylus_middlewares(wasmer_config.as_mut());
 
         if self.debug.count_ops {
             let counter = Counter::new();
