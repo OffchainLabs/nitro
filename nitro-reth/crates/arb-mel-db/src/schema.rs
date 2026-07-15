@@ -38,9 +38,11 @@ impl MelDbKey for BatchMetadataAt {
 
 /// Maps a parent chain block number to its computed MEL state
 pub const MEL_STATE_PREFIX: &[u8] = b"l";
-/// Maps a delayed sequence number to an accumulator and an RLP encoded message [TODO(NIT-4209): might need to replace or be replaced by RLP_DELAYED_MESSAGE_PREFIX]
+/// Maps a delayed sequence number to an accumulator and an RLP encoded message [TODO(NIT-4209):
+/// might need to replace or be replaced by RLP_DELAYED_MESSAGE_PREFIX]
 pub const MEL_DELAYED_MESSAGE_PREFIX: &[u8] = b"y";
-/// Maps a batch sequence number to BatchMetadata [TODO(NIT-4209): might need to replace or be replaced by SEQUENCER_BATCH_META_PREFIX]
+/// Maps a batch sequence number to BatchMetadata [TODO(NIT-4209): might need to replace or be
+/// replaced by SEQUENCER_BATCH_META_PREFIX]
 pub const MEL_SEQUENCER_BATCH_META_PREFIX: &[u8] = b"q";
 
 /// Contains the latest computed MEL state's parent chain block number

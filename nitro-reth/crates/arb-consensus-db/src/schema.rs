@@ -481,10 +481,7 @@ mod tests {
 
     #[test]
     fn fixed_key_layout_has_no_suffix() {
-        assert_eq!(
-            key(&MessageCount),
-            <MessageCount as ConsensusDbKey>::PREFIX
-        );
+        assert_eq!(key(&MessageCount), <MessageCount as ConsensusDbKey>::PREFIX);
     }
 
     #[test]
