@@ -1223,11 +1223,9 @@ where
         }
         blocks.reverse();
 
-        if blocks.is_empty() {
+        let Some(last) = blocks.last() else {
             return;
-        }
-
-        let last = blocks.last().unwrap();
+        };
         let last_num_hash = alloy_eips::BlockNumHash::new(
             last.recovered_block().number(),
             last.recovered_block().hash(),

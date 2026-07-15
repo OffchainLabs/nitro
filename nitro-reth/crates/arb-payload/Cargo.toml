@@ -1,21 +1,22 @@
 [package]
 name = "arb-payload"
-version.workspace = true
+authors.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
 
 [dependencies]
-arb-primitives = { workspace = true }
-alloy-primitives = { workspace = true, features = ["std"] }
-alloy-consensus = { workspace = true }
 alloy-eips = { workspace = true }
-alloy-rlp = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std"] }
+alloy-rlp = { workspace = true, features = ["derive"] }
 alloy-rpc-types-engine = { workspace = true }
+arb-primitives = { workspace = true }
 reth-engine-primitives = { workspace = true }
 reth-payload-primitives = { workspace = true }
 reth-primitives-traits = { workspace = true }
-serde = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 

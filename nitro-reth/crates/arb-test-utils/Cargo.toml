@@ -1,17 +1,17 @@
 [package]
 name = "arb-test-utils"
-version.workspace = true
+authors.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
 description = "Test fixtures and harness for arbreth crates"
 
 [dependencies]
-arb-chainspec = { workspace = true }
-arb-primitives = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std"] }
 arb-storage = { workspace = true }
 arbos = { workspace = true }
-alloy-primitives = { workspace = true, features = ["std"] }
 revm = { workspace = true }
 
 [lints]
