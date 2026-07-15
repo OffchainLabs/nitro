@@ -1,2 +1,2 @@
 ### Ignored
-- CI: detect if a PR touches only nitro-reth sources
+- CI: nitro-reth-only PRs run a dedicated suite instead of the standard one, and require two approvals instead of the design-approved label
