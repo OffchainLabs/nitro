@@ -11,9 +11,9 @@ arbos = { workspace = true }
 arb-storage-errors = { workspace = true }
 
 # Alloy
-alloy-primitives = { workspace = true, features = ["std"] }
+alloy-primitives = { workspace = true, features = ["std", "rlp"] }
 alloy-rpc-types-eth = { workspace = true }
-alloy-rlp = { workspace = true }
+alloy-rlp = { workspace = true, features = ["derive"] }
 alloy-sol-types = { workspace = true }
 
 # Compression

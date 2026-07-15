@@ -1203,8 +1203,10 @@ dependencies = [
 name = "arb-mel-db"
 version = "0.1.5"
 dependencies = [
+ "alloy-primitives",
  "alloy-rlp",
  "arb-consensus-db",
+ "arb-mel",
 ]
 
 [[package]]

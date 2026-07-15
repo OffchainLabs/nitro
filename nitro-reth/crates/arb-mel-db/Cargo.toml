@@ -6,9 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-alloy-rlp.workspace = true
+alloy-primitives = { workspace = true, features = ["rlp"] }
+alloy-rlp = { workspace = true, features = ["derive"] }
 
 arb-consensus-db.workspace = true
+arb-mel.workspace = true
 
 [lints]
 workspace = true
