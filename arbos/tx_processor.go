@@ -10,6 +10,7 @@ import (
 
 	"github.com/holiman/uint256"
 
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -307,6 +308,16 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 			filteredErr = &core.ErrFilteredTx{TxHash: ticketId}
 		}
 
+		// For onchain-filtered txs, result.Err must be ErrFilteredOnChain even when
+		// submission fails, so PostTxFilter treats the tx as already handled and the
+		// delayed sequencer can advance past it.
+		filteredErrOr := func(err error) error {
+			if isFiltered {
+				return filteredErr
+			}
+			return err
+		}
+
 		// mint funds with the deposit, then charge fees later
 		availableRefund := new(big.Int).Set(tx.DepositValue)
 		takeFunds(availableRefund, tx.RetryValue)
@@ -316,6 +327,23 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 			return util.TransferBalance(from, to, amount, evm, scenario, reason)
 		}
 
+		// Report addresses to the address filter as they receive funds or become
+		// able to receive funds from this retryable. Also touch the de-aliased
+		// address to catch L1 contract addresses aliased by the Inbox contract.
+		// TouchAddress is a no-op unless an address checker is installed.
+		touch := func(addr common.Address, reason filter.FilterReasonType, dealiasedReason filter.FilterReasonType) {
+			statedb.TouchAddress(&filter.FilteredAddressWithReason{Address: addr, FilterReason: filter.FilterReason{Reason: reason, EventRuleMatch: nil}})
+			statedb.TouchAddress(&filter.FilteredAddressWithReason{Address: util.InverseRemapL1Address(addr), FilterReason: filter.FilterReason{Reason: dealiasedReason, EventRuleMatch: nil}})
+		}
+		touchedFeeRefundAddr := false
+		touchFeeRefundAddr := func() {
+			if touchedFeeRefundAddr {
+				return
+			}
+			touch(tx.FeeRefundAddr, filter.ReasonRetryableFeeRefund, filter.ReasonDealiasedRetryableFeeRefund)
+			touchedFeeRefundAddr = true
+		}
+
 		// check that the user has enough balance to pay for the max submission fee
 		balanceAfterMint := evm.StateDB.GetBalance(tx.From)
 		if balanceAfterMint.ToBig().Cmp(tx.MaxSubmissionFee) < 0 {
@@ -323,7 +351,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 				"insufficient funds for max submission fee: address %v have %v want %v",
 				tx.From, balanceAfterMint, tx.MaxSubmissionFee,
 			)
-			return true, multigas.ZeroGas(), err, nil
+			return true, multigas.ZeroGas(), filteredErrOr(err), nil
 		}
 
 		submissionFee := retryables.RetryableSubmissionFee(len(tx.RetryData), tx.L1BaseFee)
@@ -333,7 +361,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 				"max submission fee %v is less than the actual submission fee %v",
 				tx.MaxSubmissionFee, submissionFee,
 			)
-			return true, multigas.ZeroGas(), err, nil
+			return true, multigas.ZeroGas(), filteredErrOr(err), nil
 		}
 
 		// collect the submission fee
@@ -341,7 +369,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 			// should be impossible as we just checked that they have enough balance for the max submission fee,
 			// and we also checked that the max submission fee is at least the actual submission fee
 			log.Error("failed to transfer submissionFee", "err", err)
-			return true, multigas.ZeroGas(), err, nil
+			return true, multigas.ZeroGas(), filteredErrOr(err), nil
 		}
 		withheldSubmissionFee := takeFunds(availableRefund, submissionFee)
 
@@ -350,6 +378,8 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		if err := transfer(&tx.From, &tx.FeeRefundAddr, submissionFeeRefund, tracing.BalanceChangeTransferRetryableExcessRefund); err != nil {
 			// should never happen as from's balance should be at least availableRefund at this point
 			log.Error("failed to transfer submissionFeeRefund", "err", err)
+		} else if submissionFeeRefund.Sign() > 0 {
+			touchFeeRefundAddr()
 		}
 
 		// move the callvalue into escrow
@@ -366,8 +396,10 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 			// with the rest remaining in the transaction sender's address (as that's where the funds were pulled from).
 			if err := transfer(&tx.From, &tx.FeeRefundAddr, withheldSubmissionFee, tracing.BalanceChangeTransferRetryableExcessRefund); err != nil {
 				log.Error("failed to refund withheldSubmissionFee", "err", err)
+			} else if withheldSubmissionFee.Sign() > 0 {
+				touchFeeRefundAddr()
 			}
-			return true, multigas.ZeroGas(), callValueErr, nil
+			return true, multigas.ZeroGas(), filteredErrOr(callValueErr), nil
 		}
 
 		time := evm.Context.Time
@@ -384,6 +416,15 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 			tx.RetryData,
 		)
 		p.state.Restrict(err)
+
+		// The retryable now exists: the beneficiary can receive the escrowed
+		// callvalue on cancel, RetryTo is called on redeem, and FeeRefundAddr
+		// receives gas refunds.
+		touch(tx.Beneficiary, filter.ReasonRetryableBeneficiary, filter.ReasonDealiasedRetryableBeneficiary)
+		touchFeeRefundAddr()
+		if tx.RetryTo != nil {
+			statedb.TouchAddress(&filter.FilteredAddressWithReason{Address: *tx.RetryTo, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableTo, EventRuleMatch: nil}})
+		}
 
 		err = EmitTicketCreatedEvent(evm, ticketId)
 		if err != nil {
@@ -716,6 +757,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 			effectiveBaseFee.Cmp(p.evm.Context.BaseFee) == 0 // don't refund retryable estimation
 
 		maxRefund := new(big.Int).Set(inner.MaxRefund)
+		touchedRefundTo := false
 		refund := func(refundFrom common.Address, amount *big.Int, reason tracing.BalanceChangeReason) {
 			const errLog = "fee address doesn't have enough funds to give user refund"
 
@@ -741,6 +783,11 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 				// However, in theory, they could've been transferred out during the redeem attempt.
 				// If the network fee address doesn't have the necessary balance, log an error and don't give a refund.
 				logMissingRefund(err)
+			} else if toRefundAddr.Sign() > 0 && !touchedRefundTo {
+				// Report the refund recipient to the address filter once funds actually
+				// flow to it; the guard keeps duplicate records out of filter reports.
+				p.evm.StateDB.TouchAddress(&filter.FilteredAddressWithReason{Address: inner.RefundTo, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableRefundTo, EventRuleMatch: nil}})
+				touchedRefundTo = true
 			}
 			// Any extra refund can't be given to the fee refund address if it didn't come from the L1 deposit.
 			// Instead, give the refund to the retryable from address.
