@@ -4,7 +4,9 @@ package gethexec
 
 import (
 	"bytes"
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -120,6 +122,14 @@ func TestReportForLog(t *testing.T) {
 	}
 	if reflect.ValueOf(logged.FilteredAddresses[2].EventRuleMatch.RawLog).Pointer() == reflect.ValueOf(report.FilteredAddresses[2].EventRuleMatch.RawLog).Pointer() {
 		t.Error("truncated record should not share RawLog with the original")
+	}
+
+	loggedJSON, err := json.Marshal(logged)
+	if err != nil {
+		t.Fatalf("failed to marshal logged report: %v", err)
+	}
+	if !strings.Contains(string(loggedJSON), `"matchedEvent":"LongData"`) {
+		t.Error("logged report JSON should contain nested EventRuleMatch contents")
 	}
 }
 
