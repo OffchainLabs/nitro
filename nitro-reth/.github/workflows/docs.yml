@@ -49,18 +49,18 @@ jobs:
         run: |
           RUSTDOCFLAGS="-A rustdoc::broken-intra-doc-links" \
             cargo doc --workspace --no-deps
-          mkdir -p docs/docs/dist/rustdoc
-          cp -r target/doc/. docs/docs/dist/rustdoc/
+          mkdir -p docs/docs/dist/public/rustdoc
+          cp -r target/doc/. docs/docs/dist/public/rustdoc/
 
       # Add .nojekyll to prevent GitHub Pages from ignoring _-prefixed files
       - name: Prepare for Pages
         run: |
-          touch docs/docs/dist/.nojekyll
-          echo "arbreth.rs" > docs/docs/dist/CNAME
+          touch docs/docs/dist/public/.nojekyll
+          echo "arbreth.rs" > docs/docs/dist/public/CNAME
 
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: docs/docs/dist
+          path: docs/docs/dist/public
 
   deploy:
     name: deploy

@@ -310,6 +310,16 @@ pub fn decode_estimate_args(data: &[u8]) -> Option<(Address, bool, Bytes)> {
     ))
 }
 
+fn hash_prefix_u64(input: &[u8]) -> u64 {
+    let [b0, b1, b2, b3, b4, b5, b6, b7, ..] = keccak256(input).0;
+    u64::from_be_bytes([b0, b1, b2, b3, b4, b5, b6, b7])
+}
+
+fn hash_prefix_u32(input: &[u8]) -> u32 {
+    let [b0, b1, b2, b3, ..] = keccak256(input).0;
+    u32::from_be_bytes([b0, b1, b2, b3])
+}
+
 /// Build the EIP-2718 envelope of a fake EIP-1559 tx used to size the
 /// calldata payload for gas estimation (hard-coded random
 /// nonce/tip/feeCap/gas/sig fields).
@@ -320,16 +330,10 @@ pub fn build_fake_tx_bytes(
     value: U256,
     data: Bytes,
 ) -> Vec<u8> {
-    let nonce = u64::from_be_bytes(keccak256(b"Nonce")[..8].try_into().unwrap());
-    let max_priority = u128::from(u32::from_be_bytes(
-        keccak256(b"GasTipCap")[..4].try_into().unwrap(),
-    ));
-    let max_fee = u128::from(u32::from_be_bytes(
-        keccak256(b"GasFeeCap")[..4].try_into().unwrap(),
-    ));
-    let gas_limit = u64::from(u32::from_be_bytes(
-        keccak256(b"Gas")[..4].try_into().unwrap(),
-    ));
+    let nonce = hash_prefix_u64(b"Nonce");
+    let max_priority = u128::from(hash_prefix_u32(b"GasTipCap"));
+    let max_fee = u128::from(hash_prefix_u32(b"GasFeeCap"));
+    let gas_limit = u64::from(hash_prefix_u32(b"Gas"));
     let r = U256::from_be_bytes(keccak256(b"R").0);
     let s = U256::from_be_bytes(keccak256(b"S").0);
 

@@ -1,26 +1,29 @@
 [package]
 name = "arb-reth"
-version.workspace = true
+authors.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
 
 [[bin]]
 name = "arb-reth"
 path = "src/main.rs"
 
 [dependencies]
+alloy-consensus = { workspace = true }
 arb-node = { workspace = true }
-clap = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+eyre = { workspace = true }
 reth = { workspace = true }
+reth-chainspec = { workspace = true }
 reth-cli = { workspace = true }
 reth-cli-commands = { workspace = true }
 reth-cli-util = { workspace = true }
-reth-chainspec = { workspace = true }
 reth-config = { workspace = true }
 reth-consensus = { workspace = true }
 reth-engine-tree = { workspace = true }
-reth-ethereum-cli = { workspace = true }
 reth-evm = { workspace = true }
 reth-primitives-traits = { workspace = true }
 reth-provider = { workspace = true }
@@ -29,10 +32,8 @@ reth-stages = { workspace = true }
 reth-static-file = { workspace = true }
 reth-tasks = { workspace = true }
 reth-tracing = { workspace = true }
-alloy-consensus = { workspace = true }
 revm-database = { workspace = true }
-eyre = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros", "sync", "time"] }
 tracing = { workspace = true }
 
 [lints]

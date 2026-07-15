@@ -244,9 +244,41 @@ mod tests {
     use super::*;
     use crate::capture::synthetic::generate;
 
-    #[test]
-    fn abba_smoke_runs_and_yields_neutral_for_identical_runs() {
-        let cfg = AbbaConfig {
+    /// Returns fixed per-block metrics instead of measuring real execution, so
+    /// verdict assertions are exact rather than subject to wall-clock noise.
+    struct StubRunner {
+        wall_clock_ns: u64,
+    }
+
+    impl BenchRunner for StubRunner {
+        fn execute(&mut self, workload: Workload) -> eyre::Result<RunResult> {
+            let blocks: Vec<BlockMetric> = workload
+                .blocks
+                .iter()
+                .map(|b| BlockMetric {
+                    block_number: b.block_number,
+                    wall_clock_ns: self.wall_clock_ns,
+                    cpu_ns: self.wall_clock_ns,
+                    gas_used: 21_000 * b.txs.len() as u64,
+                    tx_count: b.txs.len(),
+                    success_count: b.txs.len(),
+                    rss_bytes: 1 << 20,
+                })
+                .collect();
+            let windows = crate::metrics::rolling::build_windows(&blocks, 500);
+            let summary = crate::metrics::SummaryMetrics::from_blocks(&blocks, &windows);
+            Ok(RunResult {
+                manifest_name: workload.manifest_name,
+                blocks,
+                windows,
+                summary,
+                host: Default::default(),
+            })
+        }
+    }
+
+    fn test_config() -> AbbaConfig {
+        AbbaConfig {
             iterations: 1,
             bootstrap_iters: 200,
             tolerance_pct: 50.0,
@@ -255,8 +287,13 @@ mod tests {
                 rolling_window_blocks: 2,
                 abort_on_block_error: false,
             },
-        };
-        let build = || {
+        }
+    }
+
+    fn build_side(
+        wall_clock_ns: u64,
+    ) -> impl FnMut() -> eyre::Result<(Workload, Box<dyn BenchRunner>)> {
+        move || {
             let w = generate(
                 "test/abba",
                 421614,
@@ -264,16 +301,40 @@ mod tests {
                 "transfer_train",
                 &serde_json::json!({ "block_count": 2, "txs_per_block": 2 }),
             )?;
-            let r: Box<dyn BenchRunner> = Box::new(
-                crate::runner::in_process::InProcessRunner::new(cfg.runner.clone()),
-            );
-            Ok::<_, eyre::Report>((w, r))
-        };
-        let result = run_abba(&cfg, "test/abba", build, build).unwrap();
+            let r: Box<dyn BenchRunner> = Box::new(StubRunner { wall_clock_ns });
+            Ok((w, r))
+        }
+    }
+
+    #[test]
+    fn abba_smoke_runs_and_yields_neutral_for_identical_runs() {
+        let cfg = test_config();
+        let result = run_abba(
+            &cfg,
+            "test/abba",
+            build_side(1_000_000),
+            build_side(1_000_000),
+        )
+        .unwrap();
         assert_eq!(result.iterations, 1);
         assert!(!result.deltas.is_empty());
-        // Verdict for identical workloads under wide tolerance is neutral or improvement;
-        // never regression.
-        assert!(!matches!(result.verdict, Verdict::Regression { .. }));
+        // Identical metrics on both sides make every delta exactly zero.
+        assert!(matches!(result.verdict, Verdict::Neutral));
+    }
+
+    #[test]
+    fn abba_flags_regression_when_feature_slower() {
+        let cfg = test_config();
+        // Feature is 2x slower than baseline, well past the 50% tolerance. This
+        // pins the sign conventions in `decide_verdict` for both lower-is-better
+        // metrics and the flipped higher-is-better gas/s metric.
+        let result = run_abba(
+            &cfg,
+            "test/abba",
+            build_side(1_000_000),
+            build_side(2_000_000),
+        )
+        .unwrap();
+        assert!(matches!(result.verdict, Verdict::Regression { .. }));
     }
 }
