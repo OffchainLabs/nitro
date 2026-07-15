@@ -217,12 +217,15 @@ fn inject_arbos_alloc(
                 // win on conflict so fixture overrides replace bootstrap
                 // values; injected fields fill in anything the user didn't
                 // specify.
-                let user = alloc_obj.get_mut(&k).unwrap();
-                if !user.is_object() || !injected.is_object() {
-                    continue;
-                }
-                let user_obj = user.as_object_mut().unwrap();
-                let injected_obj = injected.as_object().unwrap();
+                let user = alloc_obj
+                    .get_mut(&k)
+                    .ok_or_else(|| eyre!("alloc[{k}] disappeared while merging ArbOS state"))?;
+                let user_obj = user
+                    .as_object_mut()
+                    .ok_or_else(|| eyre!("alloc[{k}] is not an object"))?;
+                let injected_obj = injected
+                    .as_object()
+                    .ok_or_else(|| eyre!("generated ArbOS alloc[{k}] is not an object"))?;
                 for (field, val) in injected_obj {
                     if field == "storage" {
                         continue;
@@ -704,6 +707,28 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn inject_arbos_alloc_rejects_non_object_account() {
+        let key = address_lower_no_prefix(arb_storage::ARBOS_STATE_ADDRESS);
+        let mut alloc = serde_json::Map::new();
+        alloc.insert(key.clone(), Value::String("malformed".into()));
+        let mut chain_spec = json!({
+            "config": { "chainId": 421614 },
+            "alloc": alloc,
+        });
+
+        let error = inject_arbos_alloc(
+            &mut chain_spec,
+            421614,
+            10,
+            Address::ZERO,
+            genesis::ArbOSInit::default(),
+        )
+        .expect_err("a non-object alloc entry must be rejected");
+
+        assert_eq!(error.to_string(), format!("alloc[{key}] is not an object"));
+    }
 
     #[test]
     fn serialize_chain_config_matches_v10_default_layout() {

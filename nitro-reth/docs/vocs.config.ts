@@ -1,7 +1,10 @@
-import { defineConfig } from "vocs";
+import { defineConfig } from "vocs/config";
 import React from "react";
 
 export default defineConfig({
+  srcDir: "docs",
+  outDir: "docs/dist",
+  renderStrategy: "full-static",
   title: "Arbitrum Reth",
   description: "A modular, Rust-native execution client for Arbitrum",
   logoUrl: "/logo.png",

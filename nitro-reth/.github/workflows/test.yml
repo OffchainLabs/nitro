@@ -1,9 +1,15 @@
 name: test
 
 on:
-  push:
-    branches: [master]
   pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -12,23 +18,11 @@ jobs:
   nextest:
     name: unit tests (nextest)
     runs-on: ocl-16cpu-64ram
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
-          submodules: false
-      - name: Init submodules with retry
-        shell: bash
-        run: |
-          for i in 1 2 3; do
-            if git submodule update --init --recursive --depth 1; then
-              echo "Submodules initialized"
-              exit 0
-            fi
-            echo "Submodule init attempt $i failed; sleeping $((i*5))s before retry"
-            sleep $((i*5))
-          done
-          echo "Submodule init failed after 3 attempts"
-          exit 1
+          submodules: recursive
       - name: Install build deps
         run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
       - uses: dtolnay/rust-toolchain@1.93
@@ -41,24 +35,14 @@ jobs:
 
   doctests:
     name: doctests
-    runs-on: ubuntu-latest
+    runs-on: ocl-16cpu-64ram
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
-          submodules: false
-      - name: Init submodules with retry
-        shell: bash
-        run: |
-          for i in 1 2 3; do
-            if git submodule update --init --recursive --depth 1; then
-              echo "Submodules initialized"
-              exit 0
-            fi
-            echo "Submodule init attempt $i failed; sleeping $((i*5))s before retry"
-            sleep $((i*5))
-          done
-          echo "Submodule init failed after 3 attempts"
-          exit 1
+          submodules: recursive
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
       - uses: dtolnay/rust-toolchain@1.93
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --doc --workspace

@@ -1,5 +1,5 @@
-fn main() {
-    let manifest_dir = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let manifest_dir = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR")?);
     let brotli_dir = manifest_dir.join("../../brotli");
     let include_dir = brotli_dir.join("c/include");
 
@@ -36,4 +36,6 @@ fn main() {
         .include(&include_dir)
         .warnings(false)
         .compile("brotli");
+
+    Ok(())
 }

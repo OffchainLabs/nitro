@@ -8,7 +8,5 @@
 
 ## Testing
 
-- [ ] `cargo check` passes
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` passes
-- [ ] `cargo test --workspace` passes
+- [ ] `make pr` passes
 - [ ] Relevant new tests added (if applicable)

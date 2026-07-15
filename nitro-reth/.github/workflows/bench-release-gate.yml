@@ -6,7 +6,10 @@ on:
       ref:
         description: "Tag or branch to evaluate"
         required: true
-        default: "master"
+        default: "main"
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -30,23 +33,10 @@ jobs:
         arbos: [30, 40, 50, 60]
         config: [default, aggressive-flush, with-pruner, large-cache]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
-          submodules: false
-      - name: Init submodules with retry
-        shell: bash
-        run: |
-          for i in 1 2 3; do
-            if git submodule update --init --recursive --depth 1; then
-              echo "Submodules initialized"
-              exit 0
-            fi
-            echo "Submodule init attempt $i failed; sleeping $((i*5))s before retry"
-            sleep $((i*5))
-          done
-          echo "Submodule init failed after 3 attempts"
-          exit 1
+          submodules: recursive
       - uses: actions/download-artifact@v8
         with:
           name: bench-release-gate-binaries

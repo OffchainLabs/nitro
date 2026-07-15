@@ -841,6 +841,12 @@ impl<'a> FunctionMiddleware<'a> for DepthCheckerFn {
             )));
         }
 
+        // Insert an extraneous Return before the final End to match Arbitrator.
+        let mut code = std::mem::take(&mut self.code);
+        let Some(final_end) = code.pop() else {
+            return Err(mw_err("depth checker: missing final End operator"));
+        };
+
         // Prologue: check and deduct depth budget
         state.extend([
             Operator::GlobalGet { global_index: g },
@@ -859,9 +865,6 @@ impl<'a> FunctionMiddleware<'a> for DepthCheckerFn {
             Operator::GlobalSet { global_index: g },
         ]);
 
-        // Insert an extraneous Return before the final End to match Arbitrator.
-        let mut code = std::mem::take(&mut self.code);
-        let final_end = code.pop().unwrap();
         code.push(Operator::Return);
         code.push(final_end);
 

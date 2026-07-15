@@ -9,7 +9,7 @@ license.workspace = true
 thiserror.workspace = true
 
 alloy-primitives = { workspace = true, features = ["rlp"] }
-alloy-rlp.workspace = true
+alloy-rlp = { workspace = true, features = ["derive"] }
 
 [lints]
 workspace = true

@@ -1,50 +1,35 @@
 name: dependencies
 
 on:
-  push:
-    branches: [master]
   pull_request:
-  schedule:
-    - cron: "0 0 * * 1" # every Monday
+
+permissions:
+  contents: read
+  # rustsec/audit-check posts its findings as a check run.
+  checks: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  deny:
-    name: cargo deny
-    runs-on: ubuntu-latest
+  deny-and-audit:
+    name: cargo deny & audit
+    runs-on: ocl-8cpu-32ram
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
-        with:
-          submodules: false
-      - name: Init submodules with retry
-        shell: bash
-        run: |
-          for i in 1 2 3; do
-            if git submodule update --init --recursive --depth 1; then
-              echo "Submodules initialized"
-              exit 0
-            fi
-            echo "Submodule init attempt $i failed; sleeping $((i*5))s before retry"
-            sleep $((i*5))
-          done
-          echo "Submodule init failed after 3 attempts"
-          exit 1
-      - uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          command: check
-
-  audit:
-    name: cargo audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          submodules: false
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.93
-      - name: Install cargo-audit
-        run: cargo install --locked cargo-audit
-      # The ignore list lives in .cargo/audit.toml and mirrors deny.toml.
-      - name: Run cargo audit
-        run: cargo audit
+      - uses: taiki-e/install-action@0abfcd587b70a713fdaa7fb502c885e2112acb15 # v2.75.7
+        with:
+          tool: cargo-deny
+      # Advisories are checked separately below via rustsec/audit-check, so
+      # this only runs the categories cargo-deny uniquely covers.
+      - run: cargo deny check bans licenses sources
+      # The ignore list lives in .cargo/audit.toml.
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

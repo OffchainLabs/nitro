@@ -1,36 +1,35 @@
 [package]
 name = "arb-fuzz"
-version.workspace = true
+authors.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
-publish = false
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
 description = "Fuzz targets for arbreth: tx/receipt decoding plus differential vs Nitro reference."
+publish = false
 
 [package.metadata]
 cargo-fuzz = true
 
 [dependencies]
-libfuzzer-sys = "0.4"
-arbos = { workspace = true }
+alloy-eips = { workspace = true, default-features = true }
+alloy-primitives = { workspace = true, features = ["arbitrary"] }
+arb-alloy-consensus = { workspace = true }
 arb-primitives = { workspace = true }
 arb-test-harness = { workspace = true }
-arb-alloy-consensus = "0.1.2"
-alloy-primitives = { workspace = true, features = ["arbitrary"] }
-alloy-eips = "1.7"
-
-arbitrary = { version = "1", features = ["derive"] }
-proptest = { version = "1", default-features = false, features = ["std"] }
-wasm-smith = "0.227"
-
-serde = { workspace = true }
+arbitrary = { workspace = true, features = ["derive"] }
+arbos = { workspace = true }
+hex = { workspace = true }
+libfuzzer-sys = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-hex = { workspace = true }
+wasm-smith = { workspace = true }
 
 [dev-dependencies]
-wat = "1.0"
-arb-stylus = { path = "../arb-stylus" }
+arb-stylus = { workspace = true }
+wat = { workspace = true }
 
 [lib]
 name = "arb_fuzz"
