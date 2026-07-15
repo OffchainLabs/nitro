@@ -9,7 +9,10 @@
     clippy::unnecessary_unwrap,
     clippy::while_immutable_condition
 )]
-use arbos::{arbos_state, arbos_types::MessageWithMetadata};
+use core::time;
+
+use alloy_primitives::Address;
+use arbos::{arbos_state, arbos_types::{L1IncomingMessage, L1IncomingMessageHeader, MessageWithMetadata}};
 
 use crate::{DelayedMessageDB, MelError, MelResult, MelState, SequencerMessage};
 
@@ -101,18 +104,30 @@ pub fn extract_batch_messages<D: DelayedMessageDB>(
 
 fn message_from_segment(
     segment: &[u8],
+    timestamp: u64,
+    block_number: u64,
 ) -> MelResult<(Option<MessageWithMetadata>, u64, u64)> {
     if segment.is_empty() {
         return Ok((None, 0, 0));
     }
+    let mut timestamp = timestamp;
+    let mut block_number = block_number;
     let kind: BatchSegmentKind = segment[0].into();
     use BatchSegmentKind::*;
     match kind {
-        AdvanceTimestamp | AdvanceL1BlockNumber => {
-
+        AdvanceTimestamp => {
+            let advancing: u64 = alloy_rlp::decode_exact(&segment[1..]).unwrap();
+            timestamp += advancing;
+            return Ok((None, timestamp, block_number));
+        }
+        AdvanceL1BlockNumber => {
+            let advancing: u64 = alloy_rlp::decode_exact(&segment[1..]).unwrap();
+            block_number += advancing;
+            return Ok((None, timestamp, block_number));
         }
         L2Message | L2MessageBrotli => {
-
+            let segment = &segment[1..];
+            let msg = produce_l2_message();
         }
         DelayedMessages =>  {
 
@@ -121,13 +136,43 @@ fn message_from_segment(
 
         }
     }
-    Ok((Some(MessageWithMetadata::default()), 0, 0))
+    Ok((Some(MessageWithMetadata::default()), timestamp, block_number))
 }
 
 fn extract_delayed_msg_from_segment(
     mel_state: &MelState,
 ) -> MelResult<MessageWithMetadata> {
     Ok(MessageWithMetadata::default())
+}
+
+fn produce_l2_message(
+    kind: u8,
+    seq_msg: SequencerMessage,
+    segment: &[u8],
+    block_number: u64,
+    timestamp: u64,
+    delayed_messages_read: u64,
+) -> MelResult<MessageWithMetadata> {
+    let mut timestamp = timestamp;
+    let mut block_number = block_number;
+    if timestamp < seq_msg.min_timestamp {
+        timestamp = seq_msg.min_timestamp;
+    }
+    Ok(MessageWithMetadata { 
+        message: L1IncomingMessage {
+            header: L1IncomingMessageHeader {
+                kind: 0,
+                poster: Address::default(),
+                block_number: 0,
+                timestamp: 0,
+                request_id: None,
+                l1_base_fee: None,
+            },
+            l2_msg: vec![],
+            batch_gas_left: None,
+        },
+        delayed_messages_read,
+    })
 }
 
 #[cfg(test)]
