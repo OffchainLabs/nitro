@@ -1160,13 +1160,6 @@ func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentH
 	return queueItems
 }
 
-// updateQueueMetrics refreshes the queue-depth gauge and histogram.
-func (s *Sequencer) updateQueueMetrics() {
-	txQueueLen := int64(len(s.txQueue))
-	sequencerQueueGauge.Update(txQueueLen)
-	sequencerQueueHistogram.Update(txQueueLen)
-}
-
 func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg *execution.SequencedMsg, throttleRegularSequencingFor time.Duration) {
 	s.createBlockMutex.Lock()
 	defer s.createBlockMutex.Unlock()
@@ -1201,7 +1194,6 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 		// Context canceled; retry promptly.
 		return nil, 0
 	}
-	s.updateQueueMetrics()
 
 	if forwarder != nil {
 		// We are forwarding (no longer the active sequencer); forward everything
@@ -1587,7 +1579,9 @@ func (s *Sequencer) StartExpressLaneService(ctx context.Context) {
 
 func (s *Sequencer) backgroundForwarder(_ context.Context) time.Duration {
 	config := s.config()
-	s.updateQueueMetrics()
+	txQueueLen := int64(len(s.txQueue))
+	sequencerQueueGauge.Update(txQueueLen)
+	sequencerQueueHistogram.Update(txQueueLen)
 
 	forwarder := s.getForwarder()
 	if forwarder != nil {
