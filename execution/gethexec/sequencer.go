@@ -994,10 +994,14 @@ func (s *Sequencer) handleInactive(forwarder *TxForwarder, queueItems []txQueueI
 	for _, item := range queueItems {
 		// Skip abandoned submissions: the forwarder ignores the item ctx, so a
 		// drained item whose submitter timed out would still be forwarded.
-		if err := item.ctx.Err(); err != nil {
-			item.returnResult(err)
-			publishResults <- nil
-			continue
+		// Auction resolution items are exempt: their ctx is the sequencer's own
+		// lifecycle context, which is already canceled during shutdown.
+		if !item.isAuctionResolution {
+			if err := item.ctx.Err(); err != nil {
+				item.returnResult(err)
+				publishResults <- nil
+				continue
+			}
 		}
 		go func() {
 			var err error
@@ -1778,12 +1782,23 @@ func (s *Sequencer) StopAndWait() {
 	if forwarder == nil {
 		return
 	}
+	// Bound the whole drain: a stuck block-creation path or a hung forwarding
+	// target must not hang shutdown.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// The existing forwarder runs on the sequencer's StopWaiter context, which
+	// was canceled above, so its publishes would fail immediately. Create a
+	// fresh forwarder on the shutdown context for the final drain.
+	forwarder = NewForwarder(forwarder.targets, &s.config().Forwarder)
+	if err := forwarder.Initialize(shutdownCtx); err != nil {
+		log.Error("failed to initialize the shutdown forwarder; dropping the queued transactions", "err", err)
+		return
+	}
+	defer forwarder.StopAndWait()
 	// The createBlockMutex should be unlocked by now since the sequencer threads
-	// were stopped above, but acquire it with a timeout to be safe: a stuck
-	// block-creation path must not hang shutdown.
-	deadline := time.Now().Add(5 * time.Second)
+	// were stopped above, but acquire it with a timeout to be safe.
 	for !s.createBlockMutex.TryLock() {
-		if time.Now().After(deadline) {
+		if shutdownCtx.Err() != nil {
 			log.Error("giving up draining the queues while shutting down; could not acquire the create block mutex")
 			return
 		}
