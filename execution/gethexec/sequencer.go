@@ -715,6 +715,11 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	if !roundTimingInfo.IsWithinAuctionCloseWindow(arrivalTime) {
 		return fmt.Errorf("transaction arrival time not within auction closure window: %v", arrivalTime)
 	}
+	// The queues are no longer drained after the sequencer is stopped; reject
+	// the tx instead of parking it.
+	if s.Stopped() {
+		return ErrNoSequencer
+	}
 	log.Info("Prioritizing auction resolution transaction from auctioneer", "txHash", tx.Hash().Hex())
 	s.timeboostAuctionResolutionTxQueue <- newAuctionResolutionTxQueueItem(s.GetContext(), tx)
 	return nil
@@ -795,6 +800,11 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 		blockStamp = s.execEngine.bc.CurrentBlock().Number.Uint64()
 	}
 
+	// The queues are no longer drained after the sequencer is stopped; reject
+	// the tx instead of parking it.
+	if s.Stopped() {
+		return ErrNoSequencer
+	}
 	queueItem := newRegularTxQueueItem(queueCtx, tx, options, resultChan, isExpressLaneController, blockStamp)
 	select {
 	case s.txQueue <- queueItem:
@@ -1805,8 +1815,19 @@ func (s *Sequencer) StopAndWait() {
 		time.Sleep(10 * time.Millisecond)
 	}
 	defer s.createBlockMutex.Unlock()
-	queueItems := drainQueueItems(s.txQueue, &s.txRetryQueue, s.timeboostAuctionResolutionTxQueue)
-	s.handleInactive(forwarder, queueItems)
+	// Drain in a loop: txs may be enqueued while a batch is being forwarded.
+	for shutdownCtx.Err() == nil {
+		queueItems := drainQueueItems(s.txQueue, &s.txRetryQueue, s.timeboostAuctionResolutionTxQueue)
+		if len(queueItems) == 0 && s.nonceFailures.Len() == 0 {
+			return
+		}
+		s.handleInactive(forwarder, queueItems)
+	}
+	log.Error("gave up draining the queues while shutting down; some transactions were not forwarded",
+		"txQueue", len(s.txQueue),
+		"retryQueue", s.txRetryQueue.Len(),
+		"nonceFailures", s.nonceFailures.Len(),
+		"timeboostAuctionResolutionTxQueue", len(s.timeboostAuctionResolutionTxQueue))
 }
 
 func (s *Sequencer) MakeSameBlockSequencingHooksAndHeaderForTest(t *testing.T, txes types.Transactions) (*arbostypes.L1IncomingMessageHeader, *FullSequencingHooks) {
