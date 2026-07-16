@@ -1150,10 +1150,10 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 	return outputQueueItems
 }
 
-// drainQueueItems snapshots each queue's length and drains exactly that many items in priority
-// order (auction resolution, then retry, then submitted). The caller must hold createBlockMutex,
-// making this the only consumer, so draining the snapshotted counts never blocks and concurrent
-// pushes are left for the next drain.
+// drainQueueItems snapshots each queue's length and drains up to that many items in priority
+// order (auction resolution, then retry, then submitted). Safe for concurrent consumers: items
+// taken by another consumer between the snapshot and the read are skipped, and concurrent pushes
+// are left for the next drain.
 func drainQueueItems(
 	txQueue chan txQueueItem,
 	txRetryQueue *synchronizedTxQueue,
@@ -1161,15 +1161,27 @@ func drainQueueItems(
 ) []txQueueItem {
 	var queueItems []txQueueItem
 	for range len(auctionResolutionTxQueue) {
-		queueItem := <-auctionResolutionTxQueue
-		log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
-		queueItems = append(queueItems, queueItem)
+		select {
+		case queueItem := <-auctionResolutionTxQueue:
+			log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
+			queueItems = append(queueItems, queueItem)
+		default:
+		}
 	}
 	for range txRetryQueue.Len() {
-		queueItems = append(queueItems, txRetryQueue.Pop())
+		queueItem := txRetryQueue.Pop()
+		if queueItem.tx == nil {
+			// Pop returned the zero value: another consumer emptied the queue.
+			break
+		}
+		queueItems = append(queueItems, queueItem)
 	}
 	for range len(txQueue) {
-		queueItems = append(queueItems, <-txQueue)
+		select {
+		case queueItem := <-txQueue:
+			queueItems = append(queueItems, queueItem)
+		default:
+		}
 	}
 	return queueItems
 }
@@ -1792,8 +1804,7 @@ func (s *Sequencer) StopAndWait() {
 	if forwarder == nil {
 		return
 	}
-	// Bound the whole drain: a stuck block-creation path or a hung forwarding
-	// target must not hang shutdown.
+	// Bound the whole drain: a hung forwarding target must not hang shutdown.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	// The existing forwarder runs on the sequencer's StopWaiter context, which
@@ -1805,16 +1816,6 @@ func (s *Sequencer) StopAndWait() {
 		return
 	}
 	defer forwarder.StopAndWait()
-	// The createBlockMutex should be unlocked by now since the sequencer threads
-	// were stopped above, but acquire it with a timeout to be safe.
-	for !s.createBlockMutex.TryLock() {
-		if shutdownCtx.Err() != nil {
-			log.Error("giving up draining the queues while shutting down; could not acquire the create block mutex")
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	defer s.createBlockMutex.Unlock()
 	// Drain in a loop: txs may be enqueued while a batch is being forwarded.
 	for shutdownCtx.Err() == nil {
 		queueItems := drainQueueItems(s.txQueue, &s.txRetryQueue, s.timeboostAuctionResolutionTxQueue)

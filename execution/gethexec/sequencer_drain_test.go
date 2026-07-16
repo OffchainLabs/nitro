@@ -8,6 +8,7 @@ import (
 	"errors"
 	"math/big"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/core"
@@ -72,6 +73,47 @@ func TestDrainQueueItemsPriorityOrder(t *testing.T) {
 		if item.tx.Nonce() != uint64(i) { // #nosec G115
 			t.Errorf("items[%d] has nonce %d, want %d", i, item.tx.Nonce(), i)
 		}
+	}
+	if len(txQueue) != 0 || retryQueue.Len() != 0 || len(auctionQueue) != 0 {
+		t.Error("queues should be empty after draining")
+	}
+}
+
+func TestDrainQueueItemsConcurrent(t *testing.T) {
+	const itemsPerQueue = 100
+	txQueue := make(chan txQueueItem, itemsPerQueue)
+	auctionQueue := make(chan txQueueItem, itemsPerQueue)
+	retryQueue := &synchronizedTxQueue{}
+
+	for nonce := range uint64(itemsPerQueue) {
+		item, _ := makeTestQueueItem(t, nonce, 0)
+		txQueue <- item
+		retryQueue.Push(item)
+		auctionQueue <- item
+	}
+
+	const drainers = 4
+	results := make(chan []txQueueItem, drainers)
+	var wg sync.WaitGroup
+	for range drainers {
+		wg.Go(func() {
+			results <- drainQueueItems(txQueue, retryQueue, auctionQueue)
+		})
+	}
+	wg.Wait()
+	close(results)
+
+	total := 0
+	for items := range results {
+		for _, item := range items {
+			if item.tx == nil {
+				t.Error("drained an empty queue item")
+			}
+		}
+		total += len(items)
+	}
+	if total != 3*itemsPerQueue {
+		t.Errorf("drained %d items total, want %d", total, 3*itemsPerQueue)
 	}
 	if len(txQueue) != 0 || retryQueue.Len() != 0 || len(auctionQueue) != 0 {
 		t.Error("queues should be empty after draining")
