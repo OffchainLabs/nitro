@@ -27,12 +27,6 @@ use crate::{
     parse_sequencer_message::decompress_brotli,
 };
 
-/// Extracts the L2 messages contained in a parsed sequencer batch.
-///
-/// Walks `seq_msg.segments`, interleaving delayed messages read from `delayed_message_db`
-/// whenever the batch's `after_delayed_messages` count runs ahead of
-/// `mel_state.delayed_messages_read`, while advancing the per-message
-/// timestamp / block-number cursors. For now it returns no messages.
 /// The result of parsing a single batch segment: an optional message together
 /// with the timestamp and block-number cursors after the segment was applied.
 struct MessageFromSegment {
@@ -41,6 +35,12 @@ struct MessageFromSegment {
     block_number: u64,
 }
 
+/// Extracts the L2 messages contained in a parsed sequencer batch.
+///
+/// Walks `seq_msg.segments`, interleaving delayed messages read from `delayed_message_db`
+/// whenever the batch's `after_delayed_messages` count runs ahead of
+/// `mel_state.delayed_messages_read`, while advancing the per-message
+/// timestamp / block-number cursors.
 pub fn extract_batch_messages<D: DelayedMessageDB>(
     mel_state: &mut MelState,
     seq_msg: &mut SequencerMessage,
