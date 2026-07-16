@@ -621,23 +621,7 @@ func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure
 		queueItem.returnResult(err)
 		return
 	}
-	forwarder := s.getForwarder()
-	if forwarder == nil {
-		queueItem.returnResult(failure.nonceErr)
-		return
-	}
-	// We might not have gotten the predecessor tx because our forwarder did. Let's try there instead.
-	// We run this in a background goroutine because LRU eviction needs to be quick.
-	// We use an untracked thread for a few reasons:
-	//   - It's guaranteed to run even when stopped (we need to return *some* result).
-	//   - It acquires mutexes and this might need to happen a lot.
-	//   - We don't need the context because queueItem has its own.
-	//   - The RPC handler is on a separate StopWaiter anyways -- we should respect its context.
-	s.LaunchUntrackedThread(func() {
-		if s.forwardQueueItem(forwarder, queueItem) {
-			s.txRetryQueue.Push(queueItem)
-		}
-	})
+	queueItem.returnResult(failure.nonceErr)
 }
 
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
