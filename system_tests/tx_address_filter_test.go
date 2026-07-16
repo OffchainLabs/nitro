@@ -41,7 +41,7 @@ func isFilteredError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(err.Error(), "internal error")
+	return strings.Contains(err.Error(), "Transaction rejected by chain policy")
 }
 
 func newHashedChecker(addrs []common.Address) *addressfilter.HashedAddressChecker {
