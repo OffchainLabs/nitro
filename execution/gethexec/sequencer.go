@@ -616,27 +616,27 @@ func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure
 		return
 	}
 	queueItem := failure.queueItem
-	err := queueItem.ctx.Err()
-	if err != nil {
+	if err := queueItem.ctx.Err(); err != nil {
 		queueItem.returnResult(err)
 		return
 	}
 	forwarder := s.getForwarder()
-	if forwarder != nil {
-		// We might not have gotten the predecessor tx because our forwarder did. Let's try there instead.
-		// We run this in a background goroutine because LRU eviction needs to be quick.
-		// We use an untracked thread for a few reasons:
-		//   - It's guaranteed to run even when stopped (we need to return *some* result).
-		//   - It acquires mutexes and this might need to happen a lot.
-		//   - We don't need the context because queueItem has its own.
-		//   - The RPC handler is on a separate StopWaiter anyways -- we should respect its context.
-		s.LaunchUntrackedThread(func() {
-			err = forwarder.PublishTransaction(queueItem.ctx, queueItem.tx, queueItem.options)
-			queueItem.returnResult(err)
-		})
-	} else {
+	if forwarder == nil {
 		queueItem.returnResult(failure.nonceErr)
+		return
 	}
+	// We might not have gotten the predecessor tx because our forwarder did. Let's try there instead.
+	// We run this in a background goroutine because LRU eviction needs to be quick.
+	// We use an untracked thread for a few reasons:
+	//   - It's guaranteed to run even when stopped (we need to return *some* result).
+	//   - It acquires mutexes and this might need to happen a lot.
+	//   - We don't need the context because queueItem has its own.
+	//   - The RPC handler is on a separate StopWaiter anyways -- we should respect its context.
+	s.LaunchUntrackedThread(func() {
+		if s.forwardQueueItem(forwarder, s.execEngine.bc.CurrentBlock(), queueItem) {
+			s.txRetryQueue.Push(queueItem)
+		}
+	})
 }
 
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
@@ -1000,43 +1000,14 @@ func (s *Sequencer) handleInactive(forwarder *TxForwarder, queueItems []txQueueI
 		queueItems = append(queueItems, failure.queueItem)
 	}
 
-	config := s.config()
 	currentHeader := s.execEngine.bc.CurrentBlock()
 	publishResults := make(chan *txQueueItem, len(queueItems))
 	for _, item := range queueItems {
-		// Skip abandoned submissions: the forwarder ignores the item ctx, so a
-		// drained item whose submitter timed out would still be forwarded.
-		// Auction resolution items are exempt: their ctx is the sequencer's own
-		// lifecycle context, which is already canceled during shutdown.
-		if !item.isAuctionResolution {
-			if err := item.ctx.Err(); err != nil {
-				item.returnResult(err)
-				publishResults <- nil
-				continue
-			}
-		}
-		// Drop expired timeboosted txs: the receiving sequencer would restamp
-		// them fresh, resetting the block-age expiry it cannot check itself.
-		if err := validateTimeboostExpiry(config, currentHeader, item); err != nil {
-			item.returnResult(err)
-			publishResults <- nil
-			continue
-		}
 		go func() {
-			var err error
-			if item.isAuctionResolution {
-				err = forwarder.PublishAuctionResolutionTransaction(item.ctx, item.tx)
-			} else {
-				err = forwarder.PublishTransaction(item.ctx, item.tx, item.options)
-			}
-			if errors.Is(err, ErrNoSequencer) {
+			if s.forwardQueueItem(forwarder, currentHeader, item) {
 				publishResults <- &item
 			} else {
-				if err != nil {
-					log.Warn("failed to forward transaction", "txHash", item.tx.Hash(), "err", err)
-				}
 				publishResults <- nil
-				item.returnResult(err)
 			}
 		}()
 	}
@@ -1046,6 +1017,41 @@ func (s *Sequencer) handleInactive(forwarder *TxForwarder, queueItems []txQueueI
 			s.txRetryQueue.Push(*remainingItem)
 		}
 	}
+}
+
+// forwardQueueItem forwards a drained item, returning true if it should be re-queued for retry
+// (the forwarder is temporarily disabled). Invalid items are dropped with their error.
+func (s *Sequencer) forwardQueueItem(forwarder *TxForwarder, currentHeader *types.Header, item txQueueItem) bool {
+	// Skip abandoned submissions: the forwarder ignores the item ctx, so a
+	// drained item whose submitter timed out would still be forwarded.
+	// Auction resolution items are exempt: their ctx is the sequencer's own
+	// lifecycle context, which is already canceled during shutdown.
+	if !item.isAuctionResolution {
+		if err := item.ctx.Err(); err != nil {
+			item.returnResult(err)
+			return false
+		}
+	}
+	// Drop expired timeboosted txs: the receiving sequencer would restamp
+	// them fresh, resetting the block-age expiry it cannot check itself.
+	if err := validateTimeboostExpiry(s.config(), currentHeader, item); err != nil {
+		item.returnResult(err)
+		return false
+	}
+	var err error
+	if item.isAuctionResolution {
+		err = forwarder.PublishAuctionResolutionTransaction(item.ctx, item.tx)
+	} else {
+		err = forwarder.PublishTransaction(item.ctx, item.tx, item.options)
+	}
+	if errors.Is(err, ErrNoSequencer) {
+		return true
+	}
+	if err != nil {
+		log.Warn("failed to forward transaction", "txHash", item.tx.Hash(), "err", err)
+	}
+	item.returnResult(err)
+	return false
 }
 
 var sequencerInternalError = errors.New("sequencer internal error")
