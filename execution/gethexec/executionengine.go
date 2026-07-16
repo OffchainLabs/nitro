@@ -1021,7 +1021,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			if s.filteringReportRPCClient != nil && len(filteringHooks.pendingFilteredTxReports) > 0 {
 				reports := filteringHooks.pendingFilteredTxReports
 				s.LaunchThread(func(ctx context.Context) {
-					if _, err := s.filteringReportRPCClient.ReportFilteredTransactions(reports).Await(ctx); err != nil {
+					if _, err := s.filteringReportRPCClient.ReportFilteredTransactions(ReportProducerSequencer, reports).Await(ctx); err != nil {
 						log.Error("error reporting filtered delayed txs to filtering-report", "count", len(reports), "err", err)
 					}
 				})
