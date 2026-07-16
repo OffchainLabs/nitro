@@ -5,6 +5,7 @@ package forwarder
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/filtering-report/signer"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/util/httperror"
 	"github.com/offchainlabs/nitro/util/sqsclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -211,8 +213,9 @@ func (r *Forwarder) pollAndForward(ctx context.Context, consecutiveRetryableErro
 		return r.config.PollInterval
 	}
 	msg := msgs[0]
+	reportFields := reportLogFields(*msg.Body)
 	if err := r.forwardToEndpoint(ctx, *msg.Body); err != nil {
-		log.Error("Failed to forward report to external endpoint", "err", err, "messageId", *msg.MessageId, "body", *msg.Body)
+		log.Error("Failed to forward report to external endpoint", append([]any{"err", err, "messageId", *msg.MessageId}, reportFields...)...)
 		var httpErr *httperror.HTTPError
 		if errors.As(err, &httpErr) && !httpErr.IsRetryable() {
 			externalEndpointNonRetryableFailuresCounter.Inc(1)
@@ -230,7 +233,7 @@ func (r *Forwarder) pollAndForward(ctx context.Context, consecutiveRetryableErro
 	}
 	externalEndpointSuccessesCounter.Inc(1)
 	*consecutiveRetryableErrors = 0
-	log.Info("Successfully forwarded report to external endpoint", "messageId", *msg.MessageId, "body", *msg.Body)
+	log.Info("Successfully forwarded report to external endpoint", append([]any{"messageId", *msg.MessageId}, reportFields...)...)
 	if err = r.queueClient.Delete(ctx, *msg.ReceiptHandle); err != nil {
 		sqsDeleteFailuresCounter.Inc(1)
 		log.Error("Failed to delete SQS message after forwarding", "err", err, "messageId", *msg.MessageId)
@@ -238,6 +241,14 @@ func (r *Forwarder) pollAndForward(ctx context.Context, consecutiveRetryableErro
 		sqsDeleteSuccessesCounter.Inc(1)
 	}
 	return 0
+}
+
+func reportLogFields(body string) []any {
+	var report addressfilter.FilteredTxReport
+	if err := json.Unmarshal([]byte(body), &report); err != nil {
+		return []any{"bodyParseErr", err}
+	}
+	return []any{"reportId", report.ID, "txHash", report.TxHash}
 }
 
 func (r *Forwarder) sendToPoisonQueue(ctx context.Context, msg sqstypes.Message, httpErr *httperror.HTTPError) {
