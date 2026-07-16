@@ -1078,6 +1078,7 @@ func (s *Sequencer) expireNonceFailures() {
 			queueItem.returnResultMaybeLog(failure.nonceErr, true)
 		}
 
+		failure.revived = true // the result was returned above; prevent the eviction hook from forwarding
 		s.nonceFailures.RemoveOldest()
 	}
 }
