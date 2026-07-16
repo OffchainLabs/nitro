@@ -634,7 +634,7 @@ func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure
 	//   - We don't need the context because queueItem has its own.
 	//   - The RPC handler is on a separate StopWaiter anyways -- we should respect its context.
 	s.LaunchUntrackedThread(func() {
-		if s.forwardQueueItem(forwarder, s.execEngine.bc.CurrentBlock(), queueItem) {
+		if s.forwardQueueItem(forwarder, queueItem) {
 			s.txRetryQueue.Push(queueItem)
 		}
 	})
@@ -1001,11 +1001,10 @@ func (s *Sequencer) handleInactive(forwarder *TxForwarder, queueItems []txQueueI
 		queueItems = append(queueItems, failure.queueItem)
 	}
 
-	currentHeader := s.execEngine.bc.CurrentBlock()
 	publishResults := make(chan *txQueueItem, len(queueItems))
 	for _, item := range queueItems {
 		go func() {
-			if s.forwardQueueItem(forwarder, currentHeader, item) {
+			if s.forwardQueueItem(forwarder, item) {
 				publishResults <- &item
 			} else {
 				publishResults <- nil
@@ -1022,16 +1021,10 @@ func (s *Sequencer) handleInactive(forwarder *TxForwarder, queueItems []txQueueI
 
 // forwardQueueItem forwards a drained item, returning true if it should be re-queued for retry
 // (the forwarder is temporarily disabled). Invalid items are dropped with their error.
-func (s *Sequencer) forwardQueueItem(forwarder *TxForwarder, currentHeader *types.Header, item txQueueItem) bool {
+func (s *Sequencer) forwardQueueItem(forwarder *TxForwarder, item txQueueItem) bool {
 	// Skip abandoned submissions: the forwarder ignores the item ctx, so a
 	// drained item whose submitter timed out would still be forwarded.
 	if err := item.ctx.Err(); err != nil {
-		item.returnResult(err)
-		return false
-	}
-	// Drop expired timeboosted txs: the receiving sequencer would restamp
-	// them fresh, resetting the block-age expiry it cannot check itself.
-	if err := validateTimeboostExpiry(s.config(), currentHeader, item); err != nil {
 		item.returnResult(err)
 		return false
 	}
