@@ -13,28 +13,19 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
-// TestTraceFilteredTxBalancedCallstack reproduces the "incorrect number of top-level
-// calls" trace failure caused by onchain-filtered transactions.
-//
-// When a tx hash is in the onchain FilteredTransactions list, TxProcessor.RevertedTxHook
-// bumps the nonce, consumes all remaining gas, and returns ErrFilteredTx. That makes
-// state_transition skip evm.Call entirely, so the EVM never fires the depth-0 OnEnter.
-// Without a faked top-level frame the tracer's callstack stays empty and GetResult fails
-// with "incorrect number of top-level calls". emitSkippedCallFrame now fakes the frame, so
-// the trace must succeed.
-//
-// The regression target is a LEGACY (type 0) transaction, matching the on-chain failure
-// observed on robinhood-testnet block 0x48F051C.
-func TestTraceFilteredTxBalancedCallstack(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
+// sequenceOnchainFilteredLegacyDelayedTx drives the production flow that lands a delayed
+// legacy (type 0) value transfer in the onchain filter: the address filter halts
+// the delayed sequencer, the filterer adds the tx hash to the onchain filter, and
+// the tx is then sequenced as a failed no-op (all gas consumed, EVM call skipped
+// by RevertedTxHook). Node teardown is registered via t.Cleanup.
+func sequenceOnchainFilteredLegacyDelayedTx(t *testing.T, ctx context.Context) (*NodeBuilder, *types.Transaction, *types.Receipt) {
 	builder := setupFilteredTxTestBuilder(t, ctx)
 
 	builder.L2Info.GenerateAccount("FilteredUser")
@@ -42,7 +33,7 @@ func TestTraceFilteredTxBalancedCallstack(t *testing.T) {
 	builder.L2Info.GenerateAccount("Filterer")
 
 	cleanup := builder.Build(t)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	builder.L2.TransferBalance(t, "Owner", "Sender", big.NewInt(1e18), builder.L2Info)
 	builder.L2.TransferBalance(t, "Owner", "Filterer", big.NewInt(1e18), builder.L2Info)
@@ -91,7 +82,30 @@ func TestTraceFilteredTxBalancedCallstack(t *testing.T) {
 	require.Equal(t, types.ReceiptStatusFailed, receipt.Status, "filtered tx should be mined with failed status")
 	require.Equal(t, delayedTx.Gas(), receipt.GasUsed, "filtered tx should consume all gas (punishment)")
 
+	return builder, delayedTx, receipt
+}
+
+// TestTraceFilteredTxBalancedCallstack reproduces the "incorrect number of top-level
+// calls" trace failure caused by onchain-filtered transactions.
+//
+// When a tx hash is in the onchain FilteredTransactions list, TxProcessor.RevertedTxHook
+// bumps the nonce, consumes all remaining gas, and returns ErrFilteredTx. That makes
+// state_transition skip evm.Call entirely, so the EVM never fires the depth-0 OnEnter.
+// Without a faked top-level frame the tracer's callstack stays empty and GetResult fails
+// with "incorrect number of top-level calls". emitSkippedCallFrame now fakes the frame, so
+// the trace must succeed.
+//
+// The regression target is a LEGACY (type 0) transaction, matching the on-chain failure
+// observed on robinhood-testnet block 0x48F051C.
+func TestTraceFilteredTxBalancedCallstack(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder, delayedTx, receipt := sequenceOnchainFilteredLegacyDelayedTx(t, ctx)
+	txHash := delayedTx.Hash()
 	senderAddr := builder.L2Info.GetAddress("Sender")
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+
 	l2rpc := builder.L2.Stack.Attach()
 	defer l2rpc.Close()
 
@@ -144,6 +158,23 @@ func TestTraceFilteredTxBalancedCallstack(t *testing.T) {
 		}
 		require.Truef(t, found, "tracer %s: block trace should include the filtered tx", tracer)
 	}
+}
+
+func TestTraceFilteredTxChainPolicyMessage(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder, delayedTx, _ := sequenceOnchainFilteredLegacyDelayedTx(t, ctx)
+
+	l2rpc := builder.L2.Stack.Attach()
+	defer l2rpc.Close()
+
+	var frame callFrame
+	err := l2rpc.CallContext(ctx, &frame, "debug_traceTransaction", delayedTx.Hash(),
+		map[string]interface{}{"tracer": "callTracer"})
+	require.NoError(t, err)
+	require.Equal(t, state.ChainPolicyRejectionMessage, frame.Error,
+		"filtered delayed tx should trace with the same chain-policy message as RPC rejection")
 }
 
 // callFrame mirrors the fields of go-ethereum's callTracer output that this test asserts on.
