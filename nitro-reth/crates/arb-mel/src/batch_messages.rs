@@ -12,15 +12,25 @@
 use core::time;
 
 use alloy_primitives::Address;
-use arbos::{arbos_state, arbos_types::{L1IncomingMessage, L1IncomingMessageHeader, MAX_L2_MESSAGE_SIZE, MessageWithMetadata, invalid_l1_message}, l1_pricing::BATCH_POSTER_ADDRESS};
+use arbos::{
+    arbos_state,
+    arbos_types::{
+        L1IncomingMessage, L1IncomingMessageHeader, MAX_L2_MESSAGE_SIZE, MessageWithMetadata,
+        invalid_l1_message,
+    },
+    l1_pricing::BATCH_POSTER_ADDRESS,
+};
 use tracing::{error, info};
 
-use crate::{DelayedMessageDB, MelError, BatchSegmentKind, MelResult, MelState, SequencerMessage, parse_sequencer_message::decompress_brotli};
+use crate::{
+    BatchSegmentKind, DelayedMessageDB, MelError, MelResult, MelState, SequencerMessage,
+    parse_sequencer_message::decompress_brotli,
+};
 
 /// Extracts the L2 messages contained in a parsed sequencer batch.
 ///
-/// Walks `seq_msg.segments`, interleaving delayed messages read from `delayed_message_db` 
-/// whenever the batch's `after_delayed_messages` count runs ahead of 
+/// Walks `seq_msg.segments`, interleaving delayed messages read from `delayed_message_db`
+/// whenever the batch's `after_delayed_messages` count runs ahead of
 /// `mel_state.delayed_messages_read`, while advancing the per-message
 /// timestamp / block-number cursors. For now it returns no messages.
 pub fn extract_batch_messages<D: DelayedMessageDB>(
@@ -41,7 +51,7 @@ pub fn extract_batch_messages<D: DelayedMessageDB>(
             seq_msg,
             segment,
             idx,
-            tstamp, 
+            tstamp,
             block_number,
             delayed_message_db,
         ) {
@@ -51,10 +61,10 @@ pub fn extract_batch_messages<D: DelayedMessageDB>(
                 if let Some(msg) = msg {
                     messages.push(msg);
                 }
-            },
+            }
             Err(MelError::ParsingAdvancingSegmentFailed) => {
                 continue;
-            },
+            }
             Err(e) => {
                 return Err(e);
             }
@@ -62,9 +72,8 @@ pub fn extract_batch_messages<D: DelayedMessageDB>(
     }
 
     while mel_state.delayed_messages_read < seq_msg.after_delayed_messages {
-        if let Some(msg) = extract_delayed_msg_from_segment(
-            mel_state, seq_msg, delayed_message_db
-        )? {
+        if let Some(msg) = extract_delayed_msg_from_segment(mel_state, seq_msg, delayed_message_db)?
+        {
             messages.push(msg);
         }
     }
@@ -78,7 +87,7 @@ fn message_from_segment<D: DelayedMessageDB>(
     segment_idx: usize,
     timestamp: u64,
     block_number: u64,
-    delayed_message_db: &D
+    delayed_message_db: &D,
 ) -> MelResult<(Option<MessageWithMetadata>, u64, u64)> {
     if segment.is_empty() {
         return Ok((None, 0, 0));
@@ -110,10 +119,8 @@ fn message_from_segment<D: DelayedMessageDB>(
             )?;
             Ok((Some(msg), timestamp, block_number))
         }
-        DelayedMessages =>  {
-            let msg = extract_delayed_msg_from_segment(
-                mel_state, seq_msg, delayed_message_db,
-            )?;
+        DelayedMessages => {
+            let msg = extract_delayed_msg_from_segment(mel_state, seq_msg, delayed_message_db)?;
             Ok((msg, timestamp, block_number))
         }
         Unknown => {
@@ -149,9 +156,7 @@ fn produce_l2_message(
     }
     let mut seg: Option<Vec<u8>> = None;
     if kind == BatchSegmentKind::L2MessageBrotli {
-        seg = match decompress_brotli(
-            segment, MAX_L2_MESSAGE_SIZE,
-        ) {
+        seg = match decompress_brotli(segment, MAX_L2_MESSAGE_SIZE) {
             Ok(decompressed) => Some(decompressed),
             Err(error) => {
                 info!("Dropping compressed message: {error:?}");
@@ -159,10 +164,10 @@ fn produce_l2_message(
                     message: invalid_l1_message(),
                     delayed_messages_read,
                 });
-            },
+            }
         };
     }
-    Ok(MessageWithMetadata { 
+    Ok(MessageWithMetadata {
         message: L1IncomingMessage {
             header: L1IncomingMessageHeader {
                 kind: BatchSegmentKind::L2Message.into(),
@@ -191,7 +196,8 @@ fn extract_delayed_msg_from_segment<D: DelayedMessageDB>(
             delayed_messages_read: seq_msg.after_delayed_messages,
         }));
     }
-    let delayed = delayed_msg_db.read_delayed_message(mel_state, mel_state.delayed_messages_read)?;
+    let delayed =
+        delayed_msg_db.read_delayed_message(mel_state, mel_state.delayed_messages_read)?;
     match delayed {
         Some(delayed_msg) => {
             mel_state.delayed_messages_read += 1;
@@ -202,9 +208,8 @@ fn extract_delayed_msg_from_segment<D: DelayedMessageDB>(
         }
         None => {
             info!(
-                "No more delayed messages in queue at index {}, delayed messages seen {}", 
-                mel_state.delayed_messages_read, 
-                mel_state.delayed_messages_seen,
+                "No more delayed messages in queue at index {}, delayed messages seen {}",
+                mel_state.delayed_messages_read, mel_state.delayed_messages_seen,
             );
             Ok(None)
         }

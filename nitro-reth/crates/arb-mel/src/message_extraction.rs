@@ -136,12 +136,11 @@ where
             serialized,
             parse_sequencer_message::DEFAULT_MAX_UNCOMPRESSED_BATCH_SIZE,
         )?;
-        let messages_in_batch =
-            batch_messages::extract_batch_messages(
-                &mut post_state, 
-                &mut raw_seq_msg, 
-                delayed_msg_db,
-            )?;
+        let messages_in_batch = batch_messages::extract_batch_messages(
+            &mut post_state,
+            &mut raw_seq_msg,
+            delayed_msg_db,
+        )?;
         for msg in messages_in_batch.into_iter() {
             post_state.accumulate_message(&msg)?;
             messages.push(msg);

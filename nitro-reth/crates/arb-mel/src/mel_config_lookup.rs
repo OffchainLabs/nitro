@@ -114,7 +114,10 @@ mod tests {
             block_logs: vec![unrelated],
             ..Default::default()
         };
-        assert_eq!(parse_mel_config_from_block(&Header::default(), &logs)?, None);
+        assert_eq!(
+            parse_mel_config_from_block(&Header::default(), &logs)?,
+            None
+        );
         Ok(())
     }
 
