@@ -1589,17 +1589,17 @@ func (s *Sequencer) backgroundForwarder(_ context.Context) time.Duration {
 	config := s.config()
 	s.updateQueueMetrics()
 
-	// Turns servicing expiry in StartSequencing are not guaranteed to happen
-	// (the sequencer may be inactive, or sequencing may be yielding while exec
-	// catches up to consensus); expire here so parked nonce-gap txs get their
-	// prompt nonce error instead of waiting out the queue-timeout abort.
-	s.nonceFailures.Resize(config.NonceFailureCacheSize)
-	s.expireNonceFailures()
-
 	forwarder := s.getForwarder()
 	if forwarder != nil {
 		queueItems := s.drainQueueItems()
 		s.handleInactive(forwarder, queueItems)
+	} else {
+		// StartSequencing turns are not guaranteed (paused without a forwarder,
+		// or sequencing yielding while exec catches up); expire here so parked
+		// nonce-gap txs get their prompt nonce error instead of waiting out the
+		// queue-timeout abort.
+		s.nonceFailures.Resize(config.NonceFailureCacheSize)
+		s.expireNonceFailures()
 	}
 	return config.PollInterval
 }
