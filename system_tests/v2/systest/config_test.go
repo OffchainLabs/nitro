@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -18,6 +19,23 @@ func TestCloneConfigPreservesExecConfig(t *testing.T) {
 	cloned := cloneConfig(cfg)
 	if diff := diffStructs("gethexec.Config", *cfg, *cloned); diff != "" {
 		t.Fatalf("cloneConfig dropped state — gob round-trip differs:\n%s\nEither Validate() must restore it, or the clone strategy must change.", diff)
+	}
+}
+
+func TestDefaultExecConfigStateScheme(t *testing.T) {
+	if got := defaultExecConfig(t, containers.Some(StateSchemePath)).Caching.StateScheme; got != string(StateSchemePath) {
+		t.Fatalf("pinned scheme: got %q, want %q", got, StateSchemePath)
+	}
+	if got := defaultExecConfig(t, containers.None[StateScheme]()).Caching.StateScheme; got != gethexec.DefaultCachingConfig.StateScheme {
+		t.Fatalf("unset scheme: got %q, want default %q", got, gethexec.DefaultCachingConfig.StateScheme)
+	}
+}
+
+func TestDefaultExecConfigDoesNotAliasConfigDefault(t *testing.T) {
+	cfg := defaultExecConfig(t, containers.Some(StateSchemeHash))
+	if len(cfg.StylusTarget.ExtraArchs) > 0 &&
+		&cfg.StylusTarget.ExtraArchs[0] == &gethexec.ConfigDefault.StylusTarget.ExtraArchs[0] {
+		t.Fatal("exec config shares slice backing with gethexec.ConfigDefault; overrides would poison the global")
 	}
 }
 

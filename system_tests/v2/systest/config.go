@@ -59,8 +59,6 @@ func defaultExecConfig(t *testing.T, stateScheme containers.Option[StateScheme])
 	cfg := gethexec.ConfigDefault
 	if stateScheme.IsSome() {
 		cfg.Caching.StateScheme = string(stateScheme.Unwrap())
-	} else {
-		cfg.Caching.StateScheme = ""
 	}
 	cfg.Sequencer = defaultSequencerConfig
 	cfg.ParentChainReader = headerreader.TestConfig
@@ -71,7 +69,7 @@ func defaultExecConfig(t *testing.T, stateScheme containers.Option[StateScheme])
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("invalid exec config: %v", err)
 	}
-	return &cfg
+	return cloneConfig(&cfg)
 }
 
 type configFetcher[T any] struct {

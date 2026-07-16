@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -121,6 +122,59 @@ func TestRunOneScenarioPanicIsolated(t *testing.T) {
 	}
 	if cleanups != 1 {
 		t.Errorf("cleanup must still run after a scenario panic, got %d", cleanups)
+	}
+}
+
+func TestRunOneBuildPanicIsolated(t *testing.T) {
+	rt := &recordingT{}
+	hooks := 0
+	item := scheduledTest{
+		Spec:      Spec{Name: "X"},
+		Scenario:  func(*Env) {},
+		PostHooks: []Hook{func(*Env) error { hooks++; return nil }},
+	}
+	runOneWith(rt, item, func(context.Context, Spec, overrides) (*Env, func()) {
+		panic("build boom")
+	})
+	if rt.errCount() != 1 {
+		t.Errorf("build panic should report 1 error, got %d: %v", rt.errCount(), rt.errors)
+	}
+	if hooks != 0 {
+		t.Error("post-hooks must not run after a build panic")
+	}
+}
+
+func TestRunOneBuildGoexitStillReturns(t *testing.T) {
+	rt := &recordingT{}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runOneWith(rt, scheduledTest{Spec: Spec{Name: "X"}, Scenario: func(*Env) {}}, func(context.Context, Spec, overrides) (*Env, func()) {
+			runtime.Goexit()
+			return nil, nil
+		})
+	}()
+	<-done
+	if rt.errCount() != 0 {
+		t.Errorf("unexpected errors: %v", rt.errors)
+	}
+}
+
+func TestGroupSchedule(t *testing.T) {
+	a := Scenario(func(*Env) {})
+	b := Scenario(func(*Env) {})
+	c := Scenario(func(*Env) {})
+	items := []scheduledTest{
+		{Spec: Spec{Name: "A"}, Scenario: a},
+		{Spec: Spec{Name: "A[v=1]"}, Scenario: a},
+		{Spec: Spec{Name: "B"}, Scenario: b},
+	}
+	matched, missing := groupSchedule(items, []Scenario{a, a, c})
+	if len(matched) != 2 || matched[0].Spec.Name != "A" || matched[1].Spec.Name != "A[v=1]" {
+		t.Fatalf("want both registrations of a exactly once, got %d matched", len(matched))
+	}
+	if len(missing) != 1 || missing[0] != reflect.ValueOf(c).Pointer() {
+		t.Fatalf("want exactly the unregistered scenario missing, got %v", missing)
 	}
 }
 

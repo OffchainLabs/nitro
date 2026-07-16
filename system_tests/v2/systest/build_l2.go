@@ -140,7 +140,11 @@ func startL2Node(t *testing.T, ctx context.Context, rb *rollbackGuard, h *L2Hand
 	}
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, h.Stack, h.ExecNode, h.Consensus)
 	if err != nil {
+		h.Consensus.StopAndWait()
 		h.ExecNode.StopAndWait()
+		for len(fatalCh) > 0 {
+			t.Logf("%s fatal during InitAndStart: %v", h.name, <-fatalCh)
+		}
 		t.Fatalf("%s InitAndStart: %v", h.name, err)
 	}
 	// Start the fatal watcher as soon as the nodes run, so a fatal during client
@@ -215,7 +219,7 @@ func startFatalWatcher(ctx context.Context, t *testing.T, fatalCh <-chan error) 
 func buildL2Node(t *testing.T, ctx context.Context, spec Spec, overrides overrides) (*Env, func()) {
 	t.Helper()
 
-	nodeConfig := arbnode.ConfigDefaultL2Test()
+	nodeConfig := cloneConfig(arbnode.ConfigDefaultL2Test())
 	chainConfig, execCfg, stackCfg := seedConfigs(t, spec, overrides, nodeConfig)
 
 	var rb rollbackGuard
