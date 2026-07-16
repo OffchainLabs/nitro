@@ -101,6 +101,44 @@ pub struct BatchMeta {
     pub parent_chain_block: u64,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum BatchSegmentKind {
+    L2Message,
+    L2MessageBrotli,
+    DelayedMessages,
+    AdvanceTimestamp,
+    AdvanceL1BlockNumber,
+    Unknown,
+}
+
+impl From<BatchSegmentKind> for u8 {
+    fn from(value: BatchSegmentKind) -> Self {
+        use BatchSegmentKind::*;
+        match value {
+            L2Message => 0,
+            L2MessageBrotli => 1,
+            DelayedMessages => 2,
+            AdvanceTimestamp => 3,
+            AdvanceL1BlockNumber => 4,
+            Unknown => 5,
+        }
+    }
+}
+
+impl From<u8> for BatchSegmentKind {
+    fn from(value: u8) -> Self {
+        use BatchSegmentKind::*;
+        match value {
+            0 => L2Message,
+            1 => L2MessageBrotli,
+            2 => DelayedMessages,
+            3 => AdvanceTimestamp,
+            4 => AdvanceL1BlockNumber,
+            _ => Unknown,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

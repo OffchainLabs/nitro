@@ -39,5 +39,5 @@ pub trait DelayedMessageDB {
         &self,
         mel_state: &MelState,
         index: u64,
-    ) -> MelResult<DelayedInboxMessage>;
+    ) -> MelResult<Option<DelayedInboxMessage>>;
 }

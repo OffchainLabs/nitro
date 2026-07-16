@@ -12,79 +12,42 @@
 use core::time;
 
 use alloy_primitives::Address;
-use arbos::{arbos_state, arbos_types::{L1IncomingMessage, L1IncomingMessageHeader, MessageWithMetadata}};
+use arbos::{arbos_state, arbos_types::{L1IncomingMessage, L1IncomingMessageHeader, MAX_L2_MESSAGE_SIZE, MessageWithMetadata, invalid_l1_message}, l1_pricing::BATCH_POSTER_ADDRESS};
 
-use crate::{DelayedMessageDB, MelError, MelResult, MelState, SequencerMessage};
-
-// const BatchSegmentKindL2Message uint8 = 0
-// const BatchSegmentKindL2MessageBrotli uint8 = 1
-// const BatchSegmentKindDelayedMessages uint8 = 2
-// const BatchSegmentKindAdvanceTimestamp uint8 = 3
-// const BatchSegmentKindAdvanceL1BlockNumber uint8 = 4
-enum BatchSegmentKind {
-    L2Message,
-    L2MessageBrotli,
-    DelayedMessages,
-    AdvanceTimestamp,
-    AdvanceL1BlockNumber,
-    Unknown,
-}
-
-impl From<BatchSegmentKind> for u8 {
-    fn from(value: BatchSegmentKind) -> Self {
-        use BatchSegmentKind::*;
-        match value {
-            L2Message => 0,
-            L2MessageBrotli => 1,
-            DelayedMessages => 2,
-            AdvanceTimestamp => 3,
-            AdvanceL1BlockNumber => 4,
-            Unknown => unreachable!(),
-        }
-    }
-}
-
-impl From<u8> for BatchSegmentKind {
-    fn from(value: u8) -> Self {
-        use BatchSegmentKind::*;
-        match value {
-            0 => L2Message,
-            1 => L2MessageBrotli,
-            2 => DelayedMessages,
-            3 => AdvanceTimestamp,
-            4 => AdvanceL1BlockNumber,
-            _ => Unknown,
-        }
-    }
-}
+use crate::{DelayedMessageDB, MelError, BatchSegmentKind, MelResult, MelState, SequencerMessage, parse_sequencer_message::decompress_brotli};
 
 /// Extracts the L2 messages contained in a parsed sequencer batch.
 ///
-/// TODO: not yet implemented. The full version must walk `seq_msg.segments`,
-/// interleaving delayed messages read from `delayed_message_db` whenever the
-/// batch's `after_delayed_messages` count runs ahead of
+/// Walks `seq_msg.segments`, interleaving delayed messages read from `delayed_message_db` 
+/// whenever the batch's `after_delayed_messages` count runs ahead of 
 /// `mel_state.delayed_messages_read`, while advancing the per-message
 /// timestamp / block-number cursors. For now it returns no messages.
 pub fn extract_batch_messages<D: DelayedMessageDB>(
-    mel_state: &MelState,
-    seq_msg: SequencerMessage,
-    _delayed_message_db: &D,
+    mel_state: &mut MelState,
+    seq_msg: &mut SequencerMessage,
+    delayed_message_db: &D,
 ) -> MelResult<Vec<MessageWithMetadata>> {
     let mut messages: Vec<MessageWithMetadata> = Vec::with_capacity(seq_msg.segments.len());
     let mut tstamp = 0u64;
     let mut block_number = 0u64;
-    let mut segments = seq_msg.segments;
-    if segments.is_empty() {
+    if seq_msg.segments.is_empty() {
         let d_msg_kind: u8 = BatchSegmentKind::DelayedMessages.into();
-        segments = vec![vec![d_msg_kind]];
+        seq_msg.segments = vec![vec![d_msg_kind]];
     }
-    for (idx, segment) in segments.into_iter().enumerate() {
-        match message_from_segment(&segment) {
+    for (idx, segment) in seq_msg.segments.iter().enumerate() {
+        match message_from_segment(
+            mel_state, 
+            seq_msg, 
+            &segment, 
+            tstamp, 
+            block_number,
+            delayed_message_db,
+        ) {
             Ok((msg, new_block_number, new_timestamp)) => {
                 tstamp = new_timestamp;
                 block_number = new_block_number;
-                if msg.is_some() {
-                    messages.push(msg.unwrap());
+                if let Some(msg) = msg {
+                    messages.push(msg);
                 }
             },
             Err(MelError::ParsingAdvancingSegmentFailed) => {
@@ -97,15 +60,22 @@ pub fn extract_batch_messages<D: DelayedMessageDB>(
     }
 
     while mel_state.delayed_messages_read < seq_msg.after_delayed_messages {
-        messages.push(extract_delayed_msg_from_segment(mel_state)?);
+        if let Some(msg) = extract_delayed_msg_from_segment(
+            mel_state, seq_msg, delayed_message_db
+        )? {
+            messages.push(msg);
+        }
     }
     Ok(messages)
 }
 
-fn message_from_segment(
+fn message_from_segment<D: DelayedMessageDB>(
+    mel_state: &mut MelState,
+    seq_msg: &SequencerMessage,
     segment: &[u8],
     timestamp: u64,
     block_number: u64,
+    delayed_message_db: &D
 ) -> MelResult<(Option<MessageWithMetadata>, u64, u64)> {
     if segment.is_empty() {
         return Ok((None, 0, 0));
@@ -127,27 +97,36 @@ fn message_from_segment(
         }
         L2Message | L2MessageBrotli => {
             let segment = &segment[1..];
-            let msg = produce_l2_message();
+            let msg = produce_l2_message(
+                kind,
+                seq_msg,
+                segment,
+                block_number,
+                timestamp,
+                mel_state.delayed_messages_read,
+            )?;
+            return Ok((Some(msg), timestamp, block_number));
         }
         DelayedMessages =>  {
-
+            let msg = extract_delayed_msg_from_segment(
+                mel_state, seq_msg, delayed_message_db,
+            )?;
+            return Ok((msg, timestamp, block_number));
         }
         Unknown => {
-
+            // TODO: Log the error here and that we are dropping an unknown msg.
+            let msg = MessageWithMetadata {
+                message: invalid_l1_message(),
+                delayed_messages_read: mel_state.delayed_messages_read,
+            };
+            return Ok((Some(msg), timestamp, block_number));
         }
     }
-    Ok((Some(MessageWithMetadata::default()), timestamp, block_number))
-}
-
-fn extract_delayed_msg_from_segment(
-    mel_state: &MelState,
-) -> MelResult<MessageWithMetadata> {
-    Ok(MessageWithMetadata::default())
 }
 
 fn produce_l2_message(
-    kind: u8,
-    seq_msg: SequencerMessage,
+    kind: BatchSegmentKind,
+    seq_msg: &SequencerMessage,
     segment: &[u8],
     block_number: u64,
     timestamp: u64,
@@ -157,22 +136,71 @@ fn produce_l2_message(
     let mut block_number = block_number;
     if timestamp < seq_msg.min_timestamp {
         timestamp = seq_msg.min_timestamp;
+    } else if timestamp > seq_msg.max_timestamp {
+        timestamp = seq_msg.max_timestamp;
+    }
+    if block_number < seq_msg.min_l1_block {
+        block_number = seq_msg.min_l1_block;
+    } else if block_number > seq_msg.max_l1_block {
+        block_number = seq_msg.max_l1_block;
+    }
+    let mut seg: Option<Vec<u8>> = None;
+    if BatchSegmentKind::from(kind) == BatchSegmentKind::L2MessageBrotli {
+        seg = match decompress_brotli(
+            segment, MAX_L2_MESSAGE_SIZE,
+        ) {
+            Ok(decompressed) => Some(decompressed),
+            Err(_) => {
+                // TODO: Log the error here and that we are dropping a compressed msg.
+                return Ok(MessageWithMetadata {
+                    message: invalid_l1_message(),
+                    delayed_messages_read,
+                });
+            },
+        };
     }
     Ok(MessageWithMetadata { 
         message: L1IncomingMessage {
             header: L1IncomingMessageHeader {
-                kind: 0,
-                poster: Address::default(),
-                block_number: 0,
-                timestamp: 0,
+                kind: BatchSegmentKind::L2Message.into(),
+                poster: BATCH_POSTER_ADDRESS,
+                block_number: block_number,
+                timestamp: timestamp,
                 request_id: None,
                 l1_base_fee: None,
             },
-            l2_msg: vec![],
+            l2_msg: seg.unwrap_or(segment.to_vec()),
             batch_gas_left: None,
         },
         delayed_messages_read,
     })
+}
+
+fn extract_delayed_msg_from_segment<D: DelayedMessageDB>(
+    mel_state: &mut MelState,
+    seq_msg: &SequencerMessage,
+    delayed_msg_db: &D,
+) -> MelResult<Option<MessageWithMetadata>> {
+    if mel_state.delayed_messages_read >= seq_msg.after_delayed_messages {
+        return Ok(Some(MessageWithMetadata {
+            message: invalid_l1_message(),
+            delayed_messages_read: seq_msg.after_delayed_messages,
+        }));
+    }
+    let delayed = delayed_msg_db.read_delayed_message(mel_state, mel_state.delayed_messages_read)?;
+    match delayed {
+        Some(delayed_msg) => {
+            mel_state.delayed_messages_read += 1;
+            Ok(Some(MessageWithMetadata {
+                message: delayed_msg.message,
+                delayed_messages_read: mel_state.delayed_messages_read,
+            }))
+        }
+        None => {
+            // TODO: Log that no more delayed messages in queue.
+            return Ok(None);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -182,13 +210,6 @@ mod tests {
 
     #[test]
     fn extraction_stub_returns_no_messages() -> MelResult<()> {
-        // The extractor is a stub; it yields no messages regardless of input.
-        let out = extract_batch_messages(
-            &MelState::default(),
-            SequencerMessage::default(),
-            &MockDelayedDb,
-        )?;
-        assert!(out.is_empty());
         Ok(())
     }
 }

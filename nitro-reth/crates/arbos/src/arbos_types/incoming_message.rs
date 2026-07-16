@@ -52,6 +52,19 @@ pub struct L1IncomingMessage {
     pub batch_gas_left: Option<u64>,
 }
 
+/// A helpful constructor to build an invalid l1 incoming message.
+pub fn invalid_l1_message() -> L1IncomingMessage {
+    let header = L1IncomingMessageHeader {
+        kind: L1_MESSAGE_TYPE_INVALID,
+        ..Default::default()
+    };
+    L1IncomingMessage { 
+        header,
+        l2_msg: Vec::new(),
+        batch_gas_left: None,
+    }
+}
+
 /// Parsed initialization message from the first L1 message.
 #[derive(Debug, Clone)]
 pub struct ParsedInitMessage {

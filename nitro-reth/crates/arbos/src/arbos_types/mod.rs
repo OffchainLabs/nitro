@@ -10,5 +10,6 @@ pub use incoming_message::{
     L1IncomingMessageHeader, MAX_L2_MESSAGE_SIZE, ParsedInitMessage, get_data_stats,
     legacy_cost_for_stats, parse_batch_posting_report_fields, parse_incoming_l1_message,
     parse_init_message,
+    invalid_l1_message,
 };
 pub use message_with_meta::{MessageWithMetadata, MessageWithMetadataAndBlockInfo};

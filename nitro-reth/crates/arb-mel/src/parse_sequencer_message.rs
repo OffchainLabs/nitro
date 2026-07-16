@@ -142,7 +142,7 @@ pub(crate) fn parse_sequencer_message(
 }
 
 /// Brotli-decompresses `compressed`, capping output at `max_size` bytes.
-fn decompress_brotli(compressed: &[u8], max_size: usize) -> MelResult<Vec<u8>> {
+pub(crate) fn decompress_brotli(compressed: &[u8], max_size: usize) -> MelResult<Vec<u8>> {
     let mut out = Vec::new();
     brotli::Decompressor::new(compressed, 4096)
         .take(max_size as u64)
