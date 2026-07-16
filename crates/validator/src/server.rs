@@ -3,7 +3,7 @@
 use std::{future::Future, sync::Arc};
 
 use anyhow::Result;
-use axum::{Router, routing::post};
+use axum::{Router, extract::DefaultBodyLimit, routing::post};
 use tokio::{net::TcpListener, signal};
 use tower_http::trace::TraceLayer;
 use tracing::info;
@@ -36,6 +36,10 @@ fn create_router(state: Arc<ServerState>) -> Router {
             state.clone(),
             jwt::auth_middleware,
         ))
+        // Validation inputs carry all block preimages inline and routinely exceed
+        // axum's 2 MB default body limit. The Go validation node removes the limit
+        // as well (cmd/nitro-val sets HTTPBodyLimit = math.MaxInt).
+        .layer(DefaultBodyLimit::disable())
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
