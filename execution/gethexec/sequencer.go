@@ -58,7 +58,6 @@ var (
 	nonceCacheRejectedCounter               = metrics.NewRegisteredCounter("arb/sequencer/noncecache/rejected", nil)
 	nonceCacheClearedCounter                = metrics.NewRegisteredCounter("arb/sequencer/noncecache/cleared", nil)
 	nonceFailureCacheSizeGauge              = metrics.NewRegisteredGauge("arb/sequencer/noncefailurecache/size", nil)
-	nonceFailureCacheOverflowCounter        = metrics.NewRegisteredCounter("arb/sequencer/noncefailurecache/overflow", nil)
 	blockCreationTimer                      = metrics.NewRegisteredHistogram("arb/sequencer/block/creation", nil, metrics.NewBoundedHistogramSample())
 	successfulBlocksCounter                 = metrics.NewRegisteredCounter("arb/sequencer/block/successful", nil)
 	blockTxSizeHistogram                    = metrics.NewRegisteredHistogram("arb/sequencer/block/txsize", nil, metrics.NewBoundedHistogramSample())
@@ -414,47 +413,6 @@ func (c *nonceCache) Resize(newSize int) {
 	c.cache.Resize(newSize)
 }
 
-type addressAndNonce struct {
-	address common.Address
-	nonce   uint64
-}
-
-type nonceFailure struct {
-	queueItem txQueueItem
-	nonceErr  error
-	expiry    time.Time
-	revived   bool
-}
-
-type nonceFailureCache struct {
-	*containers.LruCache[addressAndNonce, *nonceFailure]
-	getExpiry func() time.Duration
-}
-
-func (c nonceFailureCache) Contains(err NonceError) bool {
-	key := addressAndNonce{err.sender, err.txNonce}
-	return c.LruCache.Contains(key)
-}
-
-func (c nonceFailureCache) Add(err NonceError, queueItem txQueueItem) {
-	expiry := queueItem.firstAppearance.Add(c.getExpiry())
-	if c.Contains(err) || time.Now().After(expiry) {
-		queueItem.returnResult(err)
-		return
-	}
-	key := addressAndNonce{err.sender, err.txNonce}
-	val := &nonceFailure{
-		queueItem: queueItem,
-		nonceErr:  err,
-		expiry:    expiry,
-		revived:   false,
-	}
-	evicted := c.LruCache.Add(key, val)
-	if evicted {
-		nonceFailureCacheOverflowCounter.Inc(1)
-	}
-}
-
 type synchronizedTxQueue struct {
 	queue containers.Queue[txQueueItem]
 	mutex sync.RWMutex
@@ -567,10 +525,10 @@ func NewSequencer(
 		eventFilter:                       eventFilter,
 		addressFilterService:              addressFilterService,
 	}
-	s.nonceFailures = &nonceFailureCache{
-		containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict),
+	s.nonceFailures = newNonceFailureCache(
+		config.NonceCacheSize,
 		func() time.Duration { return configFetcher().NonceFailureCacheExpiry },
-	}
+	)
 	s.Pause()
 	execEngine.SetEventFilter(eventFilter)
 	return s, nil
@@ -610,18 +568,6 @@ func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.H
 		DelayedReportData: nil,
 	}
 	s.pendingFilteredTxReports = append(s.pendingFilteredTxReports, report)
-}
-
-func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
-	if failure.revived {
-		return
-	}
-	queueItem := failure.queueItem
-	if err := queueItem.ctx.Err(); err != nil {
-		queueItem.returnResult(err)
-		return
-	}
-	queueItem.returnResult(failure.nonceErr)
 }
 
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
@@ -859,10 +805,8 @@ func (s *Sequencer) PostTxFilter(header *types.Header, statedb *state.StateDB, _
 	newNonce := tx.Nonce() + 1
 	s.nonceCache.Update(header, sender, newNonce)
 	newAddrAndNonce := addressAndNonce{sender, newNonce}
-	nonceFailure, haveNonceFailure := s.nonceFailures.Get(newAddrAndNonce)
+	nonceFailure, haveNonceFailure := s.nonceFailures.Take(newAddrAndNonce)
 	if haveNonceFailure {
-		nonceFailure.revived = true // prevent the expiry hook from taking effect
-		s.nonceFailures.Remove(newAddrAndNonce)
 		// Immediately check if the transaction submission has been canceled
 		err := nonceFailure.queueItem.ctx.Err()
 		if err != nil {
@@ -976,12 +920,10 @@ func (s *Sequencer) handleInactive(forwarder *TxForwarder, queueItems []txQueueI
 
 	// Drain the parked nonce failures and forward them along with the queue items.
 	for {
-		_, failure, ok := s.nonceFailures.GetOldest()
+		failure, ok := s.nonceFailures.TakeOldest()
 		if !ok {
 			break
 		}
-		failure.revived = true // prevent the eviction hook from returning a result
-		s.nonceFailures.RemoveOldest()
 		queueItems = append(queueItems, failure.queueItem)
 	}
 
@@ -1033,14 +975,10 @@ var sequencerInternalError = errors.New("sequencer internal error")
 func (s *Sequencer) expireNonceFailures() {
 	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
 	for {
-		_, failure, ok := s.nonceFailures.GetOldest()
+		failure, ok := s.nonceFailures.TakeExpired()
 		if !ok {
 			return
 		}
-		if time.Until(failure.expiry) > 0 {
-			return
-		}
-
 		// Check queueCtx status before notifying client
 		queueItem := failure.queueItem
 		err := queueItem.ctx.Err()
@@ -1051,9 +989,6 @@ func (s *Sequencer) expireNonceFailures() {
 			// nonce-failure-cache-expiry timeout, return the original nonce error
 			queueItem.returnResultMaybeLog(failure.nonceErr, true)
 		}
-
-		failure.revived = true // the result was returned above; prevent the eviction hook from forwarding
-		s.nonceFailures.RemoveOldest()
 	}
 }
 
@@ -1099,12 +1034,10 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 		if txNonce == pendingNonce {
 			pendingNonces[sender] = txNonce + 1
 			nextKey := addressAndNonce{sender, txNonce + 1}
-			revivingFailure, exists := s.nonceFailures.Get(nextKey)
+			revivingFailure, exists := s.nonceFailures.Take(nextKey)
 			if exists {
 				// This tx was the predecessor to one that had failed its nonce check
 				// Re-enqueue the tx whose nonce should now be correct, unless it expired
-				revivingFailure.revived = true
-				s.nonceFailures.Remove(nextKey)
 				err := revivingFailure.queueItem.ctx.Err()
 				if err != nil {
 					revivingFailure.queueItem.returnResult(err)
