@@ -1,8 +1,11 @@
 use alloy_primitives::B256;
 use arb_consensus_db::{
-    ConsensusDb, ConsensusDbError, Result, kv,
+    ConsensusDb, ConsensusDbBatch, ConsensusDbError, Result,
+    codecs::rlp::Rlp,
+    kv,
     schema::{L1IncomingMessage, LegacyDelayedMessageAt, ParentChainBlockAt, RlpDelayedMessageAt},
 };
+use arb_mel::MelState;
 
 pub mod schema;
 
@@ -45,6 +48,35 @@ impl<S: kv::KvStore> MelDb<S> {
             consensus_db,
             initial,
         })
+    }
+
+    /// Read the MEL state stored at `parent_chain_block_number`, if any (mirrors nitro's `State`).
+    pub fn state(&self, parent_chain_block_number: u64) -> Result<Option<MelState>> {
+        Ok(self
+            .consensus_db
+            .get(schema::MelStateAt(parent_chain_block_number))?
+            .map(|state| state.0))
+    }
+
+    /// Read the current head MEL state, following the `_headMelStateBlockNum` pointer to its `l`
+    /// record. Returns `None` if no head has been set (mirrors nitro's `GetHeadMelState`).
+    pub fn head_state(&self) -> Result<Option<MelState>> {
+        Ok(self
+            .consensus_db
+            .get(schema::HeadMelStateBlockNum)?
+            .map(|block_num| self.state(block_num))
+            .transpose()?
+            .flatten())
+    }
+
+    /// Save `state` as the new head: writes it under `l` and advances the head pointer
+    /// (`_headMelStateBlockNum`) to its block number, atomically (mirrors nitro's `SaveState`).
+    pub fn save_state(&mut self, state: &MelState) -> Result<()> {
+        let block_num = state.parent_chain_block_number;
+        let mut batch = ConsensusDbBatch::new();
+        batch.put(schema::MelStateAt(block_num), &Rlp(state.clone()));
+        batch.put(schema::HeadMelStateBlockNum, &block_num);
+        self.consensus_db.write_batch(batch)
     }
 
     /// Read a split key, passing the batch boundary to [`schema::mel_key`], which selects the
