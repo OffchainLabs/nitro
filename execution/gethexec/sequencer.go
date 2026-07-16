@@ -1023,6 +1023,9 @@ func (s *Sequencer) handleInactive(forwarder *TxForwarder, queueItems []txQueueI
 			if errors.Is(err, ErrNoSequencer) {
 				publishResults <- &item
 			} else {
+				if err != nil {
+					log.Warn("failed to forward transaction", "txHash", item.tx.Hash(), "err", err)
+				}
 				publishResults <- nil
 				item.returnResult(err)
 			}
