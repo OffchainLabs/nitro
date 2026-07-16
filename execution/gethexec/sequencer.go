@@ -1299,7 +1299,7 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 	if len(s.pendingFilteredTxReports) > 0 && s.execEngine.filteringReportRPCClient != nil {
 		reports := s.pendingFilteredTxReports
 		s.LaunchThread(func(ctx context.Context) {
-			if _, err := s.execEngine.filteringReportRPCClient.ReportFilteredTransactions(reports).Await(ctx); err != nil {
+			if _, err := s.execEngine.filteringReportRPCClient.ReportFilteredTransactions(ReportProducerSequencer, reports).Await(ctx); err != nil {
 				log.Error("failed to report filtered transactions", "count", len(reports), "err", err)
 			}
 		})
@@ -1843,7 +1843,7 @@ func (s *Sequencer) DispatchPendingFilteredTxReportsForTest(t *testing.T) {
 	if len(s.pendingFilteredTxReports) > 0 && s.execEngine.filteringReportRPCClient != nil {
 		reports := s.pendingFilteredTxReports
 		s.LaunchThread(func(ctx context.Context) {
-			if _, err := s.execEngine.filteringReportRPCClient.ReportFilteredTransactions(reports).Await(ctx); err != nil {
+			if _, err := s.execEngine.filteringReportRPCClient.ReportFilteredTransactions(ReportProducerSequencer, reports).Await(ctx); err != nil {
 				log.Error("failed to report filtered transactions", "count", len(reports), "err", err)
 			}
 		})
