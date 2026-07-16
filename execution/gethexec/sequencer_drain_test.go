@@ -74,7 +74,8 @@ func TestDrainQueueItemsPriorityOrder(t *testing.T) {
 		t.Fatalf("drained %d items, want 6", len(items))
 	}
 	for i, item := range items {
-		if item.tx.Nonce() != uint64(i) { // #nosec G115
+		// #nosec G115
+		if item.tx.Nonce() != uint64(i) {
 			t.Errorf("items[%d] has nonce %d, want %d", i, item.tx.Nonce(), i)
 		}
 	}
