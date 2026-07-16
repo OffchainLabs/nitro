@@ -1174,7 +1174,8 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 // taken by another consumer between the snapshot and the read are skipped, and concurrent pushes
 // are left for the next drain.
 func (s *Sequencer) drainQueueItems() []txQueueItem {
-	var queueItems []txQueueItem
+	capacity := len(s.timeboostAuctionResolutionTxQueue) + s.txRetryQueue.Len() + len(s.txQueue)
+	queueItems := make([]txQueueItem, 0, capacity)
 	for range len(s.timeboostAuctionResolutionTxQueue) {
 		select {
 		case queueItem := <-s.timeboostAuctionResolutionTxQueue:
@@ -1240,7 +1241,8 @@ func validateQueueItem(config *SequencerConfig, currentHeader *types.Header, que
 // validation failure to each dropped item's submitter.
 func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentHeader *types.Header) []txQueueItem {
 	unvalidatedItems := s.drainQueueItems()
-	var queueItems []txQueueItem
+	// Filter in place: unvalidatedItems is freshly allocated with no other reference.
+	queueItems := unvalidatedItems[:0]
 	for _, queueItem := range unvalidatedItems {
 		if err := validateQueueItem(config, currentHeader, queueItem); err != nil {
 			queueItem.returnResult(err)
@@ -1303,7 +1305,7 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 	}
 
 	queueItems = s.drainAndValidateQueueItems(config, s.execEngine.bc.CurrentBlock())
-	if queueItems == nil {
+	if len(queueItems) == 0 {
 		// No regular txs to sequence right now; re-check on the idle poll
 		// cadence rather than waiting a full block interval. This matches the
 		// wait decideSequencingTurn uses when there is no pending work.
