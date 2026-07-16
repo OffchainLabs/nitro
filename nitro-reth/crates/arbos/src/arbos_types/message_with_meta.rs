@@ -34,7 +34,8 @@ impl MessageWithMetadata {
             message: L1IncomingMessage {
                 header: self.message.header.clone(),
                 l2_msg: self.message.l2_msg.clone(),
-                batch_gas_left: None,
+                legacy_batch_gas_cost: None,
+                batch_data_stats: None,
             },
             delayed_messages_read: self.delayed_messages_read,
         }

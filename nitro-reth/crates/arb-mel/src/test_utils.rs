@@ -50,7 +50,7 @@ impl DelayedMessageDB for MockDelayedDb {
         &self,
         _state: &MelState,
         _index: u64,
-    ) -> MelResult<DelayedInboxMessage> {
+    ) -> MelResult<Option<DelayedInboxMessage>> {
         Err(MelError::Unknown)
     }
 }

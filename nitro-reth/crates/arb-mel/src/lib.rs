@@ -9,6 +9,7 @@ mod batch_lookup;
 mod batch_messages;
 mod delayed_message_lookup;
 mod error;
+mod mel_config_lookup;
 mod message_extraction;
 mod parse_sequencer_message;
 mod serialize_batch;
@@ -17,6 +18,7 @@ mod test_utils;
 mod types;
 
 pub use error::MelError;
+pub use mel_config_lookup::MelConfig;
 pub use message_extraction::{ExtractionOutput, extract_messages};
 pub use parse_sequencer_message::SequencerMessage;
 pub use types::*;

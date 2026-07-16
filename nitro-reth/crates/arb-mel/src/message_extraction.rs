@@ -1,13 +1,14 @@
 use alloy_consensus::Header;
-use alloy_primitives::{Address, B256, keccak256};
+use alloy_primitives::{B256, keccak256};
 use arbos::arbos_types::{
-    L1_MESSAGE_TYPE_BATCH_POSTING_REPORT, MessageWithMetadata, parse_batch_posting_report_fields,
+    L1_MESSAGE_TYPE_BATCH_POSTING_REPORT, MessageWithMetadata, get_data_stats,
+    legacy_cost_for_stats, parse_batch_posting_report_fields,
 };
 
 use crate::{
     BatchMeta, DelayedInboxMessage, DelayedMessageDB, LogsFetcher, MelError, MelResult, MelState,
-    TxFetcher, batch_lookup, batch_messages, delayed_message_lookup, parse_sequencer_message,
-    serialize_batch,
+    TxFetcher, batch_lookup, batch_messages, delayed_message_lookup, mel_config_lookup,
+    parse_sequencer_message, serialize_batch,
 };
 
 pub struct ExtractionOutput {
@@ -48,22 +49,26 @@ where
         tx_fetcher,
         logs_fetcher,
     )?;
-    let delayed_messages = delayed_message_lookup::parse_delayed_messages_from_block(
+    let mut delayed_messages = delayed_message_lookup::parse_delayed_messages_from_block(
         &post_state,
         parent_chain_header,
         tx_fetcher,
         logs_fetcher,
     )?;
 
-    // Save batch posting reports for later, once batches are serialized and we
-    // need to fill in each report's batch gas stats.
-    let batch_posting_reports = delayed_messages
+    // Save the indices of batch posting reports for later, once batches are
+    // serialized and we need to fill in each report's batch gas stats. We track
+    // indices rather than references so the reports can be mutated in place
+    // below (they are also returned in the extraction output).
+    let batch_posting_report_indices = delayed_messages
         .iter()
-        .filter(|delayed| delayed.message.header.kind == L1_MESSAGE_TYPE_BATCH_POSTING_REPORT)
-        .collect::<Vec<_>>();
-    if batch_posting_reports.len() > batches.len() {
+        .enumerate()
+        .filter(|(_, delayed)| delayed.message.header.kind == L1_MESSAGE_TYPE_BATCH_POSTING_REPORT)
+        .map(|(i, _)| i)
+        .collect::<Vec<usize>>();
+    if batch_posting_report_indices.len() > batches.len() {
         return Err(MelError::TooManyBatchPostingReports {
-            reports: batch_posting_reports.len(),
+            reports: batch_posting_report_indices.len(),
             batches: batches.len(),
         });
     }
@@ -73,18 +78,20 @@ where
     let mut serialized_batches: Vec<Vec<u8>> = Vec::new();
     for (batch, tx) in batches.iter_mut().zip(batch_txs.iter()) {
         let serialized = serialize_batch::serialize_batch(batch, tx, logs_fetcher)?;
-        if batch_post_report_idx < batch_posting_reports.len() {
-            let report = batch_posting_reports[batch_post_report_idx];
+        if batch_post_report_idx < batch_posting_report_indices.len() {
+            let report_idx = batch_posting_report_indices[batch_post_report_idx];
             if batch_post_report_batch_hash == B256::ZERO {
-                batch_post_report_batch_hash = parse_batch_posting_report(report)?;
+                batch_post_report_batch_hash =
+                    parse_batch_posting_report(&delayed_messages[report_idx])?;
             }
             let got_hash = keccak256(&serialized);
             if got_hash == batch_post_report_batch_hash {
-                // Fill in the gas stats.
-                // batchPostReport.Message.BatchDataStats = arbostypes.GetDataStats(serialized)
-                // legacyCost :=
-                // arbostypes.LegacyCostForStats(batchPostReport.Message.BatchDataStats)
-                // batchPostReport.Message.LegacyBatchGasCost = &legacyCost
+                // Fill in the batch gas stats into the batch posting report.
+                let stats = get_data_stats(&serialized);
+                let legacy_cost = legacy_cost_for_stats(&stats);
+                let report = &mut delayed_messages[report_idx];
+                report.message.batch_data_stats = Some(stats);
+                report.message.legacy_batch_gas_cost = Some(legacy_cost);
                 // Process next report.
                 batch_post_report_idx += 1;
                 batch_post_report_batch_hash = B256::ZERO;
@@ -93,10 +100,13 @@ where
         serialized_batches.push(serialized);
     }
 
-    if batch_posting_reports.len() != batch_post_report_idx {
-        return Err(MelError::TooManyBatchPostingReports {
-            reports: batch_posting_reports.len(),
-            batches: batches.len(),
+    // Batch posting reports are included in the same transaction as a batch, so
+    // every report should have been matched to a batch and filled in with its
+    // gas stats above.
+    if batch_posting_report_indices.len() != batch_post_report_idx {
+        return Err(MelError::BatchPostingReportsNotProcessed {
+            reports: batch_posting_report_indices.len(),
+            processed: batch_post_report_idx,
         });
     }
 
@@ -114,21 +124,24 @@ where
         let expected_batch_seq_num = batches[0].sequence_number + i as u64;
         if batch.sequence_number != expected_batch_seq_num {
             // This should never happen if the batch fetching logic is correct.
-            return Err(MelError::Unknown);
-            // return Err(MelError::Storage(arb_storage_errors::StorageError::DataCorruption(format!
-            // (     "Batch sequence number mismatch: expected {}, got {}",
-            //     expected_batch_seq_num, batch.sequence_number
-            // ))));
+            return Err(MelError::BatchSequenceMismatch {
+                expected: expected_batch_seq_num,
+                got: batch.sequence_number,
+            });
         }
         let serialized = &serialized_batches[i];
-        let raw_seq_msg = parse_sequencer_message::parse_sequencer_message(
+        let mut raw_seq_msg = parse_sequencer_message::parse_sequencer_message(
             batch.sequence_number,
             batch.block_hash,
             serialized,
             parse_sequencer_message::DEFAULT_MAX_UNCOMPRESSED_BATCH_SIZE,
         )?;
         let messages_in_batch =
-            batch_messages::extract_batch_messages(&post_state, raw_seq_msg, delayed_msg_db)?;
+            batch_messages::extract_batch_messages(
+                &mut post_state, 
+                &mut raw_seq_msg, 
+                delayed_msg_db,
+            )?;
         for msg in messages_in_batch.into_iter() {
             post_state.accumulate_message(&msg)?;
             messages.push(msg);
@@ -142,17 +155,25 @@ where
             parent_chain_block: batch.parent_chain_block_number,
         });
         if batch.after_delayed_count != post_state.delayed_messages_read {
-            return Err(MelError::Unknown);
+            return Err(MelError::DelayedCountMismatch {
+                batch_after_delayed: batch.after_delayed_count,
+                state_delayed_read: post_state.delayed_messages_read,
+            });
         }
     }
 
     // Check for MEL config events in this block.
-    if let Some(mel_config) = lookup_mel_config()? {
+    if let Some(mel_config) =
+        mel_config_lookup::parse_mel_config_from_block(parent_chain_header, logs_fetcher)?
+    {
         // Sanity check: the contract sets activation block = block.number at emission.
         // This means the event must be observed in the same parent chain block
         // it was emitted in.
         if mel_config.activation_block != parent_chain_header.number {
-            return Err(MelError::Unknown);
+            return Err(MelError::MelConfigActivationMismatch {
+                activation_block: mel_config.activation_block,
+                parent_chain_block: parent_chain_header.number,
+            });
         }
         if post_state.version == 0 {
             post_state.move_unread_delayed_messages_to_inbox_accumulator(delayed_msg_db)?;
@@ -170,27 +191,12 @@ where
     })
 }
 
-#[derive(Default)]
-struct MelConfig {
-    pub activation_block: u64,
-    pub mel_version: u16,
-    pub inbox: Address,
-    pub sequencer_inbox: Address,
-}
-
 /// Parses a batch posting report delayed message and returns the batch data
 /// hash it references.
 fn parse_batch_posting_report(report: &DelayedInboxMessage) -> MelResult<B256> {
     let fields = parse_batch_posting_report_fields(&report.message.l2_msg)
         .map_err(|e| MelError::BatchPostingReportParse(e.to_string()))?;
     Ok(fields.data_hash)
-}
-
-/// TODO: not yet implemented. Will scan the parent-chain block's logs for a MEL
-/// config-upgrade event and return the new config when one is emitted; the
-/// default here keeps the version/target addresses unchanged.
-fn lookup_mel_config() -> MelResult<Option<MelConfig>> {
-    Ok(Some(MelConfig::default()))
 }
 
 #[cfg(test)]

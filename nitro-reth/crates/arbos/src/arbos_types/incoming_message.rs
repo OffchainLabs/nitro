@@ -48,8 +48,11 @@ pub struct BatchDataStats {
 pub struct L1IncomingMessage {
     pub header: L1IncomingMessageHeader,
     pub l2_msg: Vec<u8>,
-    /// Batch-level gas cost fields (filled lazily).
-    pub batch_gas_left: Option<u64>,
+    /// Only used for `L1_MESSAGE_TYPE_BATCH_POSTING_REPORT`. Filled lazily once
+    /// the referenced batch has been serialized. Mirrors the Go
+    /// `L1IncomingMessage.LegacyBatchGasCost` / `BatchDataStats` fields.
+    pub legacy_batch_gas_cost: Option<u64>,
+    pub batch_data_stats: Option<BatchDataStats>,
 }
 
 /// A helpful constructor to build an invalid l1 incoming message.
@@ -58,10 +61,11 @@ pub fn invalid_l1_message() -> L1IncomingMessage {
         kind: L1_MESSAGE_TYPE_INVALID,
         ..Default::default()
     };
-    L1IncomingMessage { 
+    L1IncomingMessage {
         header,
         l2_msg: Vec::new(),
-        batch_gas_left: None,
+        legacy_batch_gas_cost: None,
+        batch_data_stats: None,
     }
 }
 
@@ -164,7 +168,8 @@ pub fn parse_incoming_l1_message(data: &[u8]) -> io::Result<L1IncomingMessage> {
             l1_base_fee,
         },
         l2_msg,
-        batch_gas_left: None,
+        legacy_batch_gas_cost: None,
+        batch_data_stats: None,
     })
 }
 
