@@ -5,8 +5,13 @@
 use alloy_primitives::B256;
 use alloy_rpc_types_eth::Log;
 
+mod batch_lookup;
+mod delayed_message_lookup;
 mod error;
 mod parse_sequencer_message;
+mod serialize_batch;
+#[cfg(test)]
+mod test_utils;
 mod types;
 
 pub use error::MelError;

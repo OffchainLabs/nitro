@@ -1180,6 +1180,7 @@ version = "0.1.5"
 name = "arb-mel"
 version = "0.1.5"
 dependencies = [
+ "alloy-consensus",
  "alloy-primitives",
  "alloy-rlp",
  "alloy-rpc-types-eth",
