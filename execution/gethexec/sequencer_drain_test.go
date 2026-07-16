@@ -34,38 +34,42 @@ func makeTestQueueItem(t *testing.T, nonce uint64, gasFeeCap int64) (txQueueItem
 	return item, resultChan
 }
 
+// makeTestSequencerQueues returns a minimal Sequencer with buffered queues for drain tests.
+func makeTestSequencerQueues(queueSize int) *Sequencer {
+	return &Sequencer{
+		txQueue:                           make(chan txQueueItem, queueSize),
+		timeboostAuctionResolutionTxQueue: make(chan txQueueItem, queueSize),
+	}
+}
+
 func TestDrainQueueItemsEmptyQueues(t *testing.T) {
-	txQueue := make(chan txQueueItem, 1)
-	auctionQueue := make(chan txQueueItem, 1)
-	retryQueue := &synchronizedTxQueue{}
-	items := drainQueueItems(txQueue, retryQueue, auctionQueue)
+	s := makeTestSequencerQueues(1)
+	items := s.drainQueueItems()
 	if len(items) != 0 {
 		t.Errorf("drained %d items from empty queues, want 0", len(items))
 	}
 }
 
 func TestDrainQueueItemsPriorityOrder(t *testing.T) {
-	txQueue := make(chan txQueueItem, 2)
-	auctionQueue := make(chan txQueueItem, 2)
-	retryQueue := &synchronizedTxQueue{}
+	s := makeTestSequencerQueues(2)
 
 	const feeCap = 0 // fee validation is not exercised in this test
 
 	// Nonces identify the expected drain order: auction resolution, then retry, then submitted.
 	for _, nonce := range []uint64{4, 5} {
 		item, _ := makeTestQueueItem(t, nonce, feeCap)
-		txQueue <- item
+		s.txQueue <- item
 	}
 	for _, nonce := range []uint64{2, 3} {
 		item, _ := makeTestQueueItem(t, nonce, feeCap)
-		retryQueue.Push(item)
+		s.txRetryQueue.Push(item)
 	}
 	for _, nonce := range []uint64{0, 1} {
 		item, _ := makeTestQueueItem(t, nonce, feeCap)
-		auctionQueue <- item
+		s.timeboostAuctionResolutionTxQueue <- item
 	}
 
-	items := drainQueueItems(txQueue, retryQueue, auctionQueue)
+	items := s.drainQueueItems()
 	if len(items) != 6 {
 		t.Fatalf("drained %d items, want 6", len(items))
 	}
@@ -74,22 +78,20 @@ func TestDrainQueueItemsPriorityOrder(t *testing.T) {
 			t.Errorf("items[%d] has nonce %d, want %d", i, item.tx.Nonce(), i)
 		}
 	}
-	if len(txQueue) != 0 || retryQueue.Len() != 0 || len(auctionQueue) != 0 {
+	if len(s.txQueue) != 0 || s.txRetryQueue.Len() != 0 || len(s.timeboostAuctionResolutionTxQueue) != 0 {
 		t.Error("queues should be empty after draining")
 	}
 }
 
 func TestDrainQueueItemsConcurrent(t *testing.T) {
 	const itemsPerQueue = 100
-	txQueue := make(chan txQueueItem, itemsPerQueue)
-	auctionQueue := make(chan txQueueItem, itemsPerQueue)
-	retryQueue := &synchronizedTxQueue{}
+	s := makeTestSequencerQueues(itemsPerQueue)
 
 	for nonce := range uint64(itemsPerQueue) {
 		item, _ := makeTestQueueItem(t, nonce, 0)
-		txQueue <- item
-		retryQueue.Push(item)
-		auctionQueue <- item
+		s.txQueue <- item
+		s.txRetryQueue.Push(item)
+		s.timeboostAuctionResolutionTxQueue <- item
 	}
 
 	const drainers = 4
@@ -97,7 +99,7 @@ func TestDrainQueueItemsConcurrent(t *testing.T) {
 	var wg sync.WaitGroup
 	for range drainers {
 		wg.Go(func() {
-			results <- drainQueueItems(txQueue, retryQueue, auctionQueue)
+			results <- s.drainQueueItems()
 		})
 	}
 	wg.Wait()
@@ -115,7 +117,7 @@ func TestDrainQueueItemsConcurrent(t *testing.T) {
 	if total != 3*itemsPerQueue {
 		t.Errorf("drained %d items total, want %d", total, 3*itemsPerQueue)
 	}
-	if len(txQueue) != 0 || retryQueue.Len() != 0 || len(auctionQueue) != 0 {
+	if len(s.txQueue) != 0 || s.txRetryQueue.Len() != 0 || len(s.timeboostAuctionResolutionTxQueue) != 0 {
 		t.Error("queues should be empty after draining")
 	}
 }
@@ -208,13 +210,12 @@ func TestDrainAndValidateQueueItemsReturnsResultOnRejection(t *testing.T) {
 	rejectedItem, rejectedResultChan := makeTestQueueItem(t, 0, testBaseFee)
 	rejectedItem.txSize = config.MaxTxDataSize + 1
 	validItem, validResultChan := makeTestQueueItem(t, 1, testBaseFee)
-	txQueue := make(chan txQueueItem, 2)
-	txQueue <- rejectedItem
-	txQueue <- validItem
-	auctionQueue := make(chan txQueueItem, 1)
+	s := makeTestSequencerQueues(2)
+	s.txQueue <- rejectedItem
+	s.txQueue <- validItem
 	header := &types.Header{Number: big.NewInt(testBlockNumber), BaseFee: big.NewInt(testBaseFee)}
 
-	items := drainAndValidateQueueItems(&config, txQueue, &synchronizedTxQueue{}, auctionQueue, header)
+	items := s.drainAndValidateQueueItems(&config, header)
 
 	if len(items) != 1 || items[0].tx.Nonce() != 1 {
 		t.Fatalf("drained items = %v, want only the valid item", items)

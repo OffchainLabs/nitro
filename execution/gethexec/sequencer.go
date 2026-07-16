@@ -1166,31 +1166,27 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 // order (auction resolution, then retry, then submitted). Safe for concurrent consumers: items
 // taken by another consumer between the snapshot and the read are skipped, and concurrent pushes
 // are left for the next drain.
-func drainQueueItems(
-	txQueue chan txQueueItem,
-	txRetryQueue *synchronizedTxQueue,
-	auctionResolutionTxQueue chan txQueueItem,
-) []txQueueItem {
+func (s *Sequencer) drainQueueItems() []txQueueItem {
 	var queueItems []txQueueItem
-	for range len(auctionResolutionTxQueue) {
+	for range len(s.timeboostAuctionResolutionTxQueue) {
 		select {
-		case queueItem := <-auctionResolutionTxQueue:
+		case queueItem := <-s.timeboostAuctionResolutionTxQueue:
 			log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
 			queueItems = append(queueItems, queueItem)
 		default:
 		}
 	}
-	for range txRetryQueue.Len() {
-		queueItem := txRetryQueue.Pop()
+	for range s.txRetryQueue.Len() {
+		queueItem := s.txRetryQueue.Pop()
 		if queueItem.tx == nil {
 			// Pop returned the zero value: another consumer emptied the queue.
 			break
 		}
 		queueItems = append(queueItems, queueItem)
 	}
-	for range len(txQueue) {
+	for range len(s.txQueue) {
 		select {
-		case queueItem := <-txQueue:
+		case queueItem := <-s.txQueue:
 			queueItems = append(queueItems, queueItem)
 		default:
 		}
@@ -1235,14 +1231,8 @@ func validateQueueItem(config *SequencerConfig, currentHeader *types.Header, que
 
 // drainAndValidateQueueItems drains the queues and filters out the invalid items, returning the
 // validation failure to each dropped item's submitter.
-func drainAndValidateQueueItems(
-	config *SequencerConfig,
-	txQueue chan txQueueItem,
-	txRetryQueue *synchronizedTxQueue,
-	auctionResolutionTxQueue chan txQueueItem,
-	currentHeader *types.Header,
-) []txQueueItem {
-	unvalidatedItems := drainQueueItems(txQueue, txRetryQueue, auctionResolutionTxQueue)
+func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentHeader *types.Header) []txQueueItem {
+	unvalidatedItems := s.drainQueueItems()
 	var queueItems []txQueueItem
 	for _, queueItem := range unvalidatedItems {
 		if err := validateQueueItem(config, currentHeader, queueItem); err != nil {
@@ -1300,12 +1290,12 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 	if forwarder != nil {
 		// We are forwarding (no longer the active sequencer); forward everything
 		// drained, unvalidated, and do not sequence locally.
-		queueItems = drainQueueItems(s.txQueue, &s.txRetryQueue, s.timeboostAuctionResolutionTxQueue)
+		queueItems = s.drainQueueItems()
 		s.handleInactive(forwarder, queueItems)
 		return nil, config.MaxBlockSpeed
 	}
 
-	queueItems = drainAndValidateQueueItems(config, s.txQueue, &s.txRetryQueue, s.timeboostAuctionResolutionTxQueue, s.execEngine.bc.CurrentBlock())
+	queueItems = s.drainAndValidateQueueItems(config, s.execEngine.bc.CurrentBlock())
 	if queueItems == nil {
 		// No regular txs to sequence right now; re-check on the idle poll
 		// cadence rather than waiting a full block interval. This matches the
@@ -1695,7 +1685,7 @@ func (s *Sequencer) backgroundForwarder(_ context.Context) time.Duration {
 
 	forwarder := s.getForwarder()
 	if forwarder != nil {
-		queueItems := drainQueueItems(s.txQueue, &s.txRetryQueue, s.timeboostAuctionResolutionTxQueue)
+		queueItems := s.drainQueueItems()
 		s.handleInactive(forwarder, queueItems)
 	}
 	return config.PollInterval
@@ -1844,7 +1834,7 @@ func (s *Sequencer) StopAndWait() {
 	defer forwarder.StopAndWait()
 	// Drain in a loop: txs may be enqueued while a batch is being forwarded.
 	for shutdownCtx.Err() == nil {
-		queueItems := drainQueueItems(s.txQueue, &s.txRetryQueue, s.timeboostAuctionResolutionTxQueue)
+		queueItems := s.drainQueueItems()
 		if len(queueItems) == 0 && s.nonceFailures.Len() == 0 {
 			return
 		}
