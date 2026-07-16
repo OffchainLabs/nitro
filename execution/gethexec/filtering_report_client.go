@@ -5,7 +5,11 @@ package gethexec
 
 import (
 	"context"
+	"encoding/json"
 
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
@@ -15,6 +19,15 @@ import (
 )
 
 const FilteringReportNamespace = "filteringreport"
+
+const maxLoggedReportBytesLen = 256
+
+type ReportProducer string
+
+const (
+	ReportProducerPrechecker ReportProducer = "prechecker"
+	ReportProducerSequencer  ReportProducer = "sequencer"
+)
 
 var (
 	reportFilteredTransactionsCallFailuresCounter = metrics.NewRegisteredCounter(
@@ -56,8 +69,17 @@ func (c *FilteringReportRPCClient) StopAndWait() {
 	c.client.Close()
 }
 
-func (c *FilteringReportRPCClient) ReportFilteredTransactions(reports []addressfilter.FilteredTxReport) containers.PromiseInterface[struct{}] {
+func (c *FilteringReportRPCClient) ReportFilteredTransactions(producer ReportProducer, reports []addressfilter.FilteredTxReport) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
+		for i := range reports {
+			logged := reportForLog(&reports[i])
+			reportJSON, err := json.Marshal(logged)
+			if err != nil {
+				log.Info("filtered tx report", "producer", producer, "report", logged, "jsonMarshalErr", err)
+				continue
+			}
+			log.Info("filtered tx report", "producer", producer, "report", string(reportJSON))
+		}
 		err := c.client.CallContext(ctx, nil, FilteringReportNamespace+"_reportFilteredTransactions", reports)
 		if err != nil {
 			reportFilteredTransactionsCallFailuresCounter.Inc(1)
@@ -66,4 +88,34 @@ func (c *FilteringReportRPCClient) ReportFilteredTransactions(reports []addressf
 		}
 		return struct{}{}, err
 	})
+}
+
+// reportForLog returns a copy of the report with its unbounded byte fields (the
+// raw transaction and event log data) truncated so log entries stay compact.
+func reportForLog(report *addressfilter.FilteredTxReport) addressfilter.FilteredTxReport {
+	logged := *report
+	logged.TxRLP = truncateLoggedBytes(logged.TxRLP)
+	if len(report.FilteredAddresses) > 0 {
+		addresses := make([]filter.FilteredAddressRecord, len(report.FilteredAddresses))
+		copy(addresses, report.FilteredAddresses)
+		for i := range addresses {
+			if addresses[i].EventRuleMatch == nil || addresses[i].EventRuleMatch.RawLog == nil {
+				continue
+			}
+			rawLog := *addresses[i].EventRuleMatch.RawLog
+			rawLog.Data = truncateLoggedBytes(rawLog.Data)
+			eventRuleMatch := *addresses[i].EventRuleMatch
+			eventRuleMatch.RawLog = &rawLog
+			addresses[i].EventRuleMatch = &eventRuleMatch
+		}
+		logged.FilteredAddresses = addresses
+	}
+	return logged
+}
+
+func truncateLoggedBytes(b hexutil.Bytes) hexutil.Bytes {
+	if len(b) > maxLoggedReportBytesLen {
+		return b[:maxLoggedReportBytesLen]
+	}
+	return b
 }
