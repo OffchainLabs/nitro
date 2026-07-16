@@ -27,6 +27,7 @@ sol! {
 }
 
 /// Serializes `batch` into its canonical byte form, caching the result.
+#[allow(dead_code)] // Wired into MEL block processing in a later change.
 pub(crate) fn serialize_batch<L, T>(
     batch: &mut Batch,
     tx: &T,
