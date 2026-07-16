@@ -312,9 +312,10 @@ func newRegularTxQueueItem(
 }
 
 // newAuctionResolutionTxQueueItem returns a queue item for an auction resolution transaction.
-// Nothing reads its result, so it gets a throwaway buffered channel.
-func newAuctionResolutionTxQueueItem(ctx context.Context, tx *types.Transaction) txQueueItem {
-	item := newTxQueueItem(ctx, tx, nil, make(chan error, 1))
+// Nothing reads its result, so it gets a throwaway buffered channel, and no submitter can
+// abandon it, so its ctx is context.Background.
+func newAuctionResolutionTxQueueItem(tx *types.Transaction) txQueueItem {
+	item := newTxQueueItem(context.Background(), tx, nil, make(chan error, 1))
 	item.isAuctionResolution = true
 	return item
 }
@@ -721,7 +722,7 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 		return ErrNoSequencer
 	}
 	log.Info("Prioritizing auction resolution transaction from auctioneer", "txHash", tx.Hash().Hex())
-	s.timeboostAuctionResolutionTxQueue <- newAuctionResolutionTxQueueItem(s.GetContext(), tx)
+	s.timeboostAuctionResolutionTxQueue <- newAuctionResolutionTxQueueItem(tx)
 	return nil
 }
 
@@ -1024,13 +1025,9 @@ func (s *Sequencer) handleInactive(forwarder *TxForwarder, queueItems []txQueueI
 func (s *Sequencer) forwardQueueItem(forwarder *TxForwarder, currentHeader *types.Header, item txQueueItem) bool {
 	// Skip abandoned submissions: the forwarder ignores the item ctx, so a
 	// drained item whose submitter timed out would still be forwarded.
-	// Auction resolution items are exempt: their ctx is the sequencer's own
-	// lifecycle context, which is already canceled during shutdown.
-	if !item.isAuctionResolution {
-		if err := item.ctx.Err(); err != nil {
-			item.returnResult(err)
-			return false
-		}
+	if err := item.ctx.Err(); err != nil {
+		item.returnResult(err)
+		return false
 	}
 	// Drop expired timeboosted txs: the receiving sequencer would restamp
 	// them fresh, resetting the block-age expiry it cannot check itself.
