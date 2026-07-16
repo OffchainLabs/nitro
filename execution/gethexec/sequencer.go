@@ -1000,6 +1000,8 @@ func (s *Sequencer) handleInactive(forwarder *TxForwarder, queueItems []txQueueI
 		queueItems = append(queueItems, failure.queueItem)
 	}
 
+	config := s.config()
+	currentHeader := s.execEngine.bc.CurrentBlock()
 	publishResults := make(chan *txQueueItem, len(queueItems))
 	for _, item := range queueItems {
 		// Skip abandoned submissions: the forwarder ignores the item ctx, so a
@@ -1012,6 +1014,13 @@ func (s *Sequencer) handleInactive(forwarder *TxForwarder, queueItems []txQueueI
 				publishResults <- nil
 				continue
 			}
+		}
+		// Drop expired timeboosted txs: the receiving sequencer would restamp
+		// them fresh, resetting the block-age expiry it cannot check itself.
+		if err := validateTimeboostExpiry(config, currentHeader, item); err != nil {
+			item.returnResult(err)
+			publishResults <- nil
+			continue
 		}
 		go func() {
 			var err error
@@ -1189,6 +1198,23 @@ func drainQueueItems(
 	return queueItems
 }
 
+// validateTimeboostExpiry returns the block-age expiry error for a timeboosted item, or nil.
+func validateTimeboostExpiry(config *SequencerConfig, currentHeader *types.Header, queueItem txQueueItem) error {
+	if !queueItem.isTimeboosted || queueItem.blockStamp == 0 ||
+		currentHeader.Number.Uint64() < queueItem.blockStamp+config.Timeboost.QueueTimeoutInBlocks {
+		return nil
+	}
+	err := fmt.Errorf("timeboosted tx: %s has hit block based timeout. currentBlockNum: %d, blockStamp: %d, blockExpiry: %d",
+		queueItem.tx.Hash(),
+		currentHeader.Number.Uint64()+1,
+		queueItem.blockStamp,
+		queueItem.blockStamp+config.Timeboost.QueueTimeoutInBlocks,
+	)
+	// The timeboost result isn't read by anyone, so we log the error
+	log.Info("Error sequencing timeboost tx", "err", err)
+	return err
+}
+
 // validateQueueItem returns the reason a drained item must be dropped (canceled item ctx,
 // oversized tx, timeboost block-age expiry, fee cap below basefee), or nil to sequence it.
 func validateQueueItem(config *SequencerConfig, currentHeader *types.Header, queueItem txQueueItem) error {
@@ -1198,16 +1224,7 @@ func validateQueueItem(config *SequencerConfig, currentHeader *types.Header, que
 	if queueItem.txSize > config.MaxTxDataSize {
 		return txpool.ErrOversizedData
 	}
-	if queueItem.isTimeboosted && queueItem.blockStamp != 0 &&
-		currentHeader.Number.Uint64() >= queueItem.blockStamp+config.Timeboost.QueueTimeoutInBlocks {
-		err := fmt.Errorf("timeboosted tx: %s has hit block based timeout. currentBlockNum: %d, blockStamp: %d, blockExpiry: %d",
-			queueItem.tx.Hash(),
-			currentHeader.Number.Uint64()+1,
-			queueItem.blockStamp,
-			queueItem.blockStamp+config.Timeboost.QueueTimeoutInBlocks,
-		)
-		// The timeboost result isn't read by anyone, so we log the error
-		log.Info("Error sequencing timeboost tx", "err", err)
+	if err := validateTimeboostExpiry(config, currentHeader, queueItem); err != nil {
 		return err
 	}
 	if arbmath.BigLessThan(queueItem.tx.GasFeeCap(), currentHeader.BaseFee) {
