@@ -1254,6 +1254,13 @@ func drainAndValidateQueueItems(
 	return queueItems
 }
 
+// updateQueueMetrics refreshes the queue-depth gauge and histogram.
+func (s *Sequencer) updateQueueMetrics() {
+	txQueueLen := int64(len(s.txQueue))
+	sequencerQueueGauge.Update(txQueueLen)
+	sequencerQueueHistogram.Update(txQueueLen)
+}
+
 func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg *execution.SequencedMsg, throttleRegularSequencingFor time.Duration) {
 	s.createBlockMutex.Lock()
 	defer s.createBlockMutex.Unlock()
@@ -1288,9 +1295,7 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 		// Context canceled; retry promptly.
 		return nil, 0
 	}
-	txQueueLen := int64(len(s.txQueue))
-	sequencerQueueGauge.Update(txQueueLen)
-	sequencerQueueHistogram.Update(txQueueLen)
+	s.updateQueueMetrics()
 
 	if forwarder != nil {
 		// We are forwarding (no longer the active sequencer); forward everything
@@ -1679,6 +1684,7 @@ func (s *Sequencer) backgroundForwarder(_ context.Context) time.Duration {
 	defer s.createBlockMutex.Unlock()
 
 	config := s.config()
+	s.updateQueueMetrics()
 
 	// Turns servicing expiry in StartSequencing are not guaranteed to happen
 	// (the sequencer may be inactive, or sequencing may be yielding while exec
