@@ -1055,6 +1055,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-consensus-db"
+version = "0.1.5"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rlp",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arb-context"
 version = "0.1.5"
 dependencies = [
@@ -1189,6 +1198,14 @@ dependencies = [
  "arbos",
  "brotli 8.0.2",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "arb-mel-db"
+version = "0.1.5"
+dependencies = [
+ "alloy-rlp",
+ "arb-consensus-db",
 ]
 
 [[package]]
