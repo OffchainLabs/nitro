@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 use alloy_eips::{BlockNumberOrTag, eip2718::Encodable2718};
 use alloy_primitives::B256;
 use alloy_rpc_types_eth::{Block, Filter, Header, Log, Transaction, TransactionReceipt};
+use alloy_transport::RpcError;
 
-use super::{ParentChainReader, Result};
+use super::{ParentChainError, ParentChainReader, Result};
 
 /// An in-memory [`ParentChainReader`] for tests.
 ///
@@ -22,6 +24,7 @@ pub struct MockParentChainReader {
     txs_by_block_index: HashMap<(B256, u64), Transaction>,
     receipts_by_tx_hash: HashMap<B256, TransactionReceipt>,
     logs: Vec<Log>,
+    error: Mutex<Option<String>>,
 }
 
 impl MockParentChainReader {
@@ -81,6 +84,24 @@ impl MockParentChainReader {
         self
     }
 
+    /// Injects (or clears) an error returned by every trait method.
+    ///
+    /// Unlike the `with_*` builders this takes `&self`, so it can be toggled at
+    /// runtime through a shared handle (mirroring nitro's
+    /// `mockParentChainReader.returnErr`). Pass `Some(msg)` to fail every read,
+    /// `None` to resume returning stored data.
+    pub fn set_error(&self, err: Option<impl Into<String>>) {
+        *self.error.lock().unwrap() = err.map(Into::into);
+    }
+
+    /// Returns the injected error, if any, as a transport error.
+    fn check_error(&self) -> Result<()> {
+        match self.error.lock().unwrap().clone() {
+            Some(msg) => Err(ParentChainError::Transport(RpcError::local_usage_str(&msg))),
+            None => Ok(()),
+        }
+    }
+
     /// Resolves a [`BlockNumberOrTag`] to a concrete number against `known`,
     /// the set of numbers present in the map being queried. Tags that refer to
     /// the chain head (`latest`/`safe`/`finalized`/`pending`) resolve to the
@@ -102,6 +123,7 @@ impl MockParentChainReader {
 #[async_trait::async_trait]
 impl ParentChainReader for MockParentChainReader {
     async fn header_by_number(&self, num: BlockNumberOrTag) -> Result<Option<Header>> {
+        self.check_error()?;
         Ok(
             Self::resolve_number(num, self.headers_by_number.keys().copied())
                 .and_then(|n| self.headers_by_number.get(&n).cloned()),
@@ -109,10 +131,12 @@ impl ParentChainReader for MockParentChainReader {
     }
 
     async fn header_by_hash(&self, hash: B256) -> Result<Option<Header>> {
+        self.check_error()?;
         Ok(self.headers_by_hash.get(&hash).cloned())
     }
 
     async fn block_by_number(&self, num: BlockNumberOrTag) -> Result<Option<Block>> {
+        self.check_error()?;
         Ok(
             Self::resolve_number(num, self.blocks_by_number.keys().copied())
                 .and_then(|n| self.blocks_by_number.get(&n).cloned()),
@@ -120,22 +144,27 @@ impl ParentChainReader for MockParentChainReader {
     }
 
     async fn block_by_hash(&self, hash: B256) -> Result<Option<Block>> {
+        self.check_error()?;
         Ok(self.blocks_by_hash.get(&hash).cloned())
     }
 
     async fn transaction_in_block(&self, block: B256, index: u64) -> Result<Option<Transaction>> {
+        self.check_error()?;
         Ok(self.txs_by_block_index.get(&(block, index)).cloned())
     }
 
     async fn transaction_receipt(&self, tx: B256) -> Result<Option<TransactionReceipt>> {
+        self.check_error()?;
         Ok(self.receipts_by_tx_hash.get(&tx).cloned())
     }
 
     async fn transaction_by_hash(&self, hash: B256) -> Result<Option<Transaction>> {
+        self.check_error()?;
         Ok(self.txs_by_hash.get(&hash).cloned())
     }
 
     async fn filter_logs(&self, q: &Filter) -> Result<Vec<Log>> {
+        self.check_error()?;
         Ok(self
             .logs
             .iter()
@@ -147,11 +176,10 @@ impl ParentChainReader for MockParentChainReader {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::test_utils::{block, header, header_with_parent, log_at, receipt, tx};
     use alloy_primitives::{Address, B256};
     use alloy_rpc_types_eth::BlockTransactions;
-
-    use super::*;
-    use crate::test_utils::{block, header, log_at, receipt, tx};
 
     #[tokio::test]
     async fn header_by_number_returns_matching_header() {
@@ -456,5 +484,30 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(latest_header.inner.number, 7);
+    }
+
+    #[tokio::test]
+    async fn injected_error_fails_reads_then_clears() {
+        let mut mock = MockParentChainReader::new();
+        mock.with_header(header_with_parent(
+            5,
+            B256::repeat_byte(5),
+            B256::repeat_byte(4),
+        ));
+
+        mock.set_error(Some("boom"));
+        let err = mock
+            .header_by_number(BlockNumberOrTag::Number(5))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ParentChainError::Transport(_)));
+        assert!(err.to_string().contains("boom"));
+
+        mock.set_error(None::<String>);
+        assert!(mock
+            .header_by_number(BlockNumberOrTag::Number(5))
+            .await
+            .unwrap()
+            .is_some());
     }
 }

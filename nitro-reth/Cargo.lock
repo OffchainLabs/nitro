@@ -1210,6 +1210,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-mel-runner"
+version = "0.1.5"
+dependencies = [
+ "alloy-eips",
+ "alloy-primitives",
+ "alloy-rpc-types-eth",
+ "arb-mel",
+ "arb-parent-chain-client",
+ "arbos",
+ "async-trait",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "arb-node"
 version = "0.1.5"
 dependencies = [

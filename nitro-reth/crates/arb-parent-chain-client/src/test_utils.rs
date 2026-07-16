@@ -1,23 +1,41 @@
-//! Builders for constructing alloy values in tests, shared across the crate's
-//! test modules.
+//! Builders for constructing alloy values in tests.
+//!
+//! Shared across this crate's own test modules and, under the `test-utils`
+//! feature, by downstream crates' tests (alongside [`crate::MockParentChainReader`]).
+//! The header/log builders need only the crate's normal dependencies, so they are
+//! available under the feature; the transaction/block/receipt builders pull in
+//! `alloy-consensus` (a dev-dependency) and so exist only in this crate's own tests.
 
+use alloy_primitives::{Address, B256};
+use alloy_rpc_types_eth::{Header, Log};
+
+#[cfg(test)]
 use alloy_consensus::{
     ReceiptEnvelope, SignableTransaction, TxEip1559, TxEnvelope,
     transaction::{Recovered, TransactionInfo},
 };
-use alloy_primitives::{Address, B256, Signature, U256};
-use alloy_rpc_types_eth::{Block, BlockTransactions, Header, Log, Transaction, TransactionReceipt};
+#[cfg(test)]
+use alloy_primitives::{Signature, U256};
+#[cfg(test)]
+use alloy_rpc_types_eth::{Block, BlockTransactions, Transaction, TransactionReceipt};
 
 /// Builds a header with the given number and hash.
-pub(crate) fn header(number: u64, hash: B256) -> Header {
+pub fn header(number: u64, hash: B256) -> Header {
     let mut h: Header = Header::default();
     h.inner.number = number;
     h.hash = hash;
     h
 }
 
+/// Builds a header with the given number, hash, and parent hash.
+pub fn header_with_parent(number: u64, hash: B256, parent_hash: B256) -> Header {
+    let mut h = header(number, hash);
+    h.inner.parent_hash = parent_hash;
+    h
+}
+
 /// Builds a log emitted at `block` by `address`.
-pub(crate) fn log_at(block: u64, address: Address) -> Log {
+pub fn log_at(block: u64, address: Address) -> Log {
     let mut log = Log::default();
     log.inner.address = address;
     log.block_number = Some(block);
@@ -27,6 +45,7 @@ pub(crate) fn log_at(block: u64, address: Address) -> Log {
 
 /// Builds a transaction. `nonce` gives it a distinct hash; `mined_at` sets its
 /// `(block hash, index)` (leave `None` for a pending transaction).
+#[cfg(test)]
 pub(crate) fn tx(nonce: u64, mined_at: Option<(B256, u64)>) -> Transaction {
     let signed = TxEip1559 {
         nonce,
@@ -45,11 +64,13 @@ pub(crate) fn tx(nonce: u64, mined_at: Option<(B256, u64)>) -> Transaction {
 }
 
 /// Builds a block with the given number, hash, and transactions.
+#[cfg(test)]
 pub(crate) fn block(number: u64, hash: B256, txs: BlockTransactions<Transaction>) -> Block {
     Block::new(header(number, hash), txs)
 }
 
 /// Builds a receipt for the given transaction hash.
+#[cfg(test)]
 pub(crate) fn receipt(tx_hash: B256) -> TransactionReceipt {
     TransactionReceipt {
         inner: ReceiptEnvelope::Eip1559(Default::default()),
