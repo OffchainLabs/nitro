@@ -15,8 +15,8 @@ use alloy_primitives::{Address, U256};
 use arbos::{
     arbos_state,
     arbos_types::{
-        L1_MESSAGE_TYPE_L2_MESSAGE, L1IncomingMessage, L1IncomingMessageHeader, MAX_L2_MESSAGE_SIZE,
-        MessageWithMetadata, invalid_l1_message,
+        L1_MESSAGE_TYPE_L2_MESSAGE, L1IncomingMessage, L1IncomingMessageHeader,
+        MAX_L2_MESSAGE_SIZE, MessageWithMetadata, invalid_l1_message,
     },
     l1_pricing::BATCH_POSTER_ADDRESS,
 };
@@ -220,7 +220,8 @@ fn extract_delayed_msg_from_segment<D: DelayedMessageDB>(
             delayed_messages_read: seq_msg.after_delayed_messages,
         });
     }
-    let delayed = delayed_msg_db.read_delayed_message(mel_state, mel_state.delayed_messages_read)?;
+    let delayed =
+        delayed_msg_db.read_delayed_message(mel_state, mel_state.delayed_messages_read)?;
     match delayed {
         Some(delayed_msg) => {
             mel_state.delayed_messages_read += 1;
