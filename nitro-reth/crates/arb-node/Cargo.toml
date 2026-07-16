@@ -1,88 +1,86 @@
 [package]
 name = "arb-node"
-version.workspace = true
+authors.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
 
 [dependencies]
-arb-primitives = { workspace = true }
-arb-precompiles = { workspace = true }
+alloy-consensus = { workspace = true }
+alloy-eips = { workspace = true }
+alloy-evm = { workspace = true }
+alloy-genesis = { workspace = true }
+alloy-primitives = { workspace = true, features = ["map-foldhash"] }
+alloy-rpc-types-engine = { workspace = true }
+alloy-rpc-types-eth = { workspace = true }
 arb-chainspec = { workspace = true }
 arb-errors = { workspace = true }
 arb-evm = { workspace = true }
+arb-payload = { workspace = true }
+arb-primitives = { workspace = true }
+arb-rpc = { workspace = true }
 arb-storage = { workspace = true }
 arb-storage-errors = { workspace = true }
-arb-payload = { workspace = true }
-arb-rpc = { workspace = true }
 arb-stylus = { workspace = true }
 arb-txpool = { workspace = true }
 arbos = { workspace = true }
-alloy-genesis = { workspace = true }
-reth-cli = { workspace = true }
-reth-ethereum-cli = { workspace = true }
-serde_json = { workspace = true }
-alloy-consensus = { workspace = true }
-alloy-rlp = { workspace = true }
-alloy-eips = { workspace = true }
-alloy-evm = { workspace = true }
-alloy-primitives = { workspace = true }
-alloy-rpc-types-engine = { workspace = true }
-alloy-rpc-types-eth = { workspace = true }
-reth-chainspec = { workspace = true }
+async-trait = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+crossbeam-channel = { workspace = true }
+eyre = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+parking_lot = { workspace = true }
+rayon = { workspace = true }
 reth-chain-state = { workspace = true }
+reth-chainspec = { workspace = true }
+reth-cli = { workspace = true }
 reth-consensus = { workspace = true }
 reth-db = { workspace = true }
-reth-db-api = { workspace = true }
 reth-engine-primitives = { workspace = true }
 reth-engine-tree = { workspace = true }
 reth-engine-util = { workspace = true }
+reth-ethereum-cli = { workspace = true }
 reth-evm = { workspace = true }
+reth-execution-types = { workspace = true }
 reth-exex = { workspace = true }
 reth-metrics = { workspace = true }
-reth-execution-types = { workspace = true }
 reth-network = { workspace = true }
 reth-network-api = { workspace = true }
+reth-network-p2p = { workspace = true }
 reth-node-api = { workspace = true }
 reth-node-builder = { workspace = true }
 reth-node-core = { workspace = true }
 reth-node-events = { workspace = true }
-reth-provider = { workspace = true }
-reth-rpc-eth-api = { workspace = true }
-reth-node-ethereum = { workspace = true }
 reth-node-types = { workspace = true }
 reth-payload-builder = { workspace = true }
 reth-payload-builder-primitives = { workspace = true }
 reth-payload-primitives = { workspace = true }
 reth-primitives-traits = { workspace = true }
+reth-provider = { workspace = true }
+reth-prune = { workspace = true }
 reth-revm = { workspace = true }
+reth-rpc-eth-api = { workspace = true }
+reth-stages-api = { workspace = true }
 reth-storage-api = { workspace = true }
 reth-storage-errors = { workspace = true }
+reth-tasks = { workspace = true }
 reth-tokio-util = { workspace = true }
 reth-tracing = { workspace = true }
+reth-transaction-pool = { workspace = true }
 reth-trie = { workspace = true }
 reth-trie-common = { workspace = true }
-reth-network-p2p = { workspace = true }
-reth-prune = { workspace = true }
-reth-stages-api = { workspace = true }
-reth-tasks = { workspace = true }
-reth-transaction-pool = { workspace = true }
 reth-trie-db = { workspace = true }
 reth-trie-parallel = { workspace = true }
-async-trait = { workspace = true }
-crossbeam-channel = { workspace = true }
-eyre = { workspace = true }
-clap = { workspace = true }
-futures = { workspace = true }
-futures-util = "0.3"
-parking_lot = { workspace = true }
-rayon = { workspace = true }
-rustc-hash = { workspace = true }
 revm = { workspace = true }
 revm-database = { workspace = true }
+rustc-hash = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true }
-tokio-stream = "0.1"
+tokio = { workspace = true, features = ["macros", "sync", "time"] }
+tokio-stream = { workspace = true }
 tracing = { workspace = true }
 
 [lints]

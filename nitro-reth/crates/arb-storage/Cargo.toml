@@ -1,22 +1,19 @@
 [package]
 name = "arb-storage"
-version.workspace = true
+authors.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
 
 [dependencies]
-arb-primitives = { workspace = true }
-arb-storage-errors = { workspace = true }
 alloy-evm = { workspace = true }
-alloy-primitives = { workspace = true, features = ["std"] }
-reth-storage-api = { workspace = true }
-reth-provider = { workspace = true }
-reth-db-api = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std", "map-foldhash"] }
+arb-storage-errors = { workspace = true }
 revm = { workspace = true }
 revm-database = { workspace = true }
 revm-state = { workspace = true }
-thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
