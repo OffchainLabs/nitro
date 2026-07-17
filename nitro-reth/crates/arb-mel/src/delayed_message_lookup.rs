@@ -155,7 +155,8 @@ fn delayed_message_scaffolds_from_logs(
                     l1_base_fee: Some(ev.baseFeeL1),
                 },
                 l2_msg: Vec::new(),
-                batch_gas_left: None,
+                legacy_batch_gas_cost: None,
+                batch_data_stats: None,
             },
             parent_chain_block_number: log.block_number.unwrap_or(parent_chain_header.number),
         });

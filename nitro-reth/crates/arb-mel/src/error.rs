@@ -8,6 +8,28 @@ pub enum MelError {
     #[error("batch posting reports {reports} exceed batches {batches}")]
     TooManyBatchPostingReports { reports: usize, batches: usize },
 
+    #[error("not all batch posting reports processed: have {reports}, processed {processed}")]
+    BatchPostingReportsNotProcessed { reports: usize, processed: usize },
+
+    #[error("batch sequence number mismatch: expected {expected}, got {got}")]
+    BatchSequenceMismatch { expected: u64, got: u64 },
+
+    #[error(
+        "batch AfterDelayedCount {batch_after_delayed} does not match MEL state DelayedMessagesRead {state_delayed_read}"
+    )]
+    DelayedCountMismatch {
+        batch_after_delayed: u64,
+        state_delayed_read: u64,
+    },
+
+    #[error(
+        "MELConfigSet activation block {activation_block} does not match current parent chain block {parent_chain_block}"
+    )]
+    MelConfigActivationMismatch {
+        activation_block: u64,
+        parent_chain_block: u64,
+    },
+
     #[error(transparent)]
     Storage(#[from] arb_storage_errors::StorageError),
 
@@ -59,6 +81,12 @@ pub enum MelError {
 
     #[error("failed to decompress batch payload")]
     BatchDecompressionFailed,
+
+    #[error("failed to parse batch advancing segment")]
+    ParsingAdvancingSegmentFailed,
+
+    #[error("no more delayed messages in db")]
+    NoMoreDelayedMessages,
 
     #[error("unknown error")]
     Unknown,

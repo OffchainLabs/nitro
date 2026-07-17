@@ -22,6 +22,7 @@ brotli = { workspace = true }
 
 # Common
 thiserror = { workspace = true }
+tracing = { workspace = true }
 
 [lints]
 workspace = true

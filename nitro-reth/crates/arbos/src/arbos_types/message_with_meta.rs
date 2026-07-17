@@ -3,7 +3,7 @@ use alloy_primitives::{B256, keccak256};
 use super::incoming_message::L1IncomingMessage;
 
 /// An L1 incoming message with additional metadata.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MessageWithMetadata {
     pub message: L1IncomingMessage,
     pub delayed_messages_read: u64,
@@ -34,7 +34,8 @@ impl MessageWithMetadata {
             message: L1IncomingMessage {
                 header: self.message.header.clone(),
                 l2_msg: self.message.l2_msg.clone(),
-                batch_gas_left: None,
+                legacy_batch_gas_cost: None,
+                batch_data_stats: None,
             },
             delayed_messages_read: self.delayed_messages_read,
         }

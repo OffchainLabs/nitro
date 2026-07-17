@@ -1198,6 +1198,7 @@ dependencies = [
  "arbos",
  "brotli 8.0.2",
  "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]
