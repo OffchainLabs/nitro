@@ -85,6 +85,9 @@ pub enum MelError {
     #[error("failed to parse batch advancing segment")]
     ParsingAdvancingSegmentFailed,
 
+    #[error("no more delayed messages in db")]
+    NoMoreDelayedMessages,
+
     #[error("unknown error")]
     Unknown,
 }

@@ -35,9 +35,10 @@ where
     if input_state.parent_chain_block_hash != parent_chain_header.parent_hash {
         return Err(MelError::ParentHashMismatch {
             expected: input_state.parent_chain_block_hash,
-            got: parent_chain_header.hash_slow(),
+            got: parent_chain_header.parent_hash,
         });
     }
+    // TODO: reset the local_msg_accumulator field to empty after clone.
     let mut post_state = input_state.clone();
     post_state.parent_chain_block_hash = parent_chain_header.hash_slow();
     post_state.parent_chain_prev_block_hash = input_state.parent_chain_block_hash;
