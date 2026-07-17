@@ -31,6 +31,18 @@ use crate::{
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
 
+const MAX_USER_DATAS: usize = 128;
+const MAX_USER_ELEMENTS: usize = 128;
+const MAX_USER_EXPORTS: usize = 1024;
+const MAX_USER_FUNCTIONS: usize = 4096;
+const MAX_USER_GLOBALS: usize = 32768;
+const MAX_USER_IMPORTS: usize = 513;
+const MAX_USER_LOCALS: usize = 348;
+const MAX_USER_MEMORIES: usize = 1;
+const MAX_USER_OPS: usize = 65536;
+const MAX_USER_TABLE_ENTRIES: u64 = 4096;
+const MAX_USER_ELEMENT_ENTRIES: usize = 4096;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FloatType {
     F32,
@@ -315,6 +327,16 @@ pub fn parse_with_stylus_version<'a>(
     path: &'_ Path,
     stylus_version: u16,
 ) -> Result<WasmBinary<'a>> {
+    parse_with_limits(input, path, stylus_version, false, None)
+}
+
+fn parse_with_limits<'a>(
+    input: &'a [u8],
+    path: &'_ Path,
+    stylus_version: u16,
+    user_limits: bool,
+    user_arbos_version: Option<u64>,
+) -> Result<WasmBinary<'a>> {
     let mut features = WasmFeatures::empty();
     features.set(WasmFeatures::MUTABLE_GLOBAL, true);
     features.set(WasmFeatures::SATURATING_FLOAT_TO_INT, true);
@@ -361,6 +383,15 @@ pub fn parse_with_stylus_version<'a>(
             }};
         }
 
+        macro_rules! limit_section {
+            ($limit:expr_2021, $count:expr_2021, $name:expr_2021) => {{
+                let count = $count;
+                if user_limits && count > $limit {
+                    bail!("too many wasm {}: {} > {}", $name, count, $limit);
+                }
+            }};
+        }
+
         match section {
             TypeSection(type_section) => {
                 for func in type_section.into_iter_err_on_gc_types() {
@@ -371,10 +402,14 @@ pub fn parse_with_stylus_version<'a>(
                 let mut code = Code::default();
                 let mut locals = codes.get_locals_reader()?;
                 let mut ops = codes.get_operators_reader()?;
-                let mut index = 0;
+                let mut index = 0u32;
 
                 for _ in 0..locals.get_count() {
                     let (count, value) = locals.read()?;
+                    let end = index
+                        .checked_add(count)
+                        .ok_or_else(|| eyre!("too many wasm locals"))?;
+                    limit_section!(MAX_USER_LOCALS, end as usize, "locals");
                     for _ in 0..count {
                         code.locals.push(Local {
                             index,
@@ -384,12 +419,14 @@ pub fn parse_with_stylus_version<'a>(
                     }
                 }
                 while !ops.eof() {
+                    limit_section!(MAX_USER_OPS, code.expr.len() + 1, "opcodes in func body");
                     code.expr.push(ops.read()?);
                 }
 
                 binary.codes.push(code);
             }
             GlobalSection(globals) => {
+                limit_section!(MAX_USER_GLOBALS, globals.count() as usize, "globals");
                 for global in globals {
                     let mut init = global?.init_expr.get_operators_reader();
 
@@ -401,6 +438,11 @@ pub fn parse_with_stylus_version<'a>(
                 }
             }
             ImportSection(imports) => {
+                if user_arbos_version
+                    .is_some_and(|version| version >= ARBOS_VERSION_STYLUS_CHARGING_FIXES)
+                {
+                    limit_section!(MAX_USER_IMPORTS, imports.count() as usize, "imports");
+                }
                 for import in imports {
                     let import = import?;
                     let Imports::Single(_, import) = import else {
@@ -418,6 +460,7 @@ pub fn parse_with_stylus_version<'a>(
                 }
             }
             ExportSection(exports) => {
+                limit_section!(MAX_USER_EXPORTS, exports.count() as usize, "exports");
                 use ExternalKind as E;
                 for export in exports {
                     let export = export?;
@@ -433,15 +476,36 @@ pub fn parse_with_stylus_version<'a>(
             }
             FunctionSection(functions) => process!(binary.functions, functions),
             TableSection(tables) => {
+                let mut entries = 0u64;
                 for table in tables {
-                    binary.tables.push(table?.ty);
+                    let table = table?.ty;
+                    entries = entries.saturating_add(table.initial);
+                    limit_section!(MAX_USER_TABLE_ENTRIES, entries, "table entries");
+                    binary.tables.push(table);
                 }
             }
-            MemorySection(memories) => process!(binary.memories, memories),
+            MemorySection(memories) => {
+                limit_section!(MAX_USER_MEMORIES, memories.count() as usize, "memories");
+                process!(binary.memories, memories)
+            }
             StartSection { func, .. } => binary.start = Some(func),
-            ElementSection(elements) => process!(binary.elements, elements),
-            DataSection(datas) => process!(binary.datas, datas),
-            CodeSectionStart { .. } => {}
+            ElementSection(elements) => {
+                limit_section!(MAX_USER_ELEMENTS, elements.count() as usize, "elements");
+                let mut entries = 0usize;
+                for element in elements {
+                    let element = element?;
+                    entries = entries.saturating_add(element.range.len());
+                    limit_section!(MAX_USER_ELEMENT_ENTRIES, entries, "element entries");
+                    binary.elements.push(element);
+                }
+            }
+            DataSection(datas) => {
+                limit_section!(MAX_USER_DATAS, datas.count() as usize, "datas");
+                process!(binary.datas, datas)
+            }
+            CodeSectionStart { count, .. } => {
+                limit_section!(MAX_USER_FUNCTIONS, count as usize, "functions");
+            }
             CustomSection(reader) => {
                 if reader.name() != "name" {
                     continue;
@@ -669,9 +733,13 @@ impl<'a> WasmBinary<'a> {
         compile: &CompileConfig,
         codehash: &Bytes32,
     ) -> Result<(WasmBinary<'a>, StylusData)> {
-        let mut bin = parse_with_stylus_version(wasm, Path::new("user"), stylus_version)?;
-
-        let stylus_data = bin.instrument(compile, codehash)?;
+        let mut bin = parse_with_limits(
+            wasm,
+            Path::new("user"),
+            stylus_version,
+            true,
+            Some(arbos_version_for_activation),
+        )?;
 
         let Some(memory) = bin.memories.first() else {
             bail!("missing memory with export name \"memory\"")
@@ -692,26 +760,26 @@ impl<'a> WasmBinary<'a> {
                 }
             };
         }
-        limit!(1, bin.memories.len(), "memories");
-        limit!(128, bin.datas.len(), "datas");
-        limit!(128, bin.elements.len(), "elements");
-        limit!(1024, bin.exports.len(), "exports");
-        limit!(4096, bin.codes.len(), "functions");
-        limit!(32768, bin.globals.len(), "globals");
+        limit!(MAX_USER_MEMORIES, bin.memories.len(), "memories");
+        limit!(MAX_USER_DATAS, bin.datas.len(), "datas");
+        limit!(MAX_USER_ELEMENTS, bin.elements.len(), "elements");
+        limit!(MAX_USER_EXPORTS, bin.exports.len(), "exports");
+        limit!(MAX_USER_FUNCTIONS, bin.codes.len(), "functions");
+        limit!(MAX_USER_GLOBALS, bin.globals.len(), "globals");
         for code in &bin.codes {
-            limit!(348, code.locals.len(), "locals");
-            limit!(65536, code.expr.len(), "opcodes in func body");
+            limit!(MAX_USER_LOCALS, code.locals.len(), "locals");
+            limit!(MAX_USER_OPS, code.expr.len(), "opcodes in func body");
         }
 
         if arbos_version_for_activation >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
-            limit!(513, bin.imports.len(), "imports")
+            limit!(MAX_USER_IMPORTS, bin.imports.len(), "imports")
         }
 
         let table_entries = bin.tables.iter().map(|x| x.initial).saturating_sum();
-        limit!(4096, table_entries, "table entries");
+        limit!(MAX_USER_TABLE_ENTRIES, table_entries, "table entries");
 
         let elem_entries = bin.elements.iter().map(|x| x.range.len()).saturating_sum();
-        limit!(4096, elem_entries, "element entries");
+        limit!(MAX_USER_ELEMENT_ENTRIES, elem_entries, "element entries");
 
         let max_len = 512;
         macro_rules! too_long {
@@ -733,6 +801,7 @@ impl<'a> WasmBinary<'a> {
         if bin.start.is_some() {
             bail!("wasm start functions not allowed");
         }
+        let stylus_data = bin.instrument(compile, codehash)?;
         Ok((bin, stylus_data))
     }
 
@@ -750,5 +819,96 @@ impl<'a> WasmBinary<'a> {
             bail!("wrong type for {}: {}", name.red(), func_ty.red());
         }
         Ok(func)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_user_error(wat: String) -> String {
+        let wasm = wat::parse_str(wat).unwrap();
+        WasmBinary::parse_user(
+            &wasm,
+            0,
+            0,
+            u16::MAX,
+            &CompileConfig::default(),
+            &Bytes32::default(),
+        )
+        .unwrap_err()
+        .to_string()
+    }
+
+    #[test]
+    fn rejects_excess_user_locals_before_expansion() {
+        let locals = " i32".repeat(MAX_USER_LOCALS + 1);
+        assert_eq!(
+            parse_user_error(format!("(module (func (local {locals})))")),
+            format!(
+                "too many wasm locals: {} > {MAX_USER_LOCALS}",
+                MAX_USER_LOCALS + 1
+            )
+        );
+    }
+
+    #[test]
+    fn rejects_excess_user_functions_before_bodies() {
+        let functions = "(func)".repeat(MAX_USER_FUNCTIONS + 1);
+        assert_eq!(
+            parse_user_error(format!("(module {functions})")),
+            format!(
+                "too many wasm functions: {} > {MAX_USER_FUNCTIONS}",
+                MAX_USER_FUNCTIONS + 1
+            )
+        );
+    }
+
+    #[test]
+    fn rejects_excess_user_globals_before_allocation() {
+        let globals = "(global i32 (i32.const 0))".repeat(MAX_USER_GLOBALS + 1);
+        assert_eq!(
+            parse_user_error(format!("(module {globals})")),
+            format!(
+                "too many wasm globals: {} > {MAX_USER_GLOBALS}",
+                MAX_USER_GLOBALS + 1
+            )
+        );
+    }
+
+    #[test]
+    fn rejects_excess_user_opcodes_before_expansion() {
+        let ops = "nop ".repeat(MAX_USER_OPS + 1);
+        assert_eq!(
+            parse_user_error(format!("(module (func {ops}))")),
+            format!(
+                "too many wasm opcodes in func body: {} > {MAX_USER_OPS}",
+                MAX_USER_OPS + 1
+            )
+        );
+    }
+
+    #[test]
+    fn rejects_excess_user_table_entries_before_allocation() {
+        assert_eq!(
+            parse_user_error(format!(
+                "(module (table {} funcref))",
+                MAX_USER_TABLE_ENTRIES + 1
+            )),
+            format!(
+                "too many wasm table entries: {} > {MAX_USER_TABLE_ENTRIES}",
+                MAX_USER_TABLE_ENTRIES + 1
+            )
+        );
+    }
+
+    #[test]
+    fn rejects_excess_user_element_entries_before_allocation() {
+        let items = "$f ".repeat(MAX_USER_ELEMENT_ENTRIES + 1);
+        let error = parse_user_error(format!("(module (func $f) (elem func {items}))"));
+        assert!(
+            error.starts_with("too many wasm element entries:"),
+            "unexpected error: {error}"
+        );
     }
 }
