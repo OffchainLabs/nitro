@@ -233,7 +233,7 @@ func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
 // TxAccepted deliberately does NOT broadcast to the transaction feed. A
 // delayed block is produced atomically from one inbox message and discarded
 // completely if any of its txs is filtered. Its broadcast is handled after block production.
-func (f *DelayedFilteringSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt, collectTips bool) {
+func (f *DelayedFilteringSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt) {
 }
 
 func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
@@ -1109,9 +1109,8 @@ func (s *ExecutionEngine) broadcastBlockTxs(block *types.Block, receipts types.R
 	}
 	header := block.Header()
 
-	collectTips := types.DeserializeHeaderExtraInformation(header).CollectTips
 	for i, tx := range block.Transactions() {
-		msg, err := transactionfeed.BuildFeedMessage(header, tx, receipts[i], collectTips)
+		msg, err := transactionfeed.BuildFeedMessage(header, tx, receipts[i])
 		if err != nil {
 			log.Error("Transaction feed: failed to build message", "block", header.Number, "err", err)
 			continue

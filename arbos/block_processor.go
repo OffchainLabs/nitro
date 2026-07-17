@@ -23,6 +23,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -258,7 +259,7 @@ type SequencingHooks interface {
 	TxFailed(error)
 	// TxAccepted is called for each transaction appended to the block under construction
 	// (grouped txs are reported once their group completes; the block may still fail afterwards).
-	TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt, collectTips bool)
+	TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt)
 }
 
 type NoopSequencingHooks struct {
@@ -296,7 +297,7 @@ func (n *NoopSequencingHooks) TxSucceeded() {}
 
 func (n *NoopSequencingHooks) TxFailed(error) {}
 
-func (n *NoopSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt, collectTips bool) {
+func (n *NoopSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt) {
 }
 
 func (n *NoopSequencingHooks) SupportsGroupRollback() bool { return false }
@@ -401,16 +402,6 @@ func ProduceBlockAdvanced(
 		activeGroupCP:        nil,
 	}
 
-	collectTips := func() bool {
-		collectTips, err := buildState.arbState.ShouldCollectTips(header.Coinbase)
-		if err != nil {
-			// This read failing means broken ArbOS state; TxProcessor.CollectTips
-			// and FinalizeBlock both panic on it in this same flow.
-			panic(fmt.Errorf("%w while reading collect tips setting. Block: %d", err, header.Number))
-		}
-		return collectTips
-	}
-
 	emitGroupAccepted := func() {
 		if buildState.activeGroupCP == nil {
 			log.Warn("emitGroupAccepted was called with no active group checkpoint")
@@ -419,7 +410,7 @@ func ProduceBlockAdvanced(
 		// activeGroupCP.completeLen is the index in complete of the group's
 		// first tx
 		for i := buildState.activeGroupCP.completeLen; i < len(buildState.complete); i++ {
-			sequencingHooks.TxAccepted(header, buildState.complete[i], buildState.receipts[i], collectTips())
+			sequencingHooks.TxAccepted(header, buildState.complete[i], buildState.receipts[i])
 		}
 	}
 
@@ -731,12 +722,12 @@ func ProduceBlockAdvanced(
 		if isUserTx {
 			if buildState.activeGroupCP == nil {
 				sequencingHooks.TxSucceeded()
-				sequencingHooks.TxAccepted(header, tx, receipt, collectTips())
+				sequencingHooks.TxAccepted(header, tx, receipt)
 			}
 
 			buildState.userTxsProcessed++
 		} else if tx.Type() == types.ArbitrumInternalTxType {
-			sequencingHooks.TxAccepted(header, tx, receipt, collectTips())
+			sequencingHooks.TxAccepted(header, tx, receipt)
 		} else if buildState.activeGroupCP != nil && len(buildState.redeems) == 0 {
 			sequencingHooks.TxSucceeded()
 			emitGroupAccepted()
@@ -807,10 +798,15 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.Stat
 				newErr := fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root)
 				panic(newErr)
 			}
-			collectTips, err = state.ShouldCollectTips(header.Coinbase)
+			collectTips, err = state.CollectTips()
 			if err != nil {
 				newErr := fmt.Errorf("%w while reading collect tips setting. Block: %d root: %v", err, header.Number, header.Root)
 				panic(newErr)
+			}
+			// Delayed-message blocks never collect tips, regardless of the chain-wide setting.
+			// All transactions in a block share the same Coinbase, so this is a block-level property.
+			if collectTips && header.Coinbase != l1pricing.BatchPosterAddress {
+				collectTips = false
 			}
 			// Add outbox info to the header for client-side proving
 			acc := state.SendMerkleAccumulator()

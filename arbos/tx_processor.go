@@ -991,6 +991,11 @@ func (p *TxProcessor) GasPriceOp(evm *vm.EVM) *big.Int {
 
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
 	receipt.GasUsedForL1 = p.posterGas
+
+	receipt.EffectiveGasPrice = p.evm.Context.BaseFee
+	if p.CollectTips() {
+		receipt.EffectiveGasPrice = p.msg.Tx.EffectiveGasPrice(p.evm.Context.BaseFee)
+	}
 }
 
 func (p *TxProcessor) MsgIsNonMutating() bool {

@@ -119,11 +119,11 @@ func (s *FullSequencingHooks) TxFailed(err error) {
 	s.txErrors = append(s.txErrors, err)
 }
 
-func (s *FullSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt, collectTips bool) {
+func (s *FullSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt) {
 	if s.transactionFeedServer == nil {
 		return
 	}
-	msg, err := transactionfeed.BuildFeedMessage(header, tx, receipt, collectTips)
+	msg, err := transactionfeed.BuildFeedMessage(header, tx, receipt)
 	if err != nil {
 		log.Error("Transaction feed: failed to build message", "block", header.Number, "err", err)
 		return

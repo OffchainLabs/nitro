@@ -53,7 +53,7 @@ type Log struct {
 	Data    string   `json:"data"`
 }
 
-func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *types.Receipt, collectTips bool) (*TransactionFeedMessage, error) {
+func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *types.Receipt) (*TransactionFeedMessage, error) {
 	if tx == nil {
 		return nil, errors.New("nil transaction")
 	}
@@ -66,15 +66,14 @@ func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *type
 	if receipt == nil {
 		return nil, fmt.Errorf("nil receipt for tx %s", tx.Hash().Hex())
 	}
+	// This field should have been populated by FillTransaction
+	if receipt.EffectiveGasPrice == nil {
+		return nil, fmt.Errorf("receipt missing EffectiveGasPrice for tx %s", tx.Hash().Hex())
+	}
 
 	rawTx, err := tx.MarshalBinary()
 	if err != nil {
 		return nil, fmt.Errorf("MarshalBinary for tx %s: %w", tx.Hash().Hex(), err)
-	}
-
-	effectiveGasPrice := header.BaseFee
-	if collectTips {
-		effectiveGasPrice = tx.EffectiveGasPrice(header.BaseFee)
 	}
 
 	var contractAddress string
@@ -108,7 +107,7 @@ func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *type
 				Status:            arbmath.SaturatingUUCast[uint8](receipt.Status),
 				GasUsed:           receipt.GasUsed,
 				CumulativeGasUsed: receipt.CumulativeGasUsed,
-				EffectiveGasPrice: hexutil.EncodeBig(effectiveGasPrice),
+				EffectiveGasPrice: hexutil.EncodeBig(receipt.EffectiveGasPrice),
 				GasUsedForL1:      receipt.GasUsedForL1,
 				BaseFee:           hexutil.EncodeBig(header.BaseFee),
 				ContractAddress:   contractAddress,
