@@ -14,6 +14,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+
+	"github.com/offchainlabs/nitro/util/metricsutil"
 )
 
 func RegisterAndPopulateMetrics(ctx context.Context, spawnInterval, maxDeviceCount int) {
@@ -33,8 +35,7 @@ func RegisterAndPopulateMetrics(ctx context.Context, spawnInterval, maxDeviceCou
 		if _, ok := deviceMetrics[stat.DeviceName]; !ok {
 			// Register metrics for a maximum of maxDeviceCount (fail safe in case iostat command returns incorrect names indefinitely)
 			if len(deviceMetrics) < maxDeviceCount {
-				// Replace hyphens with underscores to avoid metric name issues
-				sanitizedDeviceName := strings.ReplaceAll(stat.DeviceName, "-", "_")
+				sanitizedDeviceName := metricsutil.CanonicalizeMetricName(stat.DeviceName)
 				baseMetricName := fmt.Sprintf("iostat/%s/", sanitizedDeviceName)
 				deviceMetrics[stat.DeviceName] = make(map[string]*metrics.GaugeFloat64)
 				deviceMetrics[stat.DeviceName]["readspersecond"] = metrics.NewRegisteredGaugeFloat64(baseMetricName+"readspersecond", nil)
@@ -119,6 +120,10 @@ func parseStream(r io.Reader, receiver chan<- DeviceStats) {
 			}
 		}
 		if stat.DeviceName == "" {
+			continue
+		}
+		if _, err := strconv.ParseFloat(stat.DeviceName, 64); err == nil {
+			log.Warn("iostat returned a numeric device name, skipping implausible row", "deviceName", stat.DeviceName)
 			continue
 		}
 		receiver <- stat
