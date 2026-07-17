@@ -178,6 +178,30 @@ func TestGroupSchedule(t *testing.T) {
 	}
 }
 
+func TestRunOneZeroTimeoutMeansNoDeadline(t *testing.T) {
+	saved := *flagTestTimeout
+	t.Cleanup(func() { *flagTestTimeout = saved })
+	*flagTestTimeout = 0
+
+	rt := &recordingT{}
+	var hasDeadline bool
+	item := scheduledTest{
+		Spec: Spec{Name: "X"},
+		Scenario: func(e *Env) {
+			_, hasDeadline = e.Ctx.Deadline()
+		},
+	}
+	runOneWith(rt, item, func(ctx context.Context, _ Spec, _ overrides) (*Env, func()) {
+		return &Env{t: rt, Ctx: ctx}, func() {}
+	})
+	if hasDeadline {
+		t.Error("zero default timeout must disable the deadline backstop")
+	}
+	if rt.errCount() != 0 {
+		t.Errorf("unexpected errors: %v", rt.errors)
+	}
+}
+
 func TestRunOneScenarioDeadlineReachesEnv(t *testing.T) {
 	rt := &recordingT{}
 	// The scenario blocks on its ctx; it can only unblock if Spec.Timeout

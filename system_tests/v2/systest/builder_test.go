@@ -51,45 +51,45 @@ func TestShouldSkip(t *testing.T) {
 	tests := []struct {
 		name       string
 		setup      func(*builder)
-		cli        scheduleParams
+		sp         scheduleParams
 		wantReason string
 	}{
 		{
 			name:       "no constraints",
 			setup:      func(*builder) {},
-			cli:        scheduleParams{},
+			sp:         scheduleParams{},
 			wantReason: "",
 		},
 		{
-			name: "pin conflicts with CLI",
+			name: "pin conflicts with params pin",
 			setup: func(b *builder) {
 				b.arbOS = containers.Some(params.ArbosVersion_31)
 			},
-			cli:        scheduleParams{ArbOS: containers.Some(params.ArbosVersion_40)},
-			wantReason: "ArbOS 31 conflicts with -v2.arbos=40",
+			sp:         scheduleParams{ArbOS: containers.Some(params.ArbosVersion_40)},
+			wantReason: "ArbOS 31 conflicts with ArbOS pin 40",
 		},
 		{
-			name: "state scheme pin conflicts with CLI",
+			name: "state scheme pin conflicts with params pin",
 			setup: func(b *builder) {
 				b.stateScheme = containers.Some(StateSchemePath)
 			},
-			cli:        scheduleParams{StateScheme: containers.Some(StateSchemeHash)},
-			wantReason: `state scheme "path" conflicts with -v2.state-scheme="hash"`,
+			sp:         scheduleParams{StateScheme: containers.Some(StateSchemeHash)},
+			wantReason: `state scheme "path" conflicts with state scheme pin "hash"`,
 		},
 		{
-			name: "db engine pin conflicts with CLI",
+			name: "db engine pin conflicts with params pin",
 			setup: func(b *builder) {
 				b.dbEngine = containers.Some(DBEngineLevelDB)
 			},
-			cli:        scheduleParams{DBEngine: containers.Some(DBEnginePebble)},
-			wantReason: `db engine "leveldb" conflicts with -v2.db-engine="pebble"`,
+			sp:         scheduleParams{DBEngine: containers.Some(DBEnginePebble)},
+			wantReason: `db engine "leveldb" conflicts with db engine pin "pebble"`,
 		},
 		{
 			name: "env default scheme not a conflict",
 			setup: func(b *builder) {
 				b.stateScheme = containers.Some(StateSchemePath)
 			},
-			cli:        scheduleParams{DefaultStateScheme: containers.Some(StateSchemeHash)},
+			sp:         scheduleParams{DefaultStateScheme: containers.Some(StateSchemeHash)},
 			wantReason: "",
 		},
 		{
@@ -97,7 +97,7 @@ func TestShouldSkip(t *testing.T) {
 			setup: func(b *builder) {
 				b.skipStateSchemes = []StateScheme{StateSchemePath}
 			},
-			cli:        scheduleParams{DefaultStateScheme: containers.Some(StateSchemePath)},
+			sp:         scheduleParams{DefaultStateScheme: containers.Some(StateSchemePath)},
 			wantReason: `incompatible with state scheme "path"`,
 		},
 		{
@@ -106,7 +106,7 @@ func TestShouldSkip(t *testing.T) {
 				b.arbOS = containers.Some(params.ArbosVersion_20)
 				b.minArbOS = params.ArbosVersion_30
 			},
-			cli:        scheduleParams{},
+			sp:         scheduleParams{},
 			wantReason: "requires ArbOS>=30, got 20",
 		},
 		{
@@ -115,7 +115,7 @@ func TestShouldSkip(t *testing.T) {
 				b.stateScheme = containers.Some(StateSchemePath)
 				b.skipStateSchemes = []StateScheme{StateSchemePath}
 			},
-			cli:        scheduleParams{},
+			sp:         scheduleParams{},
 			wantReason: `incompatible with state scheme "path"`,
 		},
 		{
@@ -124,7 +124,7 @@ func TestShouldSkip(t *testing.T) {
 				b.arbOS = containers.Some(params.ArbosVersion_50)
 				b.maxArbOS = params.ArbosVersion_40
 			},
-			cli:        scheduleParams{},
+			sp:         scheduleParams{},
 			wantReason: "requires ArbOS<=40, got 50",
 		},
 		{
@@ -132,7 +132,7 @@ func TestShouldSkip(t *testing.T) {
 			setup: func(b *builder) {
 				b.category = "challenge"
 			},
-			cli:        scheduleParams{Categories: map[string]bool{"default": true}},
+			sp:         scheduleParams{Categories: map[string]bool{"default": true}},
 			wantReason: `category "challenge" not enabled`,
 		},
 		{
@@ -141,7 +141,7 @@ func TestShouldSkip(t *testing.T) {
 				b.stateScheme = containers.Some(StateSchemeHash)
 				b.skipStateSchemes = []StateScheme{StateSchemePath, StateSchemeHash}
 			},
-			cli:        scheduleParams{},
+			sp:         scheduleParams{},
 			wantReason: `incompatible with state scheme "hash"`,
 		},
 	}
@@ -149,7 +149,7 @@ func TestShouldSkip(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			b := newBuilder()
 			c.setup(b)
-			got := b.shouldSkip(c.cli)
+			got := b.shouldSkip(c.sp)
 			if got != c.wantReason {
 				t.Fatalf("got %q, want %q", got, c.wantReason)
 			}

@@ -30,13 +30,15 @@ type scheduleParams struct {
 	MatrixStates []StateScheme
 	MatrixDBs    []DBEngine
 
+	Validate      bool
 	AllCategories bool
-	// DefaultStateScheme is the ambient scheme (-test_state_scheme flag) used
-	// when neither the test nor -v2.state-scheme pins one; resolved at parse time.
+	FollowerExec  string
+	// DefaultStateScheme is the ambient scheme used
+	// when neither the test nor StateScheme pins one; resolved by the params producer.
 	DefaultStateScheme containers.Option[StateScheme]
 }
 
-// resolvedScheme returns the explicit -v2.state-scheme pin, else the env default.
+// resolvedScheme returns the explicit StateScheme pin, else the ambient default.
 func (p scheduleParams) resolvedScheme() containers.Option[StateScheme] {
 	if p.StateScheme.IsSome() {
 		return p.StateScheme
@@ -44,8 +46,8 @@ func (p scheduleParams) resolvedScheme() containers.Option[StateScheme] {
 	return p.DefaultStateScheme
 }
 
-// categoryEnabled reports whether a test's category should run: only categories
-// listed in -v2.categories run; an empty list means no filter, like the -v2.tests filter.
+// categoryEnabled reports whether a test's category should run: only listed
+// categories run; an empty list means no filter, like the Tests filter.
 func (p scheduleParams) categoryEnabled(cat string) bool {
 	if p.AllCategories || len(p.Categories) == 0 {
 		return true
@@ -53,7 +55,7 @@ func (p scheduleParams) categoryEnabled(cat string) bool {
 	return p.Categories[cat]
 }
 
-// envDefaultScheme is the ambient state scheme for runs without -v2.state-scheme.
+// envDefaultScheme is the ambient state scheme when params pin none.
 func envDefaultScheme() containers.Option[StateScheme] {
 	if s := env.GetTestStateScheme(); s != "" {
 		return containers.Some(StateScheme(s))
@@ -118,18 +120,18 @@ func registrySnapshot() []*builder {
 	return out
 }
 
-// schedule applies CLI filters and matrix expansion. Freezes the registry —
+// schedule applies params filters and matrix expansion. Freezes the registry —
 // subsequent Test calls panic.
-func schedule(cli scheduleParams) []scheduledTest {
+func schedule(sp scheduleParams) []scheduledTest {
 	registry.frozen.Store(true)
-	unmatchedTests := maps.Clone(cli.Tests)
-	unmatchedCategories := maps.Clone(cli.Categories)
+	unmatchedTests := maps.Clone(sp.Tests)
+	unmatchedCategories := maps.Clone(sp.Categories)
 	delete(unmatchedCategories, defaultCategory)
 	var out []scheduledTest
 	for _, orig := range registrySnapshot() {
 		delete(unmatchedCategories, orig.category)
-		match := len(cli.Tests) == 0
-		for p := range cli.Tests {
+		match := len(sp.Tests) == 0
+		for p := range sp.Tests {
 			if ok, _ := path.Match(p, orig.name); ok {
 				delete(unmatchedTests, p)
 				match = true
@@ -141,13 +143,13 @@ func schedule(cli scheduleParams) []scheduledTest {
 		// Mutate a copy, not the shared registry builder; clone() drops dims, restore for expansion.
 		b := orig.clone()
 		b.dims = orig.dims
-		out = append(out, expandMatrix(b, cli)...)
+		out = append(out, expandMatrix(b, sp)...)
 	}
 	for p := range unmatchedTests {
-		panic(fmt.Sprintf("systest: -v2.tests pattern %q matched no registered test", p))
+		panic(fmt.Sprintf("systest: tests pattern %q matched no registered test", p))
 	}
 	for c := range unmatchedCategories {
-		panic(fmt.Sprintf("systest: -v2.categories value %q has no registered tests", c))
+		panic(fmt.Sprintf("systest: category %q has no registered tests", c))
 	}
 	// Sort scenarios heaviest-first
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Spec.Weight > out[j].Spec.Weight })
