@@ -261,7 +261,7 @@ func TestBackgroundForwarderExpiresNonceFailuresWhileInactive(t *testing.T) {
 
 	nonceErr := errors.New("nonce too high")
 	resultChan := make(chan error, 1)
-	seq.nonceFailures.LruCache.Add(
+	seq.nonceFailures.cache.Add(
 		addressAndNonce{nonce: 7},
 		&nonceFailure{
 			queueItem: txQueueItem{
