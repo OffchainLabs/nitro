@@ -40,6 +40,8 @@ const MAX_USER_IMPORTS: usize = 513;
 const MAX_USER_LOCALS: usize = 348;
 const MAX_USER_MEMORIES: usize = 1;
 const MAX_USER_OPS: usize = 65536;
+const MAX_USER_TABLE_ENTRIES: u64 = 4096;
+const MAX_USER_ELEMENT_ENTRIES: usize = 4096;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FloatType {
@@ -480,8 +482,14 @@ fn parse_with_limits<'a>(
             }
             FunctionSection(functions) => process!(binary.functions, functions),
             TableSection(tables) => {
+                let mut entries = 0u64;
                 for table in tables {
-                    binary.tables.push(table?.ty);
+                    let table = table?.ty;
+                    entries = entries.saturating_add(table.initial);
+                    if user_limits && entries > MAX_USER_TABLE_ENTRIES {
+                        bail!("too many wasm table entries: {entries} > {MAX_USER_TABLE_ENTRIES}");
+                    }
+                    binary.tables.push(table);
                 }
             }
             MemorySection(memories) => {
@@ -491,7 +499,17 @@ fn parse_with_limits<'a>(
             StartSection { func, .. } => binary.start = Some(func),
             ElementSection(elements) => {
                 limit_section!(MAX_USER_ELEMENTS, elements, "elements");
-                process!(binary.elements, elements)
+                let mut entries = 0usize;
+                for element in elements {
+                    let element = element?;
+                    entries = entries.saturating_add(element.range.len());
+                    if user_limits && entries > MAX_USER_ELEMENT_ENTRIES {
+                        bail!(
+                            "too many wasm element entries: {entries} > {MAX_USER_ELEMENT_ENTRIES}"
+                        );
+                    }
+                    binary.elements.push(element);
+                }
             }
             DataSection(datas) => {
                 limit_section!(MAX_USER_DATAS, datas, "datas");
@@ -771,10 +789,10 @@ impl<'a> WasmBinary<'a> {
         }
 
         let table_entries = bin.tables.iter().map(|x| x.initial).saturating_sum();
-        limit!(4096, table_entries, "table entries");
+        limit!(MAX_USER_TABLE_ENTRIES, table_entries, "table entries");
 
         let elem_entries = bin.elements.iter().map(|x| x.range.len()).saturating_sum();
-        limit!(4096, elem_entries, "element entries");
+        limit!(MAX_USER_ELEMENT_ENTRIES, elem_entries, "element entries");
 
         let max_len = 512;
         macro_rules! too_long {
@@ -880,6 +898,30 @@ mod tests {
                 "too many wasm opcodes in func body: {} > {MAX_USER_OPS}",
                 MAX_USER_OPS + 1
             )
+        );
+    }
+
+    #[test]
+    fn rejects_excess_user_table_entries_before_allocation() {
+        assert_eq!(
+            parse_user_error(format!(
+                "(module (table {} funcref))",
+                MAX_USER_TABLE_ENTRIES + 1
+            )),
+            format!(
+                "too many wasm table entries: {} > {MAX_USER_TABLE_ENTRIES}",
+                MAX_USER_TABLE_ENTRIES + 1
+            )
+        );
+    }
+
+    #[test]
+    fn rejects_excess_user_element_entries_before_allocation() {
+        let items = "$f ".repeat(MAX_USER_ELEMENT_ENTRIES + 1);
+        let error = parse_user_error(format!("(module (func $f) (elem func {items}))"));
+        assert!(
+            error.starts_with("too many wasm element entries:"),
+            "unexpected error: {error}"
         );
     }
 }
