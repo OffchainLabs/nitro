@@ -70,5 +70,5 @@ func (f *txFilterer) reportFilteredTx(tx *types.Transaction, header *types.Heade
 		IsDelayed:         false,
 		DelayedReportData: nil,
 	}
-	f.filteringReportRPCClient.ReportFilteredTransactions([]addressfilter.FilteredTxReport{report})
+	f.filteringReportRPCClient.ReportFilteredTransactions(ReportProducerPrechecker, []addressfilter.FilteredTxReport{report})
 }
