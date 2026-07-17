@@ -16,9 +16,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	arbtest "github.com/offchainlabs/nitro/system_tests"
+	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
 // Test-facing chain helpers. All take an explicit *ethclient.Client and
@@ -31,10 +33,11 @@ const DefaultTxWaitTimeout = 30 * time.Second
 // DefaultSetupTxTimeout is the wait-for-receipt timeout used during node setup.
 const DefaultSetupTxTimeout = 10 * time.Second
 
-// EnsureTxSucceededWithin polls until tx is mined and the receipt block is
-// reflected in the latest header, then runs the same success checks as v1's
-// EnsureTxSucceeded: a multi-gas consistency check and a revert-reason decode.
-// Fails the test on timeout or revert.
+// simulatedParentChainID matches geth's DeveloperGenesisBlock chain id (1337).
+var simulatedParentChainID = big.NewInt(1337)
+
+// EnsureTxSucceededWithin polls until tx is mined, then runs v1's
+// EnsureTxSucceeded success checks. Fails the test on timeout or revert.
 func EnsureTxSucceededWithin(t testing.TB, ctx context.Context, client *ethclient.Client, tx *types.Transaction, timeout time.Duration) *types.Receipt {
 	t.Helper()
 	receipt, err := ensureTxSucceededWithin(ctx, client, tx, timeout)
@@ -48,6 +51,13 @@ func ensureTxSucceededWithin(ctx context.Context, client *ethclient.Client, tx *
 	receipt, err := waitForTxWithTimeout(ctx, client, tx.Hash(), timeout)
 	if err != nil {
 		return nil, fmt.Errorf("wait tx %s: %w", tx.Hash(), err)
+	}
+	// On the simulated parent chain, wait until the tx's block is safe so later
+	// reads observe its state.
+	if receipt.Status == types.ReceiptStatusSuccessful && tx.ChainId().Cmp(simulatedParentChainID) == 0 {
+		if err := waitForSafeBlock(ctx, client, receipt.BlockNumber, timeout); err != nil {
+			return nil, fmt.Errorf("wait safe block for tx %s: %w", tx.Hash(), err)
+		}
 	}
 	// Single-gas projection of multi-dimensional gas must match gas used; skipped
 	// when multigas is disabled and reports zero.
@@ -95,6 +105,27 @@ func AdvanceBlocks(t testing.TB, ctx context.Context, client *ethclient.Client, 
 
 func isTxIndexing(err error) bool {
 	return err != nil && strings.Contains(strings.ToLower(err.Error()), "indexing is in progress")
+}
+
+// waitForSafeBlock blocks until the chain's safe block reaches target, the
+// timeout elapses, or ctx is cancelled.
+func waitForSafeBlock(ctx context.Context, client *ethclient.Client, target *big.Int, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	for {
+		safe, err := client.HeaderByNumber(ctx, big.NewInt(int64(rpc.SafeBlockNumber)))
+		if err != nil {
+			return err
+		}
+		if safe.Number.Cmp(target) >= 0 {
+			return nil
+		}
+		select {
+		case <-time.After(headerreader.TestConfig.Dangerous.WaitForTxApprovalSafePoll):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
 func dialOptional(t testing.TB, url string) *ethclient.Client {

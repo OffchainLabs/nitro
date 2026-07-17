@@ -11,6 +11,19 @@ import (
 	"time"
 )
 
+func TestJoinPollErr(t *testing.T) {
+	w, l := errors.New("wait"), errors.New("last")
+	if got := joinPollErr(nil, l); got != nil {
+		t.Fatalf("nil waitErr must stay nil, got %v", got)
+	}
+	if got := joinPollErr(w, nil); !errors.Is(got, w) {
+		t.Fatalf("nil lastErr must return waitErr, got %v", got)
+	}
+	if got := joinPollErr(w, l); !errors.Is(got, w) || !errors.Is(got, l) {
+		t.Fatalf("both set must wrap both, got %v", got)
+	}
+}
+
 func TestBackoffUntilSucceedsImmediately(t *testing.T) {
 	calls := atomic.Int64{}
 	err := defaultBackoff.until(t.Context(), func() (bool, error) {

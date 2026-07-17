@@ -33,6 +33,25 @@ func TestDoublePinPanics(t *testing.T) {
 	}
 }
 
+func TestSpecWeightDerivation(t *testing.T) {
+	tests := []struct {
+		name     string
+		topology Topology
+		want     weight
+	}{
+		{"L2-only", TopologyL2Only, weightLight},
+		{"L1L2", TopologyL1L2, weightMedium},
+		{"multi-node", TopologyMultiNode, weightHeavy},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := specWeight(tt.topology); got != tt.want {
+				t.Fatalf("specWeight(%v) = %d, want %d", tt.topology, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWithTimeoutCarriesToSpec(t *testing.T) {
 	b := newBuilder()
 	if got := b.freeze("").Timeout; got != 0 {
