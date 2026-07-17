@@ -31,6 +31,9 @@ use crate::{
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
 
+const MAX_USER_FUNCTIONS: usize = 4096;
+const MAX_USER_LOCALS: usize = 348;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FloatType {
     F32,
@@ -315,6 +318,15 @@ pub fn parse_with_stylus_version<'a>(
     path: &'_ Path,
     stylus_version: u16,
 ) -> Result<WasmBinary<'a>> {
+    parse_with_limits(input, path, stylus_version, false)
+}
+
+fn parse_with_limits<'a>(
+    input: &'a [u8],
+    path: &'_ Path,
+    stylus_version: u16,
+    user_limits: bool,
+) -> Result<WasmBinary<'a>> {
     let mut features = WasmFeatures::empty();
     features.set(WasmFeatures::MUTABLE_GLOBAL, true);
     features.set(WasmFeatures::SATURATING_FLOAT_TO_INT, true);
@@ -371,10 +383,16 @@ pub fn parse_with_stylus_version<'a>(
                 let mut code = Code::default();
                 let mut locals = codes.get_locals_reader()?;
                 let mut ops = codes.get_operators_reader()?;
-                let mut index = 0;
+                let mut index = 0u32;
 
                 for _ in 0..locals.get_count() {
                     let (count, value) = locals.read()?;
+                    let end = index
+                        .checked_add(count)
+                        .ok_or_else(|| eyre!("too many wasm locals"))?;
+                    if user_limits && end as usize > MAX_USER_LOCALS {
+                        bail!("too many wasm locals: {end} > {MAX_USER_LOCALS}");
+                    }
                     for _ in 0..count {
                         code.locals.push(Local {
                             index,
@@ -441,7 +459,11 @@ pub fn parse_with_stylus_version<'a>(
             StartSection { func, .. } => binary.start = Some(func),
             ElementSection(elements) => process!(binary.elements, elements),
             DataSection(datas) => process!(binary.datas, datas),
-            CodeSectionStart { .. } => {}
+            CodeSectionStart { count, .. } => {
+                if user_limits && count as usize > MAX_USER_FUNCTIONS {
+                    bail!("too many wasm functions: {count} > {MAX_USER_FUNCTIONS}");
+                }
+            }
             CustomSection(reader) => {
                 if reader.name() != "name" {
                     continue;
@@ -669,7 +691,7 @@ impl<'a> WasmBinary<'a> {
         compile: &CompileConfig,
         codehash: &Bytes32,
     ) -> Result<(WasmBinary<'a>, StylusData)> {
-        let mut bin = parse_with_stylus_version(wasm, Path::new("user"), stylus_version)?;
+        let mut bin = parse_with_limits(wasm, Path::new("user"), stylus_version, true)?;
 
         let Some(memory) = bin.memories.first() else {
             bail!("missing memory with export name \"memory\"")
@@ -694,10 +716,10 @@ impl<'a> WasmBinary<'a> {
         limit!(128, bin.datas.len(), "datas");
         limit!(128, bin.elements.len(), "elements");
         limit!(1024, bin.exports.len(), "exports");
-        limit!(4096, bin.codes.len(), "functions");
+        limit!(MAX_USER_FUNCTIONS, bin.codes.len(), "functions");
         limit!(32768, bin.globals.len(), "globals");
         for code in &bin.codes {
-            limit!(348, code.locals.len(), "locals");
+            limit!(MAX_USER_LOCALS, code.locals.len(), "locals");
             limit!(65536, code.expr.len(), "opcodes in func body");
         }
 
@@ -749,5 +771,48 @@ impl<'a> WasmBinary<'a> {
             bail!("wrong type for {}: {}", name.red(), func_ty.red());
         }
         Ok(func)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_user_error(wat: String) -> String {
+        let wasm = wat::parse_str(wat).unwrap();
+        WasmBinary::parse_user(
+            &wasm,
+            0,
+            0,
+            u16::MAX,
+            &CompileConfig::default(),
+            &Bytes32::default(),
+        )
+        .unwrap_err()
+        .to_string()
+    }
+
+    #[test]
+    fn rejects_excess_user_locals_before_expansion() {
+        let locals = " i32".repeat(MAX_USER_LOCALS + 1);
+        assert_eq!(
+            parse_user_error(format!("(module (func (local {locals})))")),
+            format!(
+                "too many wasm locals: {} > {MAX_USER_LOCALS}",
+                MAX_USER_LOCALS + 1
+            )
+        );
+    }
+
+    #[test]
+    fn rejects_excess_user_functions_before_bodies() {
+        let functions = "(func)".repeat(MAX_USER_FUNCTIONS + 1);
+        assert_eq!(
+            parse_user_error(format!("(module {functions})")),
+            format!(
+                "too many wasm functions: {} > {MAX_USER_FUNCTIONS}",
+                MAX_USER_FUNCTIONS + 1
+            )
+        );
     }
 }
