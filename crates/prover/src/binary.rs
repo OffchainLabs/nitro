@@ -327,16 +327,16 @@ pub fn parse_with_stylus_version<'a>(
     path: &'_ Path,
     stylus_version: u16,
 ) -> Result<WasmBinary<'a>> {
-    parse_with_limits(input, path, stylus_version, None)
+    parse_with_limits(input, path, stylus_version, false, None)
 }
 
 fn parse_with_limits<'a>(
     input: &'a [u8],
     path: &'_ Path,
     stylus_version: u16,
+    user_limits: bool,
     user_arbos_version: Option<u64>,
 ) -> Result<WasmBinary<'a>> {
-    let user_limits = user_arbos_version.is_some();
     let mut features = WasmFeatures::empty();
     features.set(WasmFeatures::MUTABLE_GLOBAL, true);
     features.set(WasmFeatures::SATURATING_FLOAT_TO_INT, true);
@@ -384,11 +384,12 @@ fn parse_with_limits<'a>(
         }
 
         macro_rules! limit_section {
-            ($limit:expr_2021, $section:expr_2021, $name:expr_2021) => {
-                if user_limits && $section.count() as usize > $limit {
-                    bail!("too many wasm {}: {} > {}", $name, $section.count(), $limit);
+            ($limit:expr_2021, $count:expr_2021, $name:expr_2021) => {{
+                let count = $count;
+                if user_limits && count > $limit {
+                    bail!("too many wasm {}: {} > {}", $name, count, $limit);
                 }
-            };
+            }};
         }
 
         match section {
@@ -408,9 +409,7 @@ fn parse_with_limits<'a>(
                     let end = index
                         .checked_add(count)
                         .ok_or_else(|| eyre!("too many wasm locals"))?;
-                    if user_limits && end as usize > MAX_USER_LOCALS {
-                        bail!("too many wasm locals: {end} > {MAX_USER_LOCALS}");
-                    }
+                    limit_section!(MAX_USER_LOCALS, end as usize, "locals");
                     for _ in 0..count {
                         code.locals.push(Local {
                             index,
@@ -420,19 +419,14 @@ fn parse_with_limits<'a>(
                     }
                 }
                 while !ops.eof() {
-                    if user_limits && code.expr.len() >= MAX_USER_OPS {
-                        bail!(
-                            "too many wasm opcodes in func body: {} > {MAX_USER_OPS}",
-                            code.expr.len() + 1
-                        );
-                    }
+                    limit_section!(MAX_USER_OPS, code.expr.len() + 1, "opcodes in func body");
                     code.expr.push(ops.read()?);
                 }
 
                 binary.codes.push(code);
             }
             GlobalSection(globals) => {
-                limit_section!(MAX_USER_GLOBALS, globals, "globals");
+                limit_section!(MAX_USER_GLOBALS, globals.count() as usize, "globals");
                 for global in globals {
                     let mut init = global?.init_expr.get_operators_reader();
 
@@ -447,7 +441,7 @@ fn parse_with_limits<'a>(
                 if user_arbos_version
                     .is_some_and(|version| version >= ARBOS_VERSION_STYLUS_CHARGING_FIXES)
                 {
-                    limit_section!(MAX_USER_IMPORTS, imports, "imports");
+                    limit_section!(MAX_USER_IMPORTS, imports.count() as usize, "imports");
                 }
                 for import in imports {
                     let import = import?;
@@ -466,7 +460,7 @@ fn parse_with_limits<'a>(
                 }
             }
             ExportSection(exports) => {
-                limit_section!(MAX_USER_EXPORTS, exports, "exports");
+                limit_section!(MAX_USER_EXPORTS, exports.count() as usize, "exports");
                 use ExternalKind as E;
                 for export in exports {
                     let export = export?;
@@ -486,39 +480,31 @@ fn parse_with_limits<'a>(
                 for table in tables {
                     let table = table?.ty;
                     entries = entries.saturating_add(table.initial);
-                    if user_limits && entries > MAX_USER_TABLE_ENTRIES {
-                        bail!("too many wasm table entries: {entries} > {MAX_USER_TABLE_ENTRIES}");
-                    }
+                    limit_section!(MAX_USER_TABLE_ENTRIES, entries, "table entries");
                     binary.tables.push(table);
                 }
             }
             MemorySection(memories) => {
-                limit_section!(MAX_USER_MEMORIES, memories, "memories");
+                limit_section!(MAX_USER_MEMORIES, memories.count() as usize, "memories");
                 process!(binary.memories, memories)
             }
             StartSection { func, .. } => binary.start = Some(func),
             ElementSection(elements) => {
-                limit_section!(MAX_USER_ELEMENTS, elements, "elements");
+                limit_section!(MAX_USER_ELEMENTS, elements.count() as usize, "elements");
                 let mut entries = 0usize;
                 for element in elements {
                     let element = element?;
                     entries = entries.saturating_add(element.range.len());
-                    if user_limits && entries > MAX_USER_ELEMENT_ENTRIES {
-                        bail!(
-                            "too many wasm element entries: {entries} > {MAX_USER_ELEMENT_ENTRIES}"
-                        );
-                    }
+                    limit_section!(MAX_USER_ELEMENT_ENTRIES, entries, "element entries");
                     binary.elements.push(element);
                 }
             }
             DataSection(datas) => {
-                limit_section!(MAX_USER_DATAS, datas, "datas");
+                limit_section!(MAX_USER_DATAS, datas.count() as usize, "datas");
                 process!(binary.datas, datas)
             }
             CodeSectionStart { count, .. } => {
-                if user_limits && count as usize > MAX_USER_FUNCTIONS {
-                    bail!("too many wasm functions: {count} > {MAX_USER_FUNCTIONS}");
-                }
+                limit_section!(MAX_USER_FUNCTIONS, count as usize, "functions");
             }
             CustomSection(reader) => {
                 if reader.name() != "name" {
@@ -751,6 +737,7 @@ impl<'a> WasmBinary<'a> {
             wasm,
             Path::new("user"),
             stylus_version,
+            true,
             Some(arbos_version_for_activation),
         )?;
 
