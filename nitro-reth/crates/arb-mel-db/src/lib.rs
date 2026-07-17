@@ -3,7 +3,10 @@ use arb_consensus_db::{
     ConsensusDb, ConsensusDbBatch, ConsensusDbError, Result,
     codecs::rlp::Rlp,
     kv,
-    schema::{L1IncomingMessage, LegacyDelayedMessageAt, ParentChainBlockAt, RlpDelayedMessageAt},
+    schema::{
+        BatchMetadata, L1IncomingMessage, LegacyDelayedMessageAt, ParentChainBlockAt,
+        RlpDelayedMessageAt,
+    },
 };
 use arb_mel::MelState;
 
@@ -79,6 +82,46 @@ impl<S: kv::KvStore> MelDb<S> {
         self.consensus_db.write_batch(batch)
     }
 
+    /// Save a run of newly-seen delayed messages under the MEL `y` prefix, atomically. They are
+    /// the last `messages.len()` of `state.delayed_messages_seen`, so the first is written at
+    /// `delayed_messages_seen - messages.len()` (mirrors nitro's `SaveDelayedMessages`).
+    ///
+    /// Panics if `state.delayed_messages_seen < messages.len()`, a caller invariant violation
+    /// (the state was not advanced to cover these messages) that cannot occur in correct flow.
+    pub fn save_delayed_messages(
+        &mut self,
+        state: &MelState,
+        messages: &[schema::DelayedInboxMessage],
+    ) -> Result<()> {
+        let first = state
+            .delayed_messages_seen
+            .checked_sub(messages.len() as u64)
+            .expect("delayed_messages_seen < batch len: state and messages are inconsistent");
+        let mut batch = ConsensusDbBatch::new();
+        for (i, message) in messages.iter().enumerate() {
+            batch.put(schema::MelDelayedMessageAt(first + i as u64), message);
+        }
+        self.consensus_db.write_batch(batch)
+    }
+
+    /// Save a run of newly-computed batch metadata under the MEL `q` prefix, atomically. They are
+    /// the last `metas.len()` of `state.batch_count`, so the first is written at
+    /// `batch_count - metas.len()` (mirrors nitro's `SaveBatchMetas`).
+    ///
+    /// Panics if `state.batch_count < metas.len()`, a caller invariant violation that cannot
+    /// occur in correct flow.
+    pub fn save_batch_metas(&mut self, state: &MelState, metas: &[BatchMetadata]) -> Result<()> {
+        let first = state
+            .batch_count
+            .checked_sub(metas.len() as u64)
+            .expect("batch_count < metas len: state and batch metas are inconsistent");
+        let mut batch = ConsensusDbBatch::new();
+        for (i, meta) in metas.iter().enumerate() {
+            batch.put(schema::MelBatchMetaAt(first + i as u64), meta);
+        }
+        self.consensus_db.write_batch(batch)
+    }
+
     /// Read a split key, passing the batch boundary to [`schema::mel_key`], which selects the
     /// legacy or MEL prefix. Only batch metadata (`s`/`q`) is a [`schema::MelDbKey`]; delayed
     /// messages go through [`Self::delayed_message`], since their legacy side is a multi-key
@@ -87,13 +130,6 @@ impl<S: kv::KvStore> MelDb<S> {
         let boundary = self.initial.map_or(0, |b| b.batch_count);
         self.consensus_db
             .get_at_key(&schema::mel_key(&key, boundary))
-    }
-
-    /// Write a split key, passing the batch boundary to [`schema::mel_key`]. See [`Self::get`].
-    pub fn put<K: schema::MelDbKey>(&mut self, key: K, value: &K::StoredValue) -> Result<()> {
-        let boundary = self.initial.map_or(0, |b| b.batch_count);
-        self.consensus_db
-            .put_at_key(&schema::mel_key(&key, boundary), value)
     }
 
     /// Read a delayed message by its delayed index, dispatching across the legacy/MEL boundary.
