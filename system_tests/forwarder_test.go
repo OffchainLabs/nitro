@@ -108,7 +108,6 @@ func TestSetForwardToWhilePaused(t *testing.T) {
 	nodeConfigB.BatchPoster.Enable = false
 	execConfigB := *builder.execConfig
 	execConfigB.Sequencer.MaxBlockSpeed = time.Millisecond * 100
-	execConfigB.Sequencer.ReadFromTxQueueTimeout = time.Millisecond * 10
 	stackConfigB := testhelpers.CreateStackConfigForTest(t.TempDir())
 	stackConfigB.IPCPath = ipcPathB
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{
