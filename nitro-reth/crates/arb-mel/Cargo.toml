@@ -9,6 +9,7 @@ license.workspace = true
 # Internal crates
 arbos = { workspace = true }
 arb-storage-errors = { workspace = true }
+arb-da-provider-client = { workspace = true }
 
 # Alloy
 alloy-primitives = { workspace = true, features = ["std"] }
@@ -23,6 +24,9 @@ brotli = { workspace = true, features = ["std"] }
 # Common
 thiserror = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
 
 [lints]
 workspace = true

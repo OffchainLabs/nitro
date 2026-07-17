@@ -19,9 +19,7 @@
 mod batch_counter;
 mod config;
 mod consumer;
-mod daprovider;
 mod database;
-mod extraction;
 mod extractor;
 mod fsm;
 mod types;
@@ -29,19 +27,20 @@ mod types;
 pub use batch_counter::{MockSequencerBatchCountFetcher, SequencerBatchCountFetcher};
 pub use config::MessageExtractionConfig;
 pub use consumer::{MessageConsumer, MockMessageConsumer};
-pub use daprovider::{DaProvider, MockDaProvider};
 pub use database::{Database, MockDatabase};
-pub use extraction::{MessageExtraction, MockMessageExtraction, RpcMessageExtraction};
 pub use extractor::MessageExtractor;
 pub use fsm::{FsmState, FsmStateKind};
 pub use types::{MessageSyncProgress, RollupAddresses};
+
+// The DA provider is the real `arb-da-provider-client`; re-export for convenience.
+pub use arb_da_provider_client::{DaReaderRegistry, DaReaderSource};
 
 // Canonical MEL types are owned by `arb-mel`; re-export for convenience.
 pub use arb_mel::{BatchMeta, DelayedInboxMessage, ExtractionOutput, MelState};
 
 /// Something went wrong while running the message extractor.
 #[derive(Debug, thiserror::Error)]
-pub enum MelError {
+pub enum MelRunnerError {
     /// A requested item was not present in the database.
     #[error("{0}: not found")]
     NotFound(String),
@@ -72,4 +71,4 @@ pub enum MelError {
 }
 
 /// Return type used throughout the crate.
-pub type Result<T, E = MelError> = std::result::Result<T, E>;
+pub type Result<T, E = MelRunnerError> = std::result::Result<T, E>;

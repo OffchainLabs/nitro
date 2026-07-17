@@ -11,11 +11,11 @@ use std::sync::Mutex;
 use arb_mel::{BatchMeta, DelayedInboxMessage, MelState};
 use async_trait::async_trait;
 
-use crate::{MelError, Result};
+use crate::{MelRunnerError, Result};
 
 /// Persistence for MEL state, delayed messages, and batch metadata.
 ///
-/// A lookup that finds nothing returns [`MelError::NotFound`].
+/// A lookup that finds nothing returns [`MelRunnerError::NotFound`].
 #[async_trait]
 pub trait Database: Send + Sync {
     /// Returns the current head MEL state.
@@ -97,7 +97,7 @@ impl MockDatabase {
 
     fn check_error(&self) -> Result<()> {
         match self.error.lock().unwrap().clone() {
-            Some(msg) => Err(MelError::Database(msg)),
+            Some(msg) => Err(MelRunnerError::Database(msg)),
             None => Ok(()),
         }
     }
@@ -112,7 +112,7 @@ impl Database for MockDatabase {
             .unwrap()
             .head
             .clone()
-            .ok_or_else(|| MelError::NotFound("head mel state".to_string()))
+            .ok_or_else(|| MelRunnerError::NotFound("head mel state".to_string()))
     }
 
     async fn get_head_mel_state_block_num(&self) -> Result<u64> {
@@ -121,7 +121,7 @@ impl Database for MockDatabase {
             .lock()
             .unwrap()
             .head_block_num
-            .ok_or_else(|| MelError::NotFound("HeadMelStateBlockNum".to_string()))
+            .ok_or_else(|| MelRunnerError::NotFound("HeadMelStateBlockNum".to_string()))
     }
 
     async fn state(&self, parent_chain_block_number: u64) -> Result<MelState> {
@@ -133,7 +133,7 @@ impl Database for MockDatabase {
             .get(&parent_chain_block_number)
             .cloned()
             .ok_or_else(|| {
-                MelError::NotFound(format!("mel state at block {parent_chain_block_number}"))
+                MelRunnerError::NotFound(format!("mel state at block {parent_chain_block_number}"))
             })
     }
 
@@ -141,7 +141,7 @@ impl Database for MockDatabase {
         // `arb_mel::DelayedInboxMessage` isn't `Clone`, so the mock doesn't store
         // them; the FSM tests don't exercise this path (preimage rebuild is deferred).
         self.check_error()?;
-        Err(MelError::NotFound(format!("delayed message {index}")))
+        Err(MelRunnerError::NotFound(format!("delayed message {index}")))
     }
 
     async fn save_batch_metas(&self, _state: &MelState, _batch_metas: &[BatchMeta]) -> Result<()> {
@@ -190,11 +190,11 @@ mod tests {
         let db = MockDatabase::new();
         assert!(matches!(
             db.get_head_mel_state().await,
-            Err(MelError::NotFound(_))
+            Err(MelRunnerError::NotFound(_))
         ));
         assert!(matches!(
             db.get_head_mel_state_block_num().await,
-            Err(MelError::NotFound(_))
+            Err(MelRunnerError::NotFound(_))
         ));
     }
 
@@ -221,7 +221,7 @@ mod tests {
         assert_eq!(db.state(3).await.unwrap().parent_chain_block_number, 3);
         assert!(matches!(
             db.get_head_mel_state().await,
-            Err(MelError::NotFound(_))
+            Err(MelRunnerError::NotFound(_))
         ));
     }
 
@@ -232,7 +232,7 @@ mod tests {
         db.set_error(Some("boom"));
         assert!(matches!(
             db.get_head_mel_state().await,
-            Err(MelError::Database(_))
+            Err(MelRunnerError::Database(_))
         ));
         db.set_error(None::<String>);
         assert!(db.get_head_mel_state().await.is_ok());

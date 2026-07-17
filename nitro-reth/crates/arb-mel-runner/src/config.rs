@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use crate::{MelError, Result};
+use crate::{MelRunnerError, Result};
 
 /// Tunables for the [`crate::MessageExtractor`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,13 +32,13 @@ impl MessageExtractionConfig {
     pub fn validate(&mut self) -> Result<()> {
         self.read_mode = self.read_mode.to_lowercase();
         if !matches!(self.read_mode.as_str(), "latest" | "safe" | "finalized") {
-            return Err(MelError::Config(format!(
+            return Err(MelRunnerError::Config(format!(
                 "inbox reader read-mode is invalid, want: latest or safe or finalized, got: {}",
                 self.read_mode
             )));
         }
         if self.log_extraction_status_frequency_blocks == 0 {
-            return Err(MelError::Config(
+            return Err(MelRunnerError::Config(
                 "log-extraction-status-frequency-blocks must be greater than 0".to_string(),
             ));
         }

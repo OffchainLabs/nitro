@@ -17,6 +17,7 @@ alloy-rpc-types-eth.workspace = true
 
 arb-parent-chain-client.workspace = true
 arb-mel.workspace = true
+arb-da-provider-client.workspace = true
 arbos.workspace = true
 
 [dev-dependencies]

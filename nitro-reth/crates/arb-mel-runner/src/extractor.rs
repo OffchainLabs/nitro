@@ -15,16 +15,18 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use alloy_eips::BlockNumberOrTag;
+use alloy_primitives::B256;
+use alloy_rpc_types_eth::{Log, Transaction};
+use arb_da_provider_client::DaReaderSource;
+use arb_mel::{DelayedInboxMessage, DelayedMessageDB, LogsFetcher, MelResult, MelState, TxFetcher};
 use arb_parent_chain_client::ParentChainReader;
 
 use crate::{
-    MelError, Result,
+    MelRunnerError, Result,
     batch_counter::SequencerBatchCountFetcher,
     config::MessageExtractionConfig,
     consumer::MessageConsumer,
-    daprovider::DaProvider,
     database::Database,
-    extraction::MessageExtraction,
     fsm::{FsmState, FsmStateKind},
     types::RollupAddresses,
 };
@@ -39,8 +41,7 @@ pub struct MessageExtractor {
     addrs: RollupAddresses,
     db: Arc<dyn Database>,
     msg_consumer: Arc<dyn MessageConsumer>,
-    data_providers: Arc<dyn DaProvider>,
-    extraction: Arc<dyn MessageExtraction>,
+    data_providers: Arc<dyn DaReaderSource>,
     seq_batch_counter: Option<Arc<dyn SequencerBatchCountFetcher>>,
     fsm_state: FsmState,
     stuck_count: u64,
@@ -59,8 +60,7 @@ impl MessageExtractor {
         addrs: RollupAddresses,
         db: Arc<dyn Database>,
         msg_consumer: Arc<dyn MessageConsumer>,
-        data_providers: Arc<dyn DaProvider>,
-        extraction: Arc<dyn MessageExtraction>,
+        data_providers: Arc<dyn DaReaderSource>,
         seq_batch_counter: Option<Arc<dyn SequencerBatchCountFetcher>>,
     ) -> Self {
         Self {
@@ -70,7 +70,6 @@ impl MessageExtractor {
             db,
             msg_consumer,
             data_providers,
-            extraction,
             seq_batch_counter,
             fsm_state: FsmState::Start,
             stuck_count: 0,
@@ -99,9 +98,8 @@ impl MessageExtractor {
         self.seq_batch_counter.is_some()
     }
 
-    /// The DA provider, reserved for when `arb-mel` wires data-availability reads
-    /// into extraction (its `extract_messages` does not take one yet).
-    pub fn data_providers(&self) -> &Arc<dyn DaProvider> {
+    /// The DA provider passed into extraction for recovering off-chain batch payloads.
+    pub fn data_providers(&self) -> &Arc<dyn DaReaderSource> {
         &self.data_providers
     }
 
@@ -176,7 +174,7 @@ impl MessageExtractor {
             Ok(None) => {
                 return (
                     retry,
-                    Err(MelError::NotFound(format!(
+                    Err(MelRunnerError::NotFound(format!(
                         "parent chain header at block {}",
                         head.parent_chain_block_number
                     ))),
@@ -211,7 +209,7 @@ impl MessageExtractor {
             _ => {
                 return (
                     retry,
-                    Err(MelError::InvalidState(
+                    Err(MelRunnerError::InvalidState(
                         "expected ProcessingNextBlock".to_string(),
                     )),
                 );
@@ -262,16 +260,25 @@ impl MessageExtractor {
             return (retry, Err(e));
         }
 
-        // Extract messages from the block via arb-mel. The real impl prefetches
-        // the block's logs/txs from the parent chain; the mock advances the state.
-        let extraction = self.extraction.clone();
+        // Extract messages from the block via arb-mel. Logs/tx/delayed fetchers are
+        // nil until the logs-and-headers fetcher lands (empty logs -> no batches ->
+        // no messages); DA payloads are recovered on demand via `data_providers`.
         let pre_state = match &self.fsm_state {
             FsmState::ProcessingNextBlock { mel_state, .. } => mel_state.clone(),
             _ => unreachable!("state checked above"),
         };
-        let output = match extraction.extract_messages(pre_state, &header).await {
+        let output = match arb_mel::extract_messages(
+            pre_state,
+            &header.inner,
+            self.data_providers.as_ref(),
+            &NilDelayedMessageDb,
+            &NilLogsFetcher,
+            &NilTxFetcher,
+        )
+        .await
+        {
             Ok(o) => o,
-            Err(e) => return (retry, Err(e)),
+            Err(e) => return (retry, Err(e.into())),
         };
 
         self.fsm_state = FsmState::SavingMessages {
@@ -319,7 +326,7 @@ impl MessageExtractor {
         } else {
             return (
                 retry,
-                Err(MelError::InvalidState(
+                Err(MelRunnerError::InvalidState(
                     "expected SavingMessages".to_string(),
                 )),
             );
@@ -346,12 +353,14 @@ impl MessageExtractor {
             _ => {
                 return (
                     retry,
-                    Err(MelError::InvalidState("expected Reorging".to_string())),
+                    Err(MelRunnerError::InvalidState(
+                        "expected Reorging".to_string(),
+                    )),
                 );
             }
         };
         if number == 0 {
-            return (retry, Err(MelError::ReorgBelowGenesis));
+            return (retry, Err(MelRunnerError::ReorgBelowGenesis));
         }
         let previous = match self.db.state(number - 1).await {
             Ok(s) => s,
@@ -365,11 +374,49 @@ impl MessageExtractor {
     }
 }
 
+// Empty ("nil") collaborators for `arb_mel::extract_messages`, used until the
+// logs-and-headers fetcher is implemented. An empty logs source yields no
+// batches (hence no messages) for every block.
+
+struct NilLogsFetcher;
+
+impl LogsFetcher for NilLogsFetcher {
+    fn logs_for_block_hash(&self, _block_hash: B256) -> MelResult<Vec<Log>> {
+        Ok(Vec::new())
+    }
+
+    fn logs_for_tx_index(&self, _block_hash: B256, _tx_index: u64) -> MelResult<Vec<Log>> {
+        Ok(Vec::new())
+    }
+}
+
+/// Never invoked while `NilLogsFetcher` yields no logs.
+struct NilTxFetcher;
+
+impl TxFetcher for NilTxFetcher {
+    type Transaction = Transaction;
+
+    fn transaction_by_log(&self, _log: &Log) -> MelResult<Self::Transaction> {
+        Err(arb_mel::MelError::Unknown)
+    }
+}
+
+struct NilDelayedMessageDb;
+
+impl DelayedMessageDB for NilDelayedMessageDb {
+    fn read_delayed_message(
+        &self,
+        _state: &MelState,
+        _index: u64,
+    ) -> MelResult<Option<DelayedInboxMessage>> {
+        Ok(None)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::extraction::MockMessageExtraction;
-    use crate::{MelState, MockDaProvider, MockDatabase, MockMessageConsumer};
+    use crate::{DaReaderRegistry, MelState, MockDatabase, MockMessageConsumer};
     use alloy_primitives::B256;
     use arb_parent_chain_client::MockParentChainReader;
     use arb_parent_chain_client::test_utils::header_with_parent;
@@ -403,7 +450,6 @@ mod tests {
 
         let db = Arc::new(MockDatabase::new());
         let consumer = Arc::new(MockMessageConsumer::new());
-        let extraction = Arc::new(MockMessageExtraction::new());
 
         let mut ex = MessageExtractor::new(
             MessageExtractionConfig::test(),
@@ -411,8 +457,7 @@ mod tests {
             RollupAddresses::default(),
             db.clone(),
             consumer.clone(),
-            Arc::new(MockDaProvider::new()),
-            extraction.clone(),
+            Arc::new(DaReaderRegistry::new()),
             None,
         );
         assert_eq!(ex.current_fsm_state(), FsmStateKind::Start);
@@ -449,7 +494,7 @@ mod tests {
         assert!(res.is_ok());
         assert_eq!(ex.current_fsm_state(), FsmStateKind::SavingMessages);
 
-        // SavingMessages -> ProcessingNextBlock (now anchored at block 2 / h1).
+        // SavingMessages -> ProcessingNextBlock (now anchored at block 2).
         let (_, res) = ex.act().await;
         assert!(res.is_ok());
         assert_eq!(ex.current_fsm_state(), FsmStateKind::ProcessingNextBlock);
@@ -487,8 +532,7 @@ mod tests {
             RollupAddresses::default(),
             db,
             Arc::new(MockMessageConsumer::new()),
-            Arc::new(MockDaProvider::new()),
-            Arc::new(MockMessageExtraction::new()),
+            Arc::new(DaReaderRegistry::new()),
             None,
         );
 
@@ -524,8 +568,7 @@ mod tests {
             RollupAddresses::default(),
             db.clone(),
             consumer.clone(),
-            Arc::new(MockDaProvider::new()),
-            Arc::new(MockMessageExtraction::new()),
+            Arc::new(DaReaderRegistry::new()),
             None,
         );
 
@@ -560,8 +603,7 @@ mod tests {
             RollupAddresses::default(),
             Arc::new(MockDatabase::new()), // no head state -> Start keeps erroring
             Arc::new(MockMessageConsumer::new()),
-            Arc::new(MockDaProvider::new()),
-            Arc::new(MockMessageExtraction::new()),
+            Arc::new(DaReaderRegistry::new()),
             None,
         );
 

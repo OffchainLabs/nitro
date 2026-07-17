@@ -1194,10 +1194,12 @@ dependencies = [
  "alloy-rlp",
  "alloy-rpc-types-eth",
  "alloy-sol-types",
+ "arb-da-provider-client",
  "arb-storage-errors",
  "arbos",
  "brotli 8.0.2",
  "thiserror 2.0.18",
+ "tokio",
  "tracing",
 ]
 
@@ -1216,6 +1218,7 @@ dependencies = [
  "alloy-eips",
  "alloy-primitives",
  "alloy-rpc-types-eth",
+ "arb-da-provider-client",
  "arb-mel",
  "arb-parent-chain-client",
  "arbos",

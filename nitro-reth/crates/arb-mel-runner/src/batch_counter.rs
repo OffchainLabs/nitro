@@ -9,7 +9,7 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 
-use crate::{MelError, Result};
+use crate::{MelRunnerError, Result};
 
 /// Queries the sequencer-inbox batch count at a parent-chain block.
 #[async_trait]
@@ -44,7 +44,7 @@ impl MockSequencerBatchCountFetcher {
 impl SequencerBatchCountFetcher for MockSequencerBatchCountFetcher {
     async fn get_batch_count(&self, _block_num: u64) -> Result<u64> {
         match self.error.lock().unwrap().clone() {
-            Some(msg) => Err(MelError::Database(msg)),
+            Some(msg) => Err(MelRunnerError::Database(msg)),
             None => Ok(self.count),
         }
     }

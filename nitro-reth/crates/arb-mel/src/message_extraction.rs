@@ -1,5 +1,6 @@
 use alloy_consensus::Header;
 use alloy_primitives::{B256, keccak256};
+use arb_da_provider_client::DaReaderSource;
 use arbos::arbos_types::{
     L1_MESSAGE_TYPE_BATCH_POSTING_REPORT, MessageWithMetadata, get_data_stats,
     legacy_cost_for_stats, parse_batch_posting_report_fields,
@@ -18,9 +19,10 @@ pub struct ExtractionOutput {
     pub batch_metas: Vec<BatchMeta>,
 }
 
-pub fn extract_messages<D, L, T>(
+pub async fn extract_messages<D, L, T>(
     input_state: MelState,
     parent_chain_header: &Header,
+    da_reader_source: &dyn DaReaderSource,
     delayed_msg_db: &D,
     logs_fetcher: &L,
     tx_fetcher: &T,
@@ -136,7 +138,9 @@ where
             batch.block_hash,
             serialized,
             parse_sequencer_message::DEFAULT_MAX_UNCOMPRESSED_BATCH_SIZE,
-        )?;
+            da_reader_source,
+        )
+        .await?;
         let messages_in_batch = batch_messages::extract_batch_messages(
             &mut post_state,
             &mut raw_seq_msg,
@@ -201,11 +205,13 @@ fn parse_batch_posting_report(report: &DelayedInboxMessage) -> MelResult<B256> {
 
 #[cfg(test)]
 mod tests {
+    use arb_da_provider_client::DaReaderRegistry;
+
     use super::*;
     use crate::test_utils::{MockDelayedDb, MockLogs, MockTx};
 
-    #[test]
-    fn rejects_parent_hash_mismatch() {
+    #[tokio::test]
+    async fn rejects_parent_hash_mismatch() {
         // Input state's parent hash does not line up with the header's parent.
         let input_state = MelState {
             parent_chain_block_hash: B256::repeat_byte(0xAB),
@@ -214,18 +220,20 @@ mod tests {
         let result = extract_messages(
             input_state,
             &Header::default(),
+            &DaReaderRegistry::new(),
             &MockDelayedDb,
             &MockLogs::default(),
             &MockTx,
-        );
+        )
+        .await;
         assert!(matches!(
             result,
             Err(MelError::ParentHashMismatch { expected, .. }) if expected == B256::repeat_byte(0xAB)
         ));
     }
 
-    #[test]
-    fn extracts_empty_block_and_advances_state() -> MelResult<()> {
+    #[tokio::test]
+    async fn extracts_empty_block_and_advances_state() -> MelResult<()> {
         // A default header (number 0, zero parent hash) with no logs: linkage
         // holds, and the post-state records the header linkage while producing no
         // messages.
@@ -234,10 +242,12 @@ mod tests {
         let out = extract_messages(
             input_state,
             &header,
+            &DaReaderRegistry::new(),
             &MockDelayedDb,
             &MockLogs::default(),
             &MockTx,
-        )?;
+        )
+        .await?;
 
         assert!(out.messages.is_empty());
         assert!(out.delayed_messages.is_empty());

@@ -15,7 +15,7 @@ use std::sync::Mutex;
 use arbos::arbos_types::MessageWithMetadata;
 use async_trait::async_trait;
 
-use crate::{MelError, Result};
+use crate::{MelRunnerError, Result};
 
 /// The consumer (nitro node) the runner pushes extracted data to.
 #[async_trait]
@@ -65,7 +65,7 @@ impl MockMessageConsumer {
 
     fn check_error(&self) -> Result<()> {
         match self.error.lock().unwrap().clone() {
-            Some(msg) => Err(MelError::Consumer(msg)),
+            Some(msg) => Err(MelRunnerError::Consumer(msg)),
             None => Ok(()),
         }
     }
