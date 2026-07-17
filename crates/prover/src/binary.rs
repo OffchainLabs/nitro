@@ -671,8 +671,6 @@ impl<'a> WasmBinary<'a> {
     ) -> Result<(WasmBinary<'a>, StylusData)> {
         let mut bin = parse_with_stylus_version(wasm, Path::new("user"), stylus_version)?;
 
-        let stylus_data = bin.instrument(compile, codehash)?;
-
         let Some(memory) = bin.memories.first() else {
             bail!("missing memory with export name \"memory\"")
         };
@@ -733,6 +731,7 @@ impl<'a> WasmBinary<'a> {
         if bin.start.is_some() {
             bail!("wasm start functions not allowed");
         }
+        let stylus_data = bin.instrument(compile, codehash)?;
         Ok((bin, stylus_data))
     }
 
