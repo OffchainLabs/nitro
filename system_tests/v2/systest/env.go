@@ -21,9 +21,13 @@ import (
 
 // Env is the runtime handle passed to a Scenario.
 type Env struct {
-	t    testing.TB
-	Ctx  context.Context
-	L2   *L2Handle
+	t   testing.TB
+	Ctx context.Context
+	L2  *L2Handle
+	// L2Follower is the non-sequencer follower handle. Nil unless TopologyMultiNode or TopologyFullStack.
+	L2Follower *L2Handle
+	// L1 is the parent chain handle. Nil for TopologyL2Only scenarios.
+	L1   *L1Handle
 	Spec Spec
 
 	goWG sync.WaitGroup

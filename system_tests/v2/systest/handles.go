@@ -10,12 +10,16 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/node"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	arbtest "github.com/offchainlabs/nitro/system_tests"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 // ChainHandle is the client+info surface shared by every layer (L1, L2, followers).
@@ -129,4 +133,19 @@ type L2Handle struct {
 	Consensus *arbnode.Node
 
 	cleanup func()
+}
+
+// L1Handle is the live parent-chain client plus low-level escape hatches for
+// tests that drive L1 directly (delayed inbox, deposits, reorgs).
+type L1Handle struct {
+	ChainHandle
+
+	// Low-level escape hatches: Backend for forced reorgs, Stack for endpoints.
+	Backend *eth.Ethereum
+	Stack   *node.Node
+
+	// Shared artifacts a second L2 node needs to follow this chain.
+	blobReader containers.Option[daprovider.BlobReader]
+	initMsg    *arbostypes.ParsedInitMessage
+	wasmRoot   common.Hash
 }

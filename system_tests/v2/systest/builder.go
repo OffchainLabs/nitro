@@ -178,7 +178,7 @@ func (b *builder) freeze(nameSuffix string) Spec {
 	}
 	return Spec{
 		Name:           name,
-		Weight:         weightLight,
+		Weight:         specWeight(b.topology),
 		ArbOSVersion:   b.arbOS,
 		StateScheme:    b.stateScheme,
 		DBEngine:       b.dbEngine,
