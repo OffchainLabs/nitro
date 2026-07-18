@@ -96,7 +96,7 @@ func TestSetForwardToWhilePaused(t *testing.T) {
 	// creates node A
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.nodeConfig.BatchPoster.Enable = false
-	builder.execConfig.Sequencer.MaxBlockSpeed = time.Hour // effectively disables sequencing in this node
+	builder.execConfig.Sequencer.MaxBlockSpeed = time.Hour // rate-limits node A to one locally sequenced block per hour
 	cleanupA := builder.Build(t)
 	defer cleanupA()
 	clientA := builder.L2.Client
@@ -108,7 +108,6 @@ func TestSetForwardToWhilePaused(t *testing.T) {
 	nodeConfigB.BatchPoster.Enable = false
 	execConfigB := *builder.execConfig
 	execConfigB.Sequencer.MaxBlockSpeed = time.Millisecond * 100
-	execConfigB.Sequencer.ReadFromTxQueueTimeout = time.Millisecond * 10
 	stackConfigB := testhelpers.CreateStackConfigForTest(t.TempDir())
 	stackConfigB.IPCPath = ipcPathB
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{
@@ -118,6 +117,20 @@ func TestSetForwardToWhilePaused(t *testing.T) {
 	})
 	defer cleanupB()
 	clientB := testClientB.Client
+
+	// Sequence one block in node A before pausing it. Pause is not synchronized
+	// with the consensus node's sequencing loop: a triggerSequencing iteration
+	// that observed IsActive()==true just before the Pause below can still call
+	// StartSequencing afterwards and sequence a transaction that was queued after
+	// Pause returned. That window is wide enough to flake in CI when consensus
+	// and execution communicate over RPC. MaxBlockSpeed rate-limits block
+	// production only after the first block, so producing a block here engages
+	// the one-block-per-hour rate limit and guarantees that no sequencing turn --
+	// even one already past its IsActive check -- can sequence the transaction
+	// sent below. The Faucet self-transfer leaves the Owner nonce and the User2
+	// balance (asserted on both nodes later) untouched, and node B never sees
+	// this block because it builds its own chain from the shared genesis.
+	builder.L2.TransferBalance(t, "Faucet", "Faucet", big.NewInt(1), builder.L2Info)
 
 	// pauses node A
 	builder.L2.ExecNode.Pause()

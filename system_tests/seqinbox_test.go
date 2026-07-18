@@ -407,15 +407,46 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 		}
 
 		expectedBlockNumber := blockStates[len(blockStates)-1].l2BlockNumber
-		for i := 0; ; i++ {
-			blockNumber := l2Backend.APIBackend().CurrentHeader().Number.Uint64()
-			if blockNumber >= expectedBlockNumber {
-				break
-			} else if i >= 1000 {
-				Fatal(t, "timed out waiting for l2 block update; have", blockNumber, "want", expectedBlockNumber)
-			}
-			time.Sleep(10 * time.Millisecond)
+		if i%10 != 0 {
+			// The node may not notice a previous iteration's L1 reorg until it
+			// ingests the batch we just posted: the inbox reader's accumulator
+			// check only inspects the last batch still on the L1 chain, which is
+			// shared history, so the stale post-reorg batches and messages linger
+			// until the new batch mismatches them and triggers a confirmed reorg
+			// in the TransactionStreamer. That reorg rewinds the execution chain
+			// and re-applies the new messages asynchronously (especially with
+			// consensus->execution communicating over RPC). Waiting for
+			// blockNumber >= expectedBlockNumber is therefore insufficient: the
+			// stale pre-reorg head satisfies it, and the state checks below can
+			// then observe the execution chain mid-rewind and find expected
+			// blocks missing. Instead, wait for the consensus node to have
+			// ingested exactly the batches we've posted, and then for the
+			// execution head to land exactly on the expected block (messages map
+			// 1:1 to blocks, so the head never legitimately exceeds it).
+			pollUntil(t, ctx, 60*time.Second, 20*time.Millisecond, "consensus node to ingest posted batches", func() bool {
+				var batchCount uint64
+				var err error
+				if builder.L2.ConsensusNode.InboxTracker != nil {
+					batchCount, err = builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+				} else {
+					batchCount, err = builder.L2.ConsensusNode.MessageExtractor.GetBatchCount()
+				}
+				if err != nil {
+					t.Logf("error getting consensus batch count: %v", err)
+					return false
+				}
+				// #nosec G115
+				return batchCount == uint64(len(blockStates))
+			})
+			pollUntil(t, ctx, 60*time.Second, 10*time.Millisecond, "l2 head to reach expected block", func() bool {
+				return l2Backend.APIBackend().CurrentHeader().Number.Uint64() == expectedBlockNumber
+			})
 		}
+		// On reorg iterations (i%10 == 0) no new batch is posted, so the node
+		// intentionally still has the stale pre-reorg chain; the states checked
+		// below are all part of the shared history, which the stale chain also
+		// contains, so no wait is needed (nor possible: the node only detects
+		// the reorg once the next batch arrives).
 
 		if validator && i%15 == 0 {
 			for i := 0; ; i++ {

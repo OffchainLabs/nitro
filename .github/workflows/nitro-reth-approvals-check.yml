@@ -13,7 +13,7 @@ name: Check Nitro Reth Approvals
 on:
   merge_group:
   pull_request_target:
-    branches: [master]
+    branches: [master, main, '*-release', '*-backports']
     types: [synchronize, opened, reopened]
   pull_request_review:
 
