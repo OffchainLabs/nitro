@@ -61,12 +61,17 @@ impl<S: kv::KvStore> MelDb<S> {
             .map(|state| state.0))
     }
 
+    /// Read the parent-chain block number of the current head MEL state, or `None` if no head has
+    /// been set (mirrors nitro's `GetHeadMelStateBlockNum`; the MEL runner uses this to resume).
+    pub fn head_state_block_num(&self) -> Result<Option<u64>> {
+        self.consensus_db.get(schema::HeadMelStateBlockNum)
+    }
+
     /// Read the current head MEL state, following the `_headMelStateBlockNum` pointer to its `l`
     /// record. Returns `None` if no head has been set (mirrors nitro's `GetHeadMelState`).
     pub fn head_state(&self) -> Result<Option<MelState>> {
         Ok(self
-            .consensus_db
-            .get(schema::HeadMelStateBlockNum)?
+            .head_state_block_num()?
             .map(|block_num| self.state(block_num))
             .transpose()?
             .flatten())
@@ -80,6 +85,24 @@ impl<S: kv::KvStore> MelDb<S> {
         batch.put(schema::MelStateAt(block_num), &Rlp(state.clone()));
         batch.put(schema::HeadMelStateBlockNum, &block_num);
         self.consensus_db.write_batch(batch)
+    }
+
+    /// Establish the legacy/MEL boundary at `initial_state`: atomically writes it under `l`, sets
+    /// the head pointer, and records the `_initialMelStateBlockNum` anchor, then caches the
+    /// boundary counts so later lookups below them route to the legacy schema (mirrors nitro's
+    /// `SaveInitialMelState`).
+    pub fn save_initial_mel_state(&mut self, initial_state: &MelState) -> Result<()> {
+        let block_num = initial_state.parent_chain_block_number;
+        let mut batch = ConsensusDbBatch::new();
+        batch.put(schema::InitialMelStateBlockNum, &block_num);
+        batch.put(schema::MelStateAt(block_num), &Rlp(initial_state.clone()));
+        batch.put(schema::HeadMelStateBlockNum, &block_num);
+        self.consensus_db.write_batch(batch)?;
+        self.initial = Some(Boundary {
+            batch_count: initial_state.batch_count,
+            delayed_count: initial_state.delayed_messages_seen,
+        });
+        Ok(())
     }
 
     /// Save a run of newly-seen delayed messages under the MEL `y` prefix, atomically. They are
