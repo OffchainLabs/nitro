@@ -2935,7 +2935,15 @@ impl Machine {
             MachineStatus::Finished => {
                 crypto::keccak_seq(&[b"Machine finished:", self.global_state.hash().as_ref()])
             }
-            MachineStatus::Errored => crypto::keccak_seq(&[b"Machine errored:"]),
+            // The global state must be committed here to match the on-chain OSP,
+            // which hashes an errored machine as keccak("Machine errored:" || globalStateHash)
+            // in both MachineLib.hash (per-step) and OneStepProofEntry.getMachineHash
+            // (block endpoint). Omitting it made a terminal Errored machine unadjudicable:
+            // the hash the honest validator commits here (via cgo) could never equal the
+            // hash the on-chain contract computes for the same state.
+            MachineStatus::Errored => {
+                crypto::keccak_seq(&[b"Machine errored:", self.global_state.hash().as_ref()])
+            }
             MachineStatus::TooFar => crypto::keccak_seq(&[b"Machine too far:"]),
         }
     }
