@@ -422,7 +422,8 @@ fn past_batches_for_nonreport_msg_is_empty() {
             l1_base_fee: None,
         },
         l2_msg: vec![],
-        batch_gas_left: None,
+        legacy_batch_gas_cost: None,
+        batch_data_stats: None,
     };
     assert!(msg.past_batches_required().unwrap().is_empty());
 }
@@ -452,7 +453,8 @@ fn past_batches_for_report_msg_has_number() {
             l1_base_fee: None,
         },
         l2_msg: data,
-        batch_gas_left: None,
+        legacy_batch_gas_cost: None,
+        batch_data_stats: None,
     };
     assert_eq!(msg.past_batches_required().unwrap(), vec![11]);
 }

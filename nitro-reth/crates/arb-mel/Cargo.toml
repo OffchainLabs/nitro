@@ -12,6 +12,7 @@ arb-storage-errors = { workspace = true }
 
 # Alloy
 alloy-primitives = { workspace = true, features = ["std", "rlp"] }
+alloy-consensus = { workspace = true }
 alloy-rpc-types-eth = { workspace = true }
 alloy-rlp = { workspace = true, features = ["derive"] }
 alloy-sol-types = { workspace = true }
@@ -21,6 +22,7 @@ brotli = { workspace = true, features = ["std"] }
 
 # Common
 thiserror = { workspace = true }
+tracing = { workspace = true }
 
 [lints]
 workspace = true

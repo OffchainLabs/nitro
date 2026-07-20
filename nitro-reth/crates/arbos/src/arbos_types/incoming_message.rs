@@ -26,7 +26,7 @@ pub const MAX_L2_MESSAGE_SIZE: usize = 256 * 1024;
 pub const DEFAULT_INITIAL_L1_BASE_FEE: u64 = 50_000_000_000; // 50 Gwei
 
 /// Header of an L1 incoming message.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct L1IncomingMessageHeader {
     pub kind: u8,
     pub poster: Address,
@@ -44,12 +44,29 @@ pub struct BatchDataStats {
 }
 
 /// An L1 incoming message containing the header and L2 payload.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct L1IncomingMessage {
     pub header: L1IncomingMessageHeader,
     pub l2_msg: Vec<u8>,
-    /// Batch-level gas cost fields (filled lazily).
-    pub batch_gas_left: Option<u64>,
+    /// Only used for `L1_MESSAGE_TYPE_BATCH_POSTING_REPORT`. Filled lazily once
+    /// the referenced batch has been serialized. Mirrors the Go
+    /// `L1IncomingMessage.LegacyBatchGasCost` / `BatchDataStats` fields.
+    pub legacy_batch_gas_cost: Option<u64>,
+    pub batch_data_stats: Option<BatchDataStats>,
+}
+
+/// A helpful constructor to build an invalid l1 incoming message.
+pub fn invalid_l1_message() -> L1IncomingMessage {
+    let header = L1IncomingMessageHeader {
+        kind: L1_MESSAGE_TYPE_INVALID,
+        ..Default::default()
+    };
+    L1IncomingMessage {
+        header,
+        l2_msg: Vec::new(),
+        legacy_batch_gas_cost: None,
+        batch_data_stats: None,
+    }
 }
 
 /// Parsed initialization message from the first L1 message.
@@ -151,7 +168,8 @@ pub fn parse_incoming_l1_message(data: &[u8]) -> io::Result<L1IncomingMessage> {
             l1_base_fee,
         },
         l2_msg,
-        batch_gas_left: None,
+        legacy_batch_gas_cost: None,
+        batch_data_stats: None,
     })
 }
 

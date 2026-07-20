@@ -5,11 +5,21 @@
 use alloy_primitives::B256;
 use alloy_rpc_types_eth::Log;
 
+mod batch_lookup;
+mod batch_messages;
+mod delayed_message_lookup;
 mod error;
+mod mel_config_lookup;
+mod message_extraction;
 mod parse_sequencer_message;
+mod serialize_batch;
+#[cfg(test)]
+mod test_utils;
 mod types;
 
 pub use error::MelError;
+pub use mel_config_lookup::MelConfig;
+pub use message_extraction::{ExtractionOutput, extract_messages};
 pub use parse_sequencer_message::SequencerMessage;
 pub use types::*;
 
@@ -31,5 +41,5 @@ pub trait DelayedMessageDB {
         &self,
         mel_state: &MelState,
         index: u64,
-    ) -> MelResult<DelayedInboxMessage>;
+    ) -> MelResult<Option<DelayedInboxMessage>>;
 }
