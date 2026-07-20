@@ -14,8 +14,14 @@ on:
         description: 'New changelog fragments.'
         value: ${{ jobs.changes.outputs.changelog_added }}
       code_changed:
-        description: 'True if any file other than CHANGELOG.md or changelog/** changed.'
+        description: 'True if any file other than CHANGELOG.md, changelog/**, or Nitro Reth files changed.'
         value: ${{ jobs.changes.outputs.code_changed }}
+      nitro_reth_changed:
+        description: 'True if Nitro Reth or related files changed.'
+        value: ${{ jobs.changes.outputs.nitro_reth_changed }}
+      reth_only:
+        description: 'True if only Nitro Reth and changelog files changed.'
+        value: ${{ jobs.changes.outputs.reth_only }}
 
 permissions:
   contents: read
@@ -29,6 +35,8 @@ jobs:
       bold_legacy_changed: ${{ steps.changed.outputs.bold_legacy_any_changed }}
       changelog_added: ${{ steps.changed.outputs.changelog_added_files }}
       code_changed: ${{ steps.changed.outputs.code_any_changed }}
+      nitro_reth_changed: ${{ steps.changed.outputs.nitro_reth_any_changed }}
+      reth_only: ${{ steps.changed.outputs.nitro_reth_any_changed == 'true' && steps.changed.outputs.code_any_changed != 'true' }}
 
     steps:
       - name: Checkout
@@ -40,7 +48,7 @@ jobs:
 
       - name: Detect changes
         id: changed
-        uses: tj-actions/changed-files@v47
+        uses: tj-actions/changed-files@24d32ffd492484c1d75e0c0b894501ddb9d30d62  # v47.0.0
         with:
           files_yaml: |
             rust:
@@ -53,14 +61,21 @@ jobs:
               - 'Makefile'
               - '**.toml'
               - '**/Cargo.lock'
+              - '!nitro-reth/**'
               - '.github/workflows/_rust-tests.yml'
               - '.github/workflows/_detect-changes.yml'
             bold_legacy:
               - 'bold/legacy/**'
               - '.github/workflows/_bold-legacy.yml'
+            nitro_reth:
+              - 'nitro-reth/**'
+              - '.github/workflows/_nitro-reth*.yml'
+              - '.github/workflows/_detect-changes.yml'
             changelog:
               - 'changelog/**.md'
             code:
               - '**'
               - '!CHANGELOG.md'
               - '!changelog/**'
+              - '!nitro-reth/**'
+              - '!.github/workflows/_nitro-reth*.yml'

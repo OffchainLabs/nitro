@@ -45,7 +45,7 @@ func (f *txFilterer) CheckFiltered(statedb *state.StateDB, rootTx *types.Transac
 		if f.filteringReportRPCClient != nil {
 			f.reportFilteredTx(rootTx, header, records)
 		}
-		return state.ErrArbTxFilter
+		return state.ErrSeqFilter
 	}
 	return nil
 }
@@ -70,5 +70,5 @@ func (f *txFilterer) reportFilteredTx(tx *types.Transaction, header *types.Heade
 		IsDelayed:         false,
 		DelayedReportData: nil,
 	}
-	f.filteringReportRPCClient.ReportFilteredTransactions([]addressfilter.FilteredTxReport{report})
+	f.filteringReportRPCClient.ReportFilteredTransactions(ReportProducerPrechecker, []addressfilter.FilteredTxReport{report})
 }

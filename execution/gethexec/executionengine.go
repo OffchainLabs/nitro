@@ -23,6 +23,7 @@ import (
 	"runtime/debug"
 	"runtime/pprof"
 	"runtime/trace"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -61,22 +62,22 @@ import (
 )
 
 var (
-	l1GasPriceEstimateGauge              = metrics.NewRegisteredGauge("arb/l1gasprice/estimate", nil)
-	baseFeeGauge                         = metrics.NewRegisteredGauge("arb/block/basefee", nil)
-	blockGasUsedHistogram                = metrics.NewRegisteredHistogram("arb/block/gasused", nil, metrics.NewBoundedHistogramSample())
-	txCountHistogram                     = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
-	txGasUsedHistogram                   = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
-	gasUsedSinceStartupCounter           = metrics.NewRegisteredCounter("arb/gas_used", nil)
-	multiGasUsedSinceStartupCounters     = make([]*metrics.Counter, multigas.NumResourceKind)
-	totalMultiGasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/multigas_used/total", nil)
-	blockExecutionTimer                  = metrics.NewRegisteredHistogram("arb/block/execution", nil, metrics.NewBoundedHistogramSample())
-	blockWriteToDbTimer                  = metrics.NewRegisteredHistogram("arb/block/writetodb", nil, metrics.NewBoundedHistogramSample())
+	l1GasPriceEstimateGauge               = metrics.NewRegisteredGauge("arb/l1gasprice/estimate", nil)
+	baseFeeGauge                          = metrics.NewRegisteredGauge("arb/block/basefee", nil)
+	blockGasUsedHistogram                 = metrics.NewRegisteredHistogram("arb/block/gasused", nil, metrics.NewBoundedHistogramSample())
+	txCountHistogram                      = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
+	txGasUsedHistogram                    = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
+	gasUsedSinceStartupCounter            = metrics.NewRegisteredCounter("arb/gas_used", nil)
+	multiGasUsedSinceStartupCounters      = make([]*metrics.Counter, multigas.NumResourceKind)
+	totalMultiGasUsedSinceStartupCounter  = metrics.NewRegisteredCounter("arb/multigas_used/total", nil)
+	blockExecutionTimer                   = metrics.NewRegisteredHistogram("arb/block/execution", nil, metrics.NewBoundedHistogramSample())
+	blockWriteToDbTimer                   = metrics.NewRegisteredHistogram("arb/block/writetodb", nil, metrics.NewBoundedHistogramSample())
+	delayedSequencerFilteredTxWaitSeconds = metrics.NewRegisteredGauge("arb/delayedsequencer/filtered_tx_wait_seconds", nil)
 )
 
 var (
-	ExecutionEngineBlockCreationStopped = errors.New("block creation stopped in execution engine")
-	ResultNotFound                      = errors.New("result not found")
-	BlockNumBeforeGenesis               = errors.New("block number is before genesis")
+	ResultNotFound        = errors.New("result not found")
+	BlockNumBeforeGenesis = errors.New("block number is before genesis")
 )
 
 // ErrFilteredDelayedMessage is returned when a delayed message contains transactions
@@ -123,25 +124,23 @@ func touchAddresses(db *state.StateDB, tx *types.Transaction, sender common.Addr
 	if tx.To() != nil {
 		db.TouchAddress(&filter.FilteredAddressWithReason{Address: *tx.To(), FilterReason: filter.FilterReason{Reason: filter.ReasonTo, EventRuleMatch: nil}})
 	}
-	// For tx types that alias the sender (unsigned contract txs, retryables),
-	// also check the original L1 address. The sender in the tx is already
-	// aliased by the L1 bridge, but the restricted address list contains
-	// original (non-aliased) addresses.
+	// For tx types whose sender is aliased by the L1 bridge, also check the
+	// original L1 address, since the restricted address list contains original
+	// (non-aliased) addresses. Submit retryables and deposits are aliased
+	// unconditionally by the Inbox but are special-cased here rather than added
+	// to DoesTxTypeAlias, which ArbSys.WasMyCallersAddressAliased also relies
+	// on.
 	txType := tx.Type()
-	if arbosutil.DoesTxTypeAlias(&txType) {
+	if arbosutil.DoesTxTypeAlias(&txType) || txType == types.ArbitrumSubmitRetryableTxType || txType == types.ArbitrumDepositTxType {
 		db.TouchAddress(&filter.FilteredAddressWithReason{Address: arbosutil.InverseRemapL1Address(sender), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedFrom, EventRuleMatch: nil}})
 	}
-	touchRetryableAddresses(db, tx)
 }
 
 // PostTxFilter touches To/From addresses and checks IsAddressFiltered.
-// Builds a FilteredTxReport and returns ErrArbTxFilter for filtered txs.
-// For redeems, returns ErrArbTxFilter without a report (originating tx is
+// Builds a FilteredTxReport and returns ErrSeqFilter for filtered txs.
+// For redeems, returns ErrSeqFilter without a report (originating tx is
 // collected in TxFailed after group rollback).
 func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult, positionInBlock int) error {
-	if tx.Type() == types.ArbitrumInternalTxType {
-		return nil
-	}
 	touchAddresses(db, tx, sender)
 	applyEventFilter(f.eventFilter, db)
 
@@ -150,11 +149,11 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 		// trigger a group rollback. The block processor captures all report
 		// data before rollback and passes it through ErrFilteredCascadingRedeem.
 		if tx.Type() == types.ArbitrumRetryTxType {
-			return state.ErrArbTxFilter
+			return state.ErrSeqFilter
 		}
 		// If the STF already handled this tx via the onchain filter mechanism,
 		// the filter entry has been cleaned up and we're done.
-		var filteredErr *core.ErrFilteredTx
+		var filteredErr *core.ErrFilteredOnChain
 		if errors.As(result.Err, &filteredErr) {
 			return nil
 		}
@@ -199,7 +198,14 @@ func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
 		return
 	}
 	originatingTxHash := cascadingErr.OriginatingTx.Hash()
-	f.filteredTxHashes = append(f.filteredTxHashes, originatingTxHash)
+	// The originating tx may already have been flagged by PostTxFilter (e.g. a
+	// filtered sender is touched by both the submission and its auto-redeem);
+	// don't record the halt hash twice. The report is still emitted below: it
+	// may contain filtered addresses found during redeem execution that are
+	// not in the submission's report.
+	if !slices.Contains(f.filteredTxHashes, originatingTxHash) {
+		f.filteredTxHashes = append(f.filteredTxHashes, originatingTxHash)
+	}
 
 	txRLP, marshalErr := cascadingErr.OriginatingTx.MarshalBinary()
 	if marshalErr != nil {
@@ -234,22 +240,6 @@ func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
 	}
 }
 
-// touchRetryableAddresses touches addresses from retryable inner fields
-// (Beneficiary, FeeRefundAddr, RetryTo) so the address filter can detect them.
-// Also touches de-aliased versions to catch L1 contract addresses that were
-// aliased by the Inbox contract.
-func touchRetryableAddresses(db *state.StateDB, tx *types.Transaction) {
-	if inner, ok := tx.GetInner().(*types.ArbitrumSubmitRetryableTx); ok {
-		db.TouchAddress(&filter.FilteredAddressWithReason{Address: inner.Beneficiary, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableBeneficiary, EventRuleMatch: nil}})
-		db.TouchAddress(&filter.FilteredAddressWithReason{Address: inner.FeeRefundAddr, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableFeeRefund, EventRuleMatch: nil}})
-		if inner.RetryTo != nil {
-			db.TouchAddress(&filter.FilteredAddressWithReason{Address: *inner.RetryTo, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableTo, EventRuleMatch: nil}})
-		}
-		db.TouchAddress(&filter.FilteredAddressWithReason{Address: arbosutil.InverseRemapL1Address(inner.Beneficiary), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedRetryableBeneficiary, EventRuleMatch: nil}})
-		db.TouchAddress(&filter.FilteredAddressWithReason{Address: arbosutil.InverseRemapL1Address(inner.FeeRefundAddr), FilterReason: filter.FilterReason{Reason: filter.ReasonDealiasedRetryableFeeRefund, EventRuleMatch: nil}})
-	}
-}
-
 type L1PriceDataOfMsg struct {
 	callDataUnits            uint64
 	cummulativeCallDataUnits uint64
@@ -262,6 +252,30 @@ type L1PriceData struct {
 	msgToL1PriceData        []L1PriceDataOfMsg
 }
 
+type pendingAppendBlock struct {
+	block                         *types.Block
+	receipts                      types.Receipts
+	statedb                       *state.StateDB
+	blockCalcTime                 time.Duration
+	msgIdx                        arbutil.MessageIndex
+	blockBuiltUsingDelayedMessage bool
+}
+
+type delayedMsg struct {
+	msg    *arbostypes.L1IncomingMessage
+	msgIdx uint64
+}
+
+// FilteredTxWaitState tracks a halt while waiting for filtered transactions
+// to be added to the onchain filter
+type FilteredTxWaitState struct {
+	TxHashes      []common.Hash
+	DelayedMsgIdx uint64
+	FirstSeen     time.Time
+	LastLogTime   time.Time
+	LastFullRetry time.Time
+}
+
 type ExecutionEngine struct {
 	stopwaiter.StopWaiter
 
@@ -269,17 +283,15 @@ type ExecutionEngine struct {
 	consensus consensus.FullConsensusClient
 	recorder  *BlockRecorder
 
-	resequenceChan    chan []*arbostypes.MessageWithMetadata
 	createBlocksMutex sync.Mutex
 
 	newBlockNotifier    chan struct{}
 	reorgEventsNotifier chan struct{}
 	latestBlockMutex    sync.Mutex
 	latestBlock         *types.Block
+	pendingAppendBlock  *pendingAppendBlock
 
 	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
-
-	reorgSequencing bool
 
 	disableStylusCacheMetricsCollection bool
 
@@ -295,11 +307,16 @@ type ExecutionEngine struct {
 
 	runningMaintenance atomic.Bool
 
+	delayedMsgs      containers.Queue[*delayedMsg]
+	delayedMsgsMutex sync.Mutex
+
 	addressChecker                 state.AddressChecker
 	eventFilter                    *eventfilter.EventFilter
 	transactionFiltererRPCClient   *TransactionFiltererRPCClient
 	filteringReportRPCClient       *FilteringReportRPCClient
 	disableDelayedSequencingFilter bool
+	filteredTxFullRetryInterval    time.Duration
+	waitingForFilteredTx           *FilteredTxWaitState
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -322,10 +339,10 @@ func NewExecutionEngine(
 	disableDelayedSequencingFilter bool,
 	addressChecker state.AddressChecker,
 	filteringReportRPCClient *FilteringReportRPCClient,
+	filteredTxFullRetryInterval time.Duration,
 ) *ExecutionEngine {
 	return &ExecutionEngine{
 		bc:                             bc,
-		resequenceChan:                 make(chan []*arbostypes.MessageWithMetadata),
 		newBlockNotifier:               make(chan struct{}, 1),
 		cachedL1PriceData:              NewL1PriceData(),
 		exposeMultiGas:                 exposeMultiGas,
@@ -333,6 +350,7 @@ func NewExecutionEngine(
 		disableDelayedSequencingFilter: disableDelayedSequencingFilter,
 		addressChecker:                 addressChecker,
 		filteringReportRPCClient:       filteringReportRPCClient,
+		filteredTxFullRetryInterval:    filteredTxFullRetryInterval,
 	}
 }
 
@@ -450,16 +468,6 @@ func (s *ExecutionEngine) SetReorgEventsNotifier(reorgEventsNotifier chan struct
 	s.reorgEventsNotifier = reorgEventsNotifier
 }
 
-func (s *ExecutionEngine) EnableReorgSequencing() {
-	if s.Started() {
-		panic("trying to enable reorg sequencing after start")
-	}
-	if s.reorgSequencing {
-		panic("trying to enable reorg sequencing when already set")
-	}
-	s.reorgSequencing = true
-}
-
 func (s *ExecutionEngine) DisableStylusCacheMetricsCollection() {
 	if s.Started() {
 		panic("trying to disable stylus cache metrics collection after start")
@@ -501,20 +509,57 @@ func (s *ExecutionEngine) GetBatchFetcher() consensus.BatchFetcher {
 	return s.consensus
 }
 
-func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
+func (s *ExecutionEngine) EnqueueDelayedMessages(msgs []*arbostypes.L1IncomingMessage, firstMsgIdx uint64) {
+	s.delayedMsgsMutex.Lock()
+	defer s.delayedMsgsMutex.Unlock()
+
+	// No lock spans the consensus node's read of the next delayed message number
+	// and this call, so a batch may arrive misaligned after the queue changed
+	// (concurrent enqueue, Reorg, or error reset) and must not be pushed as-is.
+	expectedMsgIdx, err := s.nextDelayedMessageNumberWithMutex()
+	if err != nil {
+		log.Error("dropping delayed messages: failed to get next delayed message number", "err", err)
+		return
+	}
+
+	if firstMsgIdx > expectedMsgIdx {
+		log.Warn("dropping delayed messages enqueued past the expected index", "firstMsgIdx", firstMsgIdx, "expectedMsgIdx", expectedMsgIdx)
+		return
+	}
+	if skip := expectedMsgIdx - firstMsgIdx; skip > 0 {
+		// The delayed inbox is append-only and accumulator-checked before every
+		// enqueue, so overlapping entries are identical to what is already
+		// queued or sequenced; drop them.
+		if skip >= uint64(len(msgs)) {
+			return
+		}
+		msgs = msgs[skip:]
+	}
+	for i, msg := range msgs {
+		s.delayedMsgs.Push(&delayedMsg{
+			msg:    msg,
+			msgIdx: expectedMsgIdx + uint64(i),
+		})
+	}
+}
+
+func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) ([]*execution.MessageResult, error) {
 	if msgIdxOfFirstMsgToAdd == 0 {
 		return nil, errors.New("cannot reorg out genesis")
 	}
 
+	// Clears delayedMsgs to remove any possible inconsistencies due to the reorg.
+	// delayedMsgs will eventually be filled again by Consensus.
+	s.delayedMsgsMutex.Lock()
+	defer s.delayedMsgsMutex.Unlock()
+	s.delayedMsgs = containers.Queue[*delayedMsg]{}
+	// Drop any filtered-tx wait tied to the discarded queue so a stale halt
+	// cannot gate an unrelated new head message.
+	s.waitingForFilteredTx = nil
+
 	s.createBlocksMutex.Lock()
-	resequencing := false
-	defer func() {
-		// if we are resequencing old messages - don't release the lock
-		// lock will be released by thread listening to resequenceChan
-		if !resequencing {
-			s.createBlocksMutex.Unlock()
-		}
-	}()
+	defer s.createBlocksMutex.Unlock()
+
 	lastBlockNumToKeep := s.MessageIndexToBlockNumber(msgIdxOfFirstMsgToAdd - 1)
 	// We can safely cast lastBlockNumToKeep to a uint64 as it comes from MessageIndexToBlockNumber
 	lastBlockToKeep := s.bc.GetBlockByNumber(uint64(lastBlockNumToKeep))
@@ -566,17 +611,6 @@ func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newM
 	if s.recorder != nil {
 		s.recorder.ReorgTo(lastBlockToKeep.Header())
 	}
-	if len(oldMessages) > 0 {
-		// Use a select to avoid blocking forever if the resequence goroutine
-		// has already exited (e.g., because the context was cancelled during
-		// shutdown before the nodes were stopped).
-		select {
-		case s.resequenceChan <- oldMessages:
-			resequencing = true
-		case <-s.GetContext().Done():
-			log.Warn("ExecutionEngine: context cancelled, skipping message resequencing")
-		}
-	}
 	return newMessagesResults, nil
 }
 
@@ -603,6 +637,18 @@ func (s *ExecutionEngine) HeadMessageIndexSync(t *testing.T) (arbutil.MessageInd
 }
 
 func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {
+	s.delayedMsgsMutex.Lock()
+	defer s.delayedMsgsMutex.Unlock()
+	return s.nextDelayedMessageNumberWithMutex()
+}
+
+// must hold delayedMsgsMutex
+func (s *ExecutionEngine) nextDelayedMessageNumberWithMutex() (uint64, error) {
+	lastDelayedMsg := s.delayedMsgs.Tail()
+	if lastDelayedMsg != nil {
+		return lastDelayedMsg.msgIdx + 1, nil
+	}
+
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return 0, err
@@ -610,104 +656,71 @@ func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {
 	return currentHeader.Nonce.Uint64(), nil
 }
 
-// The caller must hold the createBlocksMutex
-func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.MessageWithMetadata) {
-	if !s.reorgSequencing {
-		return
-	}
+func (s *ExecutionEngine) blockCreationStopped() bool {
+	return s.syncTillBlock > 0 && s.latestBlock != nil && s.latestBlock.NumberU64() >= s.syncTillBlock
+}
 
-	log.Info("Trying to resequence messages", "number", len(messages))
+func (s *ExecutionEngine) ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*execution.SequencedMsg, error) {
+	if s.blockCreationStopped() {
+		return nil, execution.ExecutionEngineBlockCreationStopped
+	}
+	s.createBlocksMutex.Lock()
+	defer s.createBlocksMutex.Unlock()
+
 	lastBlockHeader, err := s.getCurrentHeader()
 	if err != nil {
-		log.Error("block header not found during resequence", "err", err)
-		return
+		return nil, fmt.Errorf("failed to get current block header: %w", err)
 	}
 
 	nextDelayedMsgIdx := lastBlockHeader.Nonce.Uint64()
 
-	for _, msg := range messages {
-		// Check if the message is non-nil just to be safe
-		if msg == nil || msg.Message == nil || msg.Message.Header == nil {
-			continue
-		}
-		header := msg.Message.Header
-		if header.RequestId != nil {
-			delayedMsgIdx := header.RequestId.Big().Uint64()
-			if delayedMsgIdx != nextDelayedMsgIdx {
-				log.Info("not resequencing delayed message due to unexpected index", "expected", nextDelayedMsgIdx, "found", delayedMsgIdx)
-				continue
-			}
-			_, err := s.sequenceDelayedMessageWithBlockMutex(msg.Message, delayedMsgIdx)
-			if err != nil {
-				log.Error("failed to re-sequence old delayed message removed by reorg", "err", err)
-			}
-			nextDelayedMsgIdx += 1
-			continue
-		}
-		if header.Kind != arbostypes.L1MessageType_L2Message || header.Poster != l1pricing.BatchPosterAddress {
-			// This shouldn't exist?
-			log.Warn("skipping non-standard sequencer message found from reorg", "header", header)
-			continue
-		}
-		lastArbosVersion := types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion
-		txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID, lastArbosVersion)
-		if err != nil {
-			log.Warn("failed to parse sequencer message found from reorg", "err", err)
-			continue
-		}
-		hooks := MakeZeroTxSizeSequencingHooksForTesting(txes, nil, nil, nil)
-		block, err := s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks, nil)
-		if err != nil {
-			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
-			return
-		}
-		if block != nil {
-			lastBlockHeader = block.Header()
-		}
+	// Check if the message is non-nil just to be safe
+	if msg == nil || msg.Message == nil || msg.Message.Header == nil {
+		return nil, nil
 	}
+	header := msg.Message.Header
+	if header.RequestId != nil {
+		delayedMsgIdx := header.RequestId.Big().Uint64()
+		if delayedMsgIdx != nextDelayedMsgIdx {
+			log.Info("not resequencing delayed message due to unexpected index", "expected", nextDelayedMsgIdx, "found", delayedMsgIdx)
+			return nil, nil
+		}
+		sequencedMsg, err := s.sequenceDelayedMessageWithBlockMutex(msg.Message, delayedMsgIdx)
+		if err != nil {
+			log.Error("failed to re-sequence old delayed message removed by reorg", "err", err)
+			return nil, nil
+		}
+		return sequencedMsg, nil
+	}
+	if header.Kind != arbostypes.L1MessageType_L2Message || header.Poster != l1pricing.BatchPosterAddress {
+		// This shouldn't exist?
+		log.Warn("skipping non-standard sequencer message found from reorg", "header", header)
+		return nil, nil
+	}
+	lastArbosVersion := types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion
+	txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID, lastArbosVersion)
+	if err != nil {
+		log.Warn("failed to parse sequencer message found from reorg", "err", err)
+		return nil, nil
+	}
+	hooks := MakeResequencingHooks(txes)
+	sequencedMsg, _, err := s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks)
+	if err != nil {
+		return nil, fmt.Errorf("failed to re-sequence old sequencer message removed by reorg: %w", err)
+	}
+	return sequencedMsg, nil
 }
 
-func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, error)) (*types.Block, error) {
-	attempts := 0
-	for {
-		block, err := func() (*types.Block, error) {
-			s.createBlocksMutex.Lock()
-			defer s.createBlocksMutex.Unlock()
-			return sequencerFunc()
-		}()
-		if !errors.Is(err, execution.ErrSequencerInsertLockTaken) {
-			return block, err
-		}
-		// We got SequencerInsertLockTaken
-		// option 1: there was a race, we are no longer main sequencer
-		_, chosenErr := s.consensus.ExpectChosenSequencer().Await(s.GetContext())
-		if chosenErr != nil {
-			return nil, chosenErr
-		}
-		// option 2: we are in a test without very orderly sequencer coordination
-		if !s.bc.Config().ArbitrumChainParams.AllowDebugPrecompiles {
-			// option 3: something weird. send warning
-			log.Warn("sequence transactions: insert lock takent", "attempts", attempts)
-		}
-		// options 2/3 fail after too many attempts
-		attempts++
-		if attempts > 20 {
-			return nil, err
-		}
-		<-time.After(time.Millisecond * 100)
-	}
-}
-
-func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, hooks *FullSequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
-	return s.sequencerWrapper(func() (*types.Block, error) {
-		return s.sequenceTransactionsWithBlockMutex(header, hooks, timeboostedTxs)
-	})
+func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, hooks BlockSequencingHooks) (*execution.SequencedMsg, *types.Block, error) {
+	s.createBlocksMutex.Lock()
+	defer s.createBlocksMutex.Unlock()
+	return s.sequenceTransactionsWithBlockMutex(header, hooks)
 }
 
 // SequenceTransactionsWithProfiling runs SequenceTransactions with tracing and
 // CPU profiling enabled. If the block creation takes longer than 2 seconds, it
 // keeps both and prints out filenames in an error log line.
-func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L1IncomingMessageHeader, hooks *FullSequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
+func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L1IncomingMessageHeader, hooks BlockSequencingHooks) (*execution.SequencedMsg, *types.Block, error) {
 	pprofBuf, traceBuf := bytes.NewBuffer(nil), bytes.NewBuffer(nil)
 	if err := pprof.StartCPUProfile(pprofBuf); err != nil {
 		log.Error("Starting CPU profiling", "error", err)
@@ -716,15 +729,14 @@ func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L
 		log.Error("Starting tracing", "error", err)
 	}
 	start := time.Now()
-	res, err := s.SequenceTransactions(header, hooks, timeboostedTxs)
+	sequencedMsg, res, err := s.SequenceTransactions(header, hooks)
 	elapsed := time.Since(start)
 	pprof.StopCPUProfile()
 	trace.Stop()
 	if elapsed > 2*time.Second {
 		writeAndLog(pprofBuf, traceBuf)
-		return res, err
 	}
-	return res, err
+	return sequencedMsg, res, err
 }
 
 func writeAndLog(pprof, trace *bytes.Buffer) {
@@ -742,26 +754,54 @@ func writeAndLog(pprof, trace *bytes.Buffer) {
 	log.Info("Transactions sequencing took longer than 2 seconds, created pprof and trace files", "pprof", pprofFile, "traceFile", traceFile)
 }
 
-func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, hooks *FullSequencingHooks, timeboostedTxs map[common.Hash]struct{}) (*types.Block, error) {
+func (s *ExecutionEngine) AppendLastSequencedBlock() error {
+	s.createBlocksMutex.Lock()
+	defer s.createBlocksMutex.Unlock()
+
+	if s.pendingAppendBlock == nil {
+		return errors.New("no last sequenced block info")
+	}
+	pending := s.pendingAppendBlock
+	s.pendingAppendBlock = nil
+
+	err := s.appendBlock(
+		pending.block,
+		pending.statedb,
+		pending.receipts,
+		pending.blockCalcTime,
+	)
+	if err != nil {
+		return err
+	}
+	s.cacheL1PriceDataOfMsg(
+		pending.msgIdx,
+		pending.block,
+		pending.blockBuiltUsingDelayedMessage,
+	)
+
+	return nil
+}
+
+func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, hooks BlockSequencingHooks) (*execution.SequencedMsg, *types.Block, error) {
 	lastBlockHeader, err := s.getCurrentHeader()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	lastBlock := s.bc.GetBlock(lastBlockHeader.Hash(), lastBlockHeader.Number.Uint64())
 	if lastBlock == nil {
-		return nil, errors.New("can't find block for current header")
+		return nil, nil, errors.New("can't find block for current header")
 	}
 	var witness *stateless.Witness
 	var witnessStats *stateless.WitnessStats
 	if s.bc.GetVMConfig().StatelessSelfValidation {
 		witness, err = stateless.NewWitness(lastBlock.Header(), s.bc)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if s.bc.GetVMConfig().EnableWitnessStats {
 			witnessStats = stateless.NewWitnessStats()
@@ -785,34 +825,32 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.addressChecker,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	blockCalcTime := time.Since(startTime)
 	blockExecutionTimer.Update(blockCalcTime.Nanoseconds())
 
 	if len(receipts) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
-	allTxsErrored := true
-	for _, err := range hooks.txErrors {
-		if err == nil {
-			allTxsErrored = false
-			break
-		}
-	}
-	if allTxsErrored {
-		return nil, nil
-	}
-
-	msg, err := hooks.MessageFromTxes(header)
+	sequencedTxes, err := hooks.SequencedTxes()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	allTxsErrored := !slices.ContainsFunc(sequencedTxes, func(res TxResult) bool { return res.Err == nil })
+	if allTxsErrored {
+		return nil, nil, nil
+	}
+
+	msg, err := MessageFromTxes(header, sequencedTxes)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	msgIdx, err := s.BlockNumberToMessageIndex(lastBlockHeader.Number.Uint64() + 1)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	msgWithMeta := arbostypes.MessageWithMetadata{
@@ -821,54 +859,162 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	}
 	msgResult, err := s.resultFromHeader(block.Header())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	blockMetadata := s.blockMetadataFromBlock(block, timeboostedTxs)
-	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, msgWithMeta, *msgResult, blockMetadata).Await(s.GetContext())
-	if err != nil {
-		return nil, err
+	s.pendingAppendBlock = &pendingAppendBlock{
+		block:                         block,
+		receipts:                      receipts,
+		statedb:                       statedb,
+		blockCalcTime:                 blockCalcTime,
+		msgIdx:                        msgIdx,
+		blockBuiltUsingDelayedMessage: false,
 	}
 
-	// Only write the block after we've written the messages, so if the node dies in the middle of this,
-	// it will naturally recover on startup by regenerating the missing block.
-	err = s.appendBlock(block, statedb, receipts, blockCalcTime)
-	if err != nil {
-		return nil, err
+	blockMetadata := blockMetadataFromSequencedTxes(block, sequencedTxes)
+	sequencedMsg := &execution.SequencedMsg{
+		MsgIdx:        msgIdx,
+		MsgWithMeta:   msgWithMeta,
+		MsgResult:     msgResult,
+		BlockMetadata: blockMetadata,
 	}
-	s.cacheL1PriceDataOfMsg(msgIdx, block, false)
 
-	return block, nil
+	return sequencedMsg, block, nil
 }
 
-// blockMetadataFromBlock returns timeboosted byte array which says whether a transaction in the block was timeboosted
-// or not. The first byte of blockMetadata byte array is reserved to indicate the version,
-// starting from the second byte, (N)th bit would represent if (N)th tx is timeboosted or not, 1 means yes and 0 means no
-// blockMetadata[index / 8 + 1] & (1 << (index % 8)) != 0; where index = (N - 1), implies whether (N)th tx in a block is timeboosted
-// note that number of txs in a block will always lag behind (len(blockMetadata) - 1) * 8 but it won't lag more than a value of 7
-func (s *ExecutionEngine) blockMetadataFromBlock(block *types.Block, timeboostedTxs map[common.Hash]struct{}) common.BlockMetadata {
-	bits := make(common.BlockMetadata, 1+arbmath.DivCeil(uint64(len(block.Transactions())), 8))
-	if len(timeboostedTxs) == 0 {
-		return bits
+func (s *ExecutionEngine) hasPendingDelayedMsgs() bool {
+	s.delayedMsgsMutex.Lock()
+	defer s.delayedMsgsMutex.Unlock()
+	return s.delayedMsgs.Len() > 0
+}
+
+func (s *ExecutionEngine) popSequencedDelayedMessage() {
+	s.delayedMsgsMutex.Lock()
+	defer s.delayedMsgsMutex.Unlock()
+	s.delayedMsgs.Pop()
+	s.clearFilteredTxWaitState()
+}
+
+func (s *ExecutionEngine) SequenceDelayedMessage() (*execution.SequencedMsg, error) {
+	s.delayedMsgsMutex.Lock()
+	defer s.delayedMsgsMutex.Unlock()
+	if s.delayedMsgs.Len() == 0 {
+		return nil, nil
 	}
-	for i, tx := range block.Transactions() {
-		if _, ok := timeboostedTxs[tx.Hash()]; ok {
-			bits[1+i/8] |= 1 << (i % 8)
+
+	if !s.shouldAttemptWhileWaitingForFilteredTx() {
+		return nil, nil
+	}
+
+	delayedMsgToSequence := s.delayedMsgs.Peek()
+
+	s.createBlocksMutex.Lock()
+	defer s.createBlocksMutex.Unlock()
+
+	sequencedMsg, err := s.sequenceDelayedMessageWithBlockMutex(delayedMsgToSequence.msg, delayedMsgToSequence.msgIdx)
+	if err != nil {
+		var filteredErr *ErrFilteredDelayedMessage
+		if errors.As(err, &filteredErr) {
+			s.handleFilteredDelayedMessage(filteredErr)
+			// Halt without propagating the error - will retry on next interval.
+			return nil, nil
+		}
+
+		if errors.Is(err, execution.ExecutionEngineBlockCreationStopped) {
+			log.Debug("delayed sequencing halted: execution engine stopped block creation")
+			return nil, err
+		}
+
+		// Unexpected error occurred.
+		// Clears delayedMsgs to remove any possible inconsistencies.
+		// delayedMsgs will eventually be filled again by Consensus.
+		log.Error("unexpected error sequencing delayed message, resetting delayed queue", "delayedMsgIdx", delayedMsgToSequence.msgIdx, "err", err)
+		s.delayedMsgs = containers.Queue[*delayedMsg]{}
+		// Drop any filtered-tx wait tied to the discarded queue so a stale halt
+		// cannot gate an unrelated new head message.
+		s.waitingForFilteredTx = nil
+		return nil, err
+	}
+
+	return sequencedMsg, nil
+}
+
+func (s *ExecutionEngine) shouldAttemptWhileWaitingForFilteredTx() bool {
+	if s.waitingForFilteredTx == nil {
+		return true
+	}
+
+	now := time.Now()
+	waitDuration := now.Sub(s.waitingForFilteredTx.FirstSeen)
+	delayedSequencerFilteredTxWaitSeconds.Update(int64(waitDuration.Seconds()))
+	if now.Sub(s.waitingForFilteredTx.LastLogTime) >= 5*time.Minute {
+		logLevel := log.Warn
+		if waitDuration > 1*time.Hour {
+			logLevel = log.Error
+		}
+		logLevel("DelayedSequencer halted on filtered tx - waiting for tx hashes to be added to onchain filter",
+			"txHashes", s.waitingForFilteredTx.TxHashes,
+			"delayedMsgIdx", s.waitingForFilteredTx.DelayedMsgIdx,
+			"waitingSince", s.waitingForFilteredTx.FirstSeen)
+		s.waitingForFilteredTx.LastLogTime = now
+	}
+
+	// Periodically attempt full re-execution even if the tx hashes aren't in the
+	// onchain filter yet. The filtered address set may have changed since the
+	// last attempt, which could allow the tx to succeed without needing bypass.
+	if time.Since(s.waitingForFilteredTx.LastFullRetry) >= s.filteredTxFullRetryInterval {
+		return true
+	}
+
+	// Fast-path: only attempt if all filtered tx hashes are now in the onchain filter.
+	for _, txHash := range s.waitingForFilteredTx.TxHashes {
+		isInFilter, err := s.isTxHashInOnchainFilter(txHash)
+		if err != nil {
+			log.Error("error checking onchain filter", "err", err, "txHash", txHash)
+			return false
+		}
+		if !isInFilter {
+			return false
 		}
 	}
-	return bits
+	return true
 }
 
-func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) error {
-	_, err := s.sequencerWrapper(func() (*types.Block, error) {
-		return s.sequenceDelayedMessageWithBlockMutex(message, delayedMsgIdx)
-	})
-	return err
+func (s *ExecutionEngine) handleFilteredDelayedMessage(filteredErr *ErrFilteredDelayedMessage) {
+	now := time.Now()
+	if s.waitingForFilteredTx == nil {
+		// First time hitting filtered tx(es) - log and set waiting state.
+		log.Info("Delayed message filtered - HALTING delayed sequencing",
+			"txHashes", filteredErr.TxHashes,
+			"delayedMsgIdx", filteredErr.DelayedMsgIdx)
+		s.waitingForFilteredTx = &FilteredTxWaitState{
+			TxHashes:      filteredErr.TxHashes,
+			DelayedMsgIdx: filteredErr.DelayedMsgIdx,
+			FirstSeen:     now,
+			LastLogTime:   now,
+			LastFullRetry: now,
+		}
+		return
+	}
+	s.waitingForFilteredTx.TxHashes = filteredErr.TxHashes
+	s.waitingForFilteredTx.LastFullRetry = now
 }
 
-func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) (*types.Block, error) {
-	if s.syncTillBlock > 0 && s.latestBlock != nil && s.latestBlock.NumberU64() >= s.syncTillBlock {
-		return nil, ExecutionEngineBlockCreationStopped
+func (s *ExecutionEngine) clearFilteredTxWaitState() {
+	if s.waitingForFilteredTx == nil {
+		return
+	}
+	log.Info("Filtered tx resolved - resuming delayed sequencing",
+		"txHashes", s.waitingForFilteredTx.TxHashes,
+		"delayedMsgIdx", s.waitingForFilteredTx.DelayedMsgIdx,
+		"waitedFor", time.Since(s.waitingForFilteredTx.FirstSeen))
+	s.waitingForFilteredTx = nil
+	delayedSequencerFilteredTxWaitSeconds.Update(0)
+}
+
+func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) (*execution.SequencedMsg, error) {
+	if s.blockCreationStopped() {
+		return nil, execution.ExecutionEngineBlockCreationStopped
 	}
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
@@ -904,20 +1050,23 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 
-	_, err = s.consensus.WriteMessageFromSequencer(msgIdx, messageWithMeta, *msgResult, s.blockMetadataFromBlock(block, nil)).Await(s.GetContext())
-	if err != nil {
-		return nil, err
+	s.pendingAppendBlock = &pendingAppendBlock{
+		block:                         block,
+		receipts:                      receipts,
+		statedb:                       statedb,
+		blockCalcTime:                 blockCalcTime,
+		msgIdx:                        msgIdx,
+		blockBuiltUsingDelayedMessage: true,
 	}
 
-	err = s.appendBlock(block, statedb, receipts, blockCalcTime)
-	if err != nil {
-		return nil, err
+	sequencedMsg := &execution.SequencedMsg{
+		MsgIdx:        msgIdx,
+		MsgWithMeta:   messageWithMeta,
+		MsgResult:     msgResult,
+		BlockMetadata: emptyBlockMetadata(block),
 	}
-	s.cacheL1PriceDataOfMsg(msgIdx, block, true)
 
-	log.Info("ExecutionEngine: Added DelayedMessages", "msgIdx", msgIdx, "delayedMsgIdx", delayedMsgIdx, "block-header", block.Header())
-
-	return block, nil
+	return sequencedMsg, nil
 }
 
 func (s *ExecutionEngine) GetGenesisBlockNumber() uint64 {
@@ -1038,7 +1187,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			if s.filteringReportRPCClient != nil && len(filteringHooks.pendingFilteredTxReports) > 0 {
 				reports := filteringHooks.pendingFilteredTxReports
 				s.LaunchThread(func(ctx context.Context) {
-					if _, err := s.filteringReportRPCClient.ReportFilteredTransactions(reports).Await(ctx); err != nil {
+					if _, err := s.filteringReportRPCClient.ReportFilteredTransactions(ReportProducerSequencer, reports).Await(ctx); err != nil {
 						log.Error("error reporting filtered delayed txs to filtering-report", "count", len(reports), "err", err)
 					}
 				})
@@ -1352,21 +1501,6 @@ func (s *ExecutionEngine) Start(ctxIn context.Context) error {
 	}
 
 	s.LaunchThread(func(ctx context.Context) {
-		for {
-			if s.syncTillBlock > 0 && s.latestBlock != nil && s.latestBlock.NumberU64() >= s.syncTillBlock {
-				log.Info("stopping block creation in execution engine", "syncTillBlock", s.syncTillBlock)
-				return
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case resequence := <-s.resequenceChan:
-				s.resequenceReorgedMessages(resequence)
-				s.createBlocksMutex.Unlock()
-			}
-		}
-	})
-	s.LaunchThread(func(ctx context.Context) {
 		var lastBlock *types.Block
 		for {
 			select {
@@ -1467,7 +1601,7 @@ func (s *ExecutionEngine) SetTransactionFiltererRPCClient(client *TransactionFil
 	s.transactionFiltererRPCClient = client
 }
 
-func (s *ExecutionEngine) IsTxHashInOnchainFilter(txHash common.Hash) (bool, error) {
+func (s *ExecutionEngine) isTxHashInOnchainFilter(txHash common.Hash) (bool, error) {
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return false, err
@@ -1484,4 +1618,15 @@ func (s *ExecutionEngine) IsTxHashInOnchainFilter(txHash common.Hash) (bool, err
 	}
 
 	return arbState.FilteredTransactions().IsFiltered(txHash)
+}
+
+// WaitingForFilteredTx returns the tx hashes being waited on, or nil and false if not halted.
+// Takes a testing.T to prevent production code from calling this test-only function.
+func (s *ExecutionEngine) WaitingForFilteredTx(t *testing.T) ([]common.Hash, bool) {
+	s.delayedMsgsMutex.Lock()
+	defer s.delayedMsgsMutex.Unlock()
+	if s.waitingForFilteredTx == nil {
+		return nil, false
+	}
+	return s.waitingForFilteredTx.TxHashes, true
 }

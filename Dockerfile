@@ -196,23 +196,12 @@ COPY ./scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v30 0xb0de9cb89e4d944ae6023a3b62276e54804c242fd8c4c2d8e6cc4450f5fa8b1b && true
 #RUN ./download-machine.sh consensus-v31 0x260f5fa5c3176a856893642e149cf128b5a8de9f828afec8d11184415dd8dc69
 #RUN ./download-machine.sh consensus-v32 0x184884e1eb9fefdc158f6c8ac912bb183bf3cf83f0090317e0bc4ac5860baa39
-#RUN ./download-machine.sh consensus-v40-rc.1 0x6dae396b0b7644a2d63b4b22e6452b767aa6a04b6778dadebdd74aa40f40a5c5
-#RUN ./download-machine.sh consensus-v40-rc.2 0xa8206be13d53e456c7ab061d94bab5b229d674ac57ffe7281216479a8820fcc0
-#RUN ./download-machine.sh consensus-v41 0xa18d6266cef250802c3cb2bfefe947ea1aa9a32dd30a8d1dfc4568a8714d3a7a
-#RUN ./download-machine.sh consensus-v50-alpha.1 0x28cfd8d81613ce4ebe750e77bfd95d6d95d4f53240488095a11c1ad3a494fa82
-#RUN ./download-machine.sh consensus-v50-rc.1 0x8fd725477d8ef58183a1a943c375a8495a22cd2d7d701ac917fe20d69993e88e
-#RUN ./download-machine.sh consensus-v50-rc.2 0xc1ea4d6d2791bf5bdf6de3c2166ce4aab8fe16ca4ad5c226e8ae31a8b77f1a08
-#RUN ./download-machine.sh consensus-v50-rc.3 0x385fa2524d86d4ebc340988224f8686b3f485c7c9f7bc1015a64c85a9c76a6b0
-#RUN ./download-machine.sh consensus-v50-rc.4 0x393be710f252e8217d66fe179739eba1ed471f0d5a847b5905c30926d853241a
-#RUN ./download-machine.sh consensus-v50-rc.5 0xb90895a56a59c0267c2004a0e103ad725bd98d5a05c3262806ab4ccb3f997558
-#RUN ./download-machine.sh consensus-v50-rc.6 0x2c54f6e9e378ba320ed9c713a1d9f067a572b1437e4f1c40b1a915d3066c04f2
 #RUN ./download-machine.sh consensus-v40 0xdb698a2576298f25448bc092e52cf13b1e24141c997135d70f217d674bbeb69a
+#RUN ./download-machine.sh consensus-v41 0xa18d6266cef250802c3cb2bfefe947ea1aa9a32dd30a8d1dfc4568a8714d3a7a
 RUN ./download-machine.sh consensus-v50 0x2c54f6e9e378ba320ed9c713a1d9f067a572b1437e4f1c40b1a915d3066c04f2
 RUN ./download-machine.sh consensus-v51 0x8a7513bf7bb3e3db04b0d982d0e973bcf57bf8b88aef7c6d03dba3a81a56a499
-RUN ./download-machine.sh consensus-v60-rc.4 0x333f5e036235b1ce1a34cbbe254ccbb2615218f9ae6f84aeef0511cb09ef9b67
-RUN ./download-machine.sh consensus-v60-rc.5 0x7a9e6a77354888257a9989ce0b6bb39df5fedf222d453932933fdf7a489cbb57
-RUN ./download-machine.sh consensus-v61-rc.2 0xc10cd7ec6acaf1c441a3f6bd0900ad20f15855ba775a96f1939118cbc629dc97
 RUN ./download-machine.sh consensus-v51.1 0xc2c02df561d4afaf9a1d6785f70098ec3874765c638e3cb6dbe8d3c83333e14c
+RUN ./download-machine.sh consensus-v61 0xc10cd7ec6acaf1c441a3f6bd0900ad20f15855ba775a96f1939118cbc629dc97
 
 # Factored out of node-builder so the stripped variant doesn't depend on it.
 FROM golang:1.25-bookworm AS node-builder-base

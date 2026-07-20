@@ -10,6 +10,7 @@ import (
 
 	"github.com/holiman/uint256"
 
+	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -150,6 +151,50 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, evm *vm.
 	)
 }
 
+// emitSkippedCallFrame fakes a balanced top-level call frame for txs whose real
+// evm.Call/evm.Create is skipped: the deposit/retryable error short-circuits in
+// StartTxHook (endTxNow=true) and the pre-recorded-revert / onchain-filtered paths in
+// RevertedTxHook (vmerr != nil). Without it the tracer's callstack never gets its single
+// top-level frame, so callTracer/erc7562Tracer fail in GetResult with "incorrect number of
+// top-level calls" and flatCallTracer with "invalid number of calls".
+//
+// It emits OnEnter immediately followed by OnExit (no body in between) — the EVM-skipped
+// analogue of the pair a real evm.Call produces, including the vm.VMErrorFromErr wrapping
+// on the error. Because the pair is back-to-back with no statedb ops between, the tracing
+// journal's revert (on reverted=true) iterates zero entries and is a no-op; callers must
+// therefore invoke this as the LAST statement before the skip-return, after any nonce/gas
+// mutation. depth is evm.Depth()==0 at every such site.
+//
+// reverted is true whenever err != nil: these paths do no EVM work and surface as failed
+// txs, so the frame mirrors a reverted top-level call. (The deposit/internal/submit-retryable
+// success paths use startTracer instead, which reports reverted=false because they do apply
+// ArbOS state changes.) A nil tracer makes this a no-op. A nil `to` is a contract creation:
+// it is traced as CREATE (matching a real evm.Create) with a zero address, since the
+// would-be contract address is unknown for a skipped creation.
+func (p *TxProcessor) emitSkippedCallFrame(to *common.Address, gasUsed uint64, err error) {
+	tracer := p.evm.Config.Tracer
+	if tracer == nil {
+		return
+	}
+	typ := vm.CALL
+	dest := common.Address{}
+	if to != nil {
+		dest = *to
+	} else {
+		typ = vm.CREATE
+	}
+	depth := p.evm.Depth()
+	if tracer.OnEnter != nil {
+		tracer.OnEnter(depth, byte(typ), p.msg.From, dest, p.msg.Data, p.msg.GasLimit, p.msg.Value)
+	}
+	if tracer.OnExit != nil {
+		// Wrap with VMErrorFromErr to match the real evm.Call (core/vm/evm.go), so tracers
+		// that read ErrorCode()/type-assert *vm.VMError treat this skipped frame like a real
+		// reverted call rather than diverging on the raw *core.ErrFilteredTx.
+		tracer.OnExit(depth, nil, gasUsed, vm.VMErrorFromErr(err), err != nil)
+	}
+}
+
 //nolint:staticcheck
 func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiGas, err error, returnData []byte) {
 	// This hook is called before gas charging and will end the state transition if endTxNow is set to true
@@ -196,7 +241,9 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		to := p.msg.To
 		value := p.msg.Value
 		if to == nil {
-			return true, multigas.ZeroGas(), errors.New("eth deposit has no To address"), nil
+			depErr := errors.New("eth deposit has no To address")
+			p.emitSkippedCallFrame(nil, 0, depErr)
+			return true, multigas.ZeroGas(), depErr, nil
 		}
 		// Check if this deposit tx is in the onchain filter.
 		// Deposits return endTxNow=true so RevertedTxHook (which normally
@@ -206,10 +253,11 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		if p.state.FilteredTransactions().IsFilteredFree(txHash) {
 			recipient, err := p.state.FilteredFundsRecipientOrDefault()
 			if err != nil {
+				p.emitSkippedCallFrame(to, 0, err)
 				return true, multigas.ZeroGas(), err, nil
 			}
 			to = &recipient
-			txnErr = &core.ErrFilteredTx{TxHash: txHash}
+			txnErr = &core.ErrFilteredOnChain{TxHash: txHash}
 		}
 		util.MintBalance(&from, value, evm, util.TracingBeforeEVM, tracing.BalanceIncreaseDeposit)
 		defer (startTracer())()
@@ -250,14 +298,24 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 			}
 			// For symmetry with other filtered tx paths, deletion from the onchain filter
 			// is handled by the external tx authority service rather than here.
-			// Note: deletion here *would* be committed despite the ErrFilteredTx in
+			// Note: deletion here *would* be committed despite the ErrFilteredOnChain in
 			// result.Err, because endTxNow=true means the outer error is nil and state
 			// is not reverted. May move to direct deletion here in future.
 			// p.state.FilteredTransactions().DeleteFree(ticketId)
 			tx.FeeRefundAddr = recipient
 			tx.Beneficiary = recipient
 			isFiltered = true
-			filteredErr = &core.ErrFilteredTx{TxHash: ticketId}
+			filteredErr = &core.ErrFilteredOnChain{TxHash: ticketId}
+		}
+
+		// For onchain-filtered txs, result.Err must be ErrFilteredOnChain even when
+		// submission fails, so PostTxFilter treats the tx as already handled and the
+		// delayed sequencer can advance past it.
+		filteredErrOr := func(err error) error {
+			if isFiltered {
+				return filteredErr
+			}
+			return err
 		}
 
 		// mint funds with the deposit, then charge fees later
@@ -269,6 +327,23 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 			return util.TransferBalance(from, to, amount, evm, scenario, reason)
 		}
 
+		// Report addresses to the address filter as they receive funds or become
+		// able to receive funds from this retryable. Also touch the de-aliased
+		// address to catch L1 contract addresses aliased by the Inbox contract.
+		// TouchAddress is a no-op unless an address checker is installed.
+		touch := func(addr common.Address, reason filter.FilterReasonType, dealiasedReason filter.FilterReasonType) {
+			statedb.TouchAddress(&filter.FilteredAddressWithReason{Address: addr, FilterReason: filter.FilterReason{Reason: reason, EventRuleMatch: nil}})
+			statedb.TouchAddress(&filter.FilteredAddressWithReason{Address: util.InverseRemapL1Address(addr), FilterReason: filter.FilterReason{Reason: dealiasedReason, EventRuleMatch: nil}})
+		}
+		touchedFeeRefundAddr := false
+		touchFeeRefundAddr := func() {
+			if touchedFeeRefundAddr {
+				return
+			}
+			touch(tx.FeeRefundAddr, filter.ReasonRetryableFeeRefund, filter.ReasonDealiasedRetryableFeeRefund)
+			touchedFeeRefundAddr = true
+		}
+
 		// check that the user has enough balance to pay for the max submission fee
 		balanceAfterMint := evm.StateDB.GetBalance(tx.From)
 		if balanceAfterMint.ToBig().Cmp(tx.MaxSubmissionFee) < 0 {
@@ -276,7 +351,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 				"insufficient funds for max submission fee: address %v have %v want %v",
 				tx.From, balanceAfterMint, tx.MaxSubmissionFee,
 			)
-			return true, multigas.ZeroGas(), err, nil
+			return true, multigas.ZeroGas(), filteredErrOr(err), nil
 		}
 
 		submissionFee := retryables.RetryableSubmissionFee(len(tx.RetryData), tx.L1BaseFee)
@@ -286,7 +361,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 				"max submission fee %v is less than the actual submission fee %v",
 				tx.MaxSubmissionFee, submissionFee,
 			)
-			return true, multigas.ZeroGas(), err, nil
+			return true, multigas.ZeroGas(), filteredErrOr(err), nil
 		}
 
 		// collect the submission fee
@@ -294,7 +369,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 			// should be impossible as we just checked that they have enough balance for the max submission fee,
 			// and we also checked that the max submission fee is at least the actual submission fee
 			log.Error("failed to transfer submissionFee", "err", err)
-			return true, multigas.ZeroGas(), err, nil
+			return true, multigas.ZeroGas(), filteredErrOr(err), nil
 		}
 		withheldSubmissionFee := takeFunds(availableRefund, submissionFee)
 
@@ -303,6 +378,8 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		if err := transfer(&tx.From, &tx.FeeRefundAddr, submissionFeeRefund, tracing.BalanceChangeTransferRetryableExcessRefund); err != nil {
 			// should never happen as from's balance should be at least availableRefund at this point
 			log.Error("failed to transfer submissionFeeRefund", "err", err)
+		} else if submissionFeeRefund.Sign() > 0 {
+			touchFeeRefundAddr()
 		}
 
 		// move the callvalue into escrow
@@ -319,8 +396,10 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 			// with the rest remaining in the transaction sender's address (as that's where the funds were pulled from).
 			if err := transfer(&tx.From, &tx.FeeRefundAddr, withheldSubmissionFee, tracing.BalanceChangeTransferRetryableExcessRefund); err != nil {
 				log.Error("failed to refund withheldSubmissionFee", "err", err)
+			} else if withheldSubmissionFee.Sign() > 0 {
+				touchFeeRefundAddr()
 			}
-			return true, multigas.ZeroGas(), callValueErr, nil
+			return true, multigas.ZeroGas(), filteredErrOr(callValueErr), nil
 		}
 
 		time := evm.Context.Time
@@ -337,6 +416,15 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 			tx.RetryData,
 		)
 		p.state.Restrict(err)
+
+		// The retryable now exists: the beneficiary can receive the escrowed
+		// callvalue on cancel, RetryTo is called on redeem, and FeeRefundAddr
+		// receives gas refunds.
+		touch(tx.Beneficiary, filter.ReasonRetryableBeneficiary, filter.ReasonDealiasedRetryableBeneficiary)
+		touchFeeRefundAddr()
+		if tx.RetryTo != nil {
+			statedb.TouchAddress(&filter.FilteredAddressWithReason{Address: *tx.RetryTo, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableTo, EventRuleMatch: nil}})
+		}
 
 		err = EmitTicketCreatedEvent(evm, ticketId)
 		if err != nil {
@@ -450,18 +538,26 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 
 		return true, multigas.SingleDimGas(usergas), nil, ticketId.Bytes()
 	case *types.ArbitrumRetryTx:
+		// Unlike the deposit/internal/submit-retryable cases above, this case does not
+		// run startTracer: a successful redeem returns endTxNow=false and the real EVM
+		// call supplies the top-level frame. The endTxNow=true error returns below skip
+		// the EVM, so they must fake a balanced frame to keep the tracer callstack valid.
 		retryable, err := p.state.RetryableState().OpenRetryable(tx.TicketId, p.evm.Context.Time)
 		if err != nil {
+			p.emitSkippedCallFrame(p.msg.To, 0, err)
 			return true, multigas.ZeroGas(), err, nil
 		}
 		if retryable == nil {
-			return true, multigas.ZeroGas(), fmt.Errorf("retryable with ticketId: %v not found", tx.TicketId), nil
+			retryErr := fmt.Errorf("retryable with ticketId: %v not found", tx.TicketId)
+			p.emitSkippedCallFrame(p.msg.To, 0, retryErr)
+			return true, multigas.ZeroGas(), retryErr, nil
 		}
 
 		// Transfer callvalue from escrow
 		escrow := retryables.RetryableEscrowAddress(tx.TicketId)
 		scenario := util.TracingBeforeEVM
 		if err := util.TransferBalance(&escrow, &tx.From, tx.Value, evm, scenario, tracing.BalanceChangeEscrowTransfer); err != nil {
+			p.emitSkippedCallFrame(p.msg.To, 0, err)
 			return true, multigas.ZeroGas(), err, nil
 		}
 
@@ -661,6 +757,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 			effectiveBaseFee.Cmp(p.evm.Context.BaseFee) == 0 // don't refund retryable estimation
 
 		maxRefund := new(big.Int).Set(inner.MaxRefund)
+		touchedRefundTo := false
 		refund := func(refundFrom common.Address, amount *big.Int, reason tracing.BalanceChangeReason) {
 			const errLog = "fee address doesn't have enough funds to give user refund"
 
@@ -686,6 +783,11 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 				// However, in theory, they could've been transferred out during the redeem attempt.
 				// If the network fee address doesn't have the necessary balance, log an error and don't give a refund.
 				logMissingRefund(err)
+			} else if toRefundAddr.Sign() > 0 && !touchedRefundTo {
+				// Report the refund recipient to the address filter once funds actually
+				// flow to it; the guard keeps duplicate records out of filter reports.
+				p.evm.StateDB.TouchAddress(&filter.FilteredAddressWithReason{Address: inner.RefundTo, FilterReason: filter.FilterReason{Reason: filter.ReasonRetryableRefundTo, EventRuleMatch: nil}})
+				touchedRefundTo = true
 			}
 			// Any extra refund can't be given to the fee refund address if it didn't come from the L1 deposit.
 			// Instead, give the refund to the retryable from address.
@@ -966,6 +1068,7 @@ func (p *TxProcessor) RevertedTxHook(gasRemaining *uint64, usedMultiGas multigas
 
 	// Check for pre-recorded reverted transactions
 	if l2GasUsed, ok := core.RevertedTxGasUsed[txHash]; ok {
+		log.Debug("reached a reverted transaction", "hash", txHash, "gasUsed", l2GasUsed)
 		p.evm.StateDB.SetNonce(p.msg.From, p.evm.StateDB.GetNonce(p.msg.From)+1, tracing.NonceChangeEoACall)
 
 		// Calculate adjusted gas since l2GasUsed contains params.TxGas
@@ -973,6 +1076,9 @@ func (p *TxProcessor) RevertedTxHook(gasRemaining *uint64, usedMultiGas multigas
 		*gasRemaining -= adjustedGas
 
 		usedMultiGas = usedMultiGas.SaturatingAdd(multigas.ComputationGas(adjustedGas))
+		// The EVM call is skipped (vmerr != nil below), so fake a balanced top-level
+		// frame after the nonce/gas mutations to keep the tracer callstack valid.
+		p.emitSkippedCallFrame(p.msg.To, adjustedGas, vm.ErrExecutionReverted)
 		return usedMultiGas, vm.ErrExecutionReverted
 	}
 
@@ -987,7 +1093,11 @@ func (p *TxProcessor) RevertedTxHook(gasRemaining *uint64, usedMultiGas multigas
 		*gasRemaining = 0
 		usedMultiGas = usedMultiGas.SaturatingAdd(multigas.ComputationGas(usedGas))
 
-		return usedMultiGas, &core.ErrFilteredTx{TxHash: txHash}
+		// The EVM call is skipped (vmerr != nil below), so fake a balanced top-level
+		// frame after the nonce/gas mutations to keep the tracer callstack valid.
+		filteredErr := &core.ErrFilteredOnChain{TxHash: txHash}
+		p.emitSkippedCallFrame(p.msg.To, usedGas, filteredErr)
+		return usedMultiGas, filteredErr
 	}
 
 	return usedMultiGas, nil

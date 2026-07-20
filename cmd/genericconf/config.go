@@ -91,7 +91,7 @@ var DefaultFileLoggingConfig = FileLoggingConfig{
 	File:       "nitro.log",
 	MaxSize:    5,     // 5Mb
 	MaxAge:     0,     // don't remove old files based on age
-	MaxBackups: 20,    // keep 20 files
+	MaxBackups: 40,    // keep 40 files
 	LocalTime:  false, // use UTC time
 	Compress:   true,
 	BufSize:    512,
