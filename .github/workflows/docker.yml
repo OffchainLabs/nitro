@@ -25,7 +25,6 @@ jobs:
 
   docker:
     name: Docker build
-    # dind label: this job runs docker build/run and starts a dockerized testnode.
     runs-on: ocl-16cpu-64ram-dind
     needs: changes
     # Skip the build for changelog-only PRs. merge_group and manual runs always

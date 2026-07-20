@@ -12,7 +12,6 @@ permissions:
 
 jobs:
   list:
-    # dind label: ci-setup builds the wasm brotli / soft-float libs in Docker.
     runs-on: ocl-16cpu-64ram-dind
     if: github.event_name != 'schedule' || github.repository == 'OffchainLabs/nitro-private'
 

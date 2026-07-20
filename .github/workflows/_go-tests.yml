@@ -80,7 +80,6 @@ permissions:
 jobs:
   go-tests:
     name: Go tests
-    # dind label: the redis service container below requires Docker on the runner.
     runs-on: ocl-16cpu-64ram-dind
     # Per-job hard cap so a hung test terminates with a Go stack trace rather
     # than GitHub killing the runner (which yields no useful diagnostics).
