@@ -1669,8 +1669,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 func (s *Sequencer) reportFilterSetID(ctx context.Context) error {
 	if s.addressFilterService == nil {
-		log.Debug("skipping filter-set id report: address-filter service not configured")
-		return nil
+		return errors.New("address-filter service not configured")
 	}
 	filterSetID := s.addressFilterService.CurrentFilterSetID()
 	if filterSetID == uuid.Nil {
@@ -1682,7 +1681,7 @@ func (s *Sequencer) reportFilterSetID(ctx context.Context) error {
 	}
 	rpcClient := s.execEngine.GetFilteringReportRPCClient()
 	if rpcClient == nil {
-		return nil
+		return errors.New("filtering report RPC client not configured")
 	}
 	_, err := rpcClient.ReportCurrentFilterSetID(&addressfilter.FilterSetIDReport{
 		FilterSetID: filterSetID,
@@ -1695,6 +1694,9 @@ func (s *Sequencer) reportFilterSetID(ctx context.Context) error {
 func (s *Sequencer) startFilterSetReporting() {
 	if s.execEngine.GetFilteringReportRPCClient() == nil {
 		return
+	}
+	if s.addressFilterService == nil {
+		log.Warn("filtering report RPC client is configured but address filtering is not")
 	}
 	interval := s.config().FilterSetReportingInterval
 	s.CallIteratively(func(ctx context.Context) time.Duration {
