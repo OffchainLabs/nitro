@@ -34,7 +34,8 @@ jobs:
           cd /tmp
           git clone --branch v1.16.2 --depth 1 https://github.com/ethereum/go-ethereum.git
           cd go-ethereum
-          go build -o /usr/local/bin/geth ./cmd/geth
+          go build -o geth ./cmd/geth
+          sudo install -m 0755 geth /usr/local/bin/geth
 
       - name: Setup emsdk
         uses: emscripten-core/setup-emsdk@4528d102f7230f0e7b276855c01ea1159be0e984  # v16
