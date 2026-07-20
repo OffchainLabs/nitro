@@ -1674,8 +1674,10 @@ func (s *Sequencer) reportFilterSetID(ctx context.Context, rpcClient *FilteringR
 	}
 	filterSetID := s.addressFilterService.CurrentFilterSetID()
 	if filterSetID == uuid.Nil {
-		log.Info("skipping filter-set id report: no id loaded yet")
-		return nil
+		// When address filtering is set, the node blocks on the initial S3
+		// hash-list download during initialization (AddressFilterService.Initialize),
+		// so a running sequencer should always have a filter-set id loaded.
+		return errors.New("no filter-set id loaded yet")
 	}
 	_, err := rpcClient.ReportCurrentFilterSetID(&addressfilter.FilterSetIDReport{
 		FilterSetID: filterSetID,
