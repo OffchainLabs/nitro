@@ -6,7 +6,6 @@ package httpclient
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,11 +17,7 @@ import (
 
 const errorBodyLimit = 1024
 
-func PostJSON(ctx context.Context, client *http.Client, url string, v any, beforeSend func(req *http.Request, body []byte)) error {
-	body, err := json.Marshal(v)
-	if err != nil {
-		return fmt.Errorf("marshal body: %w", err)
-	}
+func PostJSON(ctx context.Context, client *http.Client, url string, body []byte, beforeSend func(req *http.Request, body []byte)) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("build request to %s: %w", url, err)

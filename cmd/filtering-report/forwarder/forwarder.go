@@ -255,5 +255,5 @@ func (r *Forwarder) sendToPoisonQueue(ctx context.Context, msg sqstypes.Message,
 }
 
 func (r *Forwarder) forwardToEndpoint(ctx context.Context, reportJSON string) error {
-	return httpclient.PostJSON(ctx, r.httpClient, r.config.ExternalEndpoint.URL, json.RawMessage(reportJSON), r.signer.SignHTTPRequest)
+	return httpclient.PostJSON(ctx, r.httpClient, r.config.ExternalEndpoint.URL, []byte(reportJSON), r.signer.SignHTTPRequest)
 }
