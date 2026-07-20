@@ -1207,6 +1207,7 @@ dependencies = [
  "alloy-rlp",
  "arb-consensus-db",
  "arb-mel",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

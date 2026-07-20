@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 alloy-primitives = { workspace = true, features = ["rlp"] }
 alloy-rlp = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
 
 arb-consensus-db.workspace = true
 arb-mel.workspace = true

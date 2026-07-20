@@ -1,6 +1,6 @@
 use alloy_primitives::B256;
 use arb_consensus_db::{
-    ConsensusDb, ConsensusDbBatch, ConsensusDbError, Result,
+    ConsensusDb, ConsensusDbBatch, ConsensusDbError,
     codecs::rlp::Rlp,
     kv,
     schema::{
@@ -11,6 +11,31 @@ use arb_consensus_db::{
 use arb_mel::MelState;
 
 pub mod schema;
+
+/// Errors returned by [`MelDb`] operations.
+#[derive(Debug, thiserror::Error)]
+pub enum MelDbError {
+    /// An error from the underlying consensus DB (read/write/decode). Consensus-DB errors
+    /// convert into this variant automatically, so `?` on those calls just works.
+    #[error(transparent)]
+    ConsensusDb(#[from] ConsensusDbError),
+
+    /// A save was asked to store more records than the MEL state accounts for: the state's
+    /// count is below the number of records queued. Mirrors nitro's `SaveBatchMetas` /
+    /// `SaveDelayedMessages` guard (there a returned error, here likewise) and signals that
+    /// `state` was not advanced to cover the records being written.
+    #[error("mel state count {count} is lower than the {queued} records queued to save")]
+    InconsistentState { count: u64, queued: usize },
+
+    /// The `_initialMelStateBlockNum` anchor points at a block with no stored MEL state,
+    /// so the legacy/MEL boundary cannot be resolved. Indicates a corrupt or partially
+    /// written database.
+    #[error("initial mel state anchor points at block {block_num}, which has no stored state")]
+    InitialAnchorMissingState { block_num: u64 },
+}
+
+/// Result alias defaulting the error type to [`MelDbError`].
+pub type Result<T, E = MelDbError> = std::result::Result<T, E>;
 
 /// The legacy/MEL boundary, resolved from the initial-state anchor: a position below the
 /// relevant count reads the legacy prefix, at or above it reads the MEL prefix.
@@ -39,7 +64,7 @@ impl<S: kv::KvStore> MelDb<S> {
             Some(block_num) => {
                 let state = consensus_db
                     .get(schema::MelStateAt(block_num))?
-                    .ok_or(ConsensusDbError::InvalidStoredValue)?
+                    .ok_or(MelDbError::InitialAnchorMissingState { block_num })?
                     .0;
                 Some(Boundary {
                     batch_count: state.batch_count,
@@ -64,7 +89,7 @@ impl<S: kv::KvStore> MelDb<S> {
     /// Read the parent-chain block number of the current head MEL state, or `None` if no head has
     /// been set (mirrors nitro's `GetHeadMelStateBlockNum`; the MEL runner uses this to resume).
     pub fn head_state_block_num(&self) -> Result<Option<u64>> {
-        self.consensus_db.get(schema::HeadMelStateBlockNum)
+        Ok(self.consensus_db.get(schema::HeadMelStateBlockNum)?)
     }
 
     /// Read the current head MEL state, following the `_headMelStateBlockNum` pointer to its `l`
@@ -84,7 +109,7 @@ impl<S: kv::KvStore> MelDb<S> {
         let mut batch = ConsensusDbBatch::new();
         batch.put(schema::MelStateAt(block_num), &Rlp(state.clone()));
         batch.put(schema::HeadMelStateBlockNum, &block_num);
-        self.consensus_db.write_batch(batch)
+        Ok(self.consensus_db.write_batch(batch)?)
     }
 
     /// Establish the legacy/MEL boundary at `initial_state`: atomically writes it under `l`, sets
@@ -109,8 +134,8 @@ impl<S: kv::KvStore> MelDb<S> {
     /// the last `messages.len()` of `state.delayed_messages_seen`, so the first is written at
     /// `delayed_messages_seen - messages.len()` (mirrors nitro's `SaveDelayedMessages`).
     ///
-    /// Panics if `state.delayed_messages_seen < messages.len()`, a caller invariant violation
-    /// (the state was not advanced to cover these messages) that cannot occur in correct flow.
+    /// Returns [`MelDbError::InconsistentState`] if `state.delayed_messages_seen < messages.len()`,
+    /// i.e. the state was not advanced to cover these messages.
     pub fn save_delayed_messages(
         &mut self,
         state: &MelState,
@@ -119,30 +144,36 @@ impl<S: kv::KvStore> MelDb<S> {
         let first = state
             .delayed_messages_seen
             .checked_sub(messages.len() as u64)
-            .expect("delayed_messages_seen < batch len: state and messages are inconsistent");
+            .ok_or(MelDbError::InconsistentState {
+                count: state.delayed_messages_seen,
+                queued: messages.len(),
+            })?;
         let mut batch = ConsensusDbBatch::new();
         for (i, message) in messages.iter().enumerate() {
             batch.put(schema::MelDelayedMessageAt(first + i as u64), message);
         }
-        self.consensus_db.write_batch(batch)
+        Ok(self.consensus_db.write_batch(batch)?)
     }
 
     /// Save a run of newly-computed batch metadata under the MEL `q` prefix, atomically. They are
     /// the last `metas.len()` of `state.batch_count`, so the first is written at
     /// `batch_count - metas.len()` (mirrors nitro's `SaveBatchMetas`).
     ///
-    /// Panics if `state.batch_count < metas.len()`, a caller invariant violation that cannot
-    /// occur in correct flow.
+    /// Returns [`MelDbError::InconsistentState`] if `state.batch_count < metas.len()`, i.e. the
+    /// state was not advanced to cover these batch metas.
     pub fn save_batch_metas(&mut self, state: &MelState, metas: &[BatchMetadata]) -> Result<()> {
         let first = state
             .batch_count
             .checked_sub(metas.len() as u64)
-            .expect("batch_count < metas len: state and batch metas are inconsistent");
+            .ok_or(MelDbError::InconsistentState {
+                count: state.batch_count,
+                queued: metas.len(),
+            })?;
         let mut batch = ConsensusDbBatch::new();
         for (i, meta) in metas.iter().enumerate() {
             batch.put(schema::MelBatchMetaAt(first + i as u64), meta);
         }
-        self.consensus_db.write_batch(batch)
+        Ok(self.consensus_db.write_batch(batch)?)
     }
 
     /// Read a split key, passing the batch boundary to [`schema::mel_key`], which selects the
@@ -151,8 +182,9 @@ impl<S: kv::KvStore> MelDb<S> {
     /// reconstruction rather than a prefix swap.
     pub fn get<K: schema::MelDbKey>(&self, key: K) -> Result<Option<K::StoredValue>> {
         let boundary = self.initial.map_or(0, |b| b.batch_count);
-        self.consensus_db
-            .get_at_key(&schema::mel_key(&key, boundary))
+        Ok(self
+            .consensus_db
+            .get_at_key(&schema::mel_key(&key, boundary))?)
     }
 
     /// Read a delayed message by its delayed index, dispatching across the legacy/MEL boundary.
@@ -164,7 +196,7 @@ impl<S: kv::KvStore> MelDb<S> {
     /// index's accumulator. The legacy format did not store `block_hash`, so it is left zero.
     pub fn delayed_message(&self, index: u64) -> Result<Option<schema::DelayedInboxMessage>> {
         if self.initial.is_none_or(|b| index >= b.delayed_count) {
-            return self.consensus_db.get(schema::MelDelayedMessageAt(index));
+            return Ok(self.consensus_db.get(schema::MelDelayedMessageAt(index))?);
         }
         let Some((message, parent_chain_block_number)) =
             self.legacy_message_and_parent_block(index)?
@@ -214,10 +246,11 @@ impl<S: kv::KvStore> MelDb<S> {
         if let Some(record) = self.consensus_db.get(RlpDelayedMessageAt(index))? {
             return Ok(record.accumulator);
         }
-        self.consensus_db
+        Ok(self
+            .consensus_db
             .get(LegacyDelayedMessageAt(index))?
             .map(|record| record.accumulator)
-            .ok_or(ConsensusDbError::InvalidStoredValue)
+            .ok_or(ConsensusDbError::InvalidStoredValue)?)
     }
 }
 
@@ -516,18 +549,125 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "batch_count < metas len")]
     fn save_batch_metas_guards_against_count_mismatch() {
         let mut db = mel_db();
-        db.save_batch_metas(&mel_state(0, 1, 0), &[batch_meta(0), batch_meta(1)])
-            .unwrap();
+        // state.batch_count (1) < metas queued (2): the state does not cover these writes.
+        assert!(matches!(
+            db.save_batch_metas(&mel_state(0, 1, 0), &[batch_meta(0), batch_meta(1)]),
+            Err(MelDbError::InconsistentState {
+                count: 1,
+                queued: 2
+            })
+        ));
     }
 
     #[test]
-    #[should_panic(expected = "delayed_messages_seen < batch len")]
     fn save_delayed_messages_guards_against_count_mismatch() {
         let mut db = mel_db();
-        db.save_delayed_messages(&mel_state(0, 0, 1), &[delayed(0), delayed(1)])
+        // state.delayed_messages_seen (1) < messages queued (2).
+        assert!(matches!(
+            db.save_delayed_messages(&mel_state(0, 0, 1), &[delayed(0), delayed(1)]),
+            Err(MelDbError::InconsistentState {
+                count: 1,
+                queued: 2
+            })
+        ));
+    }
+
+    #[test]
+    fn legacy_delayed_prefers_e_over_d_for_message_and_accumulator() {
+        // At each legacy index, seed both the RLP `e` record and the older wire `d` record with
+        // *different* contents, then assert every read resolves to the `e` side.
+        let mut cdb = ConsensusDb::open(MemoryKvStore::new()).unwrap();
+        cdb.put(schema::InitialMelStateBlockNum, &50u64).unwrap();
+        cdb.put(schema::MelStateAt(50), &Rlp(mel_state(50, 0, 2)))
             .unwrap();
+        // index 0: e and d disagree on both message and accumulator.
+        cdb.put(
+            RlpDelayedMessageAt(0),
+            &RlpDelayedMessage {
+                accumulator: B256::repeat_byte(0xE0),
+                message: l1_msg(1),
+            },
+        )
+        .unwrap();
+        cdb.put(
+            LegacyDelayedMessageAt(0),
+            &LegacyDelayedMessage {
+                accumulator: B256::repeat_byte(0xD0),
+                message: l1_msg(5),
+            },
+        )
+        .unwrap();
+        // index 1: e only, so its before_inbox_acc must come from index 0's `e` accumulator.
+        cdb.put(
+            RlpDelayedMessageAt(1),
+            &RlpDelayedMessage {
+                accumulator: B256::repeat_byte(0xE1),
+                message: l1_msg(2),
+            },
+        )
+        .unwrap();
+        let db = MelDb::open(cdb).unwrap();
+
+        // Message resolution prefers `e`: index 0 is l1_msg(1) (the `e` message), not l1_msg(5).
+        let got0 = db.delayed_message(0).unwrap().expect("index 0");
+        assert_eq!(alloy_rlp::encode(&got0.message), alloy_rlp::encode(l1_msg(1)));
+        // Accumulator resolution prefers `e`: index 1's before_inbox_acc is index 0's `e`
+        // accumulator (0xE0), not the `d` one (0xD0).
+        let got1 = db.delayed_message(1).unwrap().expect("index 1");
+        assert_eq!(got1.before_inbox_acc, B256::repeat_byte(0xE0));
+    }
+
+    #[test]
+    fn delayed_messages_dispatch_across_boundary_in_one_db() {
+        // Boundary at delayed_count 2: indices 0..2 are legacy, 2.. are MEL `y`.
+        let mut cdb = ConsensusDb::open(MemoryKvStore::new()).unwrap();
+        cdb.put(schema::InitialMelStateBlockNum, &50u64).unwrap();
+        cdb.put(schema::MelStateAt(50), &Rlp(mel_state(50, 0, 2)))
+            .unwrap();
+        // Two legacy `e` records below the boundary (index 1 needs index 0 for before_inbox_acc).
+        cdb.put(
+            RlpDelayedMessageAt(0),
+            &RlpDelayedMessage {
+                accumulator: B256::repeat_byte(0xA0),
+                message: l1_msg(0),
+            },
+        )
+        .unwrap();
+        cdb.put(
+            RlpDelayedMessageAt(1),
+            &RlpDelayedMessage {
+                accumulator: B256::repeat_byte(0xA1),
+                message: l1_msg(1),
+            },
+        )
+        .unwrap();
+        let mut db = MelDb::open(cdb).unwrap();
+
+        // Append a MEL-side message at index 2 (state advanced to 3 total, one queued).
+        let mel_msg = delayed(9);
+        db.save_delayed_messages(&mel_state(60, 0, 3), std::slice::from_ref(&mel_msg))
+            .unwrap();
+
+        // Below the boundary: reconstructed legacy message, so block_hash is zero.
+        let legacy = db.delayed_message(1).unwrap().expect("legacy index 1");
+        assert_eq!(legacy.before_inbox_acc, B256::repeat_byte(0xA0));
+        assert_eq!(legacy.block_hash, B256::ZERO);
+        // At/above the boundary: the full MEL record round-trips, block_hash preserved.
+        let mel = db.delayed_message(2).unwrap().expect("mel index 2");
+        assert_eq!(alloy_rlp::encode(&mel), alloy_rlp::encode(&mel_msg));
+        assert_ne!(mel.block_hash, B256::ZERO);
+    }
+
+    #[test]
+    fn open_errors_when_anchor_points_at_missing_state() {
+        // Anchor is set but the `l` record it names was never written: a corrupt DB.
+        let mut cdb = ConsensusDb::open(MemoryKvStore::new()).unwrap();
+        cdb.put(schema::InitialMelStateBlockNum, &50u64).unwrap();
+        assert!(matches!(
+            MelDb::open(cdb),
+            Err(MelDbError::InitialAnchorMissingState { block_num: 50 })
+        ));
     }
 }
