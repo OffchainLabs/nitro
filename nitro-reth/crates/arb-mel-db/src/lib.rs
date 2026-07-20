@@ -162,13 +162,12 @@ impl<S: kv::KvStore> MelDb<S> {
     /// Returns [`MelDbError::InconsistentState`] if `state.batch_count < metas.len()`, i.e. the
     /// state was not advanced to cover these batch metas.
     pub fn save_batch_metas(&mut self, state: &MelState, metas: &[BatchMetadata]) -> Result<()> {
-        let first = state
-            .batch_count
-            .checked_sub(metas.len() as u64)
-            .ok_or(MelDbError::InconsistentState {
+        let first = state.batch_count.checked_sub(metas.len() as u64).ok_or(
+            MelDbError::InconsistentState {
                 count: state.batch_count,
                 queued: metas.len(),
-            })?;
+            },
+        )?;
         let mut batch = ConsensusDbBatch::new();
         for (i, meta) in metas.iter().enumerate() {
             batch.put(schema::MelBatchMetaAt(first + i as u64), meta);
@@ -612,7 +611,10 @@ mod tests {
 
         // Message resolution prefers `e`: index 0 is l1_msg(1) (the `e` message), not l1_msg(5).
         let got0 = db.delayed_message(0).unwrap().expect("index 0");
-        assert_eq!(alloy_rlp::encode(&got0.message), alloy_rlp::encode(l1_msg(1)));
+        assert_eq!(
+            alloy_rlp::encode(&got0.message),
+            alloy_rlp::encode(l1_msg(1))
+        );
         // Accumulator resolution prefers `e`: index 1's before_inbox_acc is index 0's `e`
         // accumulator (0xE0), not the `d` one (0xD0).
         let got1 = db.delayed_message(1).unwrap().expect("index 1");
