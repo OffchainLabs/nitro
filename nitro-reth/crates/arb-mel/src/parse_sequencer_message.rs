@@ -176,9 +176,8 @@ fn parse_segments(decompressed: &[u8]) -> Vec<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
-
     use super::*;
+    use crate::test_utils::brotli_compress;
 
     /// Builds the fixed 40-byte batch header followed by `payload`.
     fn frame(header: [u64; 5], payload: &[u8]) -> Vec<u8> {
@@ -198,18 +197,6 @@ mod tests {
             out.extend_from_slice(&alloy_rlp::encode(*seg));
         }
         out
-    }
-
-    fn brotli_compress(raw: &[u8]) -> Vec<u8> {
-        // Writing to an in-memory buffer is infallible; `expect` only documents
-        // that fixture setup succeeded and never guards code under test.
-        let mut compressed = Vec::new();
-        {
-            let mut c = brotli::CompressorWriter::new(&mut compressed, 4096, 9, 22);
-            c.write_all(raw).expect("brotli fixture write");
-            c.flush().expect("brotli fixture flush");
-        }
-        compressed
     }
 
     #[test]

@@ -234,4 +234,37 @@ mod tests {
         let result = parse_batches_from_block(&state(), &Header::default(), &MockTx, &logs);
         assert!(matches!(result, Err(MelError::NonU64("sequence number"))));
     }
+
+    #[test]
+    fn propagates_logs_fetcher_error() {
+        let logs = MockLogs {
+            fail: true,
+            ..Default::default()
+        };
+        let result = parse_batches_from_block(&state(), &Header::default(), &MockTx, &logs);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn propagates_decode_error() {
+        let malformed = rpc_log(
+            target(),
+            LogData::new_unchecked(
+                vec![SequencerBatchDelivered::SIGNATURE_HASH],
+                Default::default(),
+            ),
+        );
+        let logs = MockLogs {
+            block_logs: vec![malformed],
+            ..Default::default()
+        };
+        let result = parse_batches_from_block(&state(), &Header::default(), &MockTx, &logs);
+        assert!(matches!(
+            result,
+            Err(MelError::AbiDecode {
+                event: "SequencerBatchDelivered",
+                ..
+            })
+        ));
+    }
 }

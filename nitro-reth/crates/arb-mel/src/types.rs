@@ -1,4 +1,4 @@
-use alloy_primitives::{Address, B256};
+use alloy_primitives::{Address, B256, keccak256};
 use arbos::arbos_types::{L1IncomingMessage, MessageWithMetadata};
 
 use crate::{DelayedMessageDB, MelError};
@@ -12,41 +12,85 @@ pub struct MelState {
     pub parent_chain_block_number: u64,
     pub batch_count: u64,
     pub msg_count: u64,
+    pub local_msg_accumulator: B256,
     pub delayed_messages_seen: u64,
     pub delayed_messages_read: u64,
+    pub delayed_message_inbox_acc: B256,
+    pub delayed_message_outbox_acc: B256,
     pub delayed_message_posting_target_address: Address,
     pub batch_posting_target_address: Address,
     pub version: u16,
 }
 
+fn chain_accumulator(prev: B256, msg_hash: B256) -> B256 {
+    let mut preimage = [0u8; 64];
+    preimage[..32].copy_from_slice(prev.as_slice());
+    preimage[32..].copy_from_slice(msg_hash.as_slice());
+    keccak256(preimage)
+}
+
 impl MelState {
-    /// TODO: not yet implemented. Will fold `message` into the delayed-inbox
-    /// accumulator and advance `delayed_messages_read`.
-    pub fn accumulate_delayed_message(&mut self, _message: &DelayedInboxMessage) -> MelResult<()> {
+    pub fn accumulate_delayed_message(&mut self, message: &DelayedInboxMessage) -> MelResult<()> {
+        self.delayed_message_inbox_acc =
+            chain_accumulator(self.delayed_message_inbox_acc, message.hash());
         Ok(())
     }
-    /// TODO: not yet implemented. Will fold `message` into the message
-    /// accumulator that seeds the L2 chain.
-    pub fn accumulate_message(&mut self, _message: &MessageWithMetadata) -> MelResult<()> {
+
+    pub fn accumulate_message(&mut self, message: &MessageWithMetadata) -> MelResult<()> {
+        self.local_msg_accumulator = chain_accumulator(self.local_msg_accumulator, message.hash());
         Ok(())
     }
-    /// TODO: not yet implemented. Will drain any unread delayed messages into
-    /// the inbox accumulator when transitioning MEL versions.
+
     pub fn move_unread_delayed_messages_to_inbox_accumulator(
         &mut self,
-        _delayed_msg_db: &impl DelayedMessageDB,
+        delayed_msg_db: &impl DelayedMessageDB,
     ) -> MelResult<()> {
+        let mut unread = Vec::new();
+        for i in self.delayed_messages_read..self.delayed_messages_seen {
+            let msg = delayed_msg_db
+                .read_delayed_message(self, i)
+                .map_err(|e| MelError::DelayedAccumulatorCreation(e.to_string()))?
+                .ok_or_else(|| {
+                    MelError::DelayedAccumulatorCreation(format!(
+                        "no delayed message in db at index {i}"
+                    ))
+                })?;
+            unread.push(msg);
+        }
+        if self.delayed_message_inbox_acc != B256::ZERO
+            || self.delayed_message_outbox_acc != B256::ZERO
+        {
+            return Err(MelError::NonZeroDelayedAccumulator {
+                inbox: self.delayed_message_inbox_acc,
+                outbox: self.delayed_message_outbox_acc,
+            });
+        }
+        for msg in &unread {
+            self.accumulate_delayed_message(msg)?;
+        }
         Ok(())
     }
 }
 
 /// A delayed inbox message reconstructed from a `MessageDelivered` event and
 /// its corresponding inbox-message data.
+#[derive(Clone)]
 pub struct DelayedInboxMessage {
     pub block_hash: B256,
     pub before_inbox_acc: B256,
     pub message: L1IncomingMessage,
     pub parent_chain_block_number: u64,
+}
+
+impl DelayedInboxMessage {
+    pub fn hash(&self) -> B256 {
+        let mut data = Vec::new();
+        data.extend_from_slice(self.block_hash.as_slice());
+        data.extend_from_slice(self.before_inbox_acc.as_slice());
+        data.extend_from_slice(&self.message.serialize());
+        data.extend_from_slice(&self.parent_chain_block_number.to_be_bytes());
+        keccak256(&data)
+    }
 }
 
 /// Time bounds for a sequencer batch.
