@@ -100,3 +100,23 @@ pub struct InitialMelStateBlockNum;
 
 fixed_key!(HeadMelStateBlockNum[HEAD_MEL_STATE_BLOCK_NUM_KEY] => u64);
 fixed_key!(InitialMelStateBlockNum[INITIAL_MEL_STATE_BLOCK_NUM_KEY] => u64);
+
+#[cfg(test)]
+mod tests {
+    use arb_consensus_db::schema::key;
+
+    use super::*;
+
+    /// Each positional MEL key is wired to its prefix and lays out as
+    /// `prefix ++ big-endian(position)` (byte-compatible with nitro's `arbitrumdata`).
+    #[test]
+    fn mel_keys_lay_out_as_prefix_plus_big_endian_position() {
+        let pos = 1u64.to_be_bytes();
+        assert_eq!(key(&MelStateAt(1)), [b"l".as_slice(), &pos].concat());
+        assert_eq!(
+            key(&MelDelayedMessageAt(1)),
+            [b"y".as_slice(), &pos].concat()
+        );
+        assert_eq!(key(&MelBatchMetaAt(1)), [b"q".as_slice(), &pos].concat());
+    }
+}

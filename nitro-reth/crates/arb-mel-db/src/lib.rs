@@ -220,3 +220,314 @@ impl<S: kv::KvStore> MelDb<S> {
             .ok_or(ConsensusDbError::InvalidStoredValue)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::{Address, U256};
+    use arb_consensus_db::{
+        codecs::rlp::NilList,
+        kv::MemoryKvStore,
+        schema::{
+            BatchMetadataAt, L1IncomingMessageHeader, LegacyDelayedMessage, ParentChainBlock,
+            RlpDelayedMessage,
+        },
+    };
+
+    use super::*;
+
+    fn mel_db() -> MelDb<MemoryKvStore> {
+        MelDb::open(ConsensusDb::open(MemoryKvStore::new()).unwrap()).unwrap()
+    }
+
+    fn mel_state(block: u64, batch_count: u64, delayed_seen: u64) -> MelState {
+        MelState {
+            parent_chain_block_number: block,
+            batch_count,
+            delayed_messages_seen: delayed_seen,
+            ..Default::default()
+        }
+    }
+
+    fn l1_msg(kind: u8) -> L1IncomingMessage {
+        L1IncomingMessage {
+            header: L1IncomingMessageHeader {
+                kind,
+                poster: Address::repeat_byte(kind),
+                block_number: 100 + kind as u64,
+                timestamp: 200,
+                request_id: NilList(Some(B256::repeat_byte(kind))),
+                l1_base_fee: U256::from(300),
+            },
+            l2msg: vec![kind, kind, kind].into(),
+            legacy_batch_gas_cost: None,
+            batch_data_stats: None,
+        }
+    }
+
+    fn delayed(kind: u8) -> schema::DelayedInboxMessage {
+        schema::DelayedInboxMessage {
+            block_hash: B256::repeat_byte(0x10 + kind),
+            before_inbox_acc: B256::repeat_byte(0x20 + kind),
+            message: l1_msg(kind),
+            parent_chain_block_number: 400 + kind as u64,
+        }
+    }
+
+    fn batch_meta(n: u8) -> BatchMetadata {
+        BatchMetadata {
+            accumulator: B256::repeat_byte(n),
+            message_count: n as u64 * 10,
+            delayed_message_count: n as u64,
+            parent_chain_block: n as u64 * 100,
+        }
+    }
+
+    #[test]
+    fn fresh_db_reads_are_none() {
+        let db = mel_db();
+        assert!(db.head_state().unwrap().is_none());
+        assert!(db.head_state_block_num().unwrap().is_none());
+        assert!(db.state(0).unwrap().is_none());
+        assert!(db.delayed_message(0).unwrap().is_none());
+        assert!(db.get(BatchMetadataAt(0)).unwrap().is_none());
+    }
+
+    #[test]
+    fn save_state_roundtrips_and_sets_head() {
+        let mut db = mel_db();
+        let s = mel_state(50, 3, 2);
+        db.save_state(&s).unwrap();
+
+        assert_eq!(db.head_state_block_num().unwrap(), Some(50));
+        assert_eq!(
+            alloy_rlp::encode(db.head_state().unwrap().unwrap()),
+            alloy_rlp::encode(&s)
+        );
+        assert_eq!(
+            alloy_rlp::encode(db.state(50).unwrap().unwrap()),
+            alloy_rlp::encode(&s)
+        );
+        assert!(db.state(51).unwrap().is_none());
+    }
+
+    #[test]
+    fn delayed_messages_roundtrip_on_mel_side() {
+        let mut db = mel_db();
+        let msgs = [delayed(0), delayed(1), delayed(2)];
+        db.save_delayed_messages(&mel_state(0, 0, 3), &msgs)
+            .unwrap();
+
+        for (i, msg) in msgs.iter().enumerate() {
+            let got = db.delayed_message(i as u64).unwrap().expect("delayed");
+            assert_eq!(alloy_rlp::encode(&got), alloy_rlp::encode(msg));
+        }
+        assert!(db.delayed_message(3).unwrap().is_none());
+    }
+
+    #[test]
+    fn batch_metas_roundtrip_on_mel_side() {
+        let mut db = mel_db();
+        let metas = [batch_meta(0), batch_meta(1)];
+        db.save_batch_metas(&mel_state(0, 2, 0), &metas).unwrap();
+
+        for (i, meta) in metas.iter().enumerate() {
+            let got = db.get(BatchMetadataAt(i as u64)).unwrap().expect("meta");
+            assert_eq!(alloy_rlp::encode(&got), alloy_rlp::encode(meta));
+        }
+        assert!(db.get(BatchMetadataAt(2)).unwrap().is_none());
+    }
+
+    #[test]
+    fn save_initial_mel_state_sets_boundary() {
+        // Seed a legacy `s[0]` record, then open with no anchor yet.
+        let mut cdb = ConsensusDb::open(MemoryKvStore::new()).unwrap();
+        cdb.put(BatchMetadataAt(0), &batch_meta(7)).unwrap();
+        let mut db = MelDb::open(cdb).unwrap();
+
+        // No boundary yet: seq 0 routes to MEL `q` (empty), the legacy `s[0]` is ignored.
+        assert!(db.get(BatchMetadataAt(0)).unwrap().is_none());
+
+        // Setting the initial state at batch_count 1 flips seq 0 below the boundary -> legacy `s`.
+        db.save_initial_mel_state(&mel_state(50, 1, 1)).unwrap();
+        assert_eq!(
+            alloy_rlp::encode(db.get(BatchMetadataAt(0)).unwrap().expect("legacy meta")),
+            alloy_rlp::encode(batch_meta(7))
+        );
+
+        // seq 1 is at the boundary -> MEL `q`.
+        db.save_batch_metas(&mel_state(0, 2, 0), &[batch_meta(1)])
+            .unwrap();
+        assert_eq!(
+            alloy_rlp::encode(db.get(BatchMetadataAt(1)).unwrap().expect("mel meta")),
+            alloy_rlp::encode(batch_meta(1))
+        );
+    }
+
+    #[test]
+    fn open_loads_boundary_from_disk() {
+        let mut cdb = ConsensusDb::open(MemoryKvStore::new()).unwrap();
+        cdb.put(schema::InitialMelStateBlockNum, &50u64).unwrap();
+        cdb.put(schema::MelStateAt(50), &Rlp(mel_state(50, 1, 1)))
+            .unwrap();
+        cdb.put(BatchMetadataAt(0), &batch_meta(7)).unwrap(); // legacy `s[0]`
+        let db = MelDb::open(cdb).unwrap();
+
+        // Boundary was loaded from the anchor: seq 0 below it -> legacy `s`, seq 1 -> empty MEL
+        // `q`.
+        assert_eq!(
+            alloy_rlp::encode(db.get(BatchMetadataAt(0)).unwrap().expect("legacy meta")),
+            alloy_rlp::encode(batch_meta(7))
+        );
+        assert!(db.get(BatchMetadataAt(1)).unwrap().is_none());
+    }
+
+    #[test]
+    fn reconstructs_legacy_delayed_message() {
+        let mut cdb = ConsensusDb::open(MemoryKvStore::new()).unwrap();
+        cdb.put(schema::InitialMelStateBlockNum, &50u64).unwrap();
+        cdb.put(schema::MelStateAt(50), &Rlp(mel_state(50, 0, 1)))
+            .unwrap();
+        cdb.put(
+            RlpDelayedMessageAt(0),
+            &RlpDelayedMessage {
+                accumulator: B256::repeat_byte(0xEE),
+                message: l1_msg(0),
+            },
+        )
+        .unwrap();
+        cdb.put(ParentChainBlockAt(0), &ParentChainBlock(4242))
+            .unwrap();
+        let db = MelDb::open(cdb).unwrap();
+
+        let got = db.delayed_message(0).unwrap().expect("reconstructed");
+        assert_eq!(got.block_hash, B256::ZERO); // legacy did not store it
+        assert_eq!(got.before_inbox_acc, B256::ZERO); // index 0 -> zero
+        assert_eq!(got.parent_chain_block_number, 4242); // from `p`
+        assert_eq!(
+            alloy_rlp::encode(&got.message),
+            alloy_rlp::encode(l1_msg(0))
+        );
+    }
+
+    #[test]
+    fn reconstructs_legacy_delayed_at_nonzero_index() {
+        let mut cdb = ConsensusDb::open(MemoryKvStore::new()).unwrap();
+        cdb.put(schema::InitialMelStateBlockNum, &50u64).unwrap();
+        cdb.put(schema::MelStateAt(50), &Rlp(mel_state(50, 0, 2)))
+            .unwrap();
+        cdb.put(
+            RlpDelayedMessageAt(0),
+            &RlpDelayedMessage {
+                accumulator: B256::repeat_byte(0xA0),
+                message: l1_msg(0),
+            },
+        )
+        .unwrap();
+        cdb.put(
+            RlpDelayedMessageAt(1),
+            &RlpDelayedMessage {
+                accumulator: B256::repeat_byte(0xA1),
+                message: l1_msg(1),
+            },
+        )
+        .unwrap();
+        cdb.put(ParentChainBlockAt(1), &ParentChainBlock(777))
+            .unwrap();
+        let db = MelDb::open(cdb).unwrap();
+
+        let got = db.delayed_message(1).unwrap().expect("reconstructed");
+        // before_inbox_acc is the *previous* record's accumulator.
+        assert_eq!(got.before_inbox_acc, B256::repeat_byte(0xA0));
+        assert_eq!(got.parent_chain_block_number, 777); // from `p[1]`
+        assert_eq!(got.block_hash, B256::ZERO);
+        assert_eq!(
+            alloy_rlp::encode(&got.message),
+            alloy_rlp::encode(l1_msg(1))
+        );
+    }
+
+    #[test]
+    fn reconstructs_legacy_delayed_from_d_prefix() {
+        let mut cdb = ConsensusDb::open(MemoryKvStore::new()).unwrap();
+        cdb.put(schema::InitialMelStateBlockNum, &50u64).unwrap();
+        cdb.put(schema::MelStateAt(50), &Rlp(mel_state(50, 0, 1)))
+            .unwrap();
+        // Only the older `d` (wire-format) record exists; no `e`, no `p`.
+        cdb.put(
+            LegacyDelayedMessageAt(0),
+            &LegacyDelayedMessage {
+                accumulator: B256::repeat_byte(0xDD),
+                message: l1_msg(5),
+            },
+        )
+        .unwrap();
+        let db = MelDb::open(cdb).unwrap();
+
+        let got = db.delayed_message(0).unwrap().expect("reconstructed");
+        // `d` has no separate `p`, so the parent-chain block is the header's block number.
+        assert_eq!(got.parent_chain_block_number, l1_msg(5).header.block_number);
+        assert_eq!(
+            alloy_rlp::encode(&got.message),
+            alloy_rlp::encode(l1_msg(5))
+        );
+    }
+
+    #[test]
+    fn reconstructs_legacy_delayed_without_parent_chain_block() {
+        let mut cdb = ConsensusDb::open(MemoryKvStore::new()).unwrap();
+        cdb.put(schema::InitialMelStateBlockNum, &50u64).unwrap();
+        cdb.put(schema::MelStateAt(50), &Rlp(mel_state(50, 0, 1)))
+            .unwrap();
+        // `e` present but no `p`: parent-chain block falls back to the header block number.
+        cdb.put(
+            RlpDelayedMessageAt(0),
+            &RlpDelayedMessage {
+                accumulator: B256::repeat_byte(0xEE),
+                message: l1_msg(6),
+            },
+        )
+        .unwrap();
+        let db = MelDb::open(cdb).unwrap();
+
+        let got = db.delayed_message(0).unwrap().expect("reconstructed");
+        assert_eq!(got.parent_chain_block_number, l1_msg(6).header.block_number);
+    }
+
+    #[test]
+    fn legacy_delayed_reconstruction_errors_on_missing_prev_record() {
+        let mut cdb = ConsensusDb::open(MemoryKvStore::new()).unwrap();
+        cdb.put(schema::InitialMelStateBlockNum, &50u64).unwrap();
+        cdb.put(schema::MelStateAt(50), &Rlp(mel_state(50, 0, 2)))
+            .unwrap();
+        // index 1 is present, but index 0 (needed for before_inbox_acc) is missing.
+        cdb.put(
+            RlpDelayedMessageAt(1),
+            &RlpDelayedMessage {
+                accumulator: B256::repeat_byte(0xA1),
+                message: l1_msg(1),
+            },
+        )
+        .unwrap();
+        cdb.put(ParentChainBlockAt(1), &ParentChainBlock(777))
+            .unwrap();
+        let db = MelDb::open(cdb).unwrap();
+
+        assert!(db.delayed_message(1).is_err());
+    }
+
+    #[test]
+    #[should_panic(expected = "batch_count < metas len")]
+    fn save_batch_metas_guards_against_count_mismatch() {
+        let mut db = mel_db();
+        db.save_batch_metas(&mel_state(0, 1, 0), &[batch_meta(0), batch_meta(1)])
+            .unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "delayed_messages_seen < batch len")]
+    fn save_delayed_messages_guards_against_count_mismatch() {
+        let mut db = mel_db();
+        db.save_delayed_messages(&mel_state(0, 0, 1), &[delayed(0), delayed(1)])
+            .unwrap();
+    }
+}
