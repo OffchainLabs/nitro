@@ -191,7 +191,7 @@ impl<S: kv::KvStore> MelDb<S> {
     /// At or above the boundary it reads the MEL `y` record directly. Below it, it reconstructs a
     /// [`schema::DelayedInboxMessage`] from the pre-MEL records (mirrors nitro's
     /// `legacyFetchDelayedMessage`): the message and its parent-chain block from
-    /// [`Self::legacy_message_and_parent_block`], and `before_inbox_acc` from the previous
+    /// `legacy_message_and_parent_block`, and `before_inbox_acc` from the previous
     /// index's accumulator. The legacy format did not store `block_hash`, so it is left zero.
     pub fn delayed_message(&self, index: u64) -> Result<Option<schema::DelayedInboxMessage>> {
         if self.initial.is_none_or(|b| index >= b.delayed_count) {
