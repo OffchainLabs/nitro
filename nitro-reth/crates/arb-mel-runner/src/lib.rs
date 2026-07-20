@@ -16,19 +16,21 @@
 //! The entry point is [`MessageExtractor`]; [`MessageExtractor::act`] ticks the
 //! FSM once, and [`MessageExtractor::run`] drives it in a loop.
 
-mod batch_counter;
 mod config;
 mod consumer;
 mod database;
 mod extractor;
 mod fsm;
+mod initialize;
+mod process_next_block;
+mod reorg;
+mod save_messages;
 mod types;
 
 // The DA provider is the real `arb-da-provider-client`; re-export for convenience.
 pub use arb_da_provider_client::{DaReaderRegistry, DaReaderSource};
 // Canonical MEL types are owned by `arb-mel`; re-export for convenience.
 pub use arb_mel::{BatchMeta, DelayedInboxMessage, ExtractionOutput, MelState};
-pub use batch_counter::{MockSequencerBatchCountFetcher, SequencerBatchCountFetcher};
 pub use config::MessageExtractionConfig;
 pub use consumer::{MessageConsumer, MockMessageConsumer};
 pub use database::{Database, MockDatabase};

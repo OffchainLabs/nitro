@@ -78,12 +78,10 @@ impl FsmStateKind {
         use FsmStateKind::*;
         match to {
             // `processNextBlock` event
-            ProcessingNextBlock => {
-                matches!(
-                    self,
-                    Start | ProcessingNextBlock | SavingMessages | Reorging
-                )
-            }
+            ProcessingNextBlock => matches!(
+                self,
+                Start | ProcessingNextBlock | SavingMessages | Reorging
+            ),
             // `reorgToOldBlock` event
             Reorging => matches!(self, Start | ProcessingNextBlock),
             // `saveMessages` event

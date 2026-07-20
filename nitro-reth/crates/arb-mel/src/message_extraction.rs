@@ -19,15 +19,16 @@ pub struct ExtractionOutput {
     pub batch_metas: Vec<BatchMeta>,
 }
 
-pub async fn extract_messages<D, L, T>(
-    input_state: MelState,
+pub async fn extract_messages<R, D, L, T>(
+    input_state: &MelState,
     parent_chain_header: &Header,
-    da_reader_source: &dyn DaReaderSource,
+    da_reader_source: &R,
     delayed_msg_db: &D,
     logs_fetcher: &L,
     tx_fetcher: &T,
 ) -> MelResult<ExtractionOutput>
 where
+    R: DaReaderSource,
     D: DelayedMessageDB,
     L: LogsFetcher,
     T: TxFetcher,
@@ -41,8 +42,7 @@ where
         });
     }
     let mut post_state = input_state.clone();
-    // LocalMsgAccumulator restarts per block: each cloned state begins a fresh
-    // hash chain for the messages it accumulates (mirrors nitro's State.Clone).
+    // LocalMsgAccumulator restarts per block (mirrors nitro's State.Clone).
     post_state.local_msg_accumulator = B256::ZERO;
     post_state.parent_chain_block_hash = parent_chain_header.hash_slow();
     post_state.parent_chain_prev_block_hash = input_state.parent_chain_block_hash;
@@ -220,7 +220,7 @@ mod tests {
             ..Default::default()
         };
         let result = extract_messages(
-            input_state,
+            &input_state,
             &Header::default(),
             &DaReaderRegistry::new(),
             &MockDelayedDb,
@@ -242,7 +242,7 @@ mod tests {
         let header = Header::default();
         let input_state = MelState::default();
         let out = extract_messages(
-            input_state,
+            &input_state,
             &header,
             &DaReaderRegistry::new(),
             &MockDelayedDb,
