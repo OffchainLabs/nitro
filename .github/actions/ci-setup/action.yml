@@ -14,6 +14,15 @@ runs:
       uses: actions/setup-node@v6
       with:
         node-version: "24"
+
+    - name: Enable corepack (provides yarn)
+      run: corepack enable
+      shell: bash
+
+    - name: Setup Node.js with yarn cache
+      uses: actions/setup-node@v6
+      with:
+        node-version: "24"
         cache: yarn
         cache-dependency-path: "**/yarn.lock"
 
