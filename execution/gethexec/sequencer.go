@@ -1669,14 +1669,11 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 func (s *Sequencer) reportFilterSetID(ctx context.Context, rpcClient *FilteringReportRPCClient) error {
 	if s.addressFilterService == nil {
-		return errors.New("address-filter service not configured")
+		log.Warn("skipping filter-set id report: address-filter service not configured")
+		return nil
 	}
 	filterSetID := s.addressFilterService.CurrentFilterSetID()
 	if filterSetID == uuid.Nil {
-		// A coordinator only activates a synced sequencer, and Synced requires
-		// FilteringReady, so an active sequencer should have an id loaded.
-		// Without a coordinator the sequencer activates at startup, where a
-		// brief window before the first fetch lands is possible.
 		log.Info("skipping filter-set id report: no id loaded yet")
 		return nil
 	}
