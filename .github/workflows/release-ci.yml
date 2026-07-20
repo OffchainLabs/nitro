@@ -15,14 +15,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
 
       - uses: ./.github/actions/init-submodules
         with:
           client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
-          pat: ${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4
