@@ -200,7 +200,10 @@ func (h *HashStore) Digest() string {
 }
 
 func (h *HashStore) Id() uuid.UUID {
-	return h.data.Load().id
+	data := h.data.Load()
+	data.mu.RLock()
+	defer data.mu.RUnlock()
+	return data.id
 }
 
 func (h *HashStore) Size() int {
