@@ -10,7 +10,8 @@ permissions:
 
 jobs:
   build_and_run:
-    runs-on: arbitrator-ci
+    # dind label: this job runs docker buildx and starts a dockerized testnode.
+    runs-on: ocl-16cpu-64ram-dind
 
     steps:
       - name: Checkout
