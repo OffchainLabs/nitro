@@ -1667,11 +1667,6 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	return nil
 }
 
-func (s *Sequencer) isActiveSequencer() bool {
-	pauseChan, forwarder := s.GetPauseAndForwarder()
-	return pauseChan == nil && forwarder == nil
-}
-
 func (s *Sequencer) reportFilterSetID(ctx context.Context) error {
 	if s.addressFilterService == nil {
 		log.Debug("skipping filter-set id report: address-filter service not configured")
@@ -1703,7 +1698,7 @@ func (s *Sequencer) startFilterSetReporting() {
 	}
 	interval := s.config().FilterSetReportingInterval
 	s.CallIteratively(func(ctx context.Context) time.Duration {
-		if !s.isActiveSequencer() {
+		if !s.isActive {
 			return interval
 		}
 		if err := s.reportFilterSetID(ctx); err != nil {
