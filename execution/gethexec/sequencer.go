@@ -1707,8 +1707,6 @@ func (s *Sequencer) startFilterSetReporting() {
 	})
 }
 
-type TxSource int
-
 func (s *Sequencer) hasPendingRegularTxs() bool {
 	return s.txRetryQueue.Len() > 0 ||
 		len(s.txQueue) > 0 ||
