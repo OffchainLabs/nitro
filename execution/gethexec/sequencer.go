@@ -488,8 +488,10 @@ type Sequencer struct {
 
 	pendingDelayedMsgCommit bool
 
-	eventFilter              *eventfilter.EventFilter
-	addressFilterService     *addressfilter.FilterService
+	eventFilter *eventfilter.EventFilter
+	// Set once at construction; atomic only so the test-only setter can swap
+	// it while background readers (e.g. the filter-set reporting loop) run.
+	addressFilterService     atomic.Pointer[addressfilter.FilterService]
 	pendingFilteredTxReports []addressfilter.FilteredTxReport
 
 	// sequencingState tracks turn alternation between regular tx and delayed
@@ -529,8 +531,8 @@ func NewSequencer(
 		parentChain:                       parentChain,
 		timeboostAuctionResolutionTxQueue: make(chan txQueueItem, 10), // There should never be more than 1 outstanding auction resolutions
 		eventFilter:                       eventFilter,
-		addressFilterService:              addressFilterService,
 	}
+	s.addressFilterService.Store(addressFilterService)
 	s.nonceFailures = newNonceFailureCache(
 		config.NonceCacheSize,
 		func() time.Duration { return configFetcher().NonceFailureCacheExpiry },
@@ -541,10 +543,11 @@ func NewSequencer(
 }
 
 func (s *Sequencer) FilteringReady() bool {
-	if s.addressFilterService == nil {
+	service := s.addressFilterService.Load()
+	if service == nil {
 		return true
 	}
-	return !s.addressFilterService.GetLoadedAt().IsZero()
+	return !service.GetLoadedAt().IsZero()
 }
 
 func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.Header, filteredAddresses []filter.FilteredAddressRecord, positionInBlock int) {
@@ -1668,11 +1671,12 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 }
 
 func (s *Sequencer) reportFilterSetID(ctx context.Context, rpcClient *FilteringReportRPCClient) error {
-	if s.addressFilterService == nil {
+	service := s.addressFilterService.Load()
+	if service == nil {
 		log.Warn("skipping filter-set id report: address-filter service not configured")
 		return nil
 	}
-	filterSetID := s.addressFilterService.CurrentFilterSetID()
+	filterSetID := service.CurrentFilterSetID()
 	if filterSetID == uuid.Nil {
 		// When address filtering is set, the node blocks on the initial S3
 		// hash-list download during initialization (AddressFilterService.Initialize),
@@ -1692,7 +1696,7 @@ func (s *Sequencer) startFilterSetReporting() {
 	if rpcClient == nil {
 		return
 	}
-	if s.addressFilterService == nil {
+	if s.addressFilterService.Load() == nil {
 		log.Warn("filtering report RPC client is configured but address filtering is not")
 	}
 	interval := s.config().FilterSetReportingInterval
@@ -1837,5 +1841,5 @@ func (s *Sequencer) DispatchPendingFilteredTxReportsForTest(t *testing.T) {
 
 func (s *Sequencer) SetAddressFilterServiceForTest(t *testing.T, service *addressfilter.FilterService) {
 	t.Helper()
-	s.addressFilterService = service
+	s.addressFilterService.Store(service)
 }
