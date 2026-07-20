@@ -411,8 +411,12 @@ mod tests {
             ],
             ..Default::default()
         };
-        let out =
-            parse_delayed_messages_from_block(&state_with_target(target), &Header::default(), &tx, &logs)?;
+        let out = parse_delayed_messages_from_block(
+            &state_with_target(target),
+            &Header::default(),
+            &tx,
+            &logs,
+        )?;
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].message.l2_msg, data);
         Ok(())
@@ -459,8 +463,14 @@ mod tests {
             &logs,
         )?;
         assert_eq!(out.len(), 2);
-        assert_eq!(out[0].message.header.request_id, Some(message_id(U256::from(1u64))));
-        assert_eq!(out[1].message.header.request_id, Some(message_id(U256::from(2u64))));
+        assert_eq!(
+            out[0].message.header.request_id,
+            Some(message_id(U256::from(1u64)))
+        );
+        assert_eq!(
+            out[1].message.header.request_id,
+            Some(message_id(U256::from(2u64)))
+        );
         Ok(())
     }
 
@@ -470,7 +480,10 @@ mod tests {
         assert!(scaffolds.is_empty());
         assert!(events.is_empty());
 
-        let topicless = rpc_log(Address::repeat_byte(0xDD), alloy_primitives::LogData::default());
+        let topicless = rpc_log(
+            Address::repeat_byte(0xDD),
+            alloy_primitives::LogData::default(),
+        );
         let refs = [&topicless];
         let (scaffolds, events) = delayed_message_scaffolds_from_logs(&Header::default(), &refs)?;
         assert!(scaffolds.is_empty());

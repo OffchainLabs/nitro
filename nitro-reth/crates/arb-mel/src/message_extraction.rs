@@ -204,11 +204,13 @@ mod tests {
     use alloy_primitives::{Address, U256};
     use alloy_rpc_types_eth::Log;
     use alloy_sol_types::{SolEvent, sol};
-    use arbos::arbos_types::{L1IncomingMessageHeader, L1_MESSAGE_TYPE_BATCH_POSTING_REPORT};
+    use arbos::arbos_types::{L1_MESSAGE_TYPE_BATCH_POSTING_REPORT, L1IncomingMessageHeader};
 
     use super::*;
-    use crate::DelayedInboxMessage;
-    use crate::test_utils::{MockDelayedDb, MockLogs, MockTx, rpc_log};
+    use crate::{
+        DelayedInboxMessage,
+        test_utils::{MockDelayedDb, MockLogs, MockTx, rpc_log},
+    };
 
     sol! {
         #[allow(missing_docs)]

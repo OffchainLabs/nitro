@@ -1,7 +1,6 @@
 //! Shared helpers for the crate's unit tests.
 
-use std::collections::BTreeMap;
-use std::io::Write;
+use std::{collections::BTreeMap, io::Write};
 
 use alloy_consensus::TxLegacy;
 use alloy_primitives::{Address, B256, LogData};
@@ -99,9 +98,7 @@ pub(crate) struct MockDelayedDb {
 }
 
 impl MockDelayedDb {
-    pub fn with_messages(
-        entries: impl IntoIterator<Item = (u64, DelayedInboxMessage)>,
-    ) -> Self {
+    pub fn with_messages(entries: impl IntoIterator<Item = (u64, DelayedInboxMessage)>) -> Self {
         Self {
             messages: entries.into_iter().collect(),
             fail: false,

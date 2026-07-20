@@ -292,7 +292,9 @@ mod tests {
         let result = serialize_batch(&mut batch, &tx, &MockLogs::default());
         assert!(matches!(
             result,
-            Err(MelError::SequencerBatchData("blob batch transaction has no blobs"))
+            Err(MelError::SequencerBatchData(
+                "blob batch transaction has no blobs"
+            ))
         ));
     }
 
@@ -315,7 +317,9 @@ mod tests {
         let result = serialize_batch(&mut batch, &TxLegacy::default(), &MockLogs::default());
         assert!(matches!(
             result,
-            Err(MelError::SequencerBatchData("no logs found in transaction receipt"))
+            Err(MelError::SequencerBatchData(
+                "no logs found in transaction receipt"
+            ))
         ));
     }
 

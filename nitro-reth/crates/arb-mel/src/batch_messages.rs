@@ -229,13 +229,15 @@ fn extract_delayed_msg_from_segment<D: DelayedMessageDB>(
 #[cfg(test)]
 mod tests {
     use alloy_primitives::B256;
-    use arbos::arbos_types::{L1IncomingMessage, L1_MESSAGE_TYPE_INVALID};
+    use arbos::arbos_types::{L1_MESSAGE_TYPE_INVALID, L1IncomingMessage};
 
     use super::*;
-    use crate::DelayedInboxMessage;
-    use crate::test_utils::{
-        MockDelayedDb, brotli_compress, sequencer_message_with_segments,
-        sequencer_message_with_timestamp_range,
+    use crate::{
+        DelayedInboxMessage,
+        test_utils::{
+            MockDelayedDb, brotli_compress, sequencer_message_with_segments,
+            sequencer_message_with_timestamp_range,
+        },
     };
 
     fn delayed_with_l2(l2: &[u8]) -> DelayedInboxMessage {
@@ -270,7 +272,11 @@ mod tests {
 
     #[test]
     fn field_bounds_simple() -> MelResult<()> {
-        let segments = vec![advance_timestamp(7), advance_timestamp(3), brotli_l2(b"foobar")];
+        let segments = vec![
+            advance_timestamp(7),
+            advance_timestamp(3),
+            brotli_l2(b"foobar"),
+        ];
         let mut seq_msg = sequencer_message_with_timestamp_range(segments, 10, 20);
         let mut state = MelState::default();
         let msgs = extract_batch_messages(&mut state, &mut seq_msg, &MockDelayedDb::default())?;
@@ -376,8 +382,7 @@ mod tests {
     fn delayed_db_error_propagates() {
         let mut seq_msg = sequencer_message_with_segments(1, vec![vec![]]);
         let mut state = MelState::default();
-        let result =
-            extract_batch_messages(&mut state, &mut seq_msg, &MockDelayedDb::failing());
+        let result = extract_batch_messages(&mut state, &mut seq_msg, &MockDelayedDb::failing());
         assert!(result.is_err());
     }
 
@@ -385,8 +390,7 @@ mod tests {
     fn delayed_missing_from_db_errors() {
         let mut seq_msg = sequencer_message_with_segments(1, vec![vec![]]);
         let mut state = MelState::default();
-        let result =
-            extract_batch_messages(&mut state, &mut seq_msg, &MockDelayedDb::default());
+        let result = extract_batch_messages(&mut state, &mut seq_msg, &MockDelayedDb::default());
         assert!(matches!(result, Err(MelError::NoMoreDelayedMessages)));
     }
 
