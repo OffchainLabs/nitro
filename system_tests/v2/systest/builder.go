@@ -46,6 +46,8 @@ type builder struct {
 	skipChainOwner   bool
 	exposeRPC        bool
 
+	validation bool
+
 	postHooks []Hook
 	dims      map[axis][]axisVariant
 
@@ -94,6 +96,12 @@ func (b *builder) validate() {
 	if b.maxArbOS != 0 && b.minArbOS > b.maxArbOS {
 		panic(fmt.Sprintf("systest: MinArbOS(%d) > MaxArbOS(%d)", b.minArbOS, b.maxArbOS))
 	}
+	if b.validation && b.topology == TopologyL2Only {
+		panic("systest: WithValidation requires an L1-bearing topology")
+	}
+	if b.validation && b.stateScheme.IsSome() && b.stateScheme.Unwrap() != validationScheme {
+		panic(fmt.Sprintf("systest: validation requires %s state scheme; conflicts with WithStateScheme(%s)", validationScheme, b.stateScheme.Unwrap()))
+	}
 }
 
 func (b *builder) shouldSkip(sp scheduleParams) string {
@@ -121,6 +129,9 @@ func (b *builder) shouldSkip(sp scheduleParams) string {
 		if scheme.IsSome() && scheme.Unwrap() == s {
 			return fmt.Sprintf("incompatible with state scheme %q", s)
 		}
+	}
+	if b.validation && scheme.IsSome() && scheme.Unwrap() != validationScheme {
+		return fmt.Sprintf("validation requires %s state scheme", validationScheme)
 	}
 	if !sp.categoryEnabled(b.category) {
 		return fmt.Sprintf("category %q not enabled", b.category)
@@ -171,6 +182,15 @@ func (b *builder) mergeParams(sp scheduleParams) {
 	}
 }
 
+// weight is the scheduler-slot cost: topology-derived, floored to weightMax
+// when the run validates (JIT validation saturates a core).
+func (b *builder) weight() weight {
+	if b.validation {
+		return weightMax
+	}
+	return specWeight(b.topology)
+}
+
 func (b *builder) freeze(nameSuffix string) Spec {
 	name := b.name
 	if nameSuffix != "" {
@@ -178,7 +198,7 @@ func (b *builder) freeze(nameSuffix string) Spec {
 	}
 	return Spec{
 		Name:           name,
-		Weight:         specWeight(b.topology),
+		Weight:         b.weight(),
 		ArbOSVersion:   b.arbOS,
 		StateScheme:    b.stateScheme,
 		DBEngine:       b.dbEngine,
@@ -188,6 +208,7 @@ func (b *builder) freeze(nameSuffix string) Spec {
 		SkipChainOwner: b.skipChainOwner,
 		ExposeRPC:      b.exposeRPC,
 		arbOSInit:      b.arbOSInit,
+		Validate:       b.validation,
 	}
 }
 
