@@ -10,9 +10,13 @@
 //! directly, as nitro's do); [`MessageExtractor::run`] drives it in a loop,
 //! replacing nitro's `stopwaiter`.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Duration,
+};
 
 use alloy_eips::BlockNumberOrTag;
 use alloy_primitives::B256;
@@ -415,11 +419,11 @@ impl DelayedMessageDB for NilDelayedMessageDb {
 
 #[cfg(test)]
 mod tests {
+    use alloy_primitives::B256;
+    use arb_parent_chain_client::{MockParentChainReader, test_utils::header_with_parent};
+
     use super::*;
     use crate::{DaReaderRegistry, MelState, MockDatabase, MockMessageConsumer};
-    use alloy_primitives::B256;
-    use arb_parent_chain_client::MockParentChainReader;
-    use arb_parent_chain_client::test_utils::header_with_parent;
 
     fn head_at(number: u64, hash: B256) -> MelState {
         MelState {

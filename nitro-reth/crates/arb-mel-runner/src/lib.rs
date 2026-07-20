@@ -24,6 +24,10 @@ mod extractor;
 mod fsm;
 mod types;
 
+// The DA provider is the real `arb-da-provider-client`; re-export for convenience.
+pub use arb_da_provider_client::{DaReaderRegistry, DaReaderSource};
+// Canonical MEL types are owned by `arb-mel`; re-export for convenience.
+pub use arb_mel::{BatchMeta, DelayedInboxMessage, ExtractionOutput, MelState};
 pub use batch_counter::{MockSequencerBatchCountFetcher, SequencerBatchCountFetcher};
 pub use config::MessageExtractionConfig;
 pub use consumer::{MessageConsumer, MockMessageConsumer};
@@ -31,12 +35,6 @@ pub use database::{Database, MockDatabase};
 pub use extractor::MessageExtractor;
 pub use fsm::{FsmState, FsmStateKind};
 pub use types::{MessageSyncProgress, RollupAddresses};
-
-// The DA provider is the real `arb-da-provider-client`; re-export for convenience.
-pub use arb_da_provider_client::{DaReaderRegistry, DaReaderSource};
-
-// Canonical MEL types are owned by `arb-mel`; re-export for convenience.
-pub use arb_mel::{BatchMeta, DelayedInboxMessage, ExtractionOutput, MelState};
 
 /// Something went wrong while running the message extractor.
 #[derive(Debug, thiserror::Error)]

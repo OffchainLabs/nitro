@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::sync::Mutex;
+use std::{collections::HashMap, sync::Mutex};
 
 use alloy_eips::{BlockNumberOrTag, eip2718::Encodable2718};
 use alloy_primitives::B256;
@@ -176,10 +175,11 @@ impl ParentChainReader for MockParentChainReader {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::test_utils::{block, header, header_with_parent, log_at, receipt, tx};
     use alloy_primitives::{Address, B256};
     use alloy_rpc_types_eth::BlockTransactions;
+
+    use super::*;
+    use crate::test_utils::{block, header, header_with_parent, log_at, receipt, tx};
 
     #[tokio::test]
     async fn header_by_number_returns_matching_header() {
@@ -504,10 +504,11 @@ mod tests {
         assert!(err.to_string().contains("boom"));
 
         mock.set_error(None::<String>);
-        assert!(mock
-            .header_by_number(BlockNumberOrTag::Number(5))
-            .await
-            .unwrap()
-            .is_some());
+        assert!(
+            mock.header_by_number(BlockNumberOrTag::Number(5))
+                .await
+                .unwrap()
+                .is_some()
+        );
     }
 }

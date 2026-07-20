@@ -6,18 +6,17 @@
 //! available under the feature; the transaction/block/receipt builders pull in
 //! `alloy-consensus` (a dev-dependency) and so exist only in this crate's own tests.
 
-use alloy_primitives::{Address, B256};
-use alloy_rpc_types_eth::{Header, Log};
-
 #[cfg(test)]
 use alloy_consensus::{
     ReceiptEnvelope, SignableTransaction, TxEip1559, TxEnvelope,
     transaction::{Recovered, TransactionInfo},
 };
+use alloy_primitives::{Address, B256};
 #[cfg(test)]
 use alloy_primitives::{Signature, U256};
 #[cfg(test)]
 use alloy_rpc_types_eth::{Block, BlockTransactions, Transaction, TransactionReceipt};
+use alloy_rpc_types_eth::{Header, Log};
 
 /// Builds a header with the given number and hash.
 pub fn header(number: u64, hash: B256) -> Header {

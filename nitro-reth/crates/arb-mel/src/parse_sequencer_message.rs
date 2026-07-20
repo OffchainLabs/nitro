@@ -205,8 +205,7 @@ fn parse_segments(decompressed: &[u8]) -> Vec<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
-    use std::sync::Arc;
+    use std::{io::Write, sync::Arc};
 
     use arb_da_provider_client::{DaReaderRegistry, MockDaReader, Preimages};
 

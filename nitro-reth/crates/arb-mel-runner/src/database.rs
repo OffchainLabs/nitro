@@ -5,8 +5,7 @@
 //! (KV/schema/RLP) implementation is ported separately. Only the methods the
 //! runner actually calls are included. Types come from `arb-mel`.
 
-use std::collections::HashMap;
-use std::sync::Mutex;
+use std::{collections::HashMap, sync::Mutex};
 
 use arb_mel::{BatchMeta, DelayedInboxMessage, MelState};
 use async_trait::async_trait;

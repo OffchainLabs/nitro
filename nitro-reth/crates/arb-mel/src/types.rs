@@ -16,7 +16,9 @@ pub struct MelState {
     pub parent_chain_prev_block_hash: B256,
     pub batch_count: u64,
     pub msg_count: u64,
-    pub local_msg_accumulator: B256, // starts at zero hash for each clone; updated only by AccumulateMessage; represents messages accumulated during processing of this specific parent chain block
+    pub local_msg_accumulator: B256, /* starts at zero hash for each clone; updated only by
+                                      * AccumulateMessage; represents messages accumulated
+                                      * during processing of this specific parent chain block */
     pub delayed_messages_read: u64,
     pub delayed_messages_seen: u64,
     pub delayed_message_inbox_acc: B256,
