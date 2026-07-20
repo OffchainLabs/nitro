@@ -1697,7 +1697,7 @@ func (s *Sequencer) startFilterSetReporting() {
 	}
 	interval := s.config().FilterSetReportingInterval
 	s.CallIteratively(func(ctx context.Context) time.Duration {
-		if !s.isActive {
+		if !s.IsActive() {
 			return interval
 		}
 		if err := s.reportFilterSetID(ctx, rpcClient); err != nil {
