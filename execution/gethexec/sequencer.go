@@ -1673,10 +1673,11 @@ func (s *Sequencer) reportFilterSetID(ctx context.Context) error {
 	}
 	filterSetID := s.addressFilterService.CurrentFilterSetID()
 	if filterSetID == uuid.Nil {
-		// The hash store starts at uuid.Nil until the first S3 fetch lands.
-		// Debug-log so an operator investigating a silent reporting loop
-		// during startup sees why nothing is being sent.
-		log.Debug("skipping filter-set id report: no id loaded yet")
+		// A coordinator only activates a synced sequencer, and Synced requires
+		// FilteringReady, so an active sequencer should have an id loaded.
+		// Without a coordinator the sequencer activates at startup, where a
+		// brief window before the first fetch lands is possible.
+		log.Info("skipping filter-set id report: no id loaded yet")
 		return nil
 	}
 	rpcClient := s.execEngine.GetFilteringReportRPCClient()
