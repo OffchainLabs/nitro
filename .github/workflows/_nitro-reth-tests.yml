@@ -14,8 +14,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
 
       # TODO(NIT-5205): replace with the real nitro-reth test suite
       - name: Check nitro-reth workspace
