@@ -5,6 +5,5 @@
 fn main() {
     if std::env::args().any(|arg| arg == "--version") {
         println!("arb-reth {} (mock)", env!("CARGO_PKG_VERSION"));
-        return;
     }
 }
