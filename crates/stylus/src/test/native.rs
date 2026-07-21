@@ -23,23 +23,85 @@ use prover::{
         MiddlewareWrapper, ModuleMod,
         counter::{Counter, CountingMachine},
         prelude::*,
+        singlepass_output_size_limit,
         start::StartMover,
     },
 };
 use wasmer::{
-    ExportIndex, Imports, Pages, Store,
+    ExportIndex, Imports, Module, Pages, Store,
     sys::{CompilerConfig, EngineBuilder, Target},
     wasmparser::Operator,
 };
 use wasmer_compiler_singlepass::Singlepass;
 
 use crate::{
+    native::ensure_singlepass_artifact_size,
     run::RunProgram,
     test::{
         TestInstance, api::TestEvmApi, check_instrumentation, random_bytes20, random_bytes32,
         random_ink, run_machine, run_native, test_compile_config, test_configs,
     },
 };
+
+#[test]
+fn singlepass_artifact_size_limit_is_inclusive() {
+    let limit = singlepass_output_size_limit();
+    assert!(ensure_singlepass_artifact_size(limit, false).is_ok());
+    assert!(ensure_singlepass_artifact_size(limit + 1, false).is_err());
+    assert!(
+        ensure_singlepass_artifact_size(usize::MAX, true).is_ok(),
+        "the Singlepass cap must not apply to Cranelift"
+    );
+}
+
+fn compile_singlepass_example(
+    max_output_size: Option<usize>,
+) -> Result<Module, wasmer::CompileError> {
+    let mut compiler = Singlepass::new();
+    if let Some(limit) = max_output_size {
+        compiler = compiler.with_max_output_size(limit);
+    }
+    compiler.canonicalize_nans(true);
+    compiler.enable_verifier();
+    let engine = wasmer::Engine::from(EngineBuilder::new(compiler));
+    let store = Store::new(engine);
+    Module::new(&store, "(module (func (export \"main\") nop))")
+}
+
+#[test]
+fn singlepass_output_size_limit_matches_compiled_module_boundary() {
+    compile_singlepass_example(None).expect("unbounded compilation should succeed");
+
+    // Find the smallest successful limit without coupling the test to an
+    // architecture-specific instruction size.
+    let mut passing_limit = 1;
+    while compile_singlepass_example(Some(passing_limit)).is_err() {
+        passing_limit = passing_limit
+            .checked_mul(2)
+            .expect("example output size should fit in usize");
+    }
+    let mut failing_limit = 0;
+    while passing_limit - failing_limit > 1 {
+        let limit = failing_limit + (passing_limit - failing_limit) / 2;
+        if compile_singlepass_example(Some(limit)).is_ok() {
+            passing_limit = limit;
+        } else {
+            failing_limit = limit;
+        }
+    }
+    let output_size = passing_limit;
+
+    let error = compile_singlepass_example(Some(output_size - 1))
+        .expect_err("a limit below the actual output size should fail");
+    assert!(
+        error
+            .to_string()
+            .contains("singlepass compiler output exceeds limit"),
+        "unexpected compilation error: {error}"
+    );
+    assert!(compile_singlepass_example(Some(output_size)).is_ok());
+    assert!(compile_singlepass_example(Some(output_size + 1)).is_ok());
+}
 
 #[test]
 fn test_ink() -> Result<()> {

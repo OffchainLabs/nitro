@@ -25,6 +25,7 @@ use prover::{
         depth::STYLUS_STACK_LEFT,
         meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
         prelude::*,
+        singlepass_output_size_limit,
         start::StartMover,
     },
 };
@@ -455,7 +456,16 @@ pub fn module(
     }
 
     let module = module.serialize()?;
+    ensure_singlepass_artifact_size(module.len(), cranelift)?;
     Ok(module.to_vec())
+}
+
+pub(crate) fn ensure_singlepass_artifact_size(size: usize, cranelift: bool) -> Result<()> {
+    let limit = singlepass_output_size_limit();
+    if !cranelift && size > limit {
+        bail!("singlepass compiler output exceeds limit: {size} > {limit} bytes");
+    }
+    Ok(())
 }
 
 pub fn activate(

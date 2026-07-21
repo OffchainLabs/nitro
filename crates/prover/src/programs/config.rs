@@ -14,7 +14,7 @@ use wasmparser::Operator;
 use {
     super::{
         MiddlewareWrapper, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
-        heap::HeapBound, meter::Meter, start::StartMover,
+        heap::HeapBound, meter::Meter, singlepass_output_size_limit, start::StartMover,
     },
     std::sync::Arc,
     wasmer::{
@@ -199,7 +199,9 @@ impl CompileConfig {
                 wasmer_config.opt_level(CraneliftOptLevel::Speed);
                 Box::new(wasmer_config)
             }
-            false => Box::new(Singlepass::new()),
+            false => {
+                Box::new(Singlepass::new().with_max_output_size(singlepass_output_size_limit()))
+            }
         };
         wasmer_config.canonicalize_nans(true);
         wasmer_config.enable_verifier();

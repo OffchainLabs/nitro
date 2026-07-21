@@ -164,6 +164,20 @@ func GetNativeStackSize() uint64 {
 	return uint64(C.stylus_get_native_stack_size())
 }
 
+// DefaultMaxSinglepassOutputSize is the default process-wide maximum output size for a
+// Singlepass compiled Stylus module. It must match DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT in Rust.
+const DefaultMaxSinglepassOutputSize uint64 = 10 * 1024 * 1024
+
+// SetMaxSinglepassOutputSize configures the output size limit for future Singlepass compilations.
+func SetMaxSinglepassOutputSize(size uint64) {
+	C.stylus_set_singlepass_output_size_limit(u64(size))
+}
+
+// GetMaxSinglepassOutputSize returns the current Singlepass output size limit in bytes.
+func GetMaxSinglepassOutputSize() uint64 {
+	return uint64(C.stylus_get_singlepass_output_size_limit())
+}
+
 // DrainStackPool discards all cached Wasmer coroutine stacks so that
 // subsequent allocations use the current process-wide stack size.
 func DrainStackPool() {

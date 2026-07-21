@@ -254,6 +254,19 @@ pub extern "C" fn stylus_get_native_stack_size() -> u64 {
     wasmer_vm::get_stack_size() as u64
 }
 
+/// Sets the process-wide Singlepass output size limit used for future compilations.
+#[unsafe(no_mangle)]
+pub extern "C" fn stylus_set_singlepass_output_size_limit(limit: u64) {
+    let limit = usize::try_from(limit).unwrap_or(usize::MAX);
+    prover::programs::set_singlepass_output_size_limit(limit);
+}
+
+/// Returns the current process-wide Singlepass output size limit.
+#[unsafe(no_mangle)]
+pub extern "C" fn stylus_get_singlepass_output_size_limit() -> u64 {
+    prover::programs::singlepass_output_size_limit() as u64
+}
+
 /// Calls an activated user program.
 ///
 /// Returns `UserOutcomeKind::NativeStackOverflow` if the Wasmer coroutine

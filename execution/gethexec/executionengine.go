@@ -404,6 +404,7 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 	}
 	s.wasmTargets = targetConfig.WasmTargets()
 	programs.SetAllowFallback(targetConfig.AllowFallback)
+	programs.SetMaxSinglepassOutputSize(targetConfig.MaxSinglepassOutputSize)
 	s.bc.StateCache().SetArbNodeConfig(&programs.ArbNodeConfig{
 		MaxOpenPages:       targetConfig.MaxStylusOpenPages,
 		MaxStylusCallDepth: targetConfig.MaxStylusCallDepth,
