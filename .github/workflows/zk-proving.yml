@@ -12,8 +12,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    uses: ./.github/workflows/_detect-changes.yml
+    secrets: inherit
+
   zk-proving:
     name: Run tests for ZK-related components and pipelines
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.code_changed == 'true'
     runs-on: arbitrator-ci
     defaults:
       run:
@@ -21,14 +27,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
 
       - uses: ./.github/actions/init-submodules
         with:
           client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
-          pat: ${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Setup CI
         uses: ./.github/actions/ci-setup

@@ -1,0 +1,20 @@
+---
+name: nitro-reth
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  nitro-reth:
+    name: Run Nitro Reth tests
+    runs-on: ubuntu-4
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # TODO(NIT-5205): replace with the real nitro-reth test suite
+      - name: Check nitro-reth workspace
+        run: echo "nitro-reth sources not migrated yet; nothing to test."
