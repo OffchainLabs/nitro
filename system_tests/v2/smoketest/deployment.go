@@ -21,13 +21,18 @@ var deploymentTests = func() []systest.Scenario {
 	for _, size := range []int{0, 1, 1000, 20000, params.DefaultMaxCodeSize} {
 		tests = append(tests, systest.Test(testContractDeploy(size, nil), systest.Named(fmt.Sprintf("ContractDeploy%d", size))))
 	}
+	extended := systest.WithChainConfigOverride(func(c *params.ChainConfig) {
+		c.ArbitrumChainParams.MaxCodeSize = params.DefaultMaxCodeSize * 3
+		c.ArbitrumChainParams.MaxInitCodeSize = params.DefaultMaxInitCodeSize * 3
+	})
+	for _, size := range []int{0, 1, 1000, 20000, 30000, 40000, 60000, params.DefaultMaxCodeSize * 3} {
+		tests = append(tests, systest.Test(testContractDeploy(size, nil), systest.Named(fmt.Sprintf("ExtendedContractDeploy%d", size)), extended))
+	}
 	return append(tests,
 		systest.Test(testContractDeploy(40000, vm.ErrMaxCodeSizeExceeded), systest.Named("ContractDeployExceedsCodeSize")),
 		systest.Test(testContractDeploy(60000, core.ErrMaxInitCodeSizeExceeded), systest.Named("ContractDeployExceedsInitCodeSize")),
-		systest.Test(testRunExtendedContractDeployment, systest.WithChainConfigOverride(func(c *params.ChainConfig) {
-			c.ArbitrumChainParams.MaxCodeSize = params.DefaultMaxCodeSize * 3
-			c.ArbitrumChainParams.MaxInitCodeSize = params.DefaultMaxInitCodeSize * 3
-		})),
+		systest.Test(testContractDeploy(100000, vm.ErrMaxCodeSizeExceeded), systest.Named("ExtendedContractDeployExceedsCodeSize"), extended),
+		systest.Test(testContractDeploy(200000, core.ErrMaxInitCodeSizeExceeded), systest.Named("ExtendedContractDeployExceedsInitCodeSize"), extended),
 	)
 }()
 
@@ -35,14 +40,6 @@ func testContractDeploy(size int, expectedErr error) systest.Scenario {
 	return func(env *systest.Env) {
 		deployContract(env, size, expectedErr)
 	}
-}
-
-func testRunExtendedContractDeployment(env *systest.Env) {
-	for _, size := range []int{0, 1, 1000, 20000, 30000, 40000, 60000, params.DefaultMaxCodeSize * 3} {
-		deployContract(env, size, nil)
-	}
-	deployContract(env, 100000, vm.ErrMaxCodeSizeExceeded)
-	deployContract(env, 200000, core.ErrMaxInitCodeSizeExceeded)
 }
 
 func deployContract(env *systest.Env, size int, expectedErr error) {

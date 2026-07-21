@@ -5,6 +5,7 @@ package systest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -133,23 +134,14 @@ func runOneWith(t testing.TB, item scheduledTest, build buildFunc) {
 
 	// Backstop for ctx-aware hangs in build/scenario: fail this one item at its
 	// deadline instead of riding the package -timeout; teardown and non-ctx-aware
-	// calls stay unbounded. Spec.Timeout overrides the CLI default; only
-	// -v2.test-timeout=0 disables the backstop.
+	// calls stay unbounded. Spec.Timeout overrides the default.
 	timeout := defaultTestTimeout
 	if item.Spec.Timeout > 0 {
 		timeout = item.Spec.Timeout
 	}
 
 	runCtx := t.Context()
-	var (
-		ctx    context.Context
-		cancel context.CancelFunc
-	)
-	if timeout > 0 {
-		ctx, cancel = context.WithTimeout(runCtx, timeout)
-	} else {
-		ctx, cancel = context.WithCancel(runCtx)
-	}
+	ctx, cancel := context.WithTimeout(runCtx, timeout)
 	// satisfies vet's lostcancel even if buildNode t.Fatalfs; the inner defer
 	// also calls cancel before env.wait so ctx-aware goroutines exit promptly.
 	defer cancel()
@@ -185,6 +177,13 @@ func runOneWith(t testing.TB, item scheduledTest, build buildFunc) {
 
 	env, cleanup = build(ctx, item.Spec, item.overrides)
 	item.Scenario(env)
+
+	// A scenario that ignores ctx can return "passing" after its deadline; fail
+	// it here rather than trusting every scenario to check.
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		t.Errorf("scenario %q: %v", item.Spec.Name, context.Cause(ctx))
+		return
+	}
 	scenarioOk = true
 }
 

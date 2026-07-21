@@ -83,42 +83,45 @@ func Test(scenario Scenario, opts ...TestOption) Scenario {
 	}
 	b.validate()
 
-	registryMu.Lock()
-	defer registryMu.Unlock()
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
 
-	if registryFrozen.Load() {
+	if registry.frozen.Load() {
 		panic("systest: Test called after schedule() — registration must complete during package init")
 	}
 	name := b.name
-	if registryNames[name] {
+	if registry.names[name] {
 		panic(fmt.Sprintf("systest: duplicate test registration %q (use systest.Named to disambiguate)", name))
 	}
-	registryNames[name] = true
-	registry = append(registry, b)
+	registry.names[name] = true
+	registry.items = append(registry.items, b)
 	return scenario
 }
 
-var (
-	registryMu     sync.Mutex
-	registry       []*builder
-	registryNames  = map[string]bool{}
-	registryFrozen atomic.Bool
-)
+// testRegistry is the process-wide set of registered tests.
+type testRegistry struct {
+	mu     sync.Mutex
+	items  []*builder
+	names  map[string]bool
+	frozen atomic.Bool
+}
+
+var registry = testRegistry{names: map[string]bool{}}
 
 // registrySnapshot returns the registry as it stood at call time. Internal;
 // callers don't mutate the shared builders — schedule clones before mutating.
 func registrySnapshot() []*builder {
-	registryMu.Lock()
-	defer registryMu.Unlock()
-	out := make([]*builder, len(registry))
-	copy(out, registry)
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	out := make([]*builder, len(registry.items))
+	copy(out, registry.items)
 	return out
 }
 
 // schedule applies CLI filters and matrix expansion. Freezes the registry —
 // subsequent Test calls panic.
 func schedule(cli scheduleParams) []scheduledTest {
-	registryFrozen.Store(true)
+	registry.frozen.Store(true)
 	unmatchedTests := maps.Clone(cli.Tests)
 	unmatchedCategories := maps.Clone(cli.Categories)
 	delete(unmatchedCategories, defaultCategory)

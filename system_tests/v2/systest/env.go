@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"math/big"
 	"runtime"
 	"runtime/debug"
@@ -20,7 +21,7 @@ import (
 
 // Env is the runtime handle passed to a Scenario.
 type Env struct {
-	T    testing.TB
+	t    testing.TB
 	Ctx  context.Context
 	L2   *L2Handle
 	Spec Spec
@@ -36,58 +37,64 @@ type Env struct {
 }
 
 func (e *Env) Require(err error, msgAndArgs ...any) {
-	e.T.Helper()
-	e.guarded(func() { require.NoError(e.T, err, msgAndArgs...) })
+	e.t.Helper()
+	e.guarded(func() { require.NoError(e.t, err, msgAndArgs...) })
 }
 
 func (e *Env) Equal(expected, actual any, msgAndArgs ...any) {
-	e.T.Helper()
-	e.guarded(func() { require.Equal(e.T, expected, actual, msgAndArgs...) })
+	e.t.Helper()
+	e.guarded(func() { require.Equal(e.t, expected, actual, msgAndArgs...) })
 }
 
 func (e *Env) EqualBig(expected, actual *big.Int, msgAndArgs ...any) {
-	e.T.Helper()
+	e.t.Helper()
 	if expected == nil || actual == nil || expected.Cmp(actual) != 0 {
 		e.guarded(func() {
-			require.Fail(e.T, fmt.Sprintf("Not equal: expected %s, actual %s", expected, actual), msgAndArgs...)
+			require.Fail(e.t, fmt.Sprintf("Not equal: expected %s, actual %s", expected, actual), msgAndArgs...)
 		})
 	}
 }
 
 func (e *Env) Len(object any, length int, msgAndArgs ...any) {
-	e.T.Helper()
-	e.guarded(func() { require.Len(e.T, object, length, msgAndArgs...) })
+	e.t.Helper()
+	e.guarded(func() { require.Len(e.t, object, length, msgAndArgs...) })
 }
 
 func (e *Env) Zero(i any, msgAndArgs ...any) {
-	e.T.Helper()
-	e.guarded(func() { require.Zero(e.T, i, msgAndArgs...) })
+	e.t.Helper()
+	e.guarded(func() { require.Zero(e.t, i, msgAndArgs...) })
 }
 
 func (e *Env) Empty(object any, msgAndArgs ...any) {
-	e.T.Helper()
-	e.guarded(func() { require.Empty(e.T, object, msgAndArgs...) })
+	e.t.Helper()
+	e.guarded(func() { require.Empty(e.t, object, msgAndArgs...) })
 }
 
 func (e *Env) NotEmpty(object any, msgAndArgs ...any) {
-	e.T.Helper()
-	e.guarded(func() { require.NotEmpty(e.T, object, msgAndArgs...) })
+	e.t.Helper()
+	e.guarded(func() { require.NotEmpty(e.t, object, msgAndArgs...) })
 }
 
 func (e *Env) NotNil(object any, msgAndArgs ...any) {
-	e.T.Helper()
-	e.guarded(func() { require.NotNil(e.T, object, msgAndArgs...) })
+	e.t.Helper()
+	e.guarded(func() { require.NotNil(e.t, object, msgAndArgs...) })
 }
 
 func (e *Env) ErrorContains(err error, contains string, msgAndArgs ...any) {
-	e.T.Helper()
-	e.guarded(func() { require.ErrorContains(e.T, err, contains, msgAndArgs...) })
+	e.t.Helper()
+	e.guarded(func() { require.ErrorContains(e.t, err, contains, msgAndArgs...) })
+}
+
+// Logf logs to the test log.
+func (e *Env) Logf(format string, args ...any) {
+	e.t.Helper()
+	e.guarded(func() { e.t.Logf(format, args...) })
 }
 
 // WaitFor polls fn until true or env.Ctx cancels. Fails the test with a
 // descriptive message on timeout.
 func (e *Env) WaitFor(desc string, fn func() bool) {
-	e.T.Helper()
+	e.t.Helper()
 	e.Require(waitFor(e.Ctx, desc, fn))
 }
 
@@ -100,7 +107,7 @@ func (e *Env) Go(fn func() error) {
 		defer e.running.Add(-1)
 		defer func() {
 			if r := recover(); r != nil {
-				e.guarded(func() { e.T.Errorf("env.Go panic: %v\n%s", r, debug.Stack()) })
+				e.guarded(func() { e.t.Errorf("env.Go panic: %v\n%s", r, debug.Stack()) })
 			}
 		}()
 		err := fn()
@@ -112,7 +119,7 @@ func (e *Env) Go(fn func() error) {
 		if suppressedAtShutdown(e.Ctx, err) {
 			return
 		}
-		e.guarded(func() { e.T.Errorf("env.Go: %v", err) })
+		e.guarded(func() { e.t.Errorf("env.Go: %v", err) })
 	})
 }
 
@@ -132,7 +139,7 @@ func (e *Env) wait(ctx context.Context) {
 	case <-ctx.Done():
 		e.asyncMu.Lock()
 		if n := e.running.Load(); n > 0 {
-			e.T.Errorf("env.Wait aborted (%v): %d env.Go goroutine(s) still running; their pending failures are now suppressed", context.Cause(ctx), n)
+			e.t.Errorf("env.Wait aborted (%v): %d env.Go goroutine(s) still running; their pending failures are now suppressed", context.Cause(ctx), n)
 		}
 		e.dead = true
 		e.asyncMu.Unlock()
@@ -142,7 +149,7 @@ func (e *Env) wait(ctx context.Context) {
 		// that ignores ctx leaks (Go can't force-kill it) but can no longer
 		// write to the finished subtest.
 		e.asyncMu.Lock()
-		e.T.Errorf("env.Wait timed out after %v: %d env.Go goroutine(s) still running; their pending failures are now suppressed — raise envWaitTimeout and rerun to surface the real error", envWaitTimeout, e.running.Load())
+		e.t.Errorf("env.Wait timed out after %v: %d env.Go goroutine(s) still running; their pending failures are now suppressed — raise envWaitTimeout and rerun to surface the real error", envWaitTimeout, e.running.Load())
 		e.dead = true
 		e.asyncMu.Unlock()
 	}
@@ -154,6 +161,9 @@ func (e *Env) guarded(fn func()) {
 	e.asyncMu.Lock()
 	defer e.asyncMu.Unlock()
 	if e.dead {
+		if e.Spec.Name != "" {
+			log.Printf("systest: %q: dropped a test write after teardown (leaked goroutine)", e.Spec.Name)
+		}
 		runtime.Goexit()
 	}
 	fn()

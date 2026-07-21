@@ -253,7 +253,7 @@ func buildL2Node(t *testing.T, ctx context.Context, spec Spec, overrides overrid
 	}
 
 	e := &Env{
-		T:    t,
+		t:    t,
 		Ctx:  ctx,
 		Spec: spec,
 	}

@@ -26,7 +26,7 @@ func testRunTransfer(env *systest.Env) {
 	env.L2.EnsureTxSucceeded(tx)
 
 	bal := env.L2.BalanceAt(env.L2.Info.GetAddress("Owner"))
-	env.T.Logf("Owner balance is: %s", bal)
+	env.Logf("Owner balance is: %s", bal)
 
 	bal2 := env.L2.BalanceAt(env.L2.Info.GetAddress("User2"))
 	env.EqualBig(big.NewInt(1e12), bal2, "recipient balance")

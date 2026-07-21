@@ -70,7 +70,7 @@ func TestRunOneSkipsWithoutBuilding(t *testing.T) {
 	built := false
 	build := func(context.Context, Spec, overrides) (*Env, func()) {
 		built = true
-		return &Env{T: rt}, func() {}
+		return &Env{t: rt}, func() {}
 	}
 	runOneWith(rt, scheduledTest{Spec: Spec{Name: "X"}, SkipReason: "nope"}, build)
 	if !rt.skipped {
@@ -90,7 +90,7 @@ func TestRunOneSuccessRunsHooksAndCleanup(t *testing.T) {
 		PostHooks: []Hook{func(*Env) error { hooks++; return nil }},
 	}
 	runOneWith(rt, item, func(context.Context, Spec, overrides) (*Env, func()) {
-		return &Env{T: rt}, func() { cleanups++ }
+		return &Env{t: rt}, func() { cleanups++ }
 	})
 	if rt.errCount() != 0 {
 		t.Errorf("unexpected errors: %v", rt.errors)
@@ -112,7 +112,7 @@ func TestRunOneScenarioPanicIsolated(t *testing.T) {
 		PostHooks: []Hook{func(*Env) error { hooks++; return nil }},
 	}
 	runOneWith(rt, item, func(context.Context, Spec, overrides) (*Env, func()) {
-		return &Env{T: rt}, func() { cleanups++ }
+		return &Env{t: rt}, func() { cleanups++ }
 	})
 	if rt.errCount() != 1 {
 		t.Errorf("scenario panic should report 1 error, got %d: %v", rt.errCount(), rt.errors)
@@ -187,14 +187,13 @@ func TestRunOneScenarioDeadlineReachesEnv(t *testing.T) {
 		Spec: Spec{Name: "X", Timeout: 30 * time.Millisecond},
 		Scenario: func(e *Env) {
 			<-e.Ctx.Done()
-			e.T.Errorf("deadline reached: %v", e.Ctx.Err())
 		},
 	}
 	runOneWith(rt, item, func(ctx context.Context, _ Spec, _ overrides) (*Env, func()) {
-		return &Env{T: rt, Ctx: ctx}, func() {}
+		return &Env{t: rt, Ctx: ctx}, func() {}
 	})
 	if rt.errCount() != 1 {
-		t.Errorf("deadline-honoring scenario should report once, got %d: %v", rt.errCount(), rt.errors)
+		t.Errorf("runner should report the expired scenario once, got %d: %v", rt.errCount(), rt.errors)
 	}
 }
 
@@ -214,7 +213,7 @@ func TestRunOneCancelsBeforeWait(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		runOneWith(rt, item, func(ctx context.Context, _ Spec, _ overrides) (*Env, func()) {
-			return &Env{T: rt, Ctx: ctx}, func() {}
+			return &Env{t: rt, Ctx: ctx}, func() {}
 		})
 		close(done)
 	}()
@@ -252,7 +251,7 @@ func TestRunOneAbortedRunCtxStopsWaitFast(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		runOneWith(rt, item, func(c context.Context, _ Spec, _ overrides) (*Env, func()) {
-			return &Env{T: rt, Ctx: c}, func() {}
+			return &Env{t: rt, Ctx: c}, func() {}
 		})
 		close(done)
 	}()
@@ -283,7 +282,7 @@ func TestRunOnePostHookSeesLiveCtx(t *testing.T) {
 		}},
 	}
 	runOneWith(rt, item, func(ctx context.Context, _ Spec, _ overrides) (*Env, func()) {
-		return &Env{T: rt, Ctx: ctx}, func() {}
+		return &Env{t: rt, Ctx: ctx}, func() {}
 	})
 	if !hookRan {
 		t.Fatal("post-hook did not run")
@@ -299,7 +298,7 @@ func TestRunOneTeardownPanicIsolated(t *testing.T) {
 	// cleanup panics (the "close of closed channel" class in node shutdown):
 	// must be recovered, not crash the worker binary.
 	runOneWith(rt, item, func(context.Context, Spec, overrides) (*Env, func()) {
-		return &Env{T: rt}, func() { panic("close of closed channel") }
+		return &Env{t: rt}, func() { panic("close of closed channel") }
 	})
 	if rt.errCount() != 1 {
 		t.Errorf("teardown panic should report 1 error, got %d: %v", rt.errCount(), rt.errors)
@@ -319,7 +318,7 @@ func TestScenarioAssertionFailureCleansUp(t *testing.T) {
 	go func() {
 		defer close(done)
 		runOneWith(rt, item, func(context.Context, Spec, overrides) (*Env, func()) {
-			return &Env{T: rt}, func() { cleanedUp = true }
+			return &Env{t: rt}, func() { cleanedUp = true }
 		})
 	}()
 	<-done
@@ -346,7 +345,7 @@ func TestPostHookGoexitStillCleansUp(t *testing.T) {
 	go func() {
 		defer close(done)
 		runOneWith(rt, item, func(context.Context, Spec, overrides) (*Env, func()) {
-			return &Env{T: rt}, func() { cleanedUp = true }
+			return &Env{t: rt}, func() { cleanedUp = true }
 		})
 	}()
 	<-done
@@ -368,7 +367,7 @@ func TestPostHookErrorAndPanicIsolated(t *testing.T) {
 		},
 	}
 	runOneWith(rt, item, func(ctx context.Context, _ Spec, _ overrides) (*Env, func()) {
-		return &Env{T: rt, Ctx: ctx}, func() {}
+		return &Env{t: rt, Ctx: ctx}, func() {}
 	})
 	if ran != 3 {
 		t.Fatalf("want all 3 hooks to run despite error and panic, got %d", ran)

@@ -13,16 +13,16 @@ import (
 
 func stubRegistry(t *testing.T, bs ...*builder) {
 	t.Helper()
-	savedReg, savedNames, savedFrozen := registry, registryNames, registryFrozen.Load()
-	registry = bs
-	registryNames = map[string]bool{}
+	savedReg, savedNames, savedFrozen := registry.items, registry.names, registry.frozen.Load()
+	registry.items = bs
+	registry.names = map[string]bool{}
 	for _, b := range bs {
-		registryNames[b.name] = true
+		registry.names[b.name] = true
 	}
-	registryFrozen.Store(false)
+	registry.frozen.Store(false)
 	t.Cleanup(func() {
-		registry, registryNames = savedReg, savedNames
-		registryFrozen.Store(savedFrozen)
+		registry.items, registry.names = savedReg, savedNames
+		registry.frozen.Store(savedFrozen)
 	})
 }
 
@@ -84,16 +84,16 @@ func TestNamedResolvesBeforeDerivation(t *testing.T) {
 	closure := func() Scenario { return func(*Env) {} }()
 	Test(closure, Named("X"))
 	Test(testRunFoo)
-	if !registryNames["X"] || !registryNames["Foo"] {
-		t.Fatalf("want registrations X and Foo, got %v", registryNames)
+	if !registry.names["X"] || !registry.names["Foo"] {
+		t.Fatalf("want registrations X and Foo, got %v", registry.names)
 	}
 }
 
 func TestRegistryFreezePanicsOnLateRegister(t *testing.T) {
-	saved := registryFrozen.Load()
-	registryFrozen.Store(true)
+	saved := registry.frozen.Load()
+	registry.frozen.Store(true)
 	t.Cleanup(func() {
-		registryFrozen.Store(saved)
+		registry.frozen.Store(saved)
 	})
 
 	mustPanic(t, "Test called after schedule()", func() {
