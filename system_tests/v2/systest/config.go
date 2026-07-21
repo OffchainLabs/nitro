@@ -36,7 +36,6 @@ var defaultSequencerConfig = gethexec.SequencerConfig{
 	Enable:                       true,
 	MaxBlockSpeed:                10 * time.Millisecond,
 	PollInterval:                 10 * time.Millisecond,
-	ReadFromTxQueueTimeout:       time.Second,
 	MaxRevertGasReject:           params.TxGas + 10000,
 	MaxAcceptableTimestampDelta:  time.Hour,
 	SenderWhitelist:              []string{},
