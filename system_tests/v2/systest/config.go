@@ -16,8 +16,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/consensus"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -69,6 +73,21 @@ func defaultExecConfig(t *testing.T, stateScheme containers.Option[StateScheme])
 		t.Fatalf("invalid exec config: %v", err)
 	}
 	return cloneConfig(&cfg)
+}
+
+func configureConsensusExecutionOverRPC(execCfg *gethexec.Config, nodeCfg *arbnode.Config, stackCfg *node.Config) {
+	if stackCfg.WSHost == "" {
+		stackCfg.WSHost = "localhost"
+	}
+	stackCfg.WSModules = append(stackCfg.WSModules, consensus.RPCNamespace, execution.RPCNamespace)
+	nodeCfg.RPCServer.Enable = true
+	nodeCfg.RPCServer.Public = true
+	nodeCfg.RPCServer.Authenticated = false
+	nodeCfg.ExecutionRPCClient.URL = "self"
+	execCfg.RPCServer.Enable = true
+	execCfg.RPCServer.Public = true
+	execCfg.RPCServer.Authenticated = false
+	execCfg.ConsensusRPCClient.URL = "self"
 }
 
 type configFetcher[T any] struct {

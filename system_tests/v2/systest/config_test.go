@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/node"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -105,5 +107,27 @@ func walkDiff(a, b reflect.Value, path string, diffs *[]string, depth int) {
 		if !reflect.DeepEqual(a.Interface(), b.Interface()) {
 			*diffs = append(*diffs, fmt.Sprintf("%s: %v -> %v", path, a.Interface(), b.Interface()))
 		}
+	}
+}
+
+func TestConfigureConsensusExecutionOverRPC(t *testing.T) {
+	execCfg := &gethexec.Config{}
+	nodeCfg := &arbnode.Config{}
+	stackCfg := &node.Config{}
+	configureConsensusExecutionOverRPC(execCfg, nodeCfg, stackCfg)
+	if stackCfg.WSHost != "localhost" {
+		t.Errorf("WSHost = %q, want localhost", stackCfg.WSHost)
+	}
+	if !nodeCfg.RPCServer.Enable || !execCfg.RPCServer.Enable {
+		t.Error("RPC servers not enabled on both sides")
+	}
+	if nodeCfg.ExecutionRPCClient.URL != "self" || execCfg.ConsensusRPCClient.URL != "self" {
+		t.Errorf("client URLs = %q / %q, want self / self", nodeCfg.ExecutionRPCClient.URL, execCfg.ConsensusRPCClient.URL)
+	}
+
+	preset := &node.Config{WSHost: "127.0.0.1"}
+	configureConsensusExecutionOverRPC(&gethexec.Config{}, &arbnode.Config{}, preset)
+	if preset.WSHost != "127.0.0.1" {
+		t.Errorf("preset WSHost overwritten: %q", preset.WSHost)
 	}
 }

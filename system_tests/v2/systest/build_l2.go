@@ -31,6 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
@@ -91,6 +92,9 @@ func seedConfigs(t *testing.T, spec Spec, o overrides, nodeConfig *arbnode.Confi
 	execCfg := defaultExecConfig(t, spec.StateScheme)
 	stackCfg := testStackConfig(t, spec)
 	applyOverrides(o, nodeConfig, execCfg, stackCfg)
+	if *testflag.ConsensusExecutionInSameProcessUseRPC {
+		configureConsensusExecutionOverRPC(execCfg, nodeConfig, stackCfg)
+	}
 	return chainConfig, execCfg, stackCfg
 }
 
