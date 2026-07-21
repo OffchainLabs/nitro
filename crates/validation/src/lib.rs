@@ -26,6 +26,13 @@ pub mod transfer;
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
 pub type Preimages = BTreeMap<u8, BTreeMap<[u8; 32], Vec<u8>>>;
 
+/// Magic payload the SP1 builder feeds as the program's third input during
+/// the bootloading step. The program recognizes this exact byte string,
+/// halts cleanly after the `beforeFirstIO` ELF dump, and skips parsing a
+/// `ValidationInput`. Any other payload, including a genuinely empty one,
+/// falls through to the normal parse path and may panic loudly.
+pub const SP1_BOOTLOAD_SENTINEL: &[u8] = b"SP1_BOOTLOAD_ONLY";
+
 /// The runtime data needed by any machine (JIT, SP1, Prover) to execute
 /// a single block validation. Extracted from a `ValidationRequest` by
 /// selecting a target architecture and stripping request metadata.
@@ -48,7 +55,9 @@ impl ValidationInput {
     /// Extract runtime data from a request for the given target architecture.
     ///
     /// Returns an error if the request contains user WASMs for a different
-    /// architecture but none for `target`.
+    /// architecture but none for `target`. With the `sp1` feature this is not
+    /// an error: the SP1 runner compiles missing `wasm`-arch sources to the
+    /// target on the fly, so `module_asms` is simply left empty.
     pub fn from_request(req: &ValidationRequest, target: &str) -> Result<Self, String> {
         let mut sequencer_messages = Inbox::new();
         for batch in &req.batch_info {
@@ -73,7 +82,7 @@ impl ValidationInput {
             for (module_hash, wasm) in user_wasms {
                 module_asms.insert(**module_hash, wasm.as_vec());
             }
-        } else {
+        } else if !cfg!(feature = "sp1") {
             for (arch, wasms) in &req.user_wasms {
                 if !wasms.is_empty() {
                     return Err(format!("bad stylus arch: got {arch}, expected {target}"));
@@ -319,12 +328,34 @@ mod tests {
         assert_eq!(input.module_asms[&[0xBB; 32]], vec![0, 1, 2, 3]);
     }
 
+    #[cfg(not(feature = "sp1"))]
     #[test]
     fn from_request_errors_on_wrong_target() {
         let req = make_request();
         let err = ValidationInput::from_request(&req, "nonexistent").unwrap_err();
-
         assert!(err.contains("bad stylus arch"));
+    }
+
+    /// The SP1 runner compiles missing target binaries from `wasm` sources on
+    /// the fly, so a request with user wasms only for another arch is valid
+    /// and yields empty `module_asms`.
+    #[cfg(feature = "sp1")]
+    #[test]
+    fn from_request_allows_wrong_target_with_sp1() {
+        let req = make_request();
+        let input = ValidationInput::from_request(&req, "nonexistent").unwrap();
+        assert!(input.module_asms.is_empty());
+    }
+
+    /// The SP1 program distinguishes the bootload sentinel from a real input
+    /// by exact byte equality before parsing, and any non-sentinel payload
+    /// must fail parsing loudly rather than validate garbage. Guarantee the
+    /// two cannot be confused: the sentinel itself is not a parseable input.
+    #[cfg(feature = "rkyv")]
+    #[test]
+    fn bootload_sentinel_is_not_a_valid_input() {
+        let err = ValidationInput::from_reader(io::Cursor::new(SP1_BOOTLOAD_SENTINEL)).unwrap_err();
+        assert!(err.contains("rkyv"), "unexpected error: {err}");
     }
 
     #[test]
