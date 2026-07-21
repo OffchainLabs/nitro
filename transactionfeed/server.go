@@ -41,6 +41,22 @@ type clientConn struct {
 	conn       *websocket.Conn
 	remoteAddr string
 	out        chan []byte
+	// closeStatus is set by the run loop before close(out) to override the
+	// close frame handleWS sends (0 means no override).
+	closeStatus atomic.Int32
+}
+
+// closeFrame returns the status and reason for this client's close frame:
+// the run loop's override if set, GoingAway on server shutdown, or normal closure.
+func (cc *clientConn) closeFrame(ctx context.Context) (websocket.StatusCode, string) {
+	switch {
+	case cc.closeStatus.Load() == int32(websocket.StatusPolicyViolation):
+		return websocket.StatusPolicyViolation, "slow consumer"
+	case ctx.Err() != nil:
+		return websocket.StatusGoingAway, "shutting down"
+	default:
+		return websocket.StatusNormalClosure, ""
+	}
 }
 
 type clientEvent struct {
@@ -127,7 +143,8 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	log.Debug("Transaction feed client disconnected", "remote", cc.remoteAddr)
 
-	_ = conn.Close(websocket.StatusNormalClosure, "")
+	code, reason := cc.closeFrame(ctx)
+	_ = conn.Close(code, reason)
 	s.sendUnregister(cc)
 }
 
@@ -172,7 +189,6 @@ func (s *Server) run(ctx context.Context) {
 	defer func() {
 		for cc := range clients {
 			close(cc.out)
-			_ = cc.conn.CloseNow()
 		}
 		s.clientCount.Store(0)
 		clientsCurrentGauge.Update(0)
@@ -199,9 +215,9 @@ func (s *Server) run(ctx context.Context) {
 				default:
 					log.Warn("Transaction feed client disconnected due to slow consumption", "remote", cc.remoteAddr)
 					clientsDisconnectedSlow.Inc(1)
+					cc.closeStatus.Store(int32(websocket.StatusPolicyViolation))
 					delete(clients, cc)
 					close(cc.out)
-					_ = cc.conn.CloseNow()
 					s.clientCount.Add(-1)
 					clientsCurrentGauge.Update(int64(s.clientCount.Load()))
 				}
