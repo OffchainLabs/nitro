@@ -21,5 +21,4 @@ serde_with = { workspace = true, optional = true, features = ["base64"] }
 default = ["std"]
 std = ["dep:arbutil", "dep:brotli", "dep:serde", "dep:serde_json", "dep:serde_with"]
 rkyv = ["dep:rkyv", "std"]
-sp1 = []
 transfer = ["std"]

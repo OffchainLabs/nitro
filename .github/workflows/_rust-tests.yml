@@ -80,10 +80,10 @@ jobs:
           cargo nextest run -p arbutil -p prover -p jit -p stylus -p validator -p validation --release
           --profile ci --config-file nextest.toml
 
-      # The sp1- and rkyv-gated tests are compiled out of the default-features
-      # run above, so run them in a dedicated pass.
-      - name: Run validation tests (sp1 + rkyv features)
-        run: cargo test -p validation --features sp1,rkyv --release
+      # The rkyv-gated tests are compiled out of the default-features run
+      # above, so run them in a dedicated pass.
+      - name: Run validation tests (rkyv feature)
+        run: cargo test -p validation --features rkyv --release
 
       - name: Upload rust test results
         if: always()

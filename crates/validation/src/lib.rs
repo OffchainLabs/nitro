@@ -55,10 +55,27 @@ impl ValidationInput {
     /// Extract runtime data from a request for the given target architecture.
     ///
     /// Returns an error if the request contains user WASMs for a different
-    /// architecture but none for `target`. With the `sp1` feature this is not
-    /// an error: the SP1 runner compiles missing `wasm`-arch sources to the
-    /// target on the fly, so `module_asms` is simply left empty.
+    /// architecture but none for `target`.
     pub fn from_request(req: &ValidationRequest, target: &str) -> Result<Self, String> {
+        Self::extract(req, target, true)
+    }
+
+    /// Like [`Self::from_request`], but a request without binaries for
+    /// `target` is not an error: `module_asms` is left empty (or partial)
+    /// and the caller is responsible for compiling the request's `wasm`-arch
+    /// sources to `target` itself, as the SP1 runner does.
+    pub fn from_request_allowing_missing_binaries(
+        req: &ValidationRequest,
+        target: &str,
+    ) -> Result<Self, String> {
+        Self::extract(req, target, false)
+    }
+
+    fn extract(
+        req: &ValidationRequest,
+        target: &str,
+        require_target_binaries: bool,
+    ) -> Result<Self, String> {
         let mut sequencer_messages = Inbox::new();
         for batch in &req.batch_info {
             sequencer_messages.insert(batch.number, batch.data.clone());
@@ -82,7 +99,7 @@ impl ValidationInput {
             for (module_hash, wasm) in user_wasms {
                 module_asms.insert(**module_hash, wasm.as_vec());
             }
-        } else if !cfg!(feature = "sp1") {
+        } else if require_target_binaries {
             for (arch, wasms) in &req.user_wasms {
                 if !wasms.is_empty() {
                     return Err(format!("bad stylus arch: got {arch}, expected {target}"));
@@ -328,7 +345,6 @@ mod tests {
         assert_eq!(input.module_asms[&[0xBB; 32]], vec![0, 1, 2, 3]);
     }
 
-    #[cfg(not(feature = "sp1"))]
     #[test]
     fn from_request_errors_on_wrong_target() {
         let req = make_request();
@@ -336,15 +352,25 @@ mod tests {
         assert!(err.contains("bad stylus arch"));
     }
 
-    /// The SP1 runner compiles missing target binaries from `wasm` sources on
-    /// the fly, so a request with user wasms only for another arch is valid
-    /// and yields empty `module_asms`.
-    #[cfg(feature = "sp1")]
+    /// Consumers like the SP1 runner compile missing target binaries from
+    /// `wasm` sources on the fly, so a request with user wasms only for
+    /// another arch is valid and yields empty `module_asms`.
     #[test]
-    fn from_request_allows_wrong_target_with_sp1() {
+    fn from_request_allowing_missing_binaries_accepts_wrong_target() {
         let req = make_request();
-        let input = ValidationInput::from_request(&req, "nonexistent").unwrap();
+        let input =
+            ValidationInput::from_request_allowing_missing_binaries(&req, "nonexistent").unwrap();
         assert!(input.module_asms.is_empty());
+    }
+
+    /// The lenient constructor still picks up binaries that do exist for the
+    /// requested target.
+    #[test]
+    fn from_request_allowing_missing_binaries_uses_present_target() {
+        let req = make_request();
+        let input = ValidationInput::from_request_allowing_missing_binaries(&req, "host").unwrap();
+        assert_eq!(input.module_asms.len(), 1);
+        assert_eq!(input.module_asms[&[0xBB; 32]], vec![0, 1, 2, 3]);
     }
 
     /// The SP1 program distinguishes the bootload sentinel from a real input
