@@ -17,6 +17,11 @@ use crate::{
     extractor::MessageExtractor, fsm::FsmState,
 };
 
+/// How far behind the parent-chain tip still counts as caught up, tolerating the
+/// chain advancing between the "next block" and "latest block" reads. Mirrors
+/// nitro's hard-coded 5-block tolerance.
+const CAUGHT_UP_TOLERANCE_BLOCKS: u64 = 5;
+
 /// The `ProcessingNextBlock` FSM phase.
 #[async_trait::async_trait]
 pub(crate) trait ProcessingNextBlock {
@@ -70,8 +75,28 @@ where
         {
             Ok(Some(h)) => h,
             Ok(None) => {
-                // The next block isn't available yet: we've reached the tip.
-                self.caught_up = true;
+                // Next block not posted yet: retry, no error. Catch-up is a
+                // latest-only signal; a fresh latest read within tolerance of our
+                // head guards against a transient miss for a block that exists.
+                if !self.caught_up && self.config.read_mode == ReadMode::Latest {
+                    match self
+                        .parent_chain_reader
+                        .header_by_number(BlockNumberOrTag::Latest)
+                        .await
+                    {
+                        Ok(Some(latest)) => {
+                            let behind = latest.inner.number.checked_sub(pre_number);
+                            if behind.is_some_and(|behind| behind <= CAUGHT_UP_TOLERANCE_BLOCKS) {
+                                self.caught_up = true;
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(e) => tracing::error!(
+                            error = %e,
+                            "failed to fetch parent-chain latest block to determine MEL catch-up",
+                        ),
+                    }
+                }
                 return (retry, Ok(()));
             }
             Err(e) => return (retry, Err(e.into())),
