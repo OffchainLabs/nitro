@@ -8,7 +8,6 @@ pub struct BeaconBlobReaderConfig {
     pub beacon_url: Url,
     pub secondary_beacon_url: Option<Url>,
     pub authorization: Option<String>,
-    pub skip_blob_proof_verification: bool,
 }
 
 /// Custom Debug implementation to avoid leaking `authorization` field.
@@ -20,10 +19,6 @@ impl fmt::Debug for BeaconBlobReaderConfig {
             .field(
                 "authorization",
                 &self.authorization.as_ref().map(|_| "<REDACTED>"),
-            )
-            .field(
-                "skip_blob_proof_verification",
-                &self.skip_blob_proof_verification,
             )
             .finish()
     }

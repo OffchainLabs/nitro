@@ -22,3 +22,30 @@ pub fn kzg_commitment_to_versioned_hash(commitment: &[u8]) -> B256 {
     hash[0] = VERSIONED_HASH_VERSION_KZG;
     B256::from_slice(&hash)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Compressed G1 identity point: the KZG commitment of an all-zero blob.
+    fn zero_blob_commitment() -> [u8; 48] {
+        let mut c = [0u8; 48];
+        c[0] = 0xc0;
+        c
+    }
+
+    #[test]
+    fn versioned_hash_sets_kzg_version_byte() {
+        let vh = kzg_commitment_to_versioned_hash(&[0u8; 48]);
+        assert_eq!(vh[0], VERSIONED_HASH_VERSION_KZG);
+    }
+
+    #[test]
+    fn zero_blob_matches_known_commitment_hash() {
+        let got = blob_to_versioned_hash(&Blob::default()).unwrap();
+        let expected = kzg_commitment_to_versioned_hash(&zero_blob_commitment());
+
+        assert_eq!(got, expected);
+        assert_eq!(got[0], VERSIONED_HASH_VERSION_KZG);
+    }
+}
