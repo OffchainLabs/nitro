@@ -2936,6 +2936,7 @@ func TestDelayedMessageFilterCatchesEventFilter(t *testing.T) {
 
 	filteringReportStack, reportAPI := SetupFilteringReport(t)
 	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -2959,8 +2960,7 @@ func TestDelayedMessageFilterCatchesEventFilter(t *testing.T) {
 
 	contractAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
-	addrFilter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	contractABI, err := localgen.AddressFilterTestMetaData.GetAbi()
 	require.NoError(t, err)

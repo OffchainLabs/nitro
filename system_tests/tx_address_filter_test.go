@@ -52,19 +52,18 @@ func newHashedCheckerWithScheme(addrs []common.Address, scheme addressfilter.Has
 	const cacheSize = 100
 	store := addressfilter.NewHashStore(cacheSize)
 	if len(addrs) > 0 {
-		salt, _ := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
 		hashes := make([]common.Hash, len(addrs))
 		if scheme == addressfilter.HashingSchemeRawBytesInput {
 			for i, addr := range addrs {
-				hashes[i] = addressfilter.HashRawBytesInput(salt, addr)
+				hashes[i] = addressfilter.HashRawBytesInput(testFilterSalt, addr)
 			}
 		} else {
-			hashPrefix := addressfilter.GetHashStringInputPrefix(salt)
+			hashPrefix := addressfilter.GetHashStringInputPrefix(testFilterSalt)
 			for i, addr := range addrs {
 				hashes[i] = addressfilter.HashStringInputWithPrefix(hashPrefix, addr)
 			}
 		}
-		store.Store(uuid.New(), salt, scheme, hashes, "test")
+		store.Store(uuid.New(), testFilterSalt, scheme, hashes, "test")
 	}
 	checker := addressfilter.NewHashedAddressChecker(store, 4, 8192)
 	checker.Start(context.Background())
@@ -1359,9 +1358,7 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	}
 
 	// Store hashes to the hashstore so FilteringReady returns true
-	salt, err := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
-	Require(t, err)
-	filterService.GetHashStore().Store(uuid.New(), salt, addressfilter.HashingSchemeStringInput, nil, "test-digest")
+	filterService.GetHashStore().Store(uuid.New(), testFilterSalt, addressfilter.HashingSchemeStringInput, nil, "test-digest")
 
 	if !execNode.Sequencer.FilteringReady() {
 		t.Fatal("FilteringReady should be true after filter rules are loaded")
