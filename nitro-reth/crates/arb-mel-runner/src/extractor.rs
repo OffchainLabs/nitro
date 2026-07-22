@@ -20,11 +20,7 @@ use crate::{
     config::MessageExtractionConfig,
     consumer::MessageConsumer,
     database::Database,
-    fsm::{FsmState, FsmStateKind},
-    initialize::Initializing,
-    process_next_block::ProcessingNextBlock,
-    reorg::Reorging,
-    save_messages::SavingMessages,
+    fsm::{FsmState, FsmStateKind, Initializing, ProcessingNextBlock, Reorging, SavingMessages},
     types::RollupAddresses,
 };
 
@@ -151,7 +147,7 @@ where
     }
 
     /// Drives the FSM in a loop until the task is dropped. Replaces `stopwaiter`.
-    pub async fn run(&mut self) {
+    pub async fn run(mut self) {
         loop {
             let delay = self.tick().await;
             if !delay.is_zero() {

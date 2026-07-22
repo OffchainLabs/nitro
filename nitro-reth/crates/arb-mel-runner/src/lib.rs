@@ -21,17 +21,13 @@ mod consumer;
 mod database;
 mod extractor;
 mod fsm;
-mod initialize;
-mod process_next_block;
-mod reorg;
-mod save_messages;
 mod types;
 
 // The DA provider is the real `arb-da-provider-client`; re-export for convenience.
 pub use arb_da_provider_client::{DaReaderRegistry, DaReaderSource};
 // Canonical MEL types are owned by `arb-mel`; re-export for convenience.
 pub use arb_mel::{BatchMeta, DelayedInboxMessage, ExtractionOutput, MelState};
-pub use config::MessageExtractionConfig;
+pub use config::{MessageExtractionConfig, ReadMode};
 pub use consumer::{MessageConsumer, MockMessageConsumer};
 pub use database::{Database, MockDatabase};
 pub use extractor::MessageExtractor;

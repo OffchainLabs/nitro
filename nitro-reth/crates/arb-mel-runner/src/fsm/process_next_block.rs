@@ -13,7 +13,7 @@ use arb_mel::{DelayedInboxMessage, DelayedMessageDB, LogsFetcher, MelResult, Mel
 use arb_parent_chain_client::ParentChainReader;
 
 use crate::{
-    MelRunnerError, Result, consumer::MessageConsumer, database::Database,
+    MelRunnerError, Result, config::ReadMode, consumer::MessageConsumer, database::Database,
     extractor::MessageExtractor, fsm::FsmState,
 };
 
@@ -57,7 +57,7 @@ where
         };
 
         // Read-mode gate: for safe/finalized, don't get ahead of the confirmed tip.
-        if self.config.read_mode != "latest"
+        if self.config.read_mode != ReadMode::Latest
             && pre_number + 1 > self.last_block_to_read.load(Ordering::Relaxed)
         {
             return (retry, Ok(()));
