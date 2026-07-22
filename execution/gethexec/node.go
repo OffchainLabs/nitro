@@ -392,7 +392,6 @@ func CreateExecutionNode(
 	}
 	var addressFilterService *addressfilter.FilterService
 	var addressChecker state.AddressChecker
-	// Tests bypass the service by injecting via ExecEngine.SetAddressChecker.
 	if config.TransactionFiltering.Enable {
 		addressFilterService, err = addressfilter.NewFilterService(&config.TransactionFiltering.AddressFilter)
 		if err != nil {

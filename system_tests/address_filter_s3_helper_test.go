@@ -35,6 +35,10 @@ func setupFakeS3AddressFilter(t *testing.T, builder *NodeBuilder) *fakeS3Address
 }
 
 func setupFakeS3AddressFilterWithScheme(t *testing.T, builder *NodeBuilder, scheme addressfilter.HashingScheme) *fakeS3AddressFilter {
+	return setupFakeS3AddressFilterForConfig(t, builder.execConfig, scheme)
+}
+
+func setupFakeS3AddressFilterForConfig(t *testing.T, execConfig *gethexec.Config, scheme addressfilter.HashingScheme) *fakeS3AddressFilter {
 	t.Helper()
 	const bucket = "addressfilter-test"
 	const objectKey = "filtered-addresses-hashed-list.json"
@@ -48,7 +52,7 @@ func setupFakeS3AddressFilterWithScheme(t *testing.T, builder *NodeBuilder, sche
 		scheme:    scheme,
 	}
 
-	filteringConfig := &builder.execConfig.TransactionFiltering
+	filteringConfig := &execConfig.TransactionFiltering
 	filteringConfig.Enable = true
 	if filteringConfig.TransactionFiltererRPCClient.URL == "" {
 		filteringConfig.TransactionFiltererRPCClient.URL = gethexec.TransactionFiltererURLNone
