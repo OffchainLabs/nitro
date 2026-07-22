@@ -1,0 +1,23 @@
+[package]
+name = "arb-blob-client"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+c-kzg.workspace = true
+reqwest = { workspace = true, features = ["json", "rustls-tls"] }
+thiserror.workspace = true
+
+# Alloy
+alloy-primitives.workspace = true
+
+# Internal
+arb-parent-chain-client.workspace = true
+
+[lints]
+workspace = true

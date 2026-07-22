@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/arb-primitives",
+    "crates/arb-blob-client",
     "crates/arb-chainspec",
     "crates/arb-consensus-db",
     "crates/arb-context",
@@ -43,6 +44,7 @@ version = "0.1.5"
 [workspace.dependencies]
 # Internal crates
 arb-primitives = { path = "crates/arb-primitives" }
+arb-blob-client = { path = "crates/arb-chainspec" }
 arb-chainspec = { path = "crates/arb-chainspec" }
 arb-consensus-db = { path = "crates/arb-consensus-db" }
 arb-context = { path = "crates/arb-context" }

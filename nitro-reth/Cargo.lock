@@ -1047,6 +1047,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-blob-client"
+version = "0.1.5"
+dependencies = [
+ "alloy-primitives",
+ "arb-parent-chain-client",
+ "async-trait",
+ "c-kzg",
+ "reqwest",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arb-chainspec"
 version = "0.1.5"
 dependencies = [
