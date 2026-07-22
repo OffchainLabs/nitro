@@ -13,25 +13,18 @@ use crate::{
     extractor::MessageExtractor, fsm::FsmState,
 };
 
-/// The `SavingMessages` FSM phase.
-#[async_trait::async_trait]
-pub(crate) trait SavingMessages {
-    /// Persists batch metas, delayed messages, and state, and pushes messages to
-    /// the consumer, then transitions to `ProcessingNextBlock`. Each sub-step is
-    /// retried independently; on failure the FSM stays in `SavingMessages`.
-    /// Mirrors `SaveMessages`.
-    async fn save_messages(&mut self) -> (Duration, Result<()>);
-}
-
-#[async_trait::async_trait]
-impl<P, D, C, S> SavingMessages for MessageExtractor<P, D, C, S>
+impl<P, D, C, S> MessageExtractor<P, D, C, S>
 where
     P: ParentChainReader,
     D: Database,
     C: MessageConsumer,
     S: DaReaderSource,
 {
-    async fn save_messages(&mut self) -> (Duration, Result<()>) {
+    /// The `SavingMessages` FSM phase: persists batch metas, delayed messages, and
+    /// state, and pushes messages to the consumer, then transitions to
+    /// `ProcessingNextBlock`. Each sub-step is retried independently; on failure
+    /// the FSM stays in `SavingMessages`. Mirrors `SaveMessages`.
+    pub(crate) async fn save_messages(&mut self) -> (Duration, Result<()>) {
         let retry = self.config.retry_interval;
         let consumer = self.msg_consumer.clone();
 

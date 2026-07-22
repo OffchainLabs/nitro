@@ -1,8 +1,8 @@
 //! The message extractor: the FSM driver.
 //!
-//! Ports nitro's `arbnode/mel/runner/mel.go`. Each FSM phase's handler lives in
-//! its own module (`initialize`, `process_next_block`, `save_messages`, `reorg`)
-//! as a trait this struct implements.
+//! Ports nitro's `arbnode/mel/runner/mel.go`. Each FSM phase's handler is an
+//! inherent method on this struct, defined in its own module (`initialize`,
+//! `process_next_block`, `save_messages`, `reorg`).
 //!
 //! [`MessageExtractor::act`] ticks the FSM once; [`MessageExtractor::run`] drives
 //! it in a loop.
@@ -24,7 +24,7 @@ use crate::{
     config::{MessageExtractionConfig, ReadMode},
     consumer::MessageConsumer,
     database::Database,
-    fsm::{FsmState, FsmStateKind, Initializing, ProcessingNextBlock, Reorging, SavingMessages},
+    fsm::{FsmState, FsmStateKind},
     types::RollupAddresses,
 };
 

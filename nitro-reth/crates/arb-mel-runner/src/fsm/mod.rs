@@ -5,20 +5,14 @@
 //! single payload-carrying [`FsmState`] enum, with a lightweight [`FsmStateKind`]
 //! discriminant for the `CurrentFSMState`-style assertions.
 //!
-//! Each state's handler lives in its own submodule (`initialize`,
-//! `process_next_block`, `save_messages`, `reorg`) as a trait
-//! [`crate::MessageExtractor`] implements; the traits are re-exported here so the
-//! driver can bring them into scope from a single path.
+//! Each state's handler is an inherent method on [`crate::MessageExtractor`],
+//! defined in its own submodule (`initialize`, `process_next_block`,
+//! `save_messages`, `reorg`).
 
 mod initialize;
 mod process_next_block;
 mod reorg;
 mod save_messages;
-
-pub(crate) use initialize::Initializing;
-pub(crate) use process_next_block::ProcessingNextBlock;
-pub(crate) use reorg::Reorging;
-pub(crate) use save_messages::SavingMessages;
 
 use arb_mel::{BatchMeta, DelayedInboxMessage, MelState};
 use arbos::arbos_types::MessageWithMetadata;

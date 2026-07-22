@@ -13,23 +13,17 @@ use crate::{
     extractor::MessageExtractor, fsm::FsmState,
 };
 
-/// The `Reorging` FSM phase.
-#[async_trait::async_trait]
-pub(crate) trait Reorging {
-    /// Rewinds to the MEL state one parent-chain block back and transitions to
-    /// `ProcessingNextBlock` with `prev_step_was_reorg` set. Mirrors `Reorg`.
-    async fn reorg(&mut self) -> (Duration, Result<()>);
-}
-
-#[async_trait::async_trait]
-impl<P, D, C, S> Reorging for MessageExtractor<P, D, C, S>
+impl<P, D, C, S> MessageExtractor<P, D, C, S>
 where
     P: ParentChainReader,
     D: Database,
     C: MessageConsumer,
     S: DaReaderSource,
 {
-    async fn reorg(&mut self) -> (Duration, Result<()>) {
+    /// The `Reorging` FSM phase: rewinds to the MEL state one parent-chain block
+    /// back and transitions to `ProcessingNextBlock` with `prev_step_was_reorg`
+    /// set. Mirrors `Reorg`.
+    pub(crate) async fn reorg(&mut self) -> (Duration, Result<()>) {
         let retry = self.config.retry_interval;
         let number = match &self.fsm_state {
             FsmState::Reorging { mel_state } => mel_state.parent_chain_block_number,

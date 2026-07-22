@@ -22,24 +22,17 @@ use crate::{
 /// nitro's hard-coded 5-block tolerance.
 const CAUGHT_UP_TOLERANCE_BLOCKS: u64 = 5;
 
-/// The `ProcessingNextBlock` FSM phase.
-#[async_trait::async_trait]
-pub(crate) trait ProcessingNextBlock {
-    /// Fetches the next parent-chain block, detects reorgs, runs extraction via
-    /// `arb-mel`, and transitions to `SavingMessages` (or `Reorging`). Mirrors
-    /// `ProcessNextBlock`.
-    async fn process_next_block(&mut self) -> (Duration, Result<()>);
-}
-
-#[async_trait::async_trait]
-impl<P, D, C, S> ProcessingNextBlock for MessageExtractor<P, D, C, S>
+impl<P, D, C, S> MessageExtractor<P, D, C, S>
 where
     P: ParentChainReader,
     D: Database,
     C: MessageConsumer,
     S: DaReaderSource,
 {
-    async fn process_next_block(&mut self) -> (Duration, Result<()>) {
+    /// The `ProcessingNextBlock` FSM phase: fetches the next parent-chain block,
+    /// detects reorgs, runs extraction via `arb-mel`, and transitions to
+    /// `SavingMessages` (or `Reorging`). Mirrors `ProcessNextBlock`.
+    pub(crate) async fn process_next_block(&mut self) -> (Duration, Result<()>) {
         let retry = self.config.retry_interval;
         let (pre_number, pre_hash, pre_msg_count, prev_was_reorg) = match &self.fsm_state {
             FsmState::ProcessingNextBlock {
@@ -170,7 +163,7 @@ impl LogsFetcher for NilLogsFetcher {
     }
 }
 
-/// Never invoked while `NilLogsFetcher` yields no logs.
+/// TODO: remove after TxFetcher lands
 struct NilTxFetcher;
 
 impl TxFetcher for NilTxFetcher {

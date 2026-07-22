@@ -14,24 +14,17 @@ use crate::{
     extractor::MessageExtractor, fsm::FsmState,
 };
 
-/// The `Start` FSM phase.
-#[async_trait::async_trait]
-pub(crate) trait Initializing {
-    /// Loads the head MEL state and transitions to `ProcessingNextBlock`, or to
-    /// `Reorging` if the stored head hash no longer matches the parent chain.
-    /// Mirrors `Initialize`.
-    async fn initialize(&mut self) -> (Duration, Result<()>);
-}
-
-#[async_trait::async_trait]
-impl<P, D, C, S> Initializing for MessageExtractor<P, D, C, S>
+impl<P, D, C, S> MessageExtractor<P, D, C, S>
 where
     P: ParentChainReader,
     D: Database,
     C: MessageConsumer,
     S: DaReaderSource,
 {
-    async fn initialize(&mut self) -> (Duration, Result<()>) {
+    /// The `Start` FSM phase: loads the head MEL state and transitions to
+    /// `ProcessingNextBlock`, or to `Reorging` if the stored head hash no longer
+    /// matches the parent chain. Mirrors `Initialize`.
+    pub(crate) async fn initialize(&mut self) -> (Duration, Result<()>) {
         let retry = self.config.retry_interval;
         let head = match self.db.get_head_mel_state().await {
             Ok(s) => s,
