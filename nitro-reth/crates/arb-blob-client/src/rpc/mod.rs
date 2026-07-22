@@ -1,46 +1,59 @@
-use std::sync::OnceLock;
+use std::{
+    fmt,
+    sync::{Arc, OnceLock},
+};
 
 use alloy_primitives::B256;
-use alloy_rpc_types_beacon::{config::SpecResponse, genesis::GenesisResponse};
+use alloy_rpc_types_beacon::{
+    config::SpecResponse, genesis::GenesisResponse, sidecar::GetBlobsResponse,
+};
+use arb_parent_chain_client::ParentChainReader;
 use reqwest::{Url, header::AUTHORIZATION};
 use serde::de::DeserializeOwned;
 
 use crate::{Blob, BlobError, BlobReader, Result};
 
 mod config;
+mod kzg;
 
 pub use config::BeaconBlobReaderConfig;
 
 const GENESIS_ENDPOINT: &str = "/eth/v1/beacon/genesis";
 const SPEC_ENDPOINT: &str = "/eth/v1/config/spec";
 
-#[derive(Debug)]
 pub struct BeaconBlobReader {
     /// Configuration options for reading blobs from the beacon.
     config: BeaconBlobReaderConfig,
     /// HTTP client for making the RPC requests.
     client: reqwest::Client,
+    /// Parent chain RPC
+    parent_chain: Arc<dyn ParentChainReader>,
     /// Timing info loaded from the beacon in [`Self::initialize`].
     slot_clock: OnceLock<SlotClock>,
 }
 
 impl BeaconBlobReader {
-    pub fn new(config: BeaconBlobReaderConfig) -> Self {
+    pub fn new(config: BeaconBlobReaderConfig, parent_chain: Arc<dyn ParentChainReader>) -> Self {
         Self {
             config,
+            parent_chain,
             client: reqwest::Client::new(),
             slot_clock: OnceLock::new(),
         }
     }
 
     /// Send a GET request to the beacon, deserializing the result.
-    async fn beacon_request<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
-        let primary = match self.fetch(&self.config.beacon_url, path).await {
+    async fn beacon_request<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        query: &[(&str, String)],
+    ) -> Result<T> {
+        let primary = match self.fetch(&self.config.beacon_url, path, query).await {
             Ok(resp) => return Ok(resp.json::<T>().await?),
             Err(err) => Box::new(err),
         };
         let secondary = match &self.config.secondary_beacon_url {
-            Some(url) => match self.fetch(url, path).await {
+            Some(url) => match self.fetch(url, path, query).await {
                 Ok(resp) => return Ok(resp.json::<T>().await?),
                 Err(err) => Some(Box::new(err)),
             },
@@ -50,10 +63,15 @@ impl BeaconBlobReader {
     }
 
     /// Issues one GET to `base` + `path`, returning the response only on 2xx.
-    async fn fetch(&self, base: &Url, path: &str) -> Result<reqwest::Response> {
+    async fn fetch(
+        &self,
+        base: &Url,
+        path: &str,
+        query: &[(&str, String)],
+    ) -> Result<reqwest::Response> {
         let mut url = base.clone();
         url.set_path(path);
-        let mut req = self.client.get(url.clone());
+        let mut req = self.client.get(url.clone()).query(query);
         if let Some(auth) = &self.config.authorization {
             req = req.header(AUTHORIZATION, auth);
         }
@@ -67,13 +85,60 @@ impl BeaconBlobReader {
         }
         Ok(resp)
     }
+
+    async fn get_blobs_by_slot(&self, slot: u64, versioned_hashes: &[B256]) -> Result<Vec<Blob>> {
+        let path = format!("/eth/v1/beacon/blobs/{slot}");
+        let query: Vec<(&str, String)> = versioned_hashes
+            .iter()
+            .map(|h| ("versioned_hashes", h.to_string()))
+            .collect();
+
+        let resp: GetBlobsResponse = self.beacon_request(&path, &query).await?;
+
+        if !versioned_hashes.is_empty() && resp.data.len() != versioned_hashes.len() {
+            return Err(BlobError::BlobCountMismatch {
+                slot,
+                expected: versioned_hashes.len(),
+                got: resp.data.len(),
+            });
+        }
+
+        resp.data
+            .into_iter()
+            .enumerate()
+            .map(|(i, blob)| {
+                if !self.config.skip_blob_proof_verification
+                    && let Some(&expected) = versioned_hashes.get(i)
+                {
+                    let got = kzg::blob_to_versioned_hash(&blob)?;
+                    if got != expected {
+                        return Err(BlobError::VersionedHashMismatch {
+                            index: i,
+                            expected,
+                            got,
+                        });
+                    }
+                }
+                Ok(blob)
+            })
+            .collect()
+    }
+}
+
+impl fmt::Debug for BeaconBlobReader {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("BeaconBlobReader")
+            .field("config", &self.config)
+            .field("slot_clock", &self.slot_clock.get())
+            .finish_non_exhaustive()
+    }
 }
 
 #[async_trait::async_trait]
 impl BlobReader for BeaconBlobReader {
     async fn initialize(&self) -> Result<()> {
-        let genesis: GenesisResponse = self.beacon_request(GENESIS_ENDPOINT).await?;
-        let spec: SpecResponse = self.beacon_request(SPEC_ENDPOINT).await?;
+        let genesis: GenesisResponse = self.beacon_request(GENESIS_ENDPOINT, &[]).await?;
+        let spec: SpecResponse = self.beacon_request(SPEC_ENDPOINT, &[]).await?;
 
         let genesis_time = genesis.data.genesis_time;
         let seconds_per_slot: u64 = spec
@@ -95,7 +160,14 @@ impl BlobReader for BeaconBlobReader {
     }
 
     async fn get_blobs(&self, block_hash: B256, versioned_hashes: &[B256]) -> Result<Vec<Blob>> {
-        todo!()
+        let slot_clock = self.slot_clock.get().ok_or(BlobError::NotInitialized)?;
+        let header = self
+            .parent_chain
+            .header_by_hash(block_hash)
+            .await?
+            .ok_or(BlobError::BlockNotFound(block_hash))?;
+        let slot = slot_clock.slot_for(header.timestamp);
+        self.get_blobs_by_slot(slot, versioned_hashes).await
     }
 }
 
