@@ -1051,10 +1051,12 @@ name = "arb-blob-client"
 version = "0.1.5"
 dependencies = [
  "alloy-primitives",
+ "alloy-rpc-types-beacon",
  "arb-parent-chain-client",
  "async-trait",
  "c-kzg",
  "reqwest",
+ "serde",
  "thiserror 2.0.18",
 ]
 

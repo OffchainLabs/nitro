@@ -11,10 +11,12 @@ version.workspace = true
 async-trait.workspace = true
 c-kzg.workspace = true
 reqwest = { workspace = true, features = ["json", "rustls-tls"] }
+serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 
 # Alloy
 alloy-primitives.workspace = true
+alloy-rpc-types-beacon.workspace = true
 
 # Internal
 arb-parent-chain-client.workspace = true
