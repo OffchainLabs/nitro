@@ -876,11 +876,11 @@ func buildOnParentChain(
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
 	execConfigFetcher := NewCommonConfigFetcher(execConfig)
-	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, executionDB, blockchain, containers.Some(parentChainTestClient.Client), execConfigFetcher, 0, parentChain)
+	fatalErrChan := make(chan error, 10)
+	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, executionDB, blockchain, containers.Some(parentChainTestClient.Client), execConfigFetcher, 0, parentChain, fatalErrChan)
 	Require(t, err)
 	chainTestClient.ExecutionConfigFetcher = execConfigFetcher
 
-	fatalErrChan := make(chan error, 10)
 	locator, err := server_common.NewMachineLocator(valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	consensusConfigFetcher := NewCommonConfigFetcher(nodeConfig)
@@ -1088,11 +1088,11 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 		t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, nil, b.l2StackConfig, b.execConfig, b.TrieNoAsyncFlush, b.NoHistoryIndexDelay)
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, executionDB, blockchain, containers.None[*ethclient.Client](), execConfigFetcher, 0, nil)
+	fatalErrChan := make(chan error, 10)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, executionDB, blockchain, containers.None[*ethclient.Client](), execConfigFetcher, 0, nil, fatalErrChan)
 	Require(t, err)
 	b.L2.ExecutionConfigFetcher = execConfigFetcher
 
-	fatalErrChan := make(chan error, 10)
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	consensusConfigFetcher := NewCommonConfigFetcher(b.nodeConfig)
@@ -1172,10 +1172,10 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	l2info, stack, executionDB, consensusDB, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, b.initMessage, b.l2StackConfig, b.execConfig, b.TrieNoAsyncFlush, b.NoHistoryIndexDelay)
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, executionDB, blockchain, containers.None[*ethclient.Client](), execConfigFetcher, 0, b.L2.ExecNode.ParentChain)
+	feedErrChan := make(chan error, 10)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, executionDB, blockchain, containers.None[*ethclient.Client](), execConfigFetcher, 0, b.L2.ExecNode.ParentChain, feedErrChan)
 	Require(t, err)
 
-	feedErrChan := make(chan error, 10)
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	var sequencerTxOpts *bind.TransactOpts
@@ -2377,8 +2377,9 @@ func waitForFindInboxBatch(t *testing.T, node *arbnode.Node, msgIdx arbutil.Mess
 }
 
 // waitForBatchContainingMessage polls until the latest batch's message count
-// is at least msgPos. Zero batches is treated as not-yet-ready; errors from
-// batch queries are immediately fatal. Calls t.Fatalf on timeout.
+// exceeds msgPos, i.e. the message at index msgPos is included in a batch.
+// Zero batches is treated as not-yet-ready; errors from batch queries are
+// immediately fatal. Calls t.Fatalf on timeout.
 func waitForBatchContainingMessage(t *testing.T, node *arbnode.Node, msgPos arbutil.MessageIndex, timeout, interval time.Duration) {
 	t.Helper()
 	var lastBatchCount uint64
@@ -2396,7 +2397,7 @@ func waitForBatchContainingMessage(t *testing.T, node *arbnode.Node, msgPos arbu
 				t.Fatalf("GetBatchMessageCount(%d): %v", batches-1, err)
 			}
 			lastMsgCount = haveMessages
-			if haveMessages >= msgPos {
+			if haveMessages > msgPos {
 				return
 			}
 		}
@@ -2490,7 +2491,7 @@ func Create2ndNodeWithConfig(
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
 	execConfigFetcher := NewCommonConfigFetcher(execConfig)
-	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, executionDB, blockchain, containers.Some(parentChainClient), execConfigFetcher, 0, parentChain)
+	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, executionDB, blockchain, containers.Some(parentChainClient), execConfigFetcher, 0, parentChain, feedErrChan)
 	Require(t, err)
 
 	var currentNode *arbnode.Node

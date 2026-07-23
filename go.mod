@@ -21,6 +21,7 @@ require (
 	github.com/ccoveille/go-safecast v1.1.0
 	github.com/cockroachdb/pebble v1.1.5
 	github.com/codeclysm/extract/v3 v3.0.2
+	github.com/coder/websocket v1.8.14
 	github.com/enescakir/emoji v1.0.0
 	github.com/ethereum/go-ethereum v1.16.2
 	github.com/fatih/structtag v1.2.0

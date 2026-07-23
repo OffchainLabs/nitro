@@ -481,8 +481,10 @@ func storageTest(t *testing.T, jit bool) {
 	validateBlocks(t, 2, jit, builder)
 
 	// Captures a block_inputs json file for the block that included the
-	// storage write transaction. Include wasm targets necessary for arbitrator prover and jit binaries
-	recordBlock(t, receipt.BlockNumber.Uint64(), builder, rawdb.TargetWavm, rawdb.LocalTarget())
+	// storage write transaction. Include wasm targets necessary for arbitrator
+	// prover and jit binaries, plus the original wasm source so runners that
+	// compile stylus programs on the fly (e.g. SP1) can use the recording.
+	recordBlock(t, receipt.BlockNumber.Uint64(), builder, rawdb.TargetWavm, rawdb.TargetWasm, rawdb.LocalTarget())
 }
 
 func TestProgramTransientStorage(t *testing.T) {

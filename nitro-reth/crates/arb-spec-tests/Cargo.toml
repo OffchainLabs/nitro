@@ -1,0 +1,19 @@
+[package]
+name = "arb-spec-tests"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[features]
+# Mirrors the real crate: spec tests that drive the arb-reth binary are
+# compiled in only when this feature is on (CI passes --features spec-binary
+# together with the ARB_SPEC_BINARY / ARB_SPEC_REQUIRE_BINARY env vars).
+spec-binary = []
+
+[dependencies]
+
+[lints]
+workspace = true
