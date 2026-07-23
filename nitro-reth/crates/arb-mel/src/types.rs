@@ -30,14 +30,20 @@ fn chain_accumulator(prev: B256, msg_hash: B256) -> B256 {
 }
 
 impl MelState {
+    // TODO: not yet at parity with Nitro's AccumulateDelayedMessage. Missing
+    // initMsg capture (when delayed_messages_seen == 0) and preimage recording
+    // that the pour/pop FIFO and MEL validation depend on.
     pub fn accumulate_delayed_message(&mut self, message: &DelayedInboxMessage) -> MelResult<()> {
         self.delayed_message_inbox_acc =
-            chain_accumulator(self.delayed_message_inbox_acc, message.hash());
+            chain_accumulator(self.delayed_message_inbox_acc, message.abi_hash());
         Ok(())
     }
 
+    // TODO: not yet at parity with Nitro's AccumulateMessage. Missing preimage
+    // recording required for MEL validation-mode replay.
     pub fn accumulate_message(&mut self, message: &MessageWithMetadata) -> MelResult<()> {
-        self.local_msg_accumulator = chain_accumulator(self.local_msg_accumulator, message.hash());
+        self.local_msg_accumulator =
+            chain_accumulator(self.local_msg_accumulator, message.abi_hash());
         Ok(())
     }
 
@@ -83,7 +89,11 @@ pub struct DelayedInboxMessage {
 }
 
 impl DelayedInboxMessage {
-    pub fn hash(&self) -> B256 {
+    /// ABI-style commitment hash fed into the MEL delayed-inbox accumulator.
+    ///
+    /// TODO: packed concatenation, not yet reconciled with the on-chain
+    /// `abi.encode` layout (Nitro's `DelayedInboxMessage.Hash()` uses RLP).
+    pub fn abi_hash(&self) -> B256 {
         let mut data = Vec::new();
         data.extend_from_slice(self.block_hash.as_slice());
         data.extend_from_slice(self.before_inbox_acc.as_slice());
