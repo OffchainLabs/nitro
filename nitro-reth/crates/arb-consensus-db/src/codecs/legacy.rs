@@ -1,8 +1,8 @@
 //! L1 incoming-message wire codec, used only by the legacy `d` prefix. Mirrors nitro's
 //! `arbostypes.ParseIncomingL1Message` / `L1IncomingMessage.Serialize` byte-for-byte.
 
-// TODO: Duplicated parsing logic from `arbos::arbos_types::incomming_message`. Since we don't want
-// to introduce that as a dependency here, we may consider consolidating within the `arb-primitives`
+// TODO: Duplicated parsing logic from `arbos::types::incomming_message`. Since we don't want
+// to introduce that as a dependency here, we may consider consolidating within the `arbos-types`
 // crate.
 
 use alloy_primitives::{Address, B256, Bytes, U256};

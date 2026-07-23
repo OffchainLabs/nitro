@@ -1,7 +1,7 @@
 use alloy_consensus::Header;
 use alloy_primitives::{B256, keccak256};
 use arb_da_provider_client::DaReaderSource;
-use arbos::arbos_types::{
+use arbos::types::{
     L1_MESSAGE_TYPE_BATCH_POSTING_REPORT, MessageWithMetadata, get_data_stats,
     legacy_cost_for_stats, parse_batch_posting_report_fields,
 };

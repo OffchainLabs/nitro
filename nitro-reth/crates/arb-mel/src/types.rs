@@ -1,6 +1,6 @@
 use alloy_primitives::{Address, B256};
 use alloy_rlp::{RlpDecodable, RlpEncodable};
-use arbos::arbos_types::{L1IncomingMessage, MessageWithMetadata};
+use arbos::types::{L1IncomingMessage, MessageWithMetadata};
 
 use crate::{DelayedMessageDB, MelError};
 

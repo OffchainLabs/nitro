@@ -25,4 +25,4 @@ pub mod reverted_tx_gas;
 pub mod tx_processor;
 pub mod util;
 
-pub use arbos_types;
+pub use arbos_types as types;

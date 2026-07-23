@@ -15,7 +15,7 @@ mod reorg;
 mod save_messages;
 
 use arb_mel::{BatchMeta, DelayedInboxMessage, MelState};
-use arbos::arbos_types::MessageWithMetadata;
+use arbos::types::MessageWithMetadata;
 
 /// The state of the extraction FSM, carrying the data each state needs.
 ///

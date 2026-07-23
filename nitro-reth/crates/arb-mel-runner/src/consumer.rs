@@ -12,7 +12,7 @@
 
 use std::sync::Mutex;
 
-use arbos::arbos_types::MessageWithMetadata;
+use arbos::types::MessageWithMetadata;
 use async_trait::async_trait;
 
 use crate::{MelRunnerError, Result};

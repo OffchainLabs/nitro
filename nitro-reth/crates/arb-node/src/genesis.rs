@@ -15,8 +15,7 @@ use arb_storage::{
     set_account_code, set_account_nonce,
 };
 use arbos::{
-    arbos_state::ArbosState, arbos_types::ParsedInitMessage, burn::SystemBurner, l1_pricing,
-    l2_pricing,
+    arbos_state::ArbosState, burn::SystemBurner, l1_pricing, l2_pricing, types::ParsedInitMessage,
 };
 use revm::{Database, database::State};
 use tracing::info;

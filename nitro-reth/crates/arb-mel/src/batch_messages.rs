@@ -14,11 +14,11 @@ use core::time;
 use alloy_primitives::{Address, U256};
 use arbos::{
     arbos_state,
-    arbos_types::{
+    l1_pricing::BATCH_POSTER_ADDRESS,
+    types::{
         L1_MESSAGE_TYPE_L2_MESSAGE, L1IncomingMessage, L1IncomingMessageHeader,
         MAX_L2_MESSAGE_SIZE, MessageWithMetadata, invalid_l1_message,
     },
-    l1_pricing::BATCH_POSTER_ADDRESS,
 };
 use tracing::{error, info, warn};
 

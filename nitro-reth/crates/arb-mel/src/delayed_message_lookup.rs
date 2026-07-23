@@ -10,7 +10,7 @@ use alloy_consensus::{Header, Transaction};
 use alloy_primitives::{Address, B256, U256, keccak256};
 use alloy_rpc_types_eth::Log;
 use alloy_sol_types::{SolCall, SolEvent, sol};
-use arbos::arbos_types::{L1IncomingMessage, L1IncomingMessageHeader};
+use arbos::types::{L1IncomingMessage, L1IncomingMessageHeader};
 
 use crate::{DelayedInboxMessage, LogsFetcher, MelError, MelResult, MelState, TxFetcher};
 

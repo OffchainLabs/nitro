@@ -1,14 +1,14 @@
 use alloy_primitives::{Address, B256, U256};
 use arbos::{
-    arbos_types::{
+    parse_l2::{
+        L2_MESSAGE_KIND_BATCH, L2_MESSAGE_KIND_HEARTBEAT, L2_MESSAGE_KIND_NON_MUTATING_CALL,
+        L2_MESSAGE_KIND_UNSIGNED_USER_TX, ParsedTransaction, parse_l2_transactions,
+    },
+    types::{
         DEFAULT_INITIAL_L1_BASE_FEE, L1_MESSAGE_TYPE_BATCH_POSTING_REPORT,
         L1_MESSAGE_TYPE_INITIALIZE, L1_MESSAGE_TYPE_L2_MESSAGE, get_data_stats,
         legacy_cost_for_stats, parse_batch_posting_report_fields, parse_incoming_l1_message,
         parse_init_message,
-    },
-    parse_l2::{
-        L2_MESSAGE_KIND_BATCH, L2_MESSAGE_KIND_HEARTBEAT, L2_MESSAGE_KIND_NON_MUTATING_CALL,
-        L2_MESSAGE_KIND_UNSIGNED_USER_TX, ParsedTransaction, parse_l2_transactions,
     },
 };
 
@@ -323,7 +323,7 @@ fn incoming_l1_message_roundtrip_via_serialize() {
 
 #[test]
 fn seq_num_extracts_last_8_bytes_of_request_id() {
-    use arbos::arbos_types::L1IncomingMessageHeader;
+    use arbos::types::L1IncomingMessageHeader;
     let mut rid = [0u8; 32];
     rid[24..32].copy_from_slice(&42u64.to_be_bytes());
     let h = L1IncomingMessageHeader {
@@ -411,7 +411,7 @@ fn batch_posting_report_truncated_errors() {
 
 #[test]
 fn past_batches_for_nonreport_msg_is_empty() {
-    use arbos::arbos_types::{L1IncomingMessage, L1IncomingMessageHeader};
+    use arbos::types::{L1IncomingMessage, L1IncomingMessageHeader};
     let msg = L1IncomingMessage {
         header: L1IncomingMessageHeader {
             kind: L1_MESSAGE_TYPE_L2_MESSAGE,
@@ -430,7 +430,7 @@ fn past_batches_for_nonreport_msg_is_empty() {
 
 #[test]
 fn past_batches_for_report_msg_has_number() {
-    use arbos::arbos_types::{L1IncomingMessage, L1IncomingMessageHeader};
+    use arbos::types::{L1IncomingMessage, L1IncomingMessageHeader};
     let mut data = Vec::new();
     let mut ts = [0u8; 32];
     ts[31] = 1;
