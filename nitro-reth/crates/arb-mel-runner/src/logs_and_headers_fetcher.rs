@@ -2,8 +2,9 @@
 //!
 //! Ports nitro's `arbnode/mel/runner/logs_and_headers_fetcher.go`.
 //! [`LogsAndHeadersFetcher::fetch`] bulk-fetches, for a block range, the logs
-//! extraction needs; the sync [`LogsFetcher`] impl then serves them from cache.
-//! Headers are served by [`LogsAndHeadersFetcher::get_header_by_number`].
+//! extraction needs and that range's headers; the sync [`LogsFetcher`] impl then
+//! serves logs from cache, and [`LogsAndHeadersFetcher::get_header_by_number`]
+//! serves headers from cache (falling back to the reader).
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -30,6 +31,9 @@ pub(crate) struct LogsAndHeadersFetcher<P: ParentChainReader> {
     chain_height: u64,
     logs_by_block_hash: HashMap<B256, Vec<Log>>,
     logs_by_tx_index: HashMap<B256, HashMap<u64, Vec<Log>>>,
+    /// Headers for `[from_block, to_block]`, one entry per block (`None` if the
+    /// batch didn't return it). Indexed by `number - from_block`.
+    headers: Vec<Option<Header>>,
 }
 
 impl<P: ParentChainReader> LogsAndHeadersFetcher<P> {
@@ -48,15 +52,19 @@ impl<P: ParentChainReader> LogsAndHeadersFetcher<P> {
             chain_height: 0,
             logs_by_block_hash: HashMap::new(),
             logs_by_tx_index: HashMap::new(),
+            headers: Vec::new(),
         }
     }
 
-    /// The parent-chain header at `number`, forwarded to the reader.
-    ///
-    /// Header prefetch (nitro's batched `eth_getBlockByNumber`) needs a
-    /// batch-call capability the reader doesn't expose yet, so this forwards
-    /// per call — as nitro does when its client lacks batch support.
+    /// The parent-chain header at `number`, served from the prefetched range
+    /// cache when present, otherwise forwarded to the reader.
     pub(crate) async fn get_header_by_number(&self, number: u64) -> Result<Option<Header>> {
+        if number >= self.from_block && number <= self.to_block {
+            let pos = (number - self.from_block) as usize;
+            if let Some(Some(header)) = self.headers.get(pos) {
+                return Ok(Some(header.clone()));
+            }
+        }
         Ok(self
             .parent_chain_reader
             .header_by_number(BlockNumberOrTag::Number(number))
@@ -86,6 +94,14 @@ impl<P: ParentChainReader> LogsAndHeadersFetcher<P> {
             self.chain_height = head.inner.number;
             to = self.chain_height.min(to);
         }
+
+        // Prefetch the range's headers (one batch) so `get_header_by_number`
+        // serves from cache. Held in a local until every fallible fetch below
+        // succeeds, so an error leaves the fetcher in its reset (empty) state.
+        let headers = self
+            .parent_chain_reader
+            .headers_by_number_range(next, to)
+            .await?;
 
         // Sequencer batch delivery + data (no address filter, like nitro).
         let seq_batch_logs = self
@@ -139,6 +155,8 @@ impl<P: ParentChainReader> LogsAndHeadersFetcher<P> {
             Vec::new()
         };
 
+        // All fallible fetches succeeded; populate the caches together.
+        self.headers = headers;
         // Index every fetched log by block hash and by tx index.
         for log in seq_batch_logs
             .into_iter()
@@ -171,6 +189,7 @@ impl<P: ParentChainReader> LogsAndHeadersFetcher<P> {
         self.to_block = 0;
         self.logs_by_block_hash.clear();
         self.logs_by_tx_index.clear();
+        self.headers.clear();
     }
 }
 
@@ -297,6 +316,28 @@ mod tests {
         let got = fetcher.get_header_by_number(9).await.unwrap();
         assert_eq!(got.unwrap().inner.number, 9);
         assert!(fetcher.get_header_by_number(999).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn serves_headers_from_prefetch_cache() {
+        let h5 = header(5, B256::repeat_byte(0x05));
+        let mut mock = MockParentChainReader::new();
+        mock.with_header(h5.clone());
+        let mut fetcher = LogsAndHeadersFetcher::new(Arc::new(mock), 10, Address::ZERO);
+        fetcher.chain_height = 100; // skip the head lookup
+
+        // Prefetch range [2, 12]; header 5 is present, the rest missing.
+        let state = MelState {
+            parent_chain_block_number: 1,
+            ..Default::default()
+        };
+        fetcher.fetch(&state).await.unwrap();
+
+        // Header 5 comes from the cache — proven by erroring the reader first.
+        fetcher.parent_chain_reader.set_error(Some("boom"));
+        assert_eq!(fetcher.get_header_by_number(5).await.unwrap(), Some(h5));
+        // A block outside the cached range forwards and hits the erroring reader.
+        assert!(fetcher.get_header_by_number(50).await.is_err());
     }
 
     #[tokio::test]

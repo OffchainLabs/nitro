@@ -42,6 +42,9 @@ pub type Result<T, E = ParentChainError> = std::result::Result<T, E>;
 pub trait ParentChainReader: Send + Sync {
     /// Returns the header of the block with the given number.
     async fn header_by_number(&self, num: BlockNumberOrTag) -> Result<Option<Header>>;
+    /// Returns the headers of blocks `from..=to`, one entry per block (`None` for
+    /// any that are missing). Used to prefetch a range in one call.
+    async fn headers_by_number_range(&self, from: u64, to: u64) -> Result<Vec<Option<Header>>>;
     /// Returns the header of the block with the given hash.
     async fn header_by_hash(&self, hash: B256) -> Result<Option<Header>>;
     /// Returns the full block, including its transactions, with the given number.

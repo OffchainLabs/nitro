@@ -129,6 +129,13 @@ impl ParentChainReader for MockParentChainReader {
         )
     }
 
+    async fn headers_by_number_range(&self, from: u64, to: u64) -> Result<Vec<Option<Header>>> {
+        self.check_error()?;
+        Ok((from..=to)
+            .map(|n| self.headers_by_number.get(&n).cloned())
+            .collect())
+    }
+
     async fn header_by_hash(&self, hash: B256) -> Result<Option<Header>> {
         self.check_error()?;
         Ok(self.headers_by_hash.get(&hash).cloned())
@@ -193,6 +200,18 @@ mod tests {
                 .unwrap(),
             Some(h5)
         );
+    }
+
+    #[tokio::test]
+    async fn headers_by_number_range_returns_one_entry_per_block() {
+        let h5 = header(5, B256::repeat_byte(5));
+        let h7 = header(7, B256::repeat_byte(7));
+        let mut mock = MockParentChainReader::new();
+        mock.with_header(h5.clone()).with_header(h7.clone());
+
+        // Range [5, 7]: 5 and 7 present, 6 missing.
+        let got = mock.headers_by_number_range(5, 7).await.unwrap();
+        assert_eq!(got, vec![Some(h5), None, Some(h7)]);
     }
 
     #[tokio::test]
