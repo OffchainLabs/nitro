@@ -725,7 +725,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	@touch $@
 
 .make/yarndeps: $(DEP_PREDICATE) */package.json */yarn.lock $(ORDER_ONLY_PREDICATE) .make
-	npm --prefix safe-smart-account install
+	npm --prefix safe-smart-account ci
 	yarn --cwd contracts install
 	yarn --cwd contracts-legacy install
 	+make -C contracts-local install
