@@ -1,3 +1,5 @@
+pub mod serialization;
+
 mod incoming_message;
 mod message_with_meta;
 

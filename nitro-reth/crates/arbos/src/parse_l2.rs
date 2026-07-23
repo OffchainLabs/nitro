@@ -7,14 +7,12 @@ use arb_primitives::{
     tx_types::{ArbContractTx, ArbDepositTx, ArbSubmitRetryableTx, ArbUnsignedTx},
 };
 
-use crate::{
-    arbos_types::{
-        L1_MESSAGE_TYPE_BATCH_FOR_GAS_ESTIMATION, L1_MESSAGE_TYPE_BATCH_POSTING_REPORT,
-        L1_MESSAGE_TYPE_END_OF_BLOCK, L1_MESSAGE_TYPE_ETH_DEPOSIT, L1_MESSAGE_TYPE_INITIALIZE,
-        L1_MESSAGE_TYPE_L2_FUNDED_BY_L1, L1_MESSAGE_TYPE_L2_MESSAGE, L1_MESSAGE_TYPE_ROLLUP_EVENT,
-        L1_MESSAGE_TYPE_SUBMIT_RETRYABLE,
-    },
-    util::{
+use crate::arbos_types::{
+    L1_MESSAGE_TYPE_BATCH_FOR_GAS_ESTIMATION, L1_MESSAGE_TYPE_BATCH_POSTING_REPORT,
+    L1_MESSAGE_TYPE_END_OF_BLOCK, L1_MESSAGE_TYPE_ETH_DEPOSIT, L1_MESSAGE_TYPE_INITIALIZE,
+    L1_MESSAGE_TYPE_L2_FUNDED_BY_L1, L1_MESSAGE_TYPE_L2_MESSAGE, L1_MESSAGE_TYPE_ROLLUP_EVENT,
+    L1_MESSAGE_TYPE_SUBMIT_RETRYABLE,
+    serialization::{
         address_from_256_from_reader, address_from_reader, bytestring_from_reader,
         hash_from_reader, uint64_from_reader, uint256_from_reader,
     },

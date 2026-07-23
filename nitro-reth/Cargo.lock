@@ -1611,6 +1611,7 @@ dependencies = [
  "arb-primitives",
  "arb-storage",
  "arb-test-utils",
+ "arbos-types",
  "cc",
  "proptest",
  "revm",
@@ -1620,6 +1621,13 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tracing",
+]
+
+[[package]]
+name = "arbos-types"
+version = "0.1.5"
+dependencies = [
+ "alloy-primitives",
 ]
 
 [[package]]

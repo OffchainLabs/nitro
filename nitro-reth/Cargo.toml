@@ -27,6 +27,7 @@ members = [
     "crates/arb-fuzz",
     "crates/arb-bench",
     "crates/arbos",
+    "crates/arbos-types",
     "bin/arb-reth",
     "bin/arb-test",
 ]
@@ -69,6 +70,7 @@ arb-test-utils = { path = "crates/arb-test-utils" }
 arb-test-harness = { path = "crates/arb-test-harness" }
 arb-spec-tests = { path = "crates/arb-spec-tests" }
 arbos = { path = "crates/arbos" }
+arbos-types = { path = "crates/arbos-types" }
 
 # Reth SDK (official)
 reth = { git = "https://github.com/paradigmxyz/reth.git", rev = "20cfb2d517" }
