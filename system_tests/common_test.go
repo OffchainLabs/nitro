@@ -2358,8 +2358,9 @@ func waitForFindInboxBatch(t *testing.T, node *arbnode.Node, msgIdx arbutil.Mess
 }
 
 // waitForBatchContainingMessage polls until the latest batch's message count
-// is at least msgPos. Zero batches is treated as not-yet-ready; errors from
-// batch queries are immediately fatal. Calls t.Fatalf on timeout.
+// exceeds msgPos, i.e. the message at index msgPos is included in a batch.
+// Zero batches is treated as not-yet-ready; errors from batch queries are
+// immediately fatal. Calls t.Fatalf on timeout.
 func waitForBatchContainingMessage(t *testing.T, node *arbnode.Node, msgPos arbutil.MessageIndex, timeout, interval time.Duration) {
 	t.Helper()
 	var lastBatchCount uint64
@@ -2377,7 +2378,7 @@ func waitForBatchContainingMessage(t *testing.T, node *arbnode.Node, msgPos arbu
 				t.Fatalf("GetBatchMessageCount(%d): %v", batches-1, err)
 			}
 			lastMsgCount = haveMessages
-			if haveMessages >= msgPos {
+			if haveMessages > msgPos {
 				return
 			}
 		}
