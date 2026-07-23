@@ -10,9 +10,13 @@
 use alloy_primitives::B256;
 use reqwest::{StatusCode, Url};
 
+mod blobs;
+mod da_reader;
 mod mock;
 mod rpc;
 
+pub use blobs::{BlobCodecError, decode_blobs, encode_blobs};
+pub use da_reader::ReaderForBlobReader;
 pub use mock::MockBlobReader;
 pub use rpc::{BeaconBlobReader, BeaconBlobReaderConfig};
 

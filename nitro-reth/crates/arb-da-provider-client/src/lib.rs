@@ -34,6 +34,10 @@ pub enum DaError {
     /// The provider returned a preimage type this client doesn't recognise.
     #[error("unknown preimage type: {0}")]
     UnknownPreimageType(u8),
+    /// A DA provider failed while recovering a batch payload (e.g. fetching or
+    /// parsing the underlying data). Carries the provider's error message.
+    #[error("data availability provider error: {0}")]
+    Provider(String),
 }
 
 /// Return type of [`DaReader`].

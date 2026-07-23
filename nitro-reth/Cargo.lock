@@ -1052,8 +1052,10 @@ version = "0.1.5"
 dependencies = [
  "alloy-eips",
  "alloy-primitives",
+ "alloy-rlp",
  "alloy-rpc-types-beacon",
  "alloy-rpc-types-eth",
+ "arb-da-provider-client",
  "arb-parent-chain-client",
  "async-trait",
  "c-kzg",
@@ -1063,6 +1065,7 @@ dependencies = [
  "sha2 0.11.0",
  "thiserror 2.0.18",
  "tokio",
+ "tracing",
  "wiremock",
 ]
 
