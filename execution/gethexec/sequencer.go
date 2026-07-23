@@ -1219,6 +1219,7 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (sequencedMsg
 		queueItems,
 		maxTxDataSize,
 		s,
+		s.execEngine.transactionBroadcaster,
 	)
 
 	timestamp := time.Now().Unix()
