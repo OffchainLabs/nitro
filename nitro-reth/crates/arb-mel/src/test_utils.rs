@@ -35,9 +35,10 @@ impl LogsFetcher for MockLogs {
 /// A [`TxFetcher`] yielding a default [`TxLegacy`] for any log.
 pub(crate) struct MockTx;
 
+#[async_trait::async_trait]
 impl TxFetcher for MockTx {
     type Transaction = TxLegacy;
-    fn transaction_by_log(&self, _log: &Log) -> MelResult<TxLegacy> {
+    async fn transaction_by_log(&self, _log: &Log) -> MelResult<TxLegacy> {
         Ok(TxLegacy::default())
     }
 }

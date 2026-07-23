@@ -43,7 +43,7 @@ impl From<TimeBoundsAbi> for TimeBounds {
 /// Parses all `SequencerBatchDelivered` batches (and their txs) from the logs
 /// of a single parent-chain block.
 #[allow(dead_code)] // Wired into MEL block processing in a later change.
-pub(crate) fn parse_batches_from_block<L, T>(
+pub(crate) async fn parse_batches_from_block<L, T>(
     mel_state: &MelState,
     parent_chain_header: &Header,
     tx_fetcher: &T,
@@ -95,7 +95,7 @@ where
         }
         last_seq_num = Some(seq_num);
 
-        let tx = tx_fetcher.transaction_by_log(log)?;
+        let tx = tx_fetcher.transaction_by_log(log).await?;
 
         batches.push(Batch {
             block_hash,
@@ -158,8 +158,8 @@ mod tests {
         rpc_log(target(), ev.encode_log_data())
     }
 
-    #[test]
-    fn parses_sequential_batches() -> MelResult<()> {
+    #[tokio::test]
+    async fn parses_sequential_batches() -> MelResult<()> {
         let logs = MockLogs {
             block_logs: vec![
                 batch_delivered_log(U256::from(5u64), 0),
@@ -168,7 +168,7 @@ mod tests {
             ..Default::default()
         };
         let (batches, txs) =
-            parse_batches_from_block(&state(), &Header::default(), &MockTx, &logs)?;
+            parse_batches_from_block(&state(), &Header::default(), &MockTx, &logs).await?;
         assert_eq!(batches.len(), 2);
         assert_eq!(txs.len(), 2);
         assert_eq!(batches[0].sequence_number, 5);
@@ -182,8 +182,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn rejects_out_of_order_batches() {
+    #[tokio::test]
+    async fn rejects_out_of_order_batches() {
         let logs = MockLogs {
             block_logs: vec![
                 batch_delivered_log(U256::from(5u64), 0),
@@ -191,15 +191,15 @@ mod tests {
             ],
             ..Default::default()
         };
-        let result = parse_batches_from_block(&state(), &Header::default(), &MockTx, &logs);
+        let result = parse_batches_from_block(&state(), &Header::default(), &MockTx, &logs).await;
         assert!(matches!(
             result,
             Err(MelError::BatchesOutOfOrder { after: 5, got: 7 })
         ));
     }
 
-    #[test]
-    fn ignores_logs_from_other_addresses_and_signatures() -> MelResult<()> {
+    #[tokio::test]
+    async fn ignores_logs_from_other_addresses_and_signatures() -> MelResult<()> {
         // A different signature at the target address, and a batch log from an
         // unrelated address: both are skipped.
         let wrong_sig = rpc_log(
@@ -219,19 +219,20 @@ mod tests {
             ],
             ..Default::default()
         };
-        let (batches, _) = parse_batches_from_block(&state(), &Header::default(), &MockTx, &logs)?;
+        let (batches, _) =
+            parse_batches_from_block(&state(), &Header::default(), &MockTx, &logs).await?;
         assert_eq!(batches.len(), 1);
         assert_eq!(batches[0].sequence_number, 0);
         Ok(())
     }
 
-    #[test]
-    fn rejects_non_u64_sequence_number() {
+    #[tokio::test]
+    async fn rejects_non_u64_sequence_number() {
         let logs = MockLogs {
             block_logs: vec![batch_delivered_log(U256::MAX, 0)],
             ..Default::default()
         };
-        let result = parse_batches_from_block(&state(), &Header::default(), &MockTx, &logs);
+        let result = parse_batches_from_block(&state(), &Header::default(), &MockTx, &logs).await;
         assert!(matches!(result, Err(MelError::NonU64("sequence number"))));
     }
 }

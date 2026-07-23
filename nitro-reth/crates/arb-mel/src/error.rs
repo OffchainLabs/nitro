@@ -55,6 +55,9 @@ pub enum MelError {
     #[error("found message {message_index} data with mismatched hash")]
     MessageDataHashMismatch { message_index: B256 },
 
+    #[error("failed to fetch transaction: {0}")]
+    TransactionFetch(String),
+
     #[error("unexpected delayed-message log type")]
     UnexpectedLogType,
 
