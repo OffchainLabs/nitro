@@ -157,10 +157,10 @@ where
     /// Drives the FSM in a loop until the task is dropped. Replaces `stopwaiter`.
     ///
     /// For `safe`/`finalized` this first spawns an independent task that keeps
-    /// [`last_block_to_read`](Self::last_block_to_read) fresh with the confirmed
-    /// tip, on its own cadence and off the extraction path — porting nitro
-    /// scheduling `updateLastBlockToRead` from `Start`. The task is aborted when
-    /// this future is dropped. `latest` spawns nothing (its gate is bypassed).
+    /// `last_block_to_read` fresh with the confirmed tip, on its own cadence and
+    /// off the extraction path — porting nitro scheduling `updateLastBlockToRead`
+    /// from `Start`. The task is aborted when this future is dropped. `latest`
+    /// spawns nothing (its gate is bypassed).
     pub async fn run(mut self)
     where
         P: 'static,
