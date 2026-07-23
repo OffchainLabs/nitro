@@ -9,12 +9,13 @@ license.workspace = true
 # Internal crates
 arbos = { workspace = true }
 arb-storage-errors = { workspace = true }
+arb-da-provider-client = { workspace = true }
 
 # Alloy
-alloy-primitives = { workspace = true, features = ["std"] }
+alloy-primitives = { workspace = true, features = ["std", "rlp"] }
 alloy-consensus = { workspace = true }
 alloy-rpc-types-eth = { workspace = true }
-alloy-rlp = { workspace = true }
+alloy-rlp = { workspace = true, features = ["derive"] }
 alloy-sol-types = { workspace = true }
 
 # Compression
@@ -23,6 +24,9 @@ brotli = { workspace = true, features = ["std"] }
 # Common
 thiserror = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
 
 [lints]
 workspace = true

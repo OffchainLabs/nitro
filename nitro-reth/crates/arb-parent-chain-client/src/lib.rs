@@ -16,8 +16,8 @@ use alloy_transport::{RpcError, TransportErrorKind};
 mod mock;
 mod rpc;
 
-#[cfg(test)]
-mod test_utils;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
 
 pub use mock::MockParentChainReader;
 pub use rpc::RpcParentChainReader;

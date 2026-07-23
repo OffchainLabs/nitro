@@ -5,6 +5,10 @@ pub enum MelError {
     #[error("parent chain block hash mismatch: expected {expected}, got {got}")]
     ParentHashMismatch { expected: B256, got: B256 },
 
+    /// Recovering a batch payload from a data-availability provider failed.
+    #[error(transparent)]
+    Da(#[from] arb_da_provider_client::DaError),
+
     #[error("batch posting reports {reports} exceed batches {batches}")]
     TooManyBatchPostingReports { reports: usize, batches: usize },
 

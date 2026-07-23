@@ -1,5 +1,6 @@
 use alloy_consensus::Header;
 use alloy_primitives::{B256, keccak256};
+use arb_da_provider_client::DaReaderSource;
 use arbos::arbos_types::{
     L1_MESSAGE_TYPE_BATCH_POSTING_REPORT, MessageWithMetadata, get_data_stats,
     legacy_cost_for_stats, parse_batch_posting_report_fields,
@@ -18,14 +19,16 @@ pub struct ExtractionOutput {
     pub batch_metas: Vec<BatchMeta>,
 }
 
-pub fn extract_messages<D, L, T>(
-    input_state: MelState,
+pub async fn extract_messages<R, D, L, T>(
+    input_state: &MelState,
     parent_chain_header: &Header,
+    da_reader_source: &R,
     delayed_msg_db: &D,
     logs_fetcher: &L,
     tx_fetcher: &T,
 ) -> MelResult<ExtractionOutput>
 where
+    R: DaReaderSource,
     D: DelayedMessageDB,
     L: LogsFetcher,
     T: TxFetcher,
@@ -38,8 +41,9 @@ where
             got: parent_chain_header.parent_hash,
         });
     }
-    // TODO: reset the local_msg_accumulator field to empty after clone.
     let mut post_state = input_state.clone();
+    // LocalMsgAccumulator restarts per block (mirrors nitro's State.Clone).
+    post_state.local_msg_accumulator = B256::ZERO;
     post_state.parent_chain_block_hash = parent_chain_header.hash_slow();
     post_state.parent_chain_prev_block_hash = input_state.parent_chain_block_hash;
     post_state.parent_chain_block_number = parent_chain_header.number;
@@ -136,7 +140,9 @@ where
             batch.block_hash,
             serialized,
             parse_sequencer_message::DEFAULT_MAX_UNCOMPRESSED_BATCH_SIZE,
-        )?;
+            da_reader_source,
+        )
+        .await?;
         let messages_in_batch = batch_messages::extract_batch_messages(
             &mut post_state,
             &mut raw_seq_msg,
@@ -204,6 +210,7 @@ mod tests {
     use alloy_primitives::{Address, U256};
     use alloy_rpc_types_eth::Log;
     use alloy_sol_types::{SolEvent, sol};
+    use arb_da_provider_client::DaReaderRegistry;
     use arbos::arbos_types::{L1_MESSAGE_TYPE_BATCH_POSTING_REPORT, L1IncomingMessageHeader};
 
     use super::*;
@@ -324,40 +331,44 @@ mod tests {
         }
     }
 
-    #[test]
-    fn rejects_parent_hash_mismatch() {
+    #[tokio::test]
+    async fn rejects_parent_hash_mismatch() {
         // Input state's parent hash does not line up with the header's parent.
         let input_state = MelState {
             parent_chain_block_hash: B256::repeat_byte(0xAB),
             ..Default::default()
         };
         let result = extract_messages(
-            input_state,
+            &input_state,
             &Header::default(),
+            &DaReaderRegistry::new(),
             &MockDelayedDb::default(),
             &MockLogs::default(),
             &MockTx,
-        );
+        )
+        .await;
         assert!(matches!(
             result,
             Err(MelError::ParentHashMismatch { expected, .. }) if expected == B256::repeat_byte(0xAB)
         ));
     }
 
-    #[test]
-    fn extracts_empty_block_and_advances_state() -> MelResult<()> {
+    #[tokio::test]
+    async fn extracts_empty_block_and_advances_state() -> MelResult<()> {
         // A default header (number 0, zero parent hash) with no logs: linkage
         // holds, and the post-state records the header linkage while producing no
         // messages.
         let header = Header::default();
         let input_state = MelState::default();
         let out = extract_messages(
-            input_state,
+            &input_state,
             &header,
+            &DaReaderRegistry::new(),
             &MockDelayedDb::default(),
             &MockLogs::default(),
             &MockTx,
-        )?;
+        )
+        .await?;
 
         assert!(out.messages.is_empty());
         assert!(out.delayed_messages.is_empty());
@@ -368,19 +379,21 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn extracts_force_inclusion_batch() -> MelResult<()> {
+    #[tokio::test]
+    async fn extracts_force_inclusion_batch() -> MelResult<()> {
         let logs = MockLogs {
             block_logs: vec![force_inclusion_batch_log(0, 0)],
             ..Default::default()
         };
         let out = extract_messages(
-            wired_state(),
+            &wired_state(),
             &Header::default(),
+            &DaReaderRegistry::new(),
             &MockDelayedDb::default(),
             &logs,
             &MockTx,
-        )?;
+        )
+        .await?;
         assert_eq!(out.post_state.batch_count, 1);
         assert_eq!(out.post_state.msg_count, 1);
         assert_eq!(out.post_state.delayed_messages_seen, 0);
@@ -391,19 +404,21 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn rejects_too_many_batch_posting_reports() {
+    #[tokio::test]
+    async fn rejects_too_many_batch_posting_reports() {
         let logs = MockLogs {
             block_logs: report_logs(0, b"x".to_vec()),
             ..Default::default()
         };
         let result = extract_messages(
-            wired_state(),
+            &wired_state(),
             &Header::default(),
+            &DaReaderRegistry::new(),
             &MockDelayedDb::default(),
             &logs,
             &MockTx,
-        );
+        )
+        .await;
         assert!(matches!(
             result,
             Err(MelError::TooManyBatchPostingReports {
@@ -413,8 +428,8 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn rejects_unprocessed_batch_posting_report() {
+    #[tokio::test]
+    async fn rejects_unprocessed_batch_posting_report() {
         let mut block_logs = vec![force_inclusion_batch_log(0, 0)];
         block_logs.extend(report_logs(0, report_body(B256::repeat_byte(0xFF))));
         let logs = MockLogs {
@@ -422,12 +437,14 @@ mod tests {
             ..Default::default()
         };
         let result = extract_messages(
-            wired_state(),
+            &wired_state(),
             &Header::default(),
+            &DaReaderRegistry::new(),
             &MockDelayedDb::default(),
             &logs,
             &MockTx,
-        );
+        )
+        .await;
         assert!(matches!(
             result,
             Err(MelError::BatchPostingReportsNotProcessed {

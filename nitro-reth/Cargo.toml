@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/arb-primitives",
+    "crates/arb-blob-client",
     "crates/arb-chainspec",
     "crates/arb-consensus-db",
     "crates/arb-context",
@@ -9,6 +10,7 @@ members = [
     "crates/arb-mel",
     "crates/arb-mel-db",
     "crates/arb-parent-chain-client",
+    "crates/arb-mel-runner",
     "crates/arb-storage",
     "crates/arb-storage-errors",
     "crates/arb-errors",
@@ -43,6 +45,7 @@ version = "0.1.5"
 [workspace.dependencies]
 # Internal crates
 arb-primitives = { path = "crates/arb-primitives" }
+arb-blob-client = { path = "crates/arb-blob-client" }
 arb-chainspec = { path = "crates/arb-chainspec" }
 arb-consensus-db = { path = "crates/arb-consensus-db" }
 arb-context = { path = "crates/arb-context" }
@@ -51,6 +54,7 @@ arb-math = { path = "crates/arb-math" }
 arb-mel = { path = "crates/arb-mel" }
 arb-mel-db = { path = "crates/arb-mel-db" }
 arb-parent-chain-client = { path = "crates/arb-parent-chain-client" }
+arb-mel-runner = { path = "crates/arb-mel-runner" }
 arb-storage = { path = "crates/arb-storage" }
 arb-storage-errors = { path = "crates/arb-storage-errors" }
 arb-errors = { path = "crates/arb-errors" }
@@ -133,6 +137,7 @@ alloy-network = { version = "1.7" }
 alloy-provider = { version = "1.7", default-features = false }
 alloy-rlp = { version = "0.3" }
 alloy-rpc-client = { version = "1.7" }
+alloy-rpc-types-beacon = { version = "1.7" }
 alloy-rpc-types-engine = { version = "1.7" }
 alloy-rpc-types-trace = { version = "1.7" }
 alloy-serde = { version = "1.7" }
@@ -193,6 +198,7 @@ tracing-subscriber = { version = "0.3" }
 ureq = { version = "2", default-features = false }
 walkdir = { version = "2" }
 wat = { version = "1" }
+wiremock = { version = "0.6" }
 
 nitro-prover = { package = "prover", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b", default-features = false }
 nitro-arbutil = { package = "arbutil", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b" }
