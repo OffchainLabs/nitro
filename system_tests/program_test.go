@@ -3423,3 +3423,46 @@ func TestProgramMemoryFillOverflow(t *testing.T) {
 		t.Fatal("should get filtered, got: ", err)
 	}
 }
+
+func TestProgramSinglepassOutputSizeLimit(t *testing.T) {
+	const maxOutputSize = 64 * 1024
+
+	savedLimit := programs.GetMaxSinglepassOutputSize()
+	defer programs.SetMaxSinglepassOutputSize(savedLimit)
+	savedFallback := programs.GetAllowFallback()
+	defer programs.SetAllowFallback(savedFallback)
+
+	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+		b.DontParalellise()
+		b.execConfig.StylusTarget.AllowFallback = false
+		b.execConfig.StylusTarget.MaxSinglepassOutputSize = maxOutputSize
+	})
+	defer cleanup()
+
+	if got := programs.GetMaxSinglepassOutputSize(); got != maxOutputSize {
+		t.Fatalf("expected Singlepass output limit %d, got %d", maxOutputSize, got)
+	}
+
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+	deployWasm(t, ctx, auth, l2client, watFile("memory"))
+
+	wasm, _ := readWasmFile(t, rustFile("multicall"))
+	program := deployContract(t, ctx, auth, l2client, wasm)
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
+
+	var compileLogs bytes.Buffer
+	savedLogger := log.Root()
+	log.SetDefault(log.NewLogger(log.LogfmtHandler(&compileLogs)))
+	defer log.SetDefault(savedLogger)
+
+	auth.Value = oneEth
+	_, err = arbWasm.ActivateProgram(&auth, program)
+	if err == nil {
+		t.Fatal("expected activation to exceed the Singlepass output limit")
+	}
+	if !strings.Contains(compileLogs.String(), "singlepass compiler output exceeds limit") {
+		t.Fatalf("expected activation to fail because Wasmer exceeded the output limit, got: %v", err)
+	}
+}
