@@ -7,6 +7,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/metrics"
@@ -19,11 +23,11 @@ func TestSyncer_FailedETagTracking(t *testing.T) {
 	handlerErr := errors.New("parse boom")
 	var handlerReturn error
 	s := &Syncer{
-		handleData: func(data []byte, digest string) error { return handlerReturn },
+		handleData: func(r io.Reader, size int64, digest string) error { return handlerReturn },
 	}
 
 	handlerReturn = handlerErr
-	if err := s.applyHandled("etag-bad", []byte("x")); err == nil {
+	if err := s.applyHandled("etag-bad", strings.NewReader("x"), 1); err == nil {
 		t.Fatal("expected handler error to propagate")
 	}
 	if s.failedETag != "etag-bad" {
@@ -34,7 +38,7 @@ func TestSyncer_FailedETagTracking(t *testing.T) {
 	}
 
 	handlerReturn = nil
-	if err := s.applyHandled("etag-good", []byte("y")); err != nil {
+	if err := s.applyHandled("etag-good", strings.NewReader("y"), 1); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if s.digestETag != "etag-good" {
@@ -164,14 +168,21 @@ func newTestConfig(endpoint, key string, maxFileSizeMB int) *Config {
 type syncerRecorder struct {
 	handlerCalls int
 	lastBody     []byte
+	lastSize     int64
 	lastDigest   string
+	returnErr    error
 }
 
-func (r *syncerRecorder) handleData(body []byte, digest string) error {
+func (r *syncerRecorder) handleData(body io.Reader, size int64, digest string) error {
 	r.handlerCalls++
-	r.lastBody = bytes.Clone(body)
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return err
+	}
+	r.lastBody = data
+	r.lastSize = size
 	r.lastDigest = digest
-	return nil
+	return r.returnErr
 }
 
 var syncerMethodCases = []struct {
@@ -347,59 +358,80 @@ func TestSyncer_CheckAndSync_SkipsUnchangedObject(t *testing.T) {
 	}
 }
 
-func TestSyncer_PreallocatesAndReusesBuffer(t *testing.T) {
-	key := "data.json"
-	body := []byte(`{"hello":"world"}`)
-	endpoint, _ := s3syncertest.NewFakeS3(t, testBucket, map[string][]byte{key: body})
+func TestSyncer_DownloadsToDirAndCleansUp(t *testing.T) {
+	for _, handlerErr := range []error{nil, errors.New("parse boom")} {
+		name := "handler success"
+		if handlerErr != nil {
+			name = "handler failure"
+		}
+		t.Run(name, func(t *testing.T) {
+			key := "data.json"
+			body := []byte(`{"hello":"world"}`)
+			endpoint, _ := s3syncertest.NewFakeS3(t, testBucket, map[string][]byte{key: body})
 
-	rec := &syncerRecorder{}
-	gauge := metrics.NewGauge()
-	cfg := newTestConfig(endpoint, key, 1)
-	cfg.PreallocateMemory = true
-	syncer := NewSyncer(cfg, rec.handleData, gauge)
+			rec := &syncerRecorder{returnErr: handlerErr}
+			gauge := metrics.NewGauge()
+			cfg := newTestConfig(endpoint, key, 1)
+			cfg.DownloadDir = t.TempDir()
+			syncer := NewSyncer(cfg, rec.handleData, gauge)
+			if err := syncer.Initialize(t.Context()); err != nil {
+				t.Fatalf("Initialize: %v", err)
+			}
 
-	if cap(syncer.reuseBuf) != bytesInMB {
-		t.Fatalf("reuseBuf cap = %d, want %d", cap(syncer.reuseBuf), bytesInMB)
-	}
-	if err := syncer.Initialize(t.Context()); err != nil {
-		t.Fatalf("Initialize: %v", err)
-	}
-	if err := syncer.DownloadAndLoad(t.Context()); err != nil {
-		t.Fatalf("DownloadAndLoad: %v", err)
-	}
+			err := syncer.DownloadAndLoad(t.Context())
+			if handlerErr == nil && err != nil {
+				t.Fatalf("DownloadAndLoad: %v", err)
+			}
+			if handlerErr != nil && !errors.Is(err, handlerErr) {
+				t.Fatalf("DownloadAndLoad error = %v, want %v", err, handlerErr)
+			}
 
-	if rec.handlerCalls != 1 {
-		t.Fatalf("handlerCalls = %d, want 1", rec.handlerCalls)
-	}
-	if !bytes.Equal(rec.lastBody, body) {
-		t.Fatalf("handler body = %q, want %q", rec.lastBody, body)
-	}
-	if !bytes.Equal(syncer.reuseBuf[:len(body)], body) {
-		t.Fatalf("download did not reuse the preallocated buffer: %q", syncer.reuseBuf[:len(body)])
+			if rec.handlerCalls != 1 {
+				t.Fatalf("handlerCalls = %d, want 1", rec.handlerCalls)
+			}
+			if !bytes.Equal(rec.lastBody, body) {
+				t.Fatalf("handler body = %q, want %q", rec.lastBody, body)
+			}
+			if rec.lastSize != int64(len(body)) {
+				t.Fatalf("handler size = %d, want %d", rec.lastSize, len(body))
+			}
+			leftovers, globErr := filepath.Glob(filepath.Join(cfg.DownloadDir, "*"))
+			if globErr != nil {
+				t.Fatalf("glob: %v", globErr)
+			}
+			if len(leftovers) != 0 {
+				t.Fatalf("temporary download file not cleaned up: %v", leftovers)
+			}
+		})
 	}
 }
 
-func TestSyncer_NoPreallocWhenDisabled(t *testing.T) {
-	key := "data.json"
-	body := []byte(`{"hello":"world"}`)
-	endpoint, _ := s3syncertest.NewFakeS3(t, testBucket, map[string][]byte{key: body})
+func TestConfigValidate_DownloadDir(t *testing.T) {
+	valid := Config{
+		Config:    s3client.Config{Region: "us-east-1"},
+		Bucket:    "test-bucket",
+		ObjectKey: "path/to/file.json",
+	}
 
-	rec := &syncerRecorder{}
-	gauge := metrics.NewGauge()
-	cfg := newTestConfig(endpoint, key, 1)
-	cfg.PreallocateMemory = false
-	syncer := NewSyncer(cfg, rec.handleData, gauge)
+	cfg := valid
+	cfg.DownloadDir = t.TempDir()
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("existing directory should validate: %v", err)
+	}
 
-	if syncer.reuseBuf != nil {
-		t.Fatal("reuseBuf should be nil when preallocation is disabled")
+	cfg = valid
+	cfg.DownloadDir = filepath.Join(t.TempDir(), "does-not-exist")
+	if err := cfg.Validate(); err == nil {
+		t.Error("missing download-dir should fail validation")
 	}
-	if err := syncer.Initialize(t.Context()); err != nil {
-		t.Fatalf("Initialize: %v", err)
+
+	cfg = valid
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if err := syncer.DownloadAndLoad(t.Context()); err != nil {
-		t.Fatalf("DownloadAndLoad: %v", err)
-	}
-	if !bytes.Equal(rec.lastBody, body) {
-		t.Fatalf("handler body = %q, want %q", rec.lastBody, body)
+	cfg.DownloadDir = file
+	if err := cfg.Validate(); err == nil {
+		t.Error("download-dir pointing at a file should fail validation")
 	}
 }

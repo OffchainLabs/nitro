@@ -5,6 +5,7 @@ package addressfilter
 
 import (
 	"encoding/binary"
+	"errors"
 	"math/rand/v2"
 	"sync"
 	"testing"
@@ -118,6 +119,91 @@ func TestHashStorePreallocConcurrentReuseRaceFree(t *testing.T) {
 	}
 	close(stop)
 	wg.Wait()
+}
+
+func TestHashStoreStoreFromFailureKeepsSnapshot(t *testing.T) {
+	for _, maxHashes := range []int{0, 1000} {
+		name := "prealloc"
+		if maxHashes == 0 {
+			name = "no prealloc"
+		}
+		t.Run(name, func(t *testing.T) {
+			store := newHashStore(100, maxHashes)
+			salt := uuid.New()
+			addr1 := common.HexToAddress("0x1111111111111111111111111111111111111111")
+			addr2 := common.HexToAddress("0x2222222222222222222222222222222222222222")
+			h1 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt), addr1)
+			h2 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt), addr2)
+
+			id1 := uuid.New()
+			store.Store(id1, salt, HashingSchemeStringInput, []common.Hash{h1}, "e1")
+
+			// A fill that inserts a hash and then fails must publish nothing.
+			fillErr := errors.New("stream broke")
+			err := store.StoreFrom("e2", 1, func(add func(common.Hash)) (*ListMeta, error) {
+				add(h2)
+				return nil, fillErr
+			})
+			require.ErrorIs(t, err, fillErr)
+
+			restricted, gotID := store.IsRestricted(addr1)
+			require.True(t, restricted, "old snapshot must survive a failed fill")
+			require.Equal(t, id1, gotID)
+			if restricted, _ := store.IsRestricted(addr2); restricted {
+				t.Fatal("hash from the failed fill must not be visible")
+			}
+			require.Equal(t, "e1", store.Digest())
+			require.Equal(t, 1, store.Size())
+
+			// The next successful store must not resurrect the aborted fill's hashes.
+			require.NoError(t, store.StoreFrom("e3", 1, func(add func(common.Hash)) (*ListMeta, error) {
+				add(h1)
+				return &ListMeta{Id: uuid.New(), Salt: salt, Scheme: HashingSchemeStringInput}, nil
+			}))
+			if restricted, _ := store.IsRestricted(addr2); restricted {
+				t.Fatal("residue from the aborted fill leaked into the next snapshot")
+			}
+			if restricted, _ := store.IsRestricted(addr1); !restricted {
+				t.Fatal("addr1 should be restricted after the successful reload")
+			}
+			require.Equal(t, "e3", store.Digest())
+		})
+	}
+}
+
+// TestHashStoreStoreFromConcurrentReaders verifies readers keep serving the old
+// snapshot, race-free, while a slow streaming fill is in progress (run with -race).
+func TestHashStoreStoreFromConcurrentReaders(t *testing.T) {
+	store := newHashStore(100, 1000)
+	salt := uuid.New()
+	addr := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	h := HashStringInputWithPrefix(GetHashStringInputPrefix(salt), addr)
+	id1 := uuid.New()
+	store.Store(id1, salt, HashingSchemeStringInput, []common.Hash{h}, "e1")
+
+	fillStarted := make(chan struct{})
+	finishFill := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- store.StoreFrom("e2", 1, func(add func(common.Hash)) (*ListMeta, error) {
+			close(fillStarted)
+			add(h)
+			<-finishFill
+			return &ListMeta{Id: uuid.New(), Salt: salt, Scheme: HashingSchemeStringInput}, nil
+		})
+	}()
+
+	<-fillStarted
+	// Mid-fill, readers must still see the previous snapshot.
+	for range 100 {
+		restricted, gotID := store.IsRestricted(addr)
+		require.True(t, restricted)
+		require.Equal(t, id1, gotID)
+		require.Equal(t, "e1", store.Digest())
+	}
+	close(finishFill)
+	require.NoError(t, <-done)
+	require.Equal(t, "e2", store.Digest())
 }
 
 // benchIsRestrictedAddrs is the number of restricted addresses each IsRestricted

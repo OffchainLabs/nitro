@@ -126,35 +126,46 @@ func newHashStore(cacheSize int, maxHashes int) *HashStore {
 	return h
 }
 
-// fillData populates the scalar fields and hash map of d from a parsed list.
-func fillData(d *hashData, id uuid.UUID, salt uuid.UUID, scheme HashingScheme, hashes []common.Hash, digest string) {
-	d.id = id
-	d.salt = salt
-	d.useRawBytesInput = scheme == HashingSchemeRawBytesInput
-	d.hashStringInputPrefix = GetHashStringInputPrefix(salt)
-	for _, hash := range hashes {
-		d.hashes[hash] = struct{}{}
-	}
+// ListMeta holds the scalar metadata of a hash list.
+type ListMeta struct {
+	Id     uuid.UUID
+	Salt   uuid.UUID
+	Scheme HashingScheme
+}
+
+func (d *hashData) setMeta(meta *ListMeta, digest string) {
+	d.id = meta.Id
+	d.salt = meta.Salt
+	d.useRawBytesInput = meta.Scheme == HashingSchemeRawBytesInput
+	d.hashStringInputPrefix = GetHashStringInputPrefix(meta.Salt)
 	d.digest = digest
 	d.loadedAt = time.Now()
 }
 
-// Store atomically swaps in a new hash list.
-// This is called after a new hash list has been downloaded and parsed.
+// StoreFrom fills a new hash list via fill and atomically swaps it in only if
+// fill returns nil. On error nothing is published; in preallocated mode the
+// dirty buffer is re-cleared at the start of the next store. sizeHint is an
+// upper bound on the number of hashes, used to size the map when not
+// preallocated.
+//
 // In preallocated mode it recycles a ping-pong buffer in place under the
 // buffer's write lock, which blocks until every in-flight reader of that buffer
 // has released it; otherwise it builds a new hashData. Either way the LRU cache
-// is reset so it stays consistent with the new data. Store is single-writer
+// is reset so it stays consistent with the new data. StoreFrom is single-writer
 // (serialized by the syncer mutex).
-func (h *HashStore) Store(id uuid.UUID, salt uuid.UUID, scheme HashingScheme, hashes []common.Hash, digest string) {
+func (h *HashStore) StoreFrom(digest string, sizeHint int, fill func(add func(common.Hash)) (*ListMeta, error)) error {
 	if h.maxHashes == 0 {
 		newData := &hashData{
-			hashes: make(map[common.Hash]struct{}, len(hashes)),
+			hashes: make(map[common.Hash]struct{}, sizeHint),
 			cache:  lru.NewCache[common.Address, bool](h.cacheSize),
 		}
-		fillData(newData, id, salt, scheme, hashes, digest)
+		meta, err := fill(func(hash common.Hash) { newData.hashes[hash] = struct{}{} })
+		if err != nil {
+			return err
+		}
+		newData.setMeta(meta, digest)
 		h.data.Store(newData) // Atomic pointer swap
-		return
+		return nil
 	}
 
 	// Recycle the non-published buffer in place. Its write lock blocks until every
@@ -166,9 +177,26 @@ func (h *HashStore) Store(id uuid.UUID, salt uuid.UUID, scheme HashingScheme, ha
 	defer d.mu.Unlock()
 	clear(d.hashes) // retains bucket memory
 	d.cache.Purge()
-	fillData(d, id, salt, scheme, hashes, digest)
+	meta, err := fill(func(hash common.Hash) { d.hashes[hash] = struct{}{} })
+	if err != nil {
+		return err
+	}
+	d.setMeta(meta, digest)
 	h.data.Store(d) // publish under the write lock; the deferred Unlock releases readers
 	h.active = next
+	return nil
+}
+
+// Store atomically swaps in a new hash list.
+// This is called after a new hash list has been downloaded and parsed.
+func (h *HashStore) Store(id uuid.UUID, salt uuid.UUID, scheme HashingScheme, hashes []common.Hash, digest string) {
+	// The fill callback cannot fail, so neither can StoreFrom.
+	_ = h.StoreFrom(digest, len(hashes), func(add func(common.Hash)) (*ListMeta, error) {
+		for _, hash := range hashes {
+			add(hash)
+		}
+		return &ListMeta{Id: id, Salt: salt, Scheme: scheme}, nil
+	})
 }
 
 // IsRestricted returns whether the address is restricted and the filter set ID,
