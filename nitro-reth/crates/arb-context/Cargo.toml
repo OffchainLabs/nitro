@@ -1,0 +1,17 @@
+[package]
+name = "arb-context"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[lib]
+doctest = false
+
+[dependencies]
+arb-storage = { path = "../arb-storage" }
+
+[lints]
+workspace = true
