@@ -257,6 +257,9 @@ type SequencingHooks interface {
 	TxSucceeded()
 	// TxFailed records an error for the last user tx from NextTxToSequence.
 	TxFailed(error)
+	// TxAccepted is called for each transaction appended to the block under construction
+	// (grouped txs are reported once their group completes; the block may still fail afterwards).
+	TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt)
 }
 
 type NoopSequencingHooks struct {
@@ -293,6 +296,9 @@ func (n *NoopSequencingHooks) BlockFilter(header *types.Header, db *state.StateD
 func (n *NoopSequencingHooks) TxSucceeded() {}
 
 func (n *NoopSequencingHooks) TxFailed(error) {}
+
+func (n *NoopSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt) {
+}
 
 func (n *NoopSequencingHooks) SupportsGroupRollback() bool { return false }
 
@@ -396,6 +402,18 @@ func ProduceBlockAdvanced(
 		activeGroupCP:        nil,
 	}
 
+	emitGroupAccepted := func() {
+		if buildState.activeGroupCP == nil {
+			log.Warn("emitGroupAccepted was called with no active group checkpoint")
+			return
+		}
+		// activeGroupCP.completeLen is the index in complete of the group's
+		// first tx
+		for i := buildState.activeGroupCP.completeLen; i < len(buildState.complete); i++ {
+			sequencingHooks.TxAccepted(header, buildState.complete[i], buildState.receipts[i])
+		}
+	}
+
 	for {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
@@ -422,6 +440,7 @@ func ProduceBlockAdvanced(
 			// Previous group (if any) completed successfully
 			if buildState.activeGroupCP != nil {
 				sequencingHooks.TxSucceeded()
+				emitGroupAccepted()
 			}
 			buildState.clearGroupCheckpoint()
 			var conditionalOptions *arbitrum_types.ConditionalOptions
@@ -703,11 +722,16 @@ func ProduceBlockAdvanced(
 		if isUserTx {
 			if buildState.activeGroupCP == nil {
 				sequencingHooks.TxSucceeded()
+				sequencingHooks.TxAccepted(header, tx, receipt)
 			}
+
 			buildState.userTxsProcessed++
+		} else if tx.Type() == types.ArbitrumInternalTxType {
+			sequencingHooks.TxAccepted(header, tx, receipt)
 		} else if buildState.activeGroupCP != nil && len(buildState.redeems) == 0 {
-			buildState.activeGroupCP = nil
 			sequencingHooks.TxSucceeded()
+			emitGroupAccepted()
+			buildState.clearGroupCheckpoint()
 		}
 	}
 

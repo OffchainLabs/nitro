@@ -1,5 +1,6 @@
 ---
 name: nitro-reth
+
 on:
   workflow_call:
 
@@ -7,14 +8,29 @@ permissions:
   contents: read
 
 jobs:
-  nitro-reth:
-    name: Run Nitro Reth tests
-    runs-on: ubuntu-4
+  test:
+    uses: ./.github/workflows/_nitro-reth-test.yml
+    secrets: inherit
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+  lint:
+    uses: ./.github/workflows/_nitro-reth-lint.yml
+    secrets: inherit
 
-      # TODO(NIT-5205): replace with the real nitro-reth test suite
-      - name: Check nitro-reth workspace
-        run: echo "nitro-reth sources not migrated yet; nothing to test."
+  spec-tests:
+    uses: ./.github/workflows/_nitro-reth-spec-tests.yml
+    secrets: inherit
+
+  coverage:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/_nitro-reth-coverage.yml
+    secrets: inherit
+
+  miri:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/_nitro-reth-miri.yml
+    secrets: inherit
+
+  dependencies:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/_nitro-reth-dependencies.yml
+    secrets: inherit
