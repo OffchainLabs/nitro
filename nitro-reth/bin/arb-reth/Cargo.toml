@@ -1,0 +1,17 @@
+[package]
+name = "arb-reth"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "arb-reth"
+path = "src/main.rs"
+
+[dependencies]
+
+[lints]
+workspace = true
