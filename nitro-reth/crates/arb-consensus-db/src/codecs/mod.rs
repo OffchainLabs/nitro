@@ -1,4 +1,4 @@
-//! Value codecs for the consensus DB: RLP field helpers ([`rlp`]), the legacy L1
+//! Value codecs for the consensus DB: an RLP field helper ([`rlp::Rlp`]), the legacy L1
 //! wire format ([`legacy`]), and small shared helpers.
 
 pub mod legacy;

@@ -9,6 +9,7 @@ version.workspace = true
 
 [dependencies]
 alloy-primitives.workspace = true
+alloy-rlp.workspace = true
 
 [lints]
 workspace = true

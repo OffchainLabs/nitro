@@ -1,10 +1,14 @@
 use std::io::{self, Cursor, Read};
 
 use alloy_primitives::{Address, B256, U256};
+use alloy_rlp::{Decodable, Encodable, bytes::BufMut, length_of_length};
 
-use crate::serialization::{
-    address_from_256_from_reader, address_from_reader, hash_from_reader, uint64_from_reader,
-    uint256_from_reader,
+use crate::{
+    rlp::NilList,
+    serialization::{
+        address_from_256_from_reader, address_from_reader, hash_from_reader, uint64_from_reader,
+        uint256_from_reader,
+    },
 };
 
 /// L1 message type constants.
@@ -34,6 +38,76 @@ pub struct L1IncomingMessageHeader {
     pub timestamp: u64,
     pub request_id: Option<B256>,
     pub l1_base_fee: Option<U256>,
+}
+
+impl L1IncomingMessageHeader {
+    fn rlp_payload_length(&self) -> usize {
+        self.kind.length()
+            + self.poster.length()
+            + self.block_number.length()
+            + self.timestamp.length()
+            + NilList(self.request_id).length()
+            + self.l1_base_fee.unwrap_or_default().length()
+    }
+}
+
+impl Encodable for L1IncomingMessageHeader {
+    fn encode(&self, out: &mut dyn BufMut) {
+        let payload_length = self.rlp_payload_length();
+        alloy_rlp::Header {
+            list: true,
+            payload_length,
+        }
+        .encode(out);
+        self.kind.encode(out);
+        self.poster.encode(out);
+        self.block_number.encode(out);
+        self.timestamp.encode(out);
+        NilList(self.request_id).encode(out);
+        self.l1_base_fee.unwrap_or_default().encode(out);
+    }
+
+    fn length(&self) -> usize {
+        let payload_length = self.rlp_payload_length();
+        length_of_length(payload_length) + payload_length
+    }
+}
+
+impl Decodable for L1IncomingMessageHeader {
+    fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
+        let header = alloy_rlp::Header::decode(buf)?;
+        if !header.list {
+            return Err(alloy_rlp::Error::UnexpectedString);
+        }
+        let started_len = buf.len();
+
+        let kind = u8::decode(buf)?;
+        let poster = Address::decode(buf)?;
+        let block_number = u64::decode(buf)?;
+        let timestamp = u64::decode(buf)?;
+        let request_id = NilList::<B256>::decode(buf)?.0;
+        let l1_base_fee = {
+            let value = U256::decode(buf)?;
+            (!value.is_zero()).then_some(value)
+        };
+
+        let consumed = started_len - buf.len();
+        if consumed != header.payload_length {
+            return Err(alloy_rlp::Error::ListLengthMismatch {
+                expected: header.payload_length,
+                got: consumed,
+            });
+        }
+
+        Ok(Self {
+            kind,
+            poster,
+            block_number,
+            timestamp,
+            request_id,
+            l1_base_fee,
+        })
+    }
 }
 
 /// Statistics about a batch of data (for L1 cost estimation).

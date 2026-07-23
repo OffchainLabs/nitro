@@ -7,12 +7,12 @@
 
 use alloy_primitives::{Address, B256, Bytes, U256};
 use alloy_rlp::{RlpDecodable, RlpDecodableWrapper, RlpEncodable, RlpEncodableWrapper};
+use arbos_types::rlp::{NilList, NilString};
 
 use crate::{
     ConsensusDbError, Result,
     codecs::{
         legacy::{decode_l1_message_wire, encode_l1_message_wire},
-        rlp::{NilList, NilString},
         strip_accumulator,
     },
     kv::KeyBuf,
@@ -393,9 +393,9 @@ pub fn key<K: ConsensusDbKey>(key: &K) -> KeyBuf {
 #[cfg(test)]
 mod tests {
     use alloy_primitives::{Address, B256, U256};
+    use arbos_types::rlp::{NilList, NilString};
 
     use super::*;
-    use crate::codecs::rlp::{NilList, NilString};
 
     fn sample_message(
         request_id: NilList<B256>,

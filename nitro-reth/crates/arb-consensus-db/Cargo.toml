@@ -8,6 +8,10 @@ license.workspace = true
 [dependencies]
 thiserror.workspace = true
 
+# Internal
+arbos-types.workspace = true
+
+# Alloy
 alloy-primitives = { workspace = true, features = ["rlp"] }
 alloy-rlp = { workspace = true, features = ["derive"] }
 

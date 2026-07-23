@@ -1,3 +1,4 @@
+pub mod rlp;
 pub mod serialization;
 
 mod incoming_message;

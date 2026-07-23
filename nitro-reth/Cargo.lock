@@ -1060,6 +1060,7 @@ version = "0.1.5"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
+ "arbos-types",
  "thiserror 2.0.18",
 ]
 
@@ -1211,6 +1212,7 @@ dependencies = [
  "alloy-rlp",
  "arb-consensus-db",
  "arb-mel",
+ "arbos-types",
  "thiserror 2.0.18",
 ]
 
@@ -1628,6 +1630,7 @@ name = "arbos-types"
 version = "0.1.5"
 dependencies = [
  "alloy-primitives",
+ "alloy-rlp",
 ]
 
 [[package]]

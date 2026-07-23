@@ -12,6 +12,7 @@ thiserror.workspace = true
 
 arb-consensus-db.workspace = true
 arb-mel.workspace = true
+arbos-types.workspace = true
 
 [lints]
 workspace = true

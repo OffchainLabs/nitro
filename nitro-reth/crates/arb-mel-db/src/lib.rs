@@ -257,13 +257,13 @@ impl<S: kv::KvStore> MelDb<S> {
 mod tests {
     use alloy_primitives::{Address, U256};
     use arb_consensus_db::{
-        codecs::rlp::NilList,
         kv::MemoryKvStore,
         schema::{
             BatchMetadataAt, L1IncomingMessageHeader, LegacyDelayedMessage, ParentChainBlock,
             RlpDelayedMessage,
         },
     };
+    use arbos_types::rlp::NilList;
 
     use super::*;
 

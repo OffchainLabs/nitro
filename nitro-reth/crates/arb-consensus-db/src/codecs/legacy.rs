@@ -6,10 +6,10 @@
 // crate.
 
 use alloy_primitives::{Address, B256, Bytes, U256};
+use arbos_types::rlp::NilList;
 
 use crate::{
     ConsensusDbError, Result,
-    codecs::rlp::NilList,
     schema::{L1IncomingMessage, L1IncomingMessageHeader},
 };
 
@@ -70,11 +70,11 @@ pub fn decode_l1_message_wire(bytes: &[u8]) -> Result<L1IncomingMessage> {
 #[cfg(test)]
 mod tests {
     use alloy_primitives::{Address, B256, U256};
+    use arbos_types::rlp::NilList;
 
     use super::{WIRE_HEADER_LEN, decode_l1_message_wire, encode_l1_message_wire};
     use crate::{
         ConsensusDbError,
-        codecs::rlp::NilList,
         schema::{L1IncomingMessage, L1IncomingMessageHeader},
     };
 
