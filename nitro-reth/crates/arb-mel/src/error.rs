@@ -92,6 +92,14 @@ pub enum MelError {
     #[error("no more delayed messages in db")]
     NoMoreDelayedMessages,
 
+    #[error("failed creating delayed msg accumulators during MEL consensus activation: {0}")]
+    DelayedAccumulatorCreation(String),
+
+    #[error(
+        "delayed message accumulator is non zero after reading all delayed msgs for MEL activation: inbox {inbox}, outbox {outbox}"
+    )]
+    NonZeroDelayedAccumulator { inbox: B256, outbox: B256 },
+
     #[error("unknown error")]
     Unknown,
 }
