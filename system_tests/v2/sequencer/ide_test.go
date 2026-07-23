@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // IDE entry points: one Test wrapper per scenario group.
-package smoketest
+package sequencer
 
 import (
 	"testing"
@@ -14,10 +14,4 @@ func TestMain(m *testing.M) {
 	systest.RunTestMain(m)
 }
 
-func TestTransfers(t *testing.T) { systest.RunGroup(t, transferTests) }
-
-func TestDeployment(t *testing.T) { systest.RunGroup(t, deploymentTests) }
-
-func TestP256Verify(t *testing.T) { systest.RunGroup(t, p256VerifyTests) }
-
-func TestMultiNode(t *testing.T) { systest.RunGroup(t, multiNodeTests) }
+func TestNonces(t *testing.T) { systest.RunGroup(t, nonceTests) }

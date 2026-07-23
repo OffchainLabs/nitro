@@ -43,6 +43,9 @@ func buildFollowerNode(t *testing.T, ctx context.Context, spec Spec, overrides o
 	// The follower must not sequence its own txs; with ForwardingTarget "null"
 	// sends to it fail loudly instead of silently forking the chain.
 	execCfg.Sequencer.Enable = false
+	for _, f := range overrides.FollowerExec {
+		f(execCfg)
+	}
 
 	var validatorTxOpts *bind.TransactOpts
 	if spec.Topology == TopologyStakingValidation {

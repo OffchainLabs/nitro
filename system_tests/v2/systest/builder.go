@@ -51,11 +51,12 @@ type builder struct {
 	postHooks []Hook
 	dims      map[axis][]axisVariant
 
-	nodeOverrides        []func(*arbnode.Config)
-	execOverrides        []func(*gethexec.Config)
-	stackOverrides       []func(*node.Config)
-	initDataOverrides    []func(*statetransfer.ArbosInitializationInfo)
-	chainConfigOverrides []func(*params.ChainConfig)
+	nodeOverrides         []func(*arbnode.Config)
+	execOverrides         []func(*gethexec.Config)
+	stackOverrides        []func(*node.Config)
+	initDataOverrides     []func(*statetransfer.ArbosInitializationInfo)
+	chainConfigOverrides  []func(*params.ChainConfig)
+	followerExecOverrides []func(*gethexec.Config)
 }
 
 func newBuilder() *builder {
@@ -85,6 +86,9 @@ func (b *builder) clone() *builder {
 	}
 	if len(b.chainConfigOverrides) > 0 {
 		out.chainConfigOverrides = append([]func(*params.ChainConfig){}, b.chainConfigOverrides...)
+	}
+	if len(b.followerExecOverrides) > 0 {
+		out.followerExecOverrides = append([]func(*gethexec.Config){}, b.followerExecOverrides...)
 	}
 	out.dims = map[axis][]axisVariant{}
 	return &out

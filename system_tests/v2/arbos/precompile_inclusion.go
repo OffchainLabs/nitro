@@ -1,20 +1,35 @@
-// Copyright 2021-2026, Offchain Labs, Inc.
+// Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-package arbtest
+package arbos
 
 import (
 	"bytes"
-	"context"
-	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum"
+	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/system_tests/v2/systest"
 )
+
+// SkipOnRace: geth precompiles (p256Verify, …) hold a process-global ArbOS
+// version via SetArbosVersion. Running these version-pinned chains concurrently
+// makes their eth_calls race on that global, so they are excluded under -race
+// until the harness gains exclusive-run scheduling.
+var precompileInclusionTests = []systest.Scenario{
+	systest.Test(testRunPrecompileInclusion,
+		systest.SkipOnRace(),
+		systest.MatrixArbOS(params.ArbosVersion_11, params.ArbosVersion_30, params.ArbosVersion_40, params.ArbosVersion_50, params.ArbosVersion_60),
+		systest.WithExecConfigOverride(precompileInclusionOverride)),
+}
+
+func precompileInclusionOverride(cfg *gethexec.Config) {
+	cfg.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessLikelyCompatible
+	cfg.RPC.RPCEVMTimeout = 30 * time.Second
+}
 
 var (
 	// Homestead
@@ -60,45 +75,27 @@ var (
 	}
 )
 
-func TestVersion11(t *testing.T) {
-	testPrecompiles(t, params.ArbosVersion_11, ecrecover.Included(), bn256AddByzantium.Included(), blake2F.Included(), kzgPointEvaluation.NotIncluded(), p256Verify.NotIncluded(), bls12381G1Add.NotIncluded(), bls12381G1MultiExp.NotIncluded())
-}
-
-func TestVersion30(t *testing.T) {
-	testPrecompiles(t, params.ArbosVersion_30, ecrecover.Included(), bn256AddByzantium.Included(), kzgPointEvaluation.Included(), p256Verify.Included(), bls12381G1Add.NotIncluded(), bls12381G1MultiExp.NotIncluded())
-}
-
-func TestVersion40(t *testing.T) {
-	testPrecompiles(t, params.ArbosVersion_40, bn256AddByzantium.Included(), kzgPointEvaluation.Included(), p256Verify.Included(), bls12381G1Add.NotIncluded(), bls12381G1MultiExp.NotIncluded())
-}
-
-func TestArbOSVersion50(t *testing.T) {
-	testPrecompiles(t, params.ArbosVersion_50, kzgPointEvaluation.Included(), bls12381G1Add.Included(), bls12381G1MultiExp.Included())
-}
-
-func TestArbOSVersion60(t *testing.T) {
-	testPrecompiles(t, params.ArbosVersion_60, kzgPointEvaluation.Included(), bls12381G1Add.Included(), bls12381G1MultiExp.Included())
-}
-
-func testPrecompiles(t *testing.T, arbosVersion uint64, cases ...precompileCase) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	builder := NewNodeBuilder(ctx).
-		DefaultConfig(t, false).
-		WithArbOSVersion(arbosVersion)
-	builder.execConfig.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessLikelyCompatible
-	builder.execConfig.RPC.RPCEVMTimeout = 30 * time.Second
-	cleanup := builder.Build(t)
-	defer cleanup()
-	for _, c := range cases {
-		res, err := builder.L2.Client.CallContract(context.Background(), ethereum.CallMsg{To: &c.addr, Data: c.in}, nil)
-		Require(t, err)
-		if !bytes.Equal(res, c.out) {
-			t.Errorf("Expected %v [%d], got %v [%d]", c.out, len(c.out), res, len(res))
-		}
+// testRunPrecompileInclusion verifies which geth precompiles are active at the
+// matrix cell's ArbOS version.
+func testRunPrecompileInclusion(env *systest.Env) {
+	var cases []precompileCase
+	switch v := env.Spec.ArbOSVersion.UnwrapOr(0); v {
+	case params.ArbosVersion_11:
+		cases = []precompileCase{ecrecover.Included(), bn256AddByzantium.Included(), blake2F.Included(), kzgPointEvaluation.NotIncluded(), p256Verify.NotIncluded(), bls12381G1Add.NotIncluded(), bls12381G1MultiExp.NotIncluded()}
+	case params.ArbosVersion_30:
+		cases = []precompileCase{ecrecover.Included(), bn256AddByzantium.Included(), kzgPointEvaluation.Included(), p256Verify.Included(), bls12381G1Add.NotIncluded(), bls12381G1MultiExp.NotIncluded()}
+	case params.ArbosVersion_40:
+		cases = []precompileCase{bn256AddByzantium.Included(), kzgPointEvaluation.Included(), p256Verify.Included(), bls12381G1Add.NotIncluded(), bls12381G1MultiExp.NotIncluded()}
+	case params.ArbosVersion_50, params.ArbosVersion_60:
+		cases = []precompileCase{kzgPointEvaluation.Included(), bls12381G1Add.Included(), bls12381G1MultiExp.Included()}
+	default:
+		env.True(false, "no precompile expectations for ArbOS version %d", v)
 	}
-
+	for _, c := range cases {
+		res, err := env.L2.Client.CallContract(env.Ctx, ethereum.CallMsg{To: &c.addr, Data: c.in}, nil)
+		env.Require(err)
+		env.Equal(c.out, res, "precompile %v output mismatch", c.addr)
+	}
 }
 
 type precompileCase struct {
@@ -114,17 +111,9 @@ type precompileCaseProvider struct {
 }
 
 func (c precompileCaseProvider) Included() precompileCase {
-	return precompileCase{
-		addr: c.addr,
-		in:   c.input,
-		out:  c.expected,
-	}
+	return precompileCase{addr: c.addr, in: c.input, out: c.expected}
 }
 
 func (c precompileCaseProvider) NotIncluded() precompileCase {
-	return precompileCase{
-		addr: c.addr,
-		in:   c.input,
-		out:  []byte{},
-	}
+	return precompileCase{addr: c.addr, in: c.input, out: []byte{}}
 }
