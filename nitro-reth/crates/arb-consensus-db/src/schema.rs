@@ -43,9 +43,13 @@ pub trait ConsensusDbValue: Sized {
 
 /// Implements [`ConsensusDbKey`] for a positional key: `prefix ++ big-endian(pos)`,
 /// where `pos` is the key's single `u64` field.
+///
+/// Exported so downstream crates (e.g. `arb-mel-db`) can extend the schema with their own
+/// positional keys.
+#[macro_export]
 macro_rules! prefix_key {
     ($key:ty[$prefix:expr] => $val:ty) => {
-        impl ConsensusDbKey for $key {
+        impl $crate::schema::ConsensusDbKey for $key {
             type StoredValue = $val;
 
             const PREFIX: &[u8] = $prefix;
@@ -54,14 +58,15 @@ macro_rules! prefix_key {
                 Some(self.0)
             }
         }
-        impl PositionalKey for $key {}
+        impl $crate::schema::PositionalKey for $key {}
     };
 }
 
 /// Implements [`ConsensusDbKey`] for a fixed (non-positional) key.
+#[macro_export]
 macro_rules! fixed_key {
     ($key:ty[$const_key:expr] => $val:ty) => {
-        impl ConsensusDbKey for $key {
+        impl $crate::schema::ConsensusDbKey for $key {
             type StoredValue = $val;
 
             const PREFIX: &[u8] = $const_key;
@@ -74,15 +79,16 @@ macro_rules! fixed_key {
 }
 
 /// Implements [`ConsensusDbValue`] via RLP (the default encoding).
+#[macro_export]
 macro_rules! rlp_value {
     ($ty:ty) => {
-        impl ConsensusDbValue for $ty {
+        impl $crate::schema::ConsensusDbValue for $ty {
             fn encode(&self) -> Vec<u8> {
-                alloy_rlp::encode(self)
+                ::alloy_rlp::encode(self)
             }
 
-            fn decode(bytes: &[u8]) -> Result<Self> {
-                Ok(alloy_rlp::decode_exact(bytes)?)
+            fn decode(bytes: &[u8]) -> $crate::Result<Self> {
+                Ok(::alloy_rlp::decode_exact(bytes)?)
             }
         }
     };

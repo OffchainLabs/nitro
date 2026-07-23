@@ -1,7 +1,13 @@
+use alloy_primitives::B256;
+use alloy_rlp::{RlpDecodable, RlpEncodable};
 use arb_consensus_db::{
+    codecs::rlp::Rlp,
+    fixed_key,
     kv::KeyBuf,
-    schema::{self, BatchMetadataAt, ConsensusDbKey},
+    prefix_key, rlp_value,
+    schema::{self, BatchMetadata, BatchMetadataAt, ConsensusDbKey, L1IncomingMessage},
 };
+use arb_mel::MelState;
 
 /// A key accessible through [`MelDb`](crate::MelDb).
 ///
@@ -49,3 +55,68 @@ pub const MEL_SEQUENCER_BATCH_META_PREFIX: &[u8] = b"q";
 pub const HEAD_MEL_STATE_BLOCK_NUM_KEY: &[u8] = b"_headMelStateBlockNum";
 /// Contains the initial MEL state's parent chain block number (legacy/MEL boundary)
 pub const INITIAL_MEL_STATE_BLOCK_NUM_KEY: &[u8] = b"_initialMelStateBlockNum";
+
+/// Key under the `l` prefix: a computed MEL state, keyed by parent-chain block number. Internal
+/// target, go through [`MelDb::state`] and [`MelDb::save_state`] for public access.
+#[derive(Debug)]
+pub(crate) struct MelStateAt(pub(crate) u64);
+
+prefix_key!(MelStateAt[MEL_STATE_PREFIX] => Rlp<MelState>);
+
+/// Key under the `y` prefix: a delayed inbox message by delayed index. Internal target, go
+/// through [`MelDb::delayed_message`] and [`MelDb::save_delayed_messages`] for public access.
+#[derive(Debug)]
+pub(crate) struct MelDelayedMessageAt(pub(crate) u64);
+
+/// A delayed inbox message stored under the MEL `y` prefix. Field order mirrors nitro's
+/// `mel.DelayedInboxMessage`, embedding the byte-faithful [`L1IncomingMessage`] so the RLP
+/// encoding matches nitro's `arbitrumdata`.
+#[derive(Debug, RlpEncodable, RlpDecodable)]
+pub struct DelayedInboxMessage {
+    pub block_hash: B256,
+    pub before_inbox_acc: B256,
+    pub message: L1IncomingMessage,
+    pub parent_chain_block_number: u64,
+}
+
+prefix_key!(MelDelayedMessageAt[MEL_DELAYED_MESSAGE_PREFIX] => DelayedInboxMessage);
+rlp_value!(DelayedInboxMessage);
+
+/// Key under the `q` prefix: the MEL-era write target for sequencer batch metadata. Internal
+/// target, go through [`MelDb::save_batch_metas`] for public access. Reads go through
+/// [`BatchMetadataAt`] with boundary dispatch; new batches are always written MEL-side.
+#[derive(Debug)]
+pub(crate) struct MelBatchMetaAt(pub(crate) u64);
+
+prefix_key!(MelBatchMetaAt[MEL_SEQUENCER_BATCH_META_PREFIX] => BatchMetadata);
+
+/// Fixed key for the latest computed MEL state's parent-chain block number.
+#[derive(Debug)]
+pub struct HeadMelStateBlockNum;
+
+/// Fixed key for the initial MEL state's parent-chain block number (legacy/MEL boundary).
+#[derive(Debug)]
+pub struct InitialMelStateBlockNum;
+
+fixed_key!(HeadMelStateBlockNum[HEAD_MEL_STATE_BLOCK_NUM_KEY] => u64);
+fixed_key!(InitialMelStateBlockNum[INITIAL_MEL_STATE_BLOCK_NUM_KEY] => u64);
+
+#[cfg(test)]
+mod tests {
+    use arb_consensus_db::schema::key;
+
+    use super::*;
+
+    /// Each positional MEL key is wired to its prefix and lays out as
+    /// `prefix ++ big-endian(position)` (byte-compatible with nitro's `arbitrumdata`).
+    #[test]
+    fn mel_keys_lay_out_as_prefix_plus_big_endian_position() {
+        let pos = 1u64.to_be_bytes();
+        assert_eq!(key(&MelStateAt(1)), [b"l".as_slice(), &pos].concat());
+        assert_eq!(
+            key(&MelDelayedMessageAt(1)),
+            [b"y".as_slice(), &pos].concat()
+        );
+        assert_eq!(key(&MelBatchMetaAt(1)), [b"q".as_slice(), &pos].concat());
+    }
+}
