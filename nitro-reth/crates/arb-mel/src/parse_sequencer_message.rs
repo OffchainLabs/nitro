@@ -17,6 +17,7 @@
 use std::io::Read;
 
 use alloy_primitives::B256;
+use arb_da_provider_client::DaReaderSource;
 
 use crate::{MelError, MelResult};
 
@@ -82,11 +83,16 @@ pub struct SequencerMessage {
 }
 
 /// Parses a serialized sequencer batch into a [`SequencerMessage`].
-pub(crate) fn parse_sequencer_message(
+///
+/// When the payload's header byte selects a data-availability provider, the
+/// underlying payload is recovered through `da_reader_source` and then decoded
+/// like any other batch (mirroring `arbstate.ParseSequencerMessage`).
+pub(crate) async fn parse_sequencer_message(
     batch_num: u64,
-    _batch_block_hash: B256,
+    batch_block_hash: B256,
     data: &[u8],
     max_uncompressed_batch_size: usize,
+    da_reader_source: &dyn DaReaderSource,
 ) -> MelResult<SequencerMessage> {
     if data.len() < HEADER_LEN {
         return Err(MelError::SequencerMessageTooShort);
@@ -112,6 +118,8 @@ pub(crate) fn parse_sequencer_message(
     }
     let header_byte = payload[0];
 
+    // An L1-authenticated batch with an unrecognised header byte means this node
+    // is behind the on-chain protocol.
     if is_l1_authenticated(header_byte) && !is_known_header_byte(header_byte) {
         return Err(MelError::NodeOutOfDate {
             batch_num,
@@ -119,14 +127,35 @@ pub(crate) fn parse_sequencer_message(
         });
     }
 
-    // TODO: data-availability providers are not yet ported. Reject the header
-    // bytes that would require one rather than silently yielding an empty batch.
-    if is_anytrust(header_byte) || is_blob_hashes(header_byte) || is_dacert(header_byte) {
-        return Err(MelError::UnsupportedDaHeaderByte {
-            batch_num,
-            header_byte,
-        });
-    }
+    // Data-availability recovery: if the header byte selects a DA provider,
+    // recover the underlying payload through the registered reader and continue
+    // decoding it. A DA header byte with no registered reader is unsupported.
+    let recovered: Vec<u8>;
+    let payload: &[u8] =
+        if is_anytrust(header_byte) || is_blob_hashes(header_byte) || is_dacert(header_byte) {
+            match da_reader_source.get_reader(header_byte) {
+                Some(reader) => {
+                    recovered = reader
+                        .recover_payload(batch_num, batch_block_hash, data)
+                        .await?;
+                    // An empty recovered payload is an empty batch (e.g. a DA
+                    // certificate that failed validation and is skipped).
+                    if recovered.is_empty() {
+                        return Ok(parsed);
+                    }
+                    &recovered
+                }
+                None => {
+                    return Err(MelError::UnsupportedDaHeaderByte {
+                        batch_num,
+                        header_byte,
+                    });
+                }
+            }
+        } else {
+            payload
+        };
+    let header_byte = payload[0];
 
     if is_zeroheavy(header_byte) {
         return Err(MelError::UnsupportedEncoding("zeroheavy"));
@@ -176,9 +205,16 @@ fn parse_segments(decompressed: &[u8]) -> Vec<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
+    use std::{io::Write, sync::Arc};
+
+    use arb_da_provider_client::{DaReaderRegistry, MockDaReader, Preimages};
 
     use super::*;
+
+    /// An empty DA source for the non-DA test cases.
+    fn no_da() -> DaReaderRegistry {
+        DaReaderRegistry::new()
+    }
 
     /// Builds the fixed 40-byte batch header followed by `payload`.
     fn frame(header: [u64; 5], payload: &[u8]) -> Vec<u8> {
@@ -227,16 +263,18 @@ mod tests {
         assert!(!is_known_header_byte(L1_AUTHENTICATED_FLAG | 0x02));
     }
 
-    #[test]
-    fn rejects_data_shorter_than_header() {
-        let result = parse_sequencer_message(0, B256::ZERO, &[0u8; HEADER_LEN - 1], usize::MAX);
+    #[tokio::test]
+    async fn rejects_data_shorter_than_header() {
+        let result =
+            parse_sequencer_message(0, B256::ZERO, &[0u8; HEADER_LEN - 1], usize::MAX, &no_da())
+                .await;
         assert!(matches!(result, Err(MelError::SequencerMessageTooShort)));
     }
 
-    #[test]
-    fn parses_header_fields_with_empty_payload() -> MelResult<()> {
+    #[tokio::test]
+    async fn parses_header_fields_with_empty_payload() -> MelResult<()> {
         let data = frame([1, 2, 3, 4, 5], &[]);
-        let msg = parse_sequencer_message(7, B256::ZERO, &data, usize::MAX)?;
+        let msg = parse_sequencer_message(7, B256::ZERO, &data, usize::MAX, &no_da()).await?;
         assert_eq!(msg.min_timestamp, 1);
         assert_eq!(msg.max_timestamp, 2);
         assert_eq!(msg.min_l1_block, 3);
@@ -246,8 +284,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn parses_brotli_encoded_segments() -> MelResult<()> {
+    #[tokio::test]
+    async fn parses_brotli_encoded_segments() -> MelResult<()> {
         let seg_a: &[u8] = b"hello";
         let seg_b: &[u8] = b"world!!";
         let raw = rlp_segments(&[seg_a, seg_b]);
@@ -255,41 +293,48 @@ mod tests {
         payload.extend_from_slice(&brotli_compress(&raw));
 
         let data = frame([10, 20, 30, 40, 2], &payload);
-        let msg =
-            parse_sequencer_message(1, B256::ZERO, &data, DEFAULT_MAX_UNCOMPRESSED_BATCH_SIZE)?;
+        let msg = parse_sequencer_message(
+            1,
+            B256::ZERO,
+            &data,
+            DEFAULT_MAX_UNCOMPRESSED_BATCH_SIZE,
+            &no_da(),
+        )
+        .await?;
         assert_eq!(msg.after_delayed_messages, 2);
         assert_eq!(msg.segments, vec![seg_a.to_vec(), seg_b.to_vec()]);
         Ok(())
     }
 
-    #[test]
-    fn oversized_decompression_yields_no_segments() -> MelResult<()> {
+    #[tokio::test]
+    async fn oversized_decompression_yields_no_segments() -> MelResult<()> {
         // Cap decompression below the real output; the reader is truncated so no
         // complete segment can be parsed, but the call still succeeds.
         let raw = rlp_segments(&[b"aaaaaaaaaaaaaaaaaaaa"]);
         let mut payload = vec![BROTLI_HEADER_BYTE];
         payload.extend_from_slice(&brotli_compress(&raw));
         let data = frame([0; 5], &payload);
-        let msg = parse_sequencer_message(1, B256::ZERO, &data, 1)?;
+        let msg = parse_sequencer_message(1, B256::ZERO, &data, 1, &no_da()).await?;
         assert!(msg.segments.is_empty());
         Ok(())
     }
 
-    #[test]
-    fn rejects_zeroheavy_encoding() {
+    #[tokio::test]
+    async fn rejects_zeroheavy_encoding() {
         let data = frame([0; 5], &[ZEROHEAVY_FLAG]);
-        let result = parse_sequencer_message(3, B256::ZERO, &data, usize::MAX);
+        let result = parse_sequencer_message(3, B256::ZERO, &data, usize::MAX, &no_da()).await;
         assert!(matches!(
             result,
             Err(MelError::UnsupportedEncoding("zeroheavy"))
         ));
     }
 
-    #[test]
-    fn rejects_unsupported_da_header_bytes() {
+    #[tokio::test]
+    async fn da_header_byte_without_reader_is_unsupported() {
+        // A DA header byte with no registered reader is rejected.
         for byte in [ANYTRUST_FLAG, BLOB_HASHES_FLAG, DACERT_FLAG] {
             let data = frame([0; 5], &[byte]);
-            let result = parse_sequencer_message(9, B256::ZERO, &data, usize::MAX);
+            let result = parse_sequencer_message(9, B256::ZERO, &data, usize::MAX, &no_da()).await;
             assert!(
                 matches!(result, Err(MelError::UnsupportedDaHeaderByte { batch_num: 9, header_byte }) if header_byte == byte),
                 "expected UnsupportedDaHeaderByte for header byte {byte:#04x}"
@@ -297,23 +342,52 @@ mod tests {
         }
     }
 
-    #[test]
-    fn rejects_node_out_of_date_header_byte() {
+    #[tokio::test]
+    async fn recovers_da_payload_and_parses_segments() -> MelResult<()> {
+        // The payload recovered from the DA provider is itself a brotli-compressed
+        // sequencer payload, decoded like any other batch after recovery.
+        let seg: &[u8] = b"da-recovered-segment";
+        let mut recovered = vec![BROTLI_HEADER_BYTE];
+        recovered.extend_from_slice(&brotli_compress(&rlp_segments(&[seg])));
+
+        // A batch whose payload header byte selects an AnyTrust DA provider.
+        let data = frame([1, 2, 3, 4, 5], &[ANYTRUST_FLAG]);
+        let block_hash = B256::repeat_byte(0x11);
+
+        let mut reader = MockDaReader::new();
+        reader.with_batch(1, block_hash, &data, recovered, Preimages::new());
+        let mut registry = DaReaderRegistry::new();
+        registry.register(ANYTRUST_FLAG, Arc::new(reader)).unwrap();
+
+        let msg = parse_sequencer_message(
+            1,
+            block_hash,
+            &data,
+            DEFAULT_MAX_UNCOMPRESSED_BATCH_SIZE,
+            &registry,
+        )
+        .await?;
+        assert_eq!(msg.segments, vec![seg.to_vec()]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rejects_node_out_of_date_header_byte() {
         // L1-authenticated flag set together with an unknown bit.
         let byte = L1_AUTHENTICATED_FLAG | 0x02;
         let data = frame([0; 5], &[byte]);
-        let result = parse_sequencer_message(5, B256::ZERO, &data, usize::MAX);
+        let result = parse_sequencer_message(5, B256::ZERO, &data, usize::MAX, &no_da()).await;
         assert!(matches!(
             result,
             Err(MelError::NodeOutOfDate { batch_num: 5, header_byte }) if header_byte == byte
         ));
     }
 
-    #[test]
-    fn unknown_non_authenticated_header_byte_yields_empty_batch() -> MelResult<()> {
+    #[tokio::test]
+    async fn unknown_non_authenticated_header_byte_yields_empty_batch() -> MelResult<()> {
         // A non-authenticated, non-brotli byte falls through to an empty batch.
         let data = frame([0; 5], &[0x04]);
-        let msg = parse_sequencer_message(1, B256::ZERO, &data, usize::MAX)?;
+        let msg = parse_sequencer_message(1, B256::ZERO, &data, usize::MAX, &no_da()).await?;
         assert!(msg.segments.is_empty());
         Ok(())
     }
