@@ -1227,8 +1227,11 @@ dependencies = [
 name = "arb-mel-db"
 version = "0.1.5"
 dependencies = [
+ "alloy-primitives",
  "alloy-rlp",
  "arb-consensus-db",
+ "arb-mel",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

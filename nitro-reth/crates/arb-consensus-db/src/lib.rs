@@ -1,5 +1,5 @@
-//! Typed access to Nitro's consensus database — the classic (non-MEL) `arbitrumdata`
-//! schema — layered over a generic [`kv::KvStore`] backend.
+//! Typed access to Nitro's consensus database: the classic (non-MEL) `arbitrumdata`
+//! schema, layered over a generic [`kv::KvStore`] backend.
 //!
 //! [`ConsensusDb`] offers typed reads and writes keyed by [`schema`] descriptors. On-disk
 //! key and value encodings are byte-compatible with Nitro, so the two can share a schema.

@@ -1,17 +1,23 @@
 use alloy_primitives::{Address, B256};
+use alloy_rlp::{RlpDecodable, RlpEncodable};
 use arbos::arbos_types::{L1IncomingMessage, MessageWithMetadata};
 
 use crate::{DelayedMessageDB, MelError};
 
 pub type MelResult<T> = Result<T, MelError>;
 
-#[derive(Default, Clone)]
+/// A computed MEL state.
+///
+/// The field set and order mirror nitro's `mel.State` exported fields exactly, so the
+/// RLP encoding is byte-compatible with nitro's `arbitrumdata` on-disk representation
+/// (nitro's unexported runtime-only fields are not serialized and so are omitted here).
+#[derive(Default, Clone, RlpEncodable, RlpDecodable)]
 pub struct MelState {
     pub version: u16,
     pub parent_chain_id: u64,
+    pub parent_chain_block_number: u64,
     pub batch_posting_target_address: Address,
     pub delayed_message_posting_target_address: Address,
-    pub parent_chain_block_number: u64,
     pub parent_chain_block_hash: B256,
     pub parent_chain_prev_block_hash: B256,
     pub batch_count: u64,

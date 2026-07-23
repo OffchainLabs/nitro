@@ -1,5 +1,22 @@
 use alloy_rlp::{Decodable, EMPTY_LIST_CODE, EMPTY_STRING_CODE, Encodable, bytes::BufMut};
 
+use crate::{Result, schema::ConsensusDbValue};
+
+/// A generic RLP-encoded value wrapper. Implements [`ConsensusDbValue`] for any
+/// `T: Encodable + Decodable`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Rlp<T>(pub T);
+
+impl<T: Encodable + Decodable> ConsensusDbValue for Rlp<T> {
+    fn encode(&self) -> Vec<u8> {
+        alloy_rlp::encode(&self.0)
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        Ok(Rlp(alloy_rlp::decode_exact(bytes)?))
+    }
+}
+
 /// Optional field, which encodes `None` as empty list (`0xC0`).
 ///
 /// `T` must never be encodable to `0xC0` since it will resolve to `None`.
