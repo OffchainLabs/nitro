@@ -7,6 +7,11 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+[features]
+# Exposes the dependency-light `test_utils` builders (headers, logs) and the
+# `MockParentChainReader` for downstream crates' tests.
+test-utils = []
+
 [dependencies]
 alloy-eips = { workspace = true }
 alloy-primitives = { workspace = true }
