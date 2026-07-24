@@ -1,0 +1,36 @@
+---
+name: nitro-reth
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/_nitro-reth-test.yml
+    secrets: inherit
+
+  lint:
+    uses: ./.github/workflows/_nitro-reth-lint.yml
+    secrets: inherit
+
+  spec-tests:
+    uses: ./.github/workflows/_nitro-reth-spec-tests.yml
+    secrets: inherit
+
+  coverage:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/_nitro-reth-coverage.yml
+    secrets: inherit
+
+  miri:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/_nitro-reth-miri.yml
+    secrets: inherit
+
+  dependencies:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/_nitro-reth-dependencies.yml
+    secrets: inherit

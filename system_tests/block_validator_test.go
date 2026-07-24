@@ -269,7 +269,10 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		Fatal(t, "did not validate all blocks")
 	}
 	gethExec := testClientB.ExecNode
-	legacyRecorder := gethExec.Recorder.(*gethexec.BlockRecorder)
+	legacyRecorder, ok := gethExec.Recorder.(*gethexec.BlockRecorder)
+	if !ok {
+		Fatal(t, "expected legacy block recorder")
+	}
 	legacyRecorder.TrimAllPrepared(t)
 	finalRefCount := legacyRecorder.RecordingDBReferenceCount()
 	lastBlockNow, err := testClientB.Client.BlockByNumber(ctx, nil)

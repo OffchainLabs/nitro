@@ -1,16 +1,23 @@
 ---
 name: 'Lint Go Code'
-description: 'Runs both golangci-lint and custom linters on the Go codebase.'
+description: 'Runs golangci-lint, the custom linters, and solhint via `make lint` so the tool versions pinned in the Makefile are the single source of truth.'
 
 runs:
   using: composite
 
   steps:
-    - name: GolangCI Lint
-      uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee  # v9.2.1
+    - name: Cache golangci-lint analysis
+      uses: actions/cache@v5
       with:
-        version: v2.5
+        path: ~/.cache/golangci-lint
+        # github.sha prevents exact-key hits, which would skip the save and
+        # let the cache go stale.
+        key: ${{ runner.os }}-golangci-${{ hashFiles('**/go.sum') }}-${{ github.sha }}
+        # Stale restores are safe: golangci-lint invalidates per file/config.
+        restore-keys: |
+          ${{ runner.os }}-golangci-${{ hashFiles('**/go.sum') }}-
+          ${{ runner.os }}-golangci-
 
-    - name: Custom Lint
+    - name: Lint
       shell: bash
-      run: go run ./linters ./...
+      run: make lint

@@ -37,6 +37,13 @@ jobs:
     uses: ./.github/workflows/_bold-legacy.yml
     secrets: inherit
 
+  # --- Run Nitro Reth tests (not required by can_proceed) ---
+  nitro-reth-tests:
+    needs: changes
+    if: needs.changes.outputs.nitro_reth_changed == 'true'
+    uses: ./.github/workflows/_nitro-reth-tests.yml
+    secrets: inherit
+
   # --- Full GO tests (not required by can_proceed) ---
   go-tests:
     needs: changes

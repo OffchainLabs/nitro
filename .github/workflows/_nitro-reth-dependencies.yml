@@ -1,0 +1,31 @@
+---
+name: nitro-reth-dependencies
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  deny-and-audit:
+    name: cargo deny & audit
+    runs-on: ocl-8cpu-32ram
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: nitro-reth
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@1.93
+      - uses: taiki-e/install-action@0abfcd587b70a713fdaa7fb502c885e2112acb15  # v2.75.7
+        with:
+          tool: cargo-deny,cargo-audit
+      # Advisories are checked separately below via cargo audit, so this
+      # only runs the categories cargo-deny uniquely covers.
+      - run: cargo deny check bans licenses sources
+      # The ignore list lives in nitro-reth/.cargo/audit.toml.
+      - run: cargo audit

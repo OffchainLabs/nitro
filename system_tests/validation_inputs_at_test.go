@@ -311,7 +311,10 @@ func validationInputsAtFromTip(t *testing.T, ctx context.Context, builder *NodeB
 	t.Helper()
 
 	var inputJson server_api.InputJSON
-	chainTipRecorder := builder.L2.ExecNode.Recorder.(*gethexec.ChainTipBlockRecorder)
+	chainTipRecorder, ok := builder.L2.ExecNode.Recorder.(*gethexec.ChainTipBlockRecorder)
+	if !ok {
+		Fatal(t, "expected chain-tip block recorder")
+	}
 	servedTipRecordingsBefore := chainTipRecorder.ServedTipRecordings()
 	retryUntilFound(t, ctx, 40, 250*time.Millisecond, "ValidationInputsAt", "batch not found on L1", func() error {
 		var err error
