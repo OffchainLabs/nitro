@@ -17,6 +17,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/transactionfeed"
 )
 
 type FullSequencingHooks struct {
@@ -28,6 +29,7 @@ type FullSequencingHooks struct {
 	txFilter                 arbos.TxFilter
 	blockFilter              arbos.BlockFilter
 	txSizeLimitReached       bool
+	transactionFeedServer    transactionBroadcaster
 }
 
 var _ BlockSequencingHooks = (*FullSequencingHooks)(nil)
@@ -36,6 +38,7 @@ func MakeSequencingHooks(
 	items []txQueueItem,
 	maxSequencedTxsSize int,
 	txFilter arbos.TxFilter,
+	transactionFeedServer transactionBroadcaster,
 ) *FullSequencingHooks {
 	res := &FullSequencingHooks{
 		queueItems:               items,
@@ -44,6 +47,7 @@ func MakeSequencingHooks(
 		maxSequencedTxsSize:      maxSequencedTxsSize,
 		txFilter:                 txFilter,
 		blockFilter:              nil, // only used in testing
+		transactionFeedServer:    transactionFeedServer,
 	}
 	return res
 }
@@ -56,6 +60,7 @@ func makeZeroTxSizeSequencingHooks(
 	txes types.Transactions,
 	txFilter arbos.TxFilter,
 	blockFilter arbos.BlockFilter,
+	transactionFeedServer transactionBroadcaster,
 ) *FullSequencingHooks {
 	var items []txQueueItem
 	for _, tx := range txes {
@@ -63,14 +68,14 @@ func makeZeroTxSizeSequencingHooks(
 			tx: tx,
 		})
 	}
-	hooks := MakeSequencingHooks(items, math.MaxInt, txFilter)
+	hooks := MakeSequencingHooks(items, math.MaxInt, txFilter, transactionFeedServer)
 	hooks.blockFilter = blockFilter
 	return hooks
 }
 
 // MakeResequencingHooks creates filterless, size-unlimited hooks for re-sequencing reorged txs.
-func MakeResequencingHooks(txes types.Transactions) BlockSequencingHooks {
-	return makeZeroTxSizeSequencingHooks(txes, nil, nil)
+func MakeResequencingHooks(txes types.Transactions, transactionFeedServer transactionBroadcaster) BlockSequencingHooks {
+	return makeZeroTxSizeSequencingHooks(txes, nil, nil, transactionFeedServer)
 }
 
 // MakeZeroTxSizeSequencingHooksForTesting creates sequencing hooks for testing with tx size always zero.
@@ -80,7 +85,7 @@ func MakeZeroTxSizeSequencingHooksForTesting(
 	txFilter arbos.TxFilter,
 	blockFilter arbos.BlockFilter,
 ) *FullSequencingHooks {
-	return makeZeroTxSizeSequencingHooks(txes, txFilter, blockFilter)
+	return makeZeroTxSizeSequencingHooks(txes, txFilter, blockFilter, nil)
 }
 
 func (s *FullSequencingHooks) SequencedTxes() ([]TxResult, error) {
@@ -112,6 +117,18 @@ func (s *FullSequencingHooks) TxFailed(err error) {
 		log.Error("TxFailed called but entry already exists", "existingErr", s.txErrors[len(s.txErrors)-1], "newErr", err)
 	}
 	s.txErrors = append(s.txErrors, err)
+}
+
+func (s *FullSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt) {
+	if s.transactionFeedServer == nil {
+		return
+	}
+	msg, err := transactionfeed.BuildFeedMessage(header, tx, receipt)
+	if err != nil {
+		log.Error("Transaction feed: failed to build message", "block", header.Number, "err", err)
+		return
+	}
+	s.transactionFeedServer.BroadcastTransaction(msg)
 }
 
 // NextTxToSequence returns the next transaction to be included in the block, or nil if there are no more transactions to include.

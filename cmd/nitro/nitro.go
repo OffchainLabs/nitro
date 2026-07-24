@@ -551,6 +551,7 @@ func mainImpl() int {
 			&config.ExecutionNodeConfigFetcher{LiveConfig: liveNodeConfig},
 			liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
 			parentChain,
+			fatalErrChan,
 		)
 		if err != nil {
 			log.Error("failed to create execution node", "err", err)
