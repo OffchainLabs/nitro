@@ -236,18 +236,18 @@ mod tests {
         assert!(matches!(result, Err(MelError::NonU64("sequence number"))));
     }
 
-    #[test]
-    fn propagates_logs_fetcher_error() {
+    #[tokio::test]
+    async fn propagates_logs_fetcher_error() {
         let logs = MockLogs {
             fail: true,
             ..Default::default()
         };
-        let result = parse_batches_from_block(&state(), &Header::default(), &MockTx, &logs);
+        let result = parse_batches_from_block(&state(), &Header::default(), &MockTx, &logs).await;
         assert!(result.is_err());
     }
 
-    #[test]
-    fn propagates_decode_error() {
+    #[tokio::test]
+    async fn propagates_decode_error() {
         let malformed = rpc_log(
             target(),
             LogData::new_unchecked(
@@ -259,7 +259,7 @@ mod tests {
             block_logs: vec![malformed],
             ..Default::default()
         };
-        let result = parse_batches_from_block(&state(), &Header::default(), &MockTx, &logs);
+        let result = parse_batches_from_block(&state(), &Header::default(), &MockTx, &logs).await;
         assert!(matches!(
             result,
             Err(MelError::AbiDecode {

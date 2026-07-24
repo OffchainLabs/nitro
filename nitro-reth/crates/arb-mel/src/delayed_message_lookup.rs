@@ -354,9 +354,10 @@ mod tests {
         input: Vec<u8>,
     }
 
+    #[async_trait::async_trait]
     impl TxFetcher for MockOriginTx {
         type Transaction = TxLegacy;
-        fn transaction_by_log(&self, _log: &Log) -> MelResult<TxLegacy> {
+        async fn transaction_by_log(&self, _log: &Log) -> MelResult<TxLegacy> {
             Ok(TxLegacy {
                 input: self.input.clone().into(),
                 ..Default::default()
@@ -398,8 +399,8 @@ mod tests {
         rpc_log(inbox, ev.encode_log_data())
     }
 
-    #[test]
-    fn reconstructs_from_origin_message() -> MelResult<()> {
+    #[tokio::test]
+    async fn reconstructs_from_origin_message() -> MelResult<()> {
         let (target, inbox) = target_and_inbox();
         let data = b"foobar";
         let call = sendL2MessageFromOriginCall {
@@ -420,14 +421,15 @@ mod tests {
             &Header::default(),
             &tx,
             &logs,
-        )?;
+        )
+        .await?;
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].message.l2_msg, data);
         Ok(())
     }
 
-    #[test]
-    fn rejects_from_origin_tx_too_short() {
+    #[tokio::test]
+    async fn rejects_from_origin_tx_too_short() {
         let (target, inbox) = target_and_inbox();
         let tx = MockOriginTx {
             input: vec![1u8, 2],
@@ -444,12 +446,13 @@ mod tests {
             &Header::default(),
             &tx,
             &logs,
-        );
+        )
+        .await;
         assert!(matches!(result, Err(MelError::TxDataTooShort)));
     }
 
-    #[test]
-    fn sorts_by_request_id() -> MelResult<()> {
+    #[tokio::test]
+    async fn sorts_by_request_id() -> MelResult<()> {
         let (target, inbox) = target_and_inbox();
         let logs = MockLogs {
             block_logs: vec![
@@ -465,7 +468,8 @@ mod tests {
             &Header::default(),
             &MockTx,
             &logs,
-        )?;
+        )
+        .await?;
         assert_eq!(out.len(), 2);
         assert_eq!(
             out[0].message.header.request_id,
