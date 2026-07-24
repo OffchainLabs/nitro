@@ -2,6 +2,8 @@ module github.com/offchainlabs/nitro
 
 go 1.25
 
+toolchain go1.25.12
+
 replace github.com/ethereum/go-ethereum => ./go-ethereum
 
 require (
