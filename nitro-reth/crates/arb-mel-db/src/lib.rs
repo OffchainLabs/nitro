@@ -5,7 +5,7 @@ use arb_consensus_db::{
     kv,
     schema::{BatchMetadata, LegacyDelayedMessageAt, ParentChainBlockAt, RlpDelayedMessageAt},
 };
-use arb_mel::MelState;
+use arb_mel::{DelayedInboxMessage, MelState};
 use arbos_types::L1IncomingMessage;
 
 pub mod schema;
@@ -137,7 +137,7 @@ impl<S: kv::KvStore> MelDb<S> {
     pub fn save_delayed_messages(
         &mut self,
         state: &MelState,
-        messages: &[schema::DelayedInboxMessage],
+        messages: &[DelayedInboxMessage],
     ) -> Result<()> {
         let first = state
             .delayed_messages_seen
@@ -148,7 +148,7 @@ impl<S: kv::KvStore> MelDb<S> {
             })?;
         let mut batch = ConsensusDbBatch::new();
         for (i, message) in messages.iter().enumerate() {
-            batch.put(schema::MelDelayedMessageAt(first + i as u64), message);
+            batch.put(schema::MelDelayedMessageAt(first + i as u64), &Rlp(message.clone()));
         }
         Ok(self.consensus_db.write_batch(batch)?)
     }
@@ -191,9 +191,12 @@ impl<S: kv::KvStore> MelDb<S> {
     /// `legacyFetchDelayedMessage`): the message and its parent-chain block from
     /// `legacy_message_and_parent_block`, and `before_inbox_acc` from the previous
     /// index's accumulator. The legacy format did not store `block_hash`, so it is left zero.
-    pub fn delayed_message(&self, index: u64) -> Result<Option<schema::DelayedInboxMessage>> {
+    pub fn delayed_message(&self, index: u64) -> Result<Option<DelayedInboxMessage>> {
         if self.initial.is_none_or(|b| index >= b.delayed_count) {
-            return Ok(self.consensus_db.get(schema::MelDelayedMessageAt(index))?);
+            return Ok(self
+                .consensus_db
+                .get(schema::MelDelayedMessageAt(index))?
+                .map(|r| r.0));
         }
         let Some((message, parent_chain_block_number)) =
             self.legacy_message_and_parent_block(index)?
@@ -205,7 +208,7 @@ impl<S: kv::KvStore> MelDb<S> {
         } else {
             self.legacy_accumulator(index - 1)?
         };
-        Ok(Some(schema::DelayedInboxMessage {
+        Ok(Some(DelayedInboxMessage {
             block_hash: B256::ZERO,
             before_inbox_acc,
             message,
@@ -291,8 +294,8 @@ mod tests {
         }
     }
 
-    fn delayed(kind: u8) -> schema::DelayedInboxMessage {
-        schema::DelayedInboxMessage {
+    fn delayed(kind: u8) -> DelayedInboxMessage {
+        DelayedInboxMessage {
             block_hash: B256::repeat_byte(0x10 + kind),
             before_inbox_acc: B256::repeat_byte(0x20 + kind),
             message: l1_msg(kind),

@@ -53,7 +53,9 @@ impl MelState {
 }
 
 /// A delayed inbox message reconstructed from a `MessageDelivered` event and
-/// its corresponding inbox-message data.
+/// its corresponding inbox-message data. Field order mirrors nitro's
+/// `mel.DelayedInboxMessage` so the RLP encoding matches `arbitrumdata`.
+#[derive(Debug, Clone, RlpEncodable, RlpDecodable)]
 pub struct DelayedInboxMessage {
     pub block_hash: B256,
     pub before_inbox_acc: B256,

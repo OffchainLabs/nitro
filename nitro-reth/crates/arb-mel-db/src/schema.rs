@@ -1,14 +1,11 @@
-use alloy_primitives::B256;
-use alloy_rlp::{RlpDecodable, RlpEncodable};
 use arb_consensus_db::{
     codecs::rlp::Rlp,
     fixed_key,
     kv::KeyBuf,
-    prefix_key, rlp_value,
+    prefix_key,
     schema::{self, BatchMetadata, BatchMetadataAt, ConsensusDbKey},
 };
-use arb_mel::MelState;
-use arbos_types::L1IncomingMessage;
+use arb_mel::{DelayedInboxMessage, MelState};
 
 /// A key accessible through [`MelDb`](crate::MelDb).
 ///
@@ -69,19 +66,7 @@ prefix_key!(MelStateAt[MEL_STATE_PREFIX] => Rlp<MelState>);
 #[derive(Debug)]
 pub(crate) struct MelDelayedMessageAt(pub(crate) u64);
 
-/// A delayed inbox message stored under the MEL `y` prefix. Field order mirrors nitro's
-/// `mel.DelayedInboxMessage`, embedding the byte-faithful [`L1IncomingMessage`] so the RLP
-/// encoding matches nitro's `arbitrumdata`.
-#[derive(Debug, RlpEncodable, RlpDecodable)]
-pub struct DelayedInboxMessage {
-    pub block_hash: B256,
-    pub before_inbox_acc: B256,
-    pub message: L1IncomingMessage,
-    pub parent_chain_block_number: u64,
-}
-
-prefix_key!(MelDelayedMessageAt[MEL_DELAYED_MESSAGE_PREFIX] => DelayedInboxMessage);
-rlp_value!(DelayedInboxMessage);
+prefix_key!(MelDelayedMessageAt[MEL_DELAYED_MESSAGE_PREFIX] => Rlp<DelayedInboxMessage>);
 
 /// Key under the `q` prefix: the MEL-era write target for sequencer batch metadata. Internal
 /// target, go through [`MelDb::save_batch_metas`] for public access. Reads go through
