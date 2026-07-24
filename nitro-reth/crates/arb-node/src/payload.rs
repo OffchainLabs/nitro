@@ -15,7 +15,7 @@ use reth_node_builder::{
     BuilderContext, FullNodeTypes, NodeTypes, components::PayloadServiceBuilder,
 };
 use reth_payload_builder::{PayloadBuilderHandle, PayloadServiceCommand};
-use reth_payload_primitives::{PayloadBuilderAttributes, PayloadTypes};
+use reth_payload_primitives::{PayloadAttributes, PayloadTypes};
 use reth_transaction_pool::TransactionPool;
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -55,8 +55,8 @@ impl<T: PayloadTypes> Future for ArbPayloadService<T> {
                 return Poll::Ready(());
             };
             match cmd {
-                PayloadServiceCommand::BuildNewPayload(attr, tx) => {
-                    let id = attr.payload_id();
+                PayloadServiceCommand::BuildNewPayload(req, _span, tx) => {
+                    let id = req.attributes.payload_id(&req.parent_hash);
                     let _ = tx.send(Ok(id));
                 }
                 PayloadServiceCommand::BestPayload(_, tx) => {

@@ -10,8 +10,8 @@ use arb_chainspec::ArbitrumChainSpec;
 use arb_primitives::ArbPrimitives;
 use reth_chainspec::{EthChainSpec, Hardforks};
 use reth_evm::{
-    ConfigureEngineEvm, ConfigureEvm, EvmEnv, EvmEnvFor, ExecutableTxIterator, ExecutionCtxFor,
-    NextBlockEnvAttributes,
+    block::BlockExecutorFor, ConfigureEngineEvm, ConfigureEvm, Database, EvmEnv, EvmEnvFor, EvmFor,
+    ExecutableTxIterator, ExecutionCtxFor, InspectorFor, NextBlockEnvAttributes,
 };
 use reth_primitives_traits::{SealedBlock, SealedHeader, SignedTransaction, TxTy};
 use reth_storage_errors::any::AnyError;
@@ -95,6 +95,19 @@ where
         &self.block_assembler
     }
 
+    fn create_executor<'a, DB, I>(
+        &'a self,
+        evm: EvmFor<Self, &'a mut revm::database::State<DB>, I>,
+        ctx: ExecutionCtxFor<'a, Self>,
+    ) -> impl BlockExecutorFor<'a, Self::BlockExecutorFactory, &'a mut revm::database::State<DB>, I>
+    where
+        DB: Database,
+        I: InspectorFor<Self, &'a mut revm::database::State<DB>> + 'a,
+    {
+        self.executor_factory
+            .create_arb_executor(evm, ctx, self.chain_spec.chain().id())
+    }
+
     fn evm_env(&self, header: &Header) -> Result<EvmEnv<SpecId>, Self::Error> {
         let chain_id = self.chain_spec.chain().id();
         let mix_hash = header.mix_hash().unwrap_or_default();
@@ -124,6 +137,7 @@ where
             prevrandao: Some(prevrandao),
             gas_limit: header.gas_limit(),
             basefee: header.base_fee_per_gas().unwrap_or_default(),
+            slot_num: 0,
             blob_excess_gas_and_price: if spec.is_enabled_in(SpecId::CANCUN) {
                 Some(revm::context_interface::block::BlobExcessGasAndPrice {
                     excess_blob_gas: 0,
@@ -167,6 +181,7 @@ where
             prevrandao: Some(prevrandao),
             gas_limit: attributes.gas_limit,
             basefee: parent.base_fee_per_gas().unwrap_or_default(),
+            slot_num: 0,
             blob_excess_gas_and_price: if spec.is_enabled_in(SpecId::CANCUN) {
                 Some(revm::context_interface::block::BlobExcessGasAndPrice {
                     excess_blob_gas: 0,
@@ -248,6 +263,7 @@ where
             prevrandao: Some(prevrandao),
             gas_limit: payload.payload.gas_limit(),
             basefee: payload.payload.saturated_base_fee_per_gas(),
+            slot_num: 0,
             blob_excess_gas_and_price: if spec.is_enabled_in(SpecId::CANCUN) {
                 Some(revm::context_interface::block::BlobExcessGasAndPrice {
                     excess_blob_gas: 0,

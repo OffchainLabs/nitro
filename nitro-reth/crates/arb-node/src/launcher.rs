@@ -207,6 +207,7 @@ impl ArbEngineLauncher {
         } = self;
         let NodeBuilderWithComponents {
             adapter: NodeTypesAdapter { database },
+            rocksdb_provider,
             components_builder,
             add_ons:
                 AddOns {
@@ -232,6 +233,7 @@ impl ArbEngineLauncher {
             .with_adjusted_configs()
             .with_provider_factory::<_, <CB::Components as NodeComponents<T>>::Evm>(
                 changeset_cache.clone(),
+                rocksdb_provider,
             )
             .await?
             .inspect(|_| {
@@ -489,6 +491,7 @@ impl ArbEngineLauncher {
             ctx.sync_metrics_tx(),
             ctx.components().evm_config().clone(),
             changeset_cache,
+            ctx.task_executor().clone(),
         );
 
         let _ = TREE_SENDER.set(arb_tree_sender);
@@ -647,10 +650,7 @@ impl ArbEngineLauncher {
         ctx.spawn_ethstats(engine_events_for_ethstats).await?;
 
         let handle = NodeHandle {
-            node_exit_future: NodeExitFuture::new(
-                async { rx.await? },
-                full_node.config.debug.terminate,
-            ),
+            node_exit_future: NodeExitFuture::new(async { rx.await? }),
             node: full_node,
         };
 

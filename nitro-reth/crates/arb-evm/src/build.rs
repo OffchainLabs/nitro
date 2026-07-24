@@ -4,7 +4,7 @@ use alloy_evm::{
     Database, Evm, EvmFactory, RecoveredTx,
     block::{
         BlockExecutionError, BlockExecutionResult, BlockExecutor, BlockExecutorFactory,
-        BlockExecutorFor, ExecutableTx, OnStateHook,
+        BlockExecutorFor, ExecutableTx, OnStateHook, StateDB,
     },
     eth::{
         EthBlockExecutionCtx, EthBlockExecutor, EthTxResult, receipt_builder::ReceiptBuilder,
@@ -30,7 +30,7 @@ use arbos::{
     },
     util::{self as arb_util, BalanceError, tx_type_has_poster_costs},
 };
-use reth_evm::TransactionEnv;
+use reth_evm::TransactionEnvMut;
 use revm::{
     context::{TxEnv, result::ExecutionResult},
     database::State,
@@ -48,7 +48,7 @@ use crate::{
 ///
 /// Arbitrum needs to cap the gas price to the base fee when dropping tips,
 /// which requires mutating fields not exposed by the standard `TransactionEnv` trait.
-pub trait ArbTransactionEnv: TransactionEnv {
+pub trait ArbTransactionEnv: TransactionEnvMut {
     /// Set the effective gas price (max_fee_per_gas for EIP-1559, gas_price for legacy).
     fn set_gas_price(&mut self, gas_price: u128);
     /// Set the max priority fee per gas (tip cap).
@@ -201,47 +201,20 @@ where
 
     fn create_executor<'a, DB, I>(
         &'a self,
-        evm: EvmF::Evm<&'a mut State<DB>, I>,
-        ctx: Self::ExecutionCtx<'a>,
+        _evm: EvmF::Evm<DB, I>,
+        _ctx: Self::ExecutionCtx<'a>,
     ) -> impl BlockExecutorFor<'a, Self, DB, I>
     where
-        DB: Database + 'a,
-        I: Inspector<EvmF::Context<&'a mut State<DB>>> + 'a,
+        DB: StateDB + 'a,
+        I: Inspector<EvmF::Context<DB>> + 'a,
     {
-        let extra_bytes = ctx.extra_data.as_ref();
-        let (delayed_messages_read, l2_block_number) = decode_extra_fields(extra_bytes);
-        let arb_ctx = ArbBlockExecutionCtx {
-            parent_hash: ctx.parent_hash,
-            parent_beacon_block_root: ctx.parent_beacon_block_root,
-            extra_data: extra_bytes[..core::cmp::min(extra_bytes.len(), 32)].to_vec(),
-            delayed_messages_read,
-            l2_block_number,
-            ..Default::default()
-        };
-        ArbBlockExecutor {
-            inner: EthBlockExecutor::new(evm, ctx, &self.spec, &self.receipt_builder),
-            arb_hooks: None,
-            arb_ctx,
-            // Reuse the per-block ctx the factory staged for the EVM so the
-            // EVM-side precompile handlers and the executor's per-tx writes go
-            // through the same `Arc<ArbPrecompileCtx>`.
-            precompile_ctx: <EvmF as crate::evm::ArbEvmFactoryStaged>::staged_precompile_ctx(
-                &self.evm_factory,
-            )
-            .unwrap_or_default(),
-            pending_tx: None,
-            block_gas_left: 0,
-            user_txs_processed: 0,
-            gas_used_for_l1: Vec::new(),
-            multi_gas_used: Vec::new(),
-            expected_balance_delta: 0,
-            zombie_accounts: rustc_hash::FxHashSet::default(),
-            finalise_deleted: rustc_hash::FxHashSet::default(),
-            touched_accounts: rustc_hash::FxHashSet::default(),
-            multi_gas_current_fees: std::sync::OnceLock::new(),
-            state_overlay: StateOverlay::new(),
-            multi_gas_sink: crate::multi_gas::MultiGasSink::default(),
-        }
+        unreachable!(
+            "BlockExecutorFactory::create_executor must not be called directly on \
+                 ArbBlockExecutorFactory; all execution goes through the \
+                 ConfigureEvm::create_executor override on ArbEvmConfig"
+        );
+        #[allow(unreachable_code)]
+        EthBlockExecutor::new(_evm, _ctx, &self.spec, &self.receipt_builder)
     }
 }
 
@@ -698,7 +671,8 @@ where
             return Ok(EthTxResult {
                 result: revm::context::result::ResultAndState {
                     result: ExecutionResult::Revert {
-                        gas_used: 0,
+                        gas: synthetic_result_gas(0),
+                        logs: Vec::new(),
                         output: alloy_primitives::Bytes::new(),
                     },
                     state: Default::default(),
@@ -789,7 +763,8 @@ where
             return Ok(EthTxResult {
                 result: revm::context::result::ResultAndState {
                     result: ExecutionResult::Revert {
-                        gas_used: 0,
+                        gas: synthetic_result_gas(0),
+                        logs: Vec::new(),
                         output: alloy_primitives::Bytes::new(),
                     },
                     state: Default::default(),
@@ -1014,7 +989,8 @@ where
             Ok(EthTxResult {
                 result: revm::context::result::ResultAndState {
                     result: ExecutionResult::Revert {
-                        gas_used,
+                        gas: synthetic_result_gas(gas_used),
+                        logs: Vec::new(),
                         output: ticket_bytes,
                     },
                     state: Default::default(),
@@ -1027,8 +1003,7 @@ where
                 result: revm::context::result::ResultAndState {
                     result: ExecutionResult::Success {
                         reason: revm::context::result::SuccessReason::Return,
-                        gas_used,
-                        gas_refunded: 0,
+                        gas: synthetic_result_gas(gas_used),
                         output: revm::context::result::Output::Call(ticket_bytes),
                         logs: receipt_logs,
                     },
@@ -1440,8 +1415,7 @@ where
                 result: revm::context::result::ResultAndState {
                     result: ExecutionResult::Success {
                         reason: revm::context::result::SuccessReason::Return,
-                        gas_used: 0,
-                        gas_refunded: 0,
+                        gas: synthetic_result_gas(0),
                         output: revm::context::result::Output::Call(alloy_primitives::Bytes::new()),
                         logs: Vec::new(),
                     },
@@ -1519,14 +1493,14 @@ where
             // are still committed.
             let result = if is_filtered {
                 ExecutionResult::Revert {
-                    gas_used: 0,
+                    gas: synthetic_result_gas(0),
+                    logs: Vec::new(),
                     output: alloy_primitives::Bytes::from("filtered transaction"),
                 }
             } else {
                 ExecutionResult::Success {
                     reason: revm::context::result::SuccessReason::Return,
-                    gas_used: 0,
-                    gas_refunded: 0,
+                    gas: synthetic_result_gas(0),
                     output: revm::context::result::Output::Call(alloy_primitives::Bytes::new()),
                     logs: Vec::new(),
                 }
@@ -1627,7 +1601,8 @@ where
                         return Ok(EthTxResult {
                             result: revm::context::result::ResultAndState {
                                 result: ExecutionResult::Revert {
-                                    gas_used: 0,
+                                    gas: synthetic_result_gas(0),
+                                    logs: Vec::new(),
                                     output: alloy_primitives::Bytes::new(),
                                 },
                                 state: Default::default(),
@@ -1699,7 +1674,8 @@ where
                     return Ok(EthTxResult {
                         result: revm::context::result::ResultAndState {
                             result: ExecutionResult::Revert {
-                                gas_used: 0,
+                                gas: synthetic_result_gas(0),
+                                logs: Vec::new(),
                                 output: alloy_primitives::Bytes::from(err_msg.into_bytes()),
                             },
                             state: Default::default(),
@@ -1729,7 +1705,8 @@ where
                     return Ok(EthTxResult {
                         result: revm::context::result::ResultAndState {
                             result: ExecutionResult::Revert {
-                                gas_used: 0,
+                                gas: synthetic_result_gas(0),
+                                logs: Vec::new(),
                                 output: alloy_primitives::Bytes::from(
                                     format!("error opening retryable {}", info.ticket_id,)
                                         .into_bytes(),
@@ -1921,7 +1898,8 @@ where
                         return Ok(EthTxResult {
                             result: revm::context::result::ResultAndState {
                                 result: ExecutionResult::Revert {
-                                    gas_used,
+                                    gas: synthetic_result_gas(gas_used),
+                                    logs: Vec::new(),
                                     output: alloy_primitives::Bytes::new(),
                                 },
                                 state: Default::default(),
@@ -1959,7 +1937,8 @@ where
                         return Ok(EthTxResult {
                             result: revm::context::result::ResultAndState {
                                 result: ExecutionResult::Revert {
-                                    gas_used,
+                                    gas: synthetic_result_gas(gas_used),
+                                    logs: Vec::new(),
                                     output: alloy_primitives::Bytes::from(
                                         "filtered transaction".as_bytes(),
                                     ),
@@ -2196,7 +2175,7 @@ where
         // dimensions. Carry it so the multi-gas can be reconstituted raw for the
         // v60 refund and backlog, which reconcile against pre-refund usage.
         let gas_refunded = match &output.result.result {
-            ExecutionResult::Success { gas_refunded, .. } => *gas_refunded,
+            ExecutionResult::Success { gas, .. } => gas.inner_refunded(),
             _ => 0,
         };
 
@@ -3139,15 +3118,20 @@ where
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Builds the gas accounting for a synthetic (non-EVM) execution result.
+fn synthetic_result_gas(gas_used: u64) -> revm::context::result::ResultGas {
+    revm::context::result::ResultGas::new(gas_used, gas_used, 0, 0, 0)
+}
+
 /// Adjust gas_used in an `ExecutionResult` by adding extra gas.
 ///
 /// Used to account for poster gas (L1 data cost) which is deducted before
 /// EVM execution but must be reflected in the receipt's gas_used.
 fn adjust_result_gas_used<H>(result: &mut ExecutionResult<H>, extra_gas: u64) {
     match result {
-        ExecutionResult::Success { gas_used, .. } => *gas_used = gas_used.saturating_add(extra_gas),
-        ExecutionResult::Revert { gas_used, .. } => *gas_used = gas_used.saturating_add(extra_gas),
-        ExecutionResult::Halt { gas_used, .. } => *gas_used = gas_used.saturating_add(extra_gas),
+        ExecutionResult::Success { gas, .. }
+        | ExecutionResult::Revert { gas, .. }
+        | ExecutionResult::Halt { gas, .. } => gas.set_spent(gas.spent().saturating_add(extra_gas)),
     }
 }
 

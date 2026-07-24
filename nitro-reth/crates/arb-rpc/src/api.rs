@@ -21,8 +21,9 @@ use reth_rpc_eth_api::{
     EthApiTypes, FromEvmError, RpcNodeCore, RpcNodeCoreExt,
     helpers::{
         Call, EthApiSpec, EthBlocks, EthCall, EthFees, EthSigner, EthState, EthTransactions,
-        LoadBlock, LoadFee, LoadPendingBlock, LoadReceipt, LoadState, LoadTransaction,
-        SpawnBlocking, Trace, estimate::EstimateCall, pending_block::PendingEnvBuilder,
+        GetBlockAccessList, LoadBlock, LoadFee, LoadPendingBlock, LoadReceipt, LoadState,
+        LoadTransaction, SpawnBlocking, Trace, estimate::EstimateCall,
+        pending_block::PendingEnvBuilder,
     },
 };
 use reth_rpc_eth_types::{
@@ -951,6 +952,38 @@ where
 {
 }
 
+impl<N, Rpc> GetBlockAccessList for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore,
+    EthApiError: FromEvmError<N::Evm>,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError, Evm = N::Evm>,
+{
+    // TODO(jsouto18): Is this currently supported in Arbitrum?
+    /// `eth_getBlockAccessList*` is unsupported on Arbitrum for now.
+    ///
+    /// reth's default implementation reconstructs the access list by replaying
+    /// the block over a `State` whose BAL recorder is fed only through
+    /// `DatabaseCommit::commit`. The Arbitrum executor applies mints, burns,
+    /// nonce bumps, and fee distribution by writing `state.cache.accounts`
+    /// directly, so those balance changes bypass
+    /// the recorder and the default would return an access list silently
+    /// missing them for every block. Return an explicit error instead of
+    /// incomplete data until the executor feeds the BAL builder.
+    fn get_block_access_list(
+        &self,
+        _block_id: BlockId,
+    ) -> impl std::future::Future<
+        Output = Result<Option<alloy_eips::eip7928::BlockAccessList>, Self::Error>,
+    > + Send {
+        async move {
+            Err(
+                EthApiError::Unsupported("eth_getBlockAccessList is not supported on Arbitrum")
+                    .into(),
+            )
+        }
+    }
+}
+
 impl<N, Rpc> LoadPendingBlock for ArbEthApi<N, Rpc>
 where
     N: RpcNodeCore,
@@ -1042,14 +1075,16 @@ where
     /// `l1BlockNumber` on every receipt).
     fn build_transaction_receipt(
         &self,
-        tx: reth_storage_api::ProviderTx<Self::Provider>,
+        tx: reth_primitives_traits::Recovered<reth_storage_api::ProviderTx<Self::Provider>>,
         meta: alloy_consensus::transaction::TransactionMeta,
         receipt: reth_storage_api::ProviderReceipt<Self::Provider>,
+        all_receipts: Option<
+            std::sync::Arc<Vec<reth_storage_api::ProviderReceipt<Self::Provider>>>,
+        >,
     ) -> impl std::future::Future<
         Output = Result<reth_rpc_eth_api::RpcReceipt<Self::NetworkTypes>, Self::Error>,
     > + Send {
         use alloy_consensus::TxReceipt;
-        use reth_primitives_traits::SignerRecoverable;
         use reth_rpc_convert::transaction::ConvertReceiptInput;
         use reth_rpc_eth_api::RpcNodeCoreExt;
         use reth_rpc_eth_types::{
@@ -1057,16 +1092,19 @@ where
         };
         async move {
             let hash = meta.block_hash;
-            let all_receipts = self
-                .cache()
-                .get_receipts(hash)
-                .await
-                .map_err(<Self::Error as FromEthApiError>::from_eth_err)?
-                .ok_or_else(|| {
-                    <Self::Error as FromEthApiError>::from_eth_err(EthApiError::HeaderNotFound(
-                        hash.into(),
-                    ))
-                })?;
+            let all_receipts = match all_receipts {
+                Some(receipts) => receipts,
+                None => self
+                    .cache()
+                    .get_receipts(hash)
+                    .await
+                    .map_err(<Self::Error as FromEthApiError>::from_eth_err)?
+                    .ok_or_else(|| {
+                        <Self::Error as FromEthApiError>::from_eth_err(EthApiError::HeaderNotFound(
+                            hash.into(),
+                        ))
+                    })?,
+            };
 
             let (gas_used, next_log_index) =
                 calculate_gas_used_and_next_log_index(meta.index, &all_receipts);
@@ -1077,12 +1115,8 @@ where
                 .await
                 .map_err(<Self::Error as FromEthApiError>::from_eth_err)?;
 
-            let tx_recovered = tx
-                .try_into_recovered_unchecked()
-                .map_err(<Self::Error as FromEthApiError>::from_eth_err)?;
-
             let input = ConvertReceiptInput {
-                tx: tx_recovered.as_recovered_ref(),
+                tx: tx.as_recovered_ref(),
                 gas_used: receipt.cumulative_gas_used() - gas_used,
                 receipt,
                 next_log_index,

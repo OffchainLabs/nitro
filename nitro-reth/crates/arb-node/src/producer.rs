@@ -189,7 +189,7 @@ struct CachedOverlay {
 
 struct CachedPrestate {
     parent_hash: B256,
-    contracts: Arc<alloy_primitives::map::HashMap<B256, revm::bytecode::Bytecode>>,
+    contracts: Arc<alloy_primitives::map::B256Map<revm::bytecode::Bytecode>>,
 }
 
 impl<Provider> ArbBlockProducer<Provider>
@@ -270,14 +270,14 @@ where
         &self,
         parent_hash: B256,
         head_state: Option<&reth_chain_state::BlockState<ArbPrimitives>>,
-    ) -> Arc<alloy_primitives::map::HashMap<B256, revm::bytecode::Bytecode>> {
+    ) -> Arc<alloy_primitives::map::B256Map<revm::bytecode::Bytecode>> {
         let mut cache = self.cached_prestate.lock();
         if let Some(c) = cache.as_ref()
             && c.parent_hash == parent_hash
         {
             return c.contracts.clone();
         }
-        let mut contracts: alloy_primitives::map::HashMap<B256, revm::bytecode::Bytecode> =
+        let mut contracts: alloy_primitives::map::B256Map<revm::bytecode::Bytecode> =
             Default::default();
         if let Some(head_state) = head_state {
             for block_state in head_state.chain() {
@@ -568,7 +568,6 @@ where
             .with_database(StateProviderDatabase::new(state_provider.as_ref()))
             .with_bundle_prestate(prestate)
             .with_bundle_update()
-            .without_state_clear()
             .build();
 
         let chain_id = self.chain_spec.chain().id();
@@ -1638,8 +1637,7 @@ fn augment_bundle_from_cache(
                 }
             };
 
-            let mut storage_changes: alloy_primitives::map::HashMap<U256, StorageSlot> =
-                alloy_primitives::map::HashMap::default();
+            let mut storage_changes: revm_database::StorageWithOriginalValues = Default::default();
             for (key, value) in &current_storage {
                 let original_value = state_provider
                     .storage(*addr, B256::from(*key))
