@@ -774,7 +774,7 @@ func TestFilterService_PreallocLoadAndReload(t *testing.T) {
 	require.NoError(t, err)
 
 	// Preallocation engaged: ping-pong buffers exist and are sized.
-	wantHashes := service.config.S3.NumPreallocatedHashes()
+	wantHashes := service.config.numPreallocatedHashes()
 	require.Equal(t, wantHashes, service.hashStore.maxHashes)
 
 	require.NoError(t, service.Initialize(context.Background()))

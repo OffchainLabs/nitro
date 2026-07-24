@@ -65,29 +65,6 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// minBytesPerHashEntry is a hard lower bound on the JSON size of one 32-byte hash entry: 64 hex chars plus the two
-// surrounding quotes. Dividing the max file size by it yields a safe upper bound on the number of hashes.
-const minBytesPerHashEntry = 66
-
-// EstimateHashCount returns a safe upper bound on the number of hashes in a
-// hash-list JSON document of the given byte size.
-func EstimateHashCount(sizeBytes int64) int {
-	if sizeBytes < 0 {
-		return 0
-	}
-	return int(sizeBytes / minBytesPerHashEntry)
-}
-
-// NumPreallocatedHashes returns how many hashes to preallocate structures for, derived from max-file-size-mb, or 0 when
-// preallocation is disabled (the toggle is off or max-file-size-mb is unset).
-func (c *Config) NumPreallocatedHashes() int {
-	if !c.PreallocateMemory || c.MaxFileSizeMB <= 0 {
-		return 0
-	}
-	// Compute the byte count in int64; it exceeds 32 bits for multi-GB files.
-	return EstimateHashCount(int64(c.MaxFileSizeMB) * bytesInMB)
-}
-
 var DefaultS3Config = Config{
 	ChunkSizeMB:       32,
 	MaxRetries:        3,
