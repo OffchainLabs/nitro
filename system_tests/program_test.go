@@ -3431,7 +3431,6 @@ func TestProgramSinglepassOutputSizeLimit(t *testing.T) {
 	defer programs.SetAllowFallback(savedFallback)
 
 	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
-		b.DontParalellise()
 		b.execConfig.StylusTarget.AllowFallback = false
 		b.execConfig.StylusTarget.MaxSinglepassOutputSize = maxOutputSize
 	})
