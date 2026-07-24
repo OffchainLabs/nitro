@@ -10,8 +10,8 @@ use arb_chainspec::ArbitrumChainSpec;
 use arb_primitives::ArbPrimitives;
 use reth_chainspec::{EthChainSpec, Hardforks};
 use reth_evm::{
-    block::BlockExecutorFor, ConfigureEngineEvm, ConfigureEvm, Database, EvmEnv, EvmEnvFor, EvmFor,
-    ExecutableTxIterator, ExecutionCtxFor, InspectorFor, NextBlockEnvAttributes,
+    ConfigureEngineEvm, ConfigureEvm, Database, EvmEnv, EvmEnvFor, EvmFor, ExecutableTxIterator,
+    ExecutionCtxFor, InspectorFor, NextBlockEnvAttributes, block::BlockExecutorFor,
 };
 use reth_primitives_traits::{SealedBlock, SealedHeader, SignedTransaction, TxTy};
 use reth_storage_errors::any::AnyError;

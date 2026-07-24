@@ -969,18 +969,13 @@ where
     /// the recorder and the default would return an access list silently
     /// missing them for every block. Return an explicit error instead of
     /// incomplete data until the executor feeds the BAL builder.
-    fn get_block_access_list(
+    async fn get_block_access_list(
         &self,
         _block_id: BlockId,
-    ) -> impl std::future::Future<
-        Output = Result<Option<alloy_eips::eip7928::BlockAccessList>, Self::Error>,
-    > + Send {
-        async move {
-            Err(
-                EthApiError::Unsupported("eth_getBlockAccessList is not supported on Arbitrum")
-                    .into(),
-            )
-        }
+    ) -> Result<Option<alloy_eips::eip7928::BlockAccessList>, Self::Error> {
+        Err(EthApiError::Unsupported(
+            "eth_getBlockAccessList is not supported on Arbitrum",
+        ))
     }
 }
 
