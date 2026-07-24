@@ -1060,6 +1060,7 @@ version = "0.1.5"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
+ "arb-mel-types",
  "arbos-types",
  "thiserror 2.0.18",
 ]
@@ -1196,6 +1197,7 @@ dependencies = [
  "alloy-rpc-types-eth",
  "alloy-sol-types",
  "arb-da-provider-client",
+ "arb-mel-types",
  "arb-storage-errors",
  "arbos",
  "brotli 8.0.2",
@@ -1211,7 +1213,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-rlp",
  "arb-consensus-db",
- "arb-mel",
+ "arb-mel-types",
  "arbos-types",
  "thiserror 2.0.18",
 ]
@@ -1231,6 +1233,15 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "arb-mel-types"
+version = "0.1.5"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rlp",
+ "arbos-types",
 ]
 
 [[package]]

@@ -7,6 +7,7 @@
 
 use alloy_primitives::B256;
 use alloy_rlp::{RlpDecodable, RlpDecodableWrapper, RlpEncodable, RlpEncodableWrapper};
+use arb_mel_types::BatchMetadata;
 use arbos_types::{L1IncomingMessage, MessageWithMetadata, parse_incoming_l1_message, rlp::NilString};
 
 use crate::{
@@ -94,15 +95,6 @@ macro_rules! rlp_value {
 /// Key under the `s` prefix: sequencer batch metadata by batch number.
 #[derive(Debug)]
 pub struct BatchMetadataAt(pub u64);
-
-/// Metadata for a sequencer batch: its accumulator and message/delayed/parent-chain counts.
-#[derive(Debug, RlpEncodable, RlpDecodable)]
-pub struct BatchMetadata {
-    pub accumulator: B256,
-    pub message_count: u64,
-    pub delayed_message_count: u64,
-    pub parent_chain_block: u64,
-}
 
 prefix_key!(BatchMetadataAt[SEQUENCER_BATCH_META_PREFIX] => BatchMetadata);
 rlp_value!(BatchMetadata);

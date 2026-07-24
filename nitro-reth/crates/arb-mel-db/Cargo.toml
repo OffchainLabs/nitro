@@ -11,7 +11,7 @@ alloy-rlp = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 
 arb-consensus-db.workspace = true
-arb-mel.workspace = true
+arb-mel-types.workspace = true
 arbos-types.workspace = true
 
 [lints]

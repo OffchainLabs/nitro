@@ -7,16 +7,17 @@ use arbos::types::{
 };
 
 use crate::{
-    BatchMeta, DelayedInboxMessage, DelayedMessageDB, LogsFetcher, MelError, MelResult, MelState,
-    TxFetcher, batch_lookup, batch_messages, delayed_message_lookup, mel_config_lookup,
-    parse_sequencer_message, serialize_batch,
+    BatchMetadata, DelayedInboxMessage, DelayedMessageDB, LogsFetcher, MelError, MelResult,
+    MelState, TxFetcher, accumulate_delayed_message, accumulate_message, batch_lookup,
+    batch_messages, delayed_message_lookup, mel_config_lookup,
+    move_unread_delayed_messages_to_inbox_accumulator, parse_sequencer_message, serialize_batch,
 };
 
 pub struct ExtractionOutput {
     pub post_state: MelState,
     pub messages: Vec<MessageWithMetadata>,
     pub delayed_messages: Vec<DelayedInboxMessage>,
-    pub batch_metas: Vec<BatchMeta>,
+    pub batch_metas: Vec<BatchMetadata>,
 }
 
 pub async fn extract_messages<R, D, L, T>(
@@ -117,7 +118,7 @@ where
 
     // Update the delayed message inbox accumulator in the MelState.
     for delayed in delayed_messages.iter() {
-        post_state.accumulate_delayed_message(delayed)?;
+        accumulate_delayed_message(&mut post_state, delayed)?;
         post_state.delayed_messages_seen += 1;
     }
 
@@ -149,12 +150,12 @@ where
             delayed_msg_db,
         )?;
         for msg in messages_in_batch.into_iter() {
-            post_state.accumulate_message(&msg)?;
+            accumulate_message(&mut post_state, &msg)?;
             messages.push(msg);
             post_state.msg_count += 1;
         }
         post_state.batch_count += 1;
-        batch_metas.push(BatchMeta {
+        batch_metas.push(BatchMetadata {
             accumulator: batch.after_inbox_acc,
             message_count: post_state.msg_count,
             delayed_message_count: batch.after_delayed_count,
@@ -182,7 +183,7 @@ where
             });
         }
         if post_state.version == 0 {
-            post_state.move_unread_delayed_messages_to_inbox_accumulator(delayed_msg_db)?;
+            move_unread_delayed_messages_to_inbox_accumulator(&mut post_state, delayed_msg_db)?;
         }
         post_state.version = mel_config.mel_version;
         post_state.delayed_message_posting_target_address = mel_config.inbox;

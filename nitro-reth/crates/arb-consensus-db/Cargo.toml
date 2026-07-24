@@ -9,6 +9,7 @@ license.workspace = true
 thiserror.workspace = true
 
 # Internal
+arb-mel-types.workspace = true
 arbos-types.workspace = true
 
 # Alloy

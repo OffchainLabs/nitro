@@ -1,67 +1,8 @@
 use alloy_primitives::{Address, B256};
-use alloy_rlp::{RlpDecodable, RlpEncodable};
-use arbos::types::{L1IncomingMessage, MessageWithMetadata};
 
-use crate::{DelayedMessageDB, MelError};
+use crate::MelError;
 
 pub type MelResult<T> = Result<T, MelError>;
-
-/// A computed MEL state.
-///
-/// The field set and order mirror nitro's `mel.State` exported fields exactly, so the
-/// RLP encoding is byte-compatible with nitro's `arbitrumdata` on-disk representation
-/// (nitro's unexported runtime-only fields are not serialized and so are omitted here).
-#[derive(Default, Clone, RlpEncodable, RlpDecodable)]
-pub struct MelState {
-    pub version: u16,
-    pub parent_chain_id: u64,
-    pub parent_chain_block_number: u64,
-    pub batch_posting_target_address: Address,
-    pub delayed_message_posting_target_address: Address,
-    pub parent_chain_block_hash: B256,
-    pub parent_chain_prev_block_hash: B256,
-    pub batch_count: u64,
-    pub msg_count: u64,
-    pub local_msg_accumulator: B256, /* starts at zero hash for each clone; updated only by
-                                      * AccumulateMessage; represents messages accumulated
-                                      * during processing of this specific parent chain block */
-    pub delayed_messages_read: u64,
-    pub delayed_messages_seen: u64,
-    pub delayed_message_inbox_acc: B256,
-    pub delayed_message_outbox_acc: B256,
-}
-
-impl MelState {
-    /// TODO: not yet implemented. Will fold `message` into the delayed-inbox
-    /// accumulator and advance `delayed_messages_read`.
-    pub fn accumulate_delayed_message(&mut self, _message: &DelayedInboxMessage) -> MelResult<()> {
-        Ok(())
-    }
-    /// TODO: not yet implemented. Will fold `message` into the message
-    /// accumulator that seeds the L2 chain.
-    pub fn accumulate_message(&mut self, _message: &MessageWithMetadata) -> MelResult<()> {
-        Ok(())
-    }
-    /// TODO: not yet implemented. Will drain any unread delayed messages into
-    /// the inbox accumulator when transitioning MEL versions.
-    pub fn move_unread_delayed_messages_to_inbox_accumulator(
-        &mut self,
-        _delayed_msg_db: &impl DelayedMessageDB,
-    ) -> MelResult<()> {
-        Ok(())
-    }
-}
-
-/// A delayed inbox message reconstructed from a `MessageDelivered` event and
-/// its corresponding inbox-message data. Field order mirrors nitro's
-/// `mel.DelayedInboxMessage` so the RLP encoding matches `arbitrumdata`.
-#[derive(Debug, Clone, RlpEncodable, RlpDecodable)]
-pub struct DelayedInboxMessage {
-    pub block_hash: B256,
-    pub before_inbox_acc: B256,
-    pub message: L1IncomingMessage,
-    pub parent_chain_block_number: u64,
-}
 
 /// Time bounds for a sequencer batch.
 #[derive(Debug, Clone, Copy, Default)]
@@ -168,15 +109,5 @@ mod tests {
         // Unknown bytes (e.g. a force-inclusion batch with no data) decode to None.
         assert_eq!(DataLocation::from_byte(3), None);
         assert_eq!(DataLocation::from_byte(255), None);
-    }
-
-    #[test]
-    fn default_mel_state_is_zeroed() {
-        let state = MelState::default();
-        assert_eq!(state.parent_chain_block_hash, B256::ZERO);
-        assert_eq!(state.batch_count, 0);
-        assert_eq!(state.msg_count, 0);
-        assert_eq!(state.delayed_messages_seen, 0);
-        assert_eq!(state.version, 0);
     }
 }

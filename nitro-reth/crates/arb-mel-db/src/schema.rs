@@ -3,9 +3,9 @@ use arb_consensus_db::{
     fixed_key,
     kv::KeyBuf,
     prefix_key,
-    schema::{self, BatchMetadata, BatchMetadataAt, ConsensusDbKey},
+    schema::{self, BatchMetadataAt, ConsensusDbKey},
 };
-use arb_mel::{DelayedInboxMessage, MelState};
+use arb_mel_types::{BatchMetadata, DelayedInboxMessage, MelState};
 
 /// A key accessible through [`MelDb`](crate::MelDb).
 ///

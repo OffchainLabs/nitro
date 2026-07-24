@@ -3,9 +3,9 @@ use arb_consensus_db::{
     ConsensusDb, ConsensusDbBatch, ConsensusDbError,
     codecs::rlp::Rlp,
     kv,
-    schema::{BatchMetadata, LegacyDelayedMessageAt, ParentChainBlockAt, RlpDelayedMessageAt},
+    schema::{LegacyDelayedMessageAt, ParentChainBlockAt, RlpDelayedMessageAt},
 };
-use arb_mel::{DelayedInboxMessage, MelState};
+use arb_mel_types::{BatchMetadata, DelayedInboxMessage, MelState};
 use arbos_types::L1IncomingMessage;
 
 pub mod schema;

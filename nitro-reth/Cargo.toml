@@ -8,6 +8,7 @@ members = [
     "crates/arb-math",
     "crates/arb-mel",
     "crates/arb-mel-db",
+    "crates/arb-mel-types",
     "crates/arb-parent-chain-client",
     "crates/arb-mel-runner",
     "crates/arb-storage",
@@ -52,6 +53,7 @@ arb-da-provider-client = { path = "crates/arb-da-provider-client" }
 arb-math = { path = "crates/arb-math" }
 arb-mel = { path = "crates/arb-mel" }
 arb-mel-db = { path = "crates/arb-mel-db" }
+arb-mel-types = { path = "crates/arb-mel-types" }
 arb-parent-chain-client = { path = "crates/arb-parent-chain-client" }
 arb-mel-runner = { path = "crates/arb-mel-runner" }
 arb-storage = { path = "crates/arb-storage" }
