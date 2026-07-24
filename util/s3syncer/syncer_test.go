@@ -350,7 +350,16 @@ func TestSyncer_DownloadsToDirAndCleansUp(t *testing.T) {
 			gauge := metrics.NewGauge()
 			cfg := newTestConfig(endpoint, key, 1)
 			cfg.DownloadDir = t.TempDir()
-			syncer := NewSyncer(cfg, rec.handleData, gauge)
+			var duringHandler []string
+			handler := func(body io.Reader, size int64, digest string) error {
+				files, globErr := filepath.Glob(filepath.Join(cfg.DownloadDir, "*"))
+				if globErr != nil {
+					t.Errorf("glob during handler: %v", globErr)
+				}
+				duringHandler = files
+				return rec.handleData(body, size, digest)
+			}
+			syncer := NewSyncer(cfg, handler, gauge)
 			if err := syncer.Initialize(t.Context()); err != nil {
 				t.Fatalf("Initialize: %v", err)
 			}
@@ -371,6 +380,9 @@ func TestSyncer_DownloadsToDirAndCleansUp(t *testing.T) {
 			}
 			if rec.lastSize != int64(len(body)) {
 				t.Fatalf("handler size = %d, want %d", rec.lastSize, len(body))
+			}
+			if len(duringHandler) != 0 {
+				t.Fatalf("temporary download file must be unlinked before the handler runs (crash-proof cleanup): %v", duringHandler)
 			}
 			leftovers, globErr := filepath.Glob(filepath.Join(cfg.DownloadDir, "*"))
 			if globErr != nil {

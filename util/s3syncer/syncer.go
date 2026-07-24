@@ -159,12 +159,13 @@ func (s *Syncer) downloadAndHandle(ctx context.Context, etagDigest string) error
 	if err != nil {
 		return fmt.Errorf("failed to create temporary download file: %w", err)
 	}
-	defer func() {
-		f.Close()
-		if err := os.Remove(f.Name()); err != nil {
-			log.Warn("failed to remove temporary download file", "path", f.Name(), "err", err)
-		}
-	}()
+	defer f.Close()
+	// Unlink the file up front so a crash mid-download can't strand it on
+	// disk; the descriptor keeps it writable and readable until Close, and
+	// the kernel reclaims the space then even if the process is killed.
+	if err := os.Remove(f.Name()); err != nil {
+		log.Warn("failed to unlink temporary download file", "path", f.Name(), "err", err)
+	}
 
 	// Download - SDK handles chunking, concurrency, and retry; the parts land at
 	// their offsets in the file concurrently. IfMatch pins every part request to
