@@ -1,0 +1,157 @@
+[graph]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+all-features = true
+
+# Advisory scanning (RustSec vulnerability DB) is owned by `cargo audit` /
+# rustsec/audit-check + .cargo/audit.toml — CI runs cargo-deny with
+# `check bans licenses sources` so it doesn't duplicate that check with a
+# second, independently-drifting ignore list.
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "0BSD",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "BSL-1.0",
+    "BUSL-1.1",
+    "CC0-1.0",
+    "MPL-2.0",
+    "OpenSSL",
+    "CDLA-Permissive-2.0",
+]
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-primitives"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-chainspec"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-storage"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-errors"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-evm"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-precompiles"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-node"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-payload"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-rpc"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-txpool"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-stylus"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arbos"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-reth"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-bench"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-test"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-test-harness"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-test-utils"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-spec-tests"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-executor-tests"
+
+[[licenses.exceptions]]
+allow = ["BUSL-1.1"]
+crate = "arb-fuzz"
+
+[[licenses.exceptions]]
+allow = ["NCSA"]
+crate = "libfuzzer-sys"
+
+[[licenses.clarify]]
+crate = "arbutil"
+expression = "BUSL-1.1"
+license-files = []
+
+[[licenses.clarify]]
+crate = "brotli"
+expression = "BUSL-1.1"
+license-files = []
+
+[[licenses.clarify]]
+crate = "prover"
+expression = "BUSL-1.1"
+license-files = []
+
+[[licenses.clarify]]
+crate = "validation"
+expression = "BUSL-1.1"
+license-files = []
+
+[[licenses.clarify]]
+crate = "forward"
+expression = "BUSL-1.1"
+license-files = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = [
+    "https://github.com/paradigmxyz/reth",
+    "https://github.com/OffchainLabs/nitro",
+    "https://github.com/OffchainLabs/wasmer",
+]

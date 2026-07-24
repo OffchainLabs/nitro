@@ -233,13 +233,13 @@ func buildL2Node(t *testing.T, ctx context.Context, spec Spec, overrides overrid
 		t, chainConfig, stackCfg, execCfg, nil, spec.arbOSInit, overrides.InitData)
 	rb.stage(func() { blockchain.Stop(); closeStack("l2", stack) })
 
+	fatalCh := make(chan error, 10)
 	execFetcher := newConfigFetcher(execCfg)
-	execNode, err := gethexec.CreateExecutionNode(ctx, stack, executionDB, blockchain, containers.None[*ethclient.Client](), execFetcher, 0, nil)
+	execNode, err := gethexec.CreateExecutionNode(ctx, stack, executionDB, blockchain, containers.None[*ethclient.Client](), execFetcher, 0, nil, fatalCh)
 	if err != nil {
 		t.Fatalf("CreateExecutionNode: %v", err)
 	}
 
-	fatalCh := make(chan error, 10)
 	locator, err := server_common.NewMachineLocator("")
 	if err != nil {
 		t.Fatalf("NewMachineLocator: %v", err)
