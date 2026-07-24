@@ -54,7 +54,7 @@ func runPool(t *testing.T, capacity int, items []scheduledTest, run func(*testin
 func planPool(capacity int, items []scheduledTest) (workers int, err error) {
 	heaviest := maxWeight(items)
 	if capacity < int(heaviest) {
-		return 0, fmt.Errorf("scheduler capacity (%d) < max scheduled weight (%d) — raise -v2.max-weight or filter out heavier tests", capacity, heaviest)
+		return 0, fmt.Errorf("scheduler capacity (%d) < max scheduled weight (%d) — raise the scheduler capacity or filter out heavier tests", capacity, heaviest)
 	}
 	return min(capacity, len(items)), nil
 }

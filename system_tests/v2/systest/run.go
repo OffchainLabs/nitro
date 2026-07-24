@@ -15,29 +15,38 @@ import (
 	"time"
 )
 
-// defaultTestTimeout is the per-scenario wall-clock backstop when no CLI
+// defaultTestTimeout is the per-scenario wall-clock backstop when no
 // override is given.
 const defaultTestTimeout = 10 * time.Minute
 
-// Run is the framework entry point: it parses the -v2.* flags, schedules the
-// registered tests, and runs them through the weighted worker pool. Call it
+// Run is the framework entry point: it schedules the registered tests and
+// runs them through the weighted worker pool. Call it
 // from a single test in a package that blank-imports the test subpackages.
 //
 // Run is the sole concurrency authority — workers call t.Parallel(), scenarios
 // never do. Names appear as TestRunner/worker-N/Foo[/matrix-suffix]; a single
 // scheduled test collapses to TestRunner/Foo.
 func Run(t *testing.T) {
-	cli := scheduleParams{DefaultStateScheme: envDefaultScheme()}
-	items := schedule(cli)
+	sp := parseCLI()
+	items := schedule(sp)
 
 	if len(items) == 0 {
 		t.Skip("no work scheduled (registry empty or filtered out)")
 	}
 
-	skipped := scheduleStats(items)
+	if isDryRun() {
+		printDryRun(items)
+		t.Skip("dry run: no tests executed")
+	}
+
+	skipped, validated := scheduleStats(items)
 	t.Logf("scheduled %d test runs (%d skipped)", len(items)-skipped, skipped)
 
-	base := runtime.GOMAXPROCS(0)
+	if sp.Validate && validated == 0 {
+		t.Fatalf("systest: validation requested but 0 of %d scheduled runs validate", len(items)-skipped)
+	}
+
+	base := capacityFor(sp)
 	capacity := poolCapacity(base, items)
 	if capacity > base {
 		t.Logf("systest: capacity %d raised to %d to fit the heaviest scheduled test", base, capacity)
@@ -60,14 +69,14 @@ func RunScenario(t *testing.T, scenario Scenario) {
 
 // RunGroup is the IDE entry point: it schedules the registered tests through
 // the same schedule the runner uses, then runs those matching the given
-// scenario funcs. -v2.* flags are ignored — no filters, pins, or category
-// gating; registered options (matrix, WithValidation, …) are honored; dedupes by func.
+// scenario funcs. Filters, pins, and category gating are ignored; registered
+// options (matrix, WithValidation, …) are honored; dedupes by func.
 func RunGroup(t *testing.T, scenarios []Scenario) {
 	if os.Getenv("CI") != "" {
 		t.Skip("IDE wrapper: covered by TestRunner on CI")
 	}
-	cli := scheduleParams{AllCategories: true, DefaultStateScheme: envDefaultScheme()}
-	matched, missing := groupSchedule(schedule(cli), scenarios)
+	sp := scheduleParams{AllCategories: true, DefaultStateScheme: envDefaultScheme()}
+	matched, missing := groupSchedule(schedule(sp), scenarios)
 	for _, item := range matched {
 		t.Run(item.Spec.Name, func(t *testing.T) { runOne(t, item) })
 	}
@@ -99,13 +108,13 @@ func groupSchedule(items []scheduledTest, scenarios []Scenario) (matched []sched
 	return matched, missing
 }
 
-func scheduleStats(items []scheduledTest) (skipped int) {
+func scheduleStats(items []scheduledTest) (skipped, validated int) {
 	for _, it := range items {
 		if it.SkipReason != "" {
 			skipped++
 		}
 	}
-	return skipped
+	return skipped, validated
 }
 
 // poolCapacity floors base to the heaviest scheduled weight to avoid deadlock.
@@ -134,14 +143,23 @@ func runOneWith(t testing.TB, item scheduledTest, build buildFunc) {
 
 	// Backstop for ctx-aware hangs in build/scenario: fail this one item at its
 	// deadline instead of riding the package -timeout; teardown and non-ctx-aware
-	// calls stay unbounded. Spec.Timeout overrides the default.
-	timeout := defaultTestTimeout
+	// calls stay unbounded. Spec.Timeout overrides the default; a
+	// zero default disables the backstop.
+	timeout := testTimeout()
 	if item.Spec.Timeout > 0 {
 		timeout = item.Spec.Timeout
 	}
 
 	runCtx := t.Context()
-	ctx, cancel := context.WithTimeout(runCtx, timeout)
+	var (
+		ctx    context.Context
+		cancel context.CancelFunc
+	)
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(runCtx, timeout)
+	} else {
+		ctx, cancel = context.WithCancel(runCtx)
+	}
 	// satisfies vet's lostcancel even if buildNode t.Fatalfs; the inner defer
 	// also calls cancel before env.wait so ctx-aware goroutines exit promptly.
 	defer cancel()

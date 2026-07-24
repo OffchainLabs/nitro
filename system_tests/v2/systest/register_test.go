@@ -31,7 +31,7 @@ func TestScheduleDoesNotMutateRegistry(t *testing.T) {
 	b.name = "X"
 	stubRegistry(t, b)
 
-	_ = schedule(scheduleParams{})
+	_ = schedule(scheduleParams{FollowerExec: "reth-url", Validate: true})
 	if len(b.postHooks) != 0 || b.topology != TopologyL2Only {
 		t.Fatalf("schedule mutated the shared registry builder: %+v", b)
 	}
@@ -59,7 +59,7 @@ func TestScheduleRejectsDeadPattern(t *testing.T) {
 
 	defer func() {
 		if recover() == nil {
-			t.Fatal("want panic for -v2.tests pattern matching no registered test")
+			t.Fatal("want panic for tests pattern matching no registered test")
 		}
 	}()
 	schedule(scheduleParams{Tests: map[string]bool{"Keep": true, "Gone": true}})
@@ -72,7 +72,7 @@ func TestScheduleRejectsDeadCategory(t *testing.T) {
 
 	defer func() {
 		if recover() == nil {
-			t.Fatal("want panic for -v2.categories value with no registered tests")
+			t.Fatal("want panic for category with no registered tests")
 		}
 	}()
 	schedule(scheduleParams{Categories: map[string]bool{"ghost": true}})
@@ -111,7 +111,7 @@ func TestCLIPinsReachScheduledSpec(t *testing.T) {
 		t.Fatalf("scheduled %d tests, want 1", len(out))
 	}
 	if s := out[0].Spec; s.ArbOSVersion.UnwrapOr(0) != params.ArbosVersion_41 || s.StateScheme.UnwrapOr("") != StateSchemeHash || s.DBEngine.UnwrapOr("") != DBEnginePebble {
-		t.Fatalf("CLI pins did not reach Spec: %+v", s)
+		t.Fatalf("params pins did not reach Spec: %+v", s)
 	}
 }
 
@@ -131,7 +131,7 @@ func TestCategoryEnabled(t *testing.T) {
 		cat  string
 		want bool
 	}{
-		{"default cat with empty CLI", scheduleParams{}, "default", true},
+		{"default cat with empty params", scheduleParams{}, "default", true},
 		{"default cat excluded when only challenge listed", scheduleParams{Categories: map[string]bool{"challenge": true}}, "default", false},
 		{"challenge enabled when listed", scheduleParams{Categories: map[string]bool{"challenge": true}}, "challenge", true},
 		{"no filter runs any category", scheduleParams{}, "challenge", true},
@@ -151,7 +151,7 @@ func TestCategoryEnabled(t *testing.T) {
 func TestResolvedSchemePrecedence(t *testing.T) {
 	p := scheduleParams{StateScheme: containers.Some(StateSchemeHash), DefaultStateScheme: containers.Some(StateSchemePath)}
 	if got := p.resolvedScheme(); got.UnwrapOr("") != StateSchemeHash {
-		t.Fatalf("resolvedScheme = %q, want explicit CLI pin %q over env default", got.UnwrapOr(""), StateSchemeHash)
+		t.Fatalf("resolvedScheme = %q, want explicit pin %q over env default", got.UnwrapOr(""), StateSchemeHash)
 	}
 	p = scheduleParams{DefaultStateScheme: containers.Some(StateSchemePath)}
 	if got := p.resolvedScheme(); got.UnwrapOr("") != StateSchemePath {

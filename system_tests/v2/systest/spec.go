@@ -83,7 +83,7 @@ type Spec struct {
 	DBEngine     containers.Option[DBEngine]
 	Category     string
 	Topology     Topology
-	// Timeout is the per-scenario wall-clock backstop. 0 = use the CLI default.
+	// Timeout is the per-scenario wall-clock backstop. 0 = use the runner default.
 	Timeout time.Duration
 	// SkipChainOwner skips making the Owner account a chain owner during setup.
 	SkipChainOwner bool
