@@ -77,14 +77,10 @@ func (s *S3SyncManager) Initialize(ctx context.Context) error {
 // hashes into the hashStore as they decode; the new list is published only if
 // the whole document parses and validates.
 func (s *S3SyncManager) handleHashListStream(r io.Reader, size int64, digest string) error {
-	var hashCount int
 	var listMeta *ListMeta
 	fill := func(addHash func(common.Hash)) (*ListMeta, error) {
 		var err error
-		listMeta, err = parseHashListStream(r, func(h common.Hash) {
-			hashCount++
-			addHash(h)
-		})
+		listMeta, err = parseHashListStream(r, addHash)
 		return listMeta, err
 	}
 	err := s.hashStore.Store(digest, estimateHashCount(size), fill)
@@ -92,7 +88,7 @@ func (s *S3SyncManager) handleHashListStream(r io.Reader, size int64, digest str
 		return fmt.Errorf("failed to parse hash list: %w", err)
 	}
 
-	log.Info("loaded restricted addr list", "filterSetID", listMeta.Id, "hash_count", hashCount, "etag", digest, "size_bytes", size, "scheme", listMeta.Scheme)
+	log.Info("loaded restricted addr list", "filterSetID", listMeta.Id, "hash_count", s.hashStore.Size(), "etag", digest, "size_bytes", size, "scheme", listMeta.Scheme)
 	return nil
 }
 
