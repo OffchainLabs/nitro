@@ -281,4 +281,73 @@ mod tests {
         let result = serialize_batch(&mut batch, &tx, &MockLogs::default());
         assert!(matches!(result, Err(MelError::TxDataTooShort)));
     }
+
+    #[test]
+    fn rejects_blob_batch_with_no_blobs() {
+        let tx = TxEip4844 {
+            blob_versioned_hashes: vec![],
+            ..Default::default()
+        };
+        let mut batch = make_batch(Some(DataLocation::BlobHashes), 0);
+        let result = serialize_batch(&mut batch, &tx, &MockLogs::default());
+        assert!(matches!(
+            result,
+            Err(MelError::SequencerBatchData(
+                "blob batch transaction has no blobs"
+            ))
+        ));
+    }
+
+    #[test]
+    fn separate_event_propagates_logs_fetcher_error() {
+        let mut batch = make_batch(Some(DataLocation::SeparateEvent), 0);
+        batch.raw_log.transaction_index = Some(0);
+        let logs = MockLogs {
+            fail: true,
+            ..Default::default()
+        };
+        let result = serialize_batch(&mut batch, &TxLegacy::default(), &logs);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn separate_event_no_logs_found() {
+        let mut batch = make_batch(Some(DataLocation::SeparateEvent), 0);
+        batch.raw_log.transaction_index = Some(0);
+        let result = serialize_batch(&mut batch, &TxLegacy::default(), &MockLogs::default());
+        assert!(matches!(
+            result,
+            Err(MelError::SequencerBatchData(
+                "no logs found in transaction receipt"
+            ))
+        ));
+    }
+
+    #[test]
+    fn separate_event_rejects_multiple_matching_logs() {
+        let seq = 3u64;
+        let bridge = Address::repeat_byte(0xCC);
+        let ev = SequencerBatchData {
+            batchSequenceNumber: U256::from(seq),
+            data: b"eventdata".to_vec().into(),
+        };
+        let logs = MockLogs {
+            tx_logs: vec![
+                rpc_log(bridge, ev.encode_log_data()),
+                rpc_log(bridge, ev.encode_log_data()),
+            ],
+            ..Default::default()
+        };
+        let mut batch = make_batch(Some(DataLocation::SeparateEvent), seq);
+        batch.bridge_address = bridge;
+        batch.raw_log = rpc_log(bridge, LogData::default());
+        batch.raw_log.transaction_index = Some(0);
+        let result = serialize_batch(&mut batch, &TxLegacy::default(), &logs);
+        assert!(matches!(
+            result,
+            Err(MelError::SequencerBatchData(
+                "expected to find only one matching sequencer batch data"
+            ))
+        ));
+    }
 }

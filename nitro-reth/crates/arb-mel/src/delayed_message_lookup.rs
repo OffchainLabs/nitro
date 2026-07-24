@@ -214,6 +214,7 @@ fn message_id(message_index: U256) -> B256 {
 
 #[cfg(test)]
 mod tests {
+    use alloy_consensus::TxLegacy;
     use alloy_primitives::Bytes;
 
     use super::*;
@@ -342,6 +343,151 @@ mod tests {
             &logs,
         )?;
         assert!(out.is_empty());
+        Ok(())
+    }
+
+    struct MockOriginTx {
+        input: Vec<u8>,
+    }
+
+    impl TxFetcher for MockOriginTx {
+        type Transaction = TxLegacy;
+        fn transaction_by_log(&self, _log: &Log) -> MelResult<TxLegacy> {
+            Ok(TxLegacy {
+                input: self.input.clone().into(),
+                ..Default::default()
+            })
+        }
+    }
+
+    fn from_origin_log(inbox: Address) -> Log {
+        let ev = InboxMessageDeliveredFromOrigin {
+            messageNum: U256::from(MESSAGE_INDEX),
+        };
+        rpc_log(inbox, ev.encode_log_data())
+    }
+
+    fn message_delivered_log_idx(
+        target: Address,
+        inbox: Address,
+        index: u64,
+        data_hash: B256,
+    ) -> Log {
+        let ev = MessageDelivered {
+            messageIndex: U256::from(index),
+            beforeInboxAcc: B256::repeat_byte(0x01),
+            inbox,
+            kind: 3,
+            sender: Address::repeat_byte(0x55),
+            messageDataHash: data_hash,
+            baseFeeL1: U256::from(1000u64),
+            timestamp: 42,
+        };
+        rpc_log(target, ev.encode_log_data())
+    }
+
+    fn inbox_message_log_idx(inbox: Address, index: u64, data: &[u8]) -> Log {
+        let ev = InboxMessageDelivered {
+            messageNum: U256::from(index),
+            data: Bytes::from(data.to_vec()),
+        };
+        rpc_log(inbox, ev.encode_log_data())
+    }
+
+    #[test]
+    fn reconstructs_from_origin_message() -> MelResult<()> {
+        let (target, inbox) = target_and_inbox();
+        let data = b"foobar";
+        let call = sendL2MessageFromOriginCall {
+            messageData: Bytes::from(data.to_vec()),
+        };
+        let tx = MockOriginTx {
+            input: call.abi_encode(),
+        };
+        let logs = MockLogs {
+            block_logs: vec![
+                message_delivered_log(target, inbox, keccak256(data)),
+                from_origin_log(inbox),
+            ],
+            ..Default::default()
+        };
+        let out = parse_delayed_messages_from_block(
+            &state_with_target(target),
+            &Header::default(),
+            &tx,
+            &logs,
+        )?;
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].message.l2_msg.as_ref(), data);
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_from_origin_tx_too_short() {
+        let (target, inbox) = target_and_inbox();
+        let tx = MockOriginTx {
+            input: vec![1u8, 2],
+        };
+        let logs = MockLogs {
+            block_logs: vec![
+                message_delivered_log(target, inbox, keccak256(b"foobar")),
+                from_origin_log(inbox),
+            ],
+            ..Default::default()
+        };
+        let result = parse_delayed_messages_from_block(
+            &state_with_target(target),
+            &Header::default(),
+            &tx,
+            &logs,
+        );
+        assert!(matches!(result, Err(MelError::TxDataTooShort)));
+    }
+
+    #[test]
+    fn sorts_by_request_id() -> MelResult<()> {
+        let (target, inbox) = target_and_inbox();
+        let logs = MockLogs {
+            block_logs: vec![
+                message_delivered_log_idx(target, inbox, 2, keccak256(b"two")),
+                message_delivered_log_idx(target, inbox, 1, keccak256(b"one")),
+                inbox_message_log_idx(inbox, 2, b"two"),
+                inbox_message_log_idx(inbox, 1, b"one"),
+            ],
+            ..Default::default()
+        };
+        let out = parse_delayed_messages_from_block(
+            &state_with_target(target),
+            &Header::default(),
+            &MockTx,
+            &logs,
+        )?;
+        assert_eq!(out.len(), 2);
+        assert_eq!(
+            out[0].message.header.request_id,
+            Some(message_id(U256::from(1u64)))
+        );
+        assert_eq!(
+            out[1].message.header.request_id,
+            Some(message_id(U256::from(2u64)))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn scaffolds_from_empty_and_topicless_logs() -> MelResult<()> {
+        let (scaffolds, events) = delayed_message_scaffolds_from_logs(&Header::default(), &[])?;
+        assert!(scaffolds.is_empty());
+        assert!(events.is_empty());
+
+        let topicless = rpc_log(
+            Address::repeat_byte(0xDD),
+            alloy_primitives::LogData::default(),
+        );
+        let refs = [&topicless];
+        let (scaffolds, events) = delayed_message_scaffolds_from_logs(&Header::default(), &refs)?;
+        assert!(scaffolds.is_empty());
+        assert!(events.is_empty());
         Ok(())
     }
 }

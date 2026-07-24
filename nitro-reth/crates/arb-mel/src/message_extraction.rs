@@ -208,10 +208,129 @@ fn parse_batch_posting_report(report: &DelayedInboxMessage) -> MelResult<B256> {
 
 #[cfg(test)]
 mod tests {
+    use alloy_primitives::{Address, U256};
+    use alloy_rpc_types_eth::Log;
+    use alloy_sol_types::{SolEvent, sol};
     use arb_da_provider_client::DaReaderRegistry;
+    use arbos::types::{L1_MESSAGE_TYPE_BATCH_POSTING_REPORT, L1IncomingMessageHeader};
 
     use super::*;
-    use crate::test_utils::{MockDelayedDb, MockLogs, MockTx};
+    use crate::{
+        DelayedInboxMessage,
+        test_utils::{MockDelayedDb, MockLogs, MockTx, rpc_log},
+    };
+
+    sol! {
+        #[allow(missing_docs)]
+        struct TimeBoundsAbi {
+            uint64 minTimestamp;
+            uint64 maxTimestamp;
+            uint64 minBlockNumber;
+            uint64 maxBlockNumber;
+        }
+        #[allow(missing_docs)]
+        event SequencerBatchDelivered(
+            uint256 indexed batchSequenceNumber,
+            bytes32 indexed beforeAcc,
+            bytes32 indexed afterAcc,
+            bytes32 delayedAcc,
+            uint256 afterDelayedMessagesRead,
+            TimeBoundsAbi timeBounds,
+            uint8 dataLocation
+        );
+        #[allow(missing_docs)]
+        event MessageDelivered(
+            uint256 indexed messageIndex,
+            bytes32 indexed beforeInboxAcc,
+            address inbox,
+            uint8 kind,
+            address sender,
+            bytes32 messageDataHash,
+            uint256 baseFeeL1,
+            uint64 timestamp
+        );
+        #[allow(missing_docs)]
+        event InboxMessageDelivered(uint256 indexed messageNum, bytes data);
+    }
+
+    const BATCH_TARGET: Address = Address::repeat_byte(0xBA);
+    const DELAYED_TARGET: Address = Address::repeat_byte(0xDD);
+    const INBOX: Address = Address::repeat_byte(0xEE);
+
+    fn wired_state() -> MelState {
+        MelState {
+            batch_posting_target_address: BATCH_TARGET,
+            delayed_message_posting_target_address: DELAYED_TARGET,
+            ..Default::default()
+        }
+    }
+
+    fn force_inclusion_batch_log(seq: u64, after_delayed: u64) -> Log {
+        let ev = SequencerBatchDelivered {
+            batchSequenceNumber: U256::from(seq),
+            beforeAcc: B256::ZERO,
+            afterAcc: B256::repeat_byte(0x22),
+            delayedAcc: B256::ZERO,
+            afterDelayedMessagesRead: U256::from(after_delayed),
+            timeBounds: TimeBoundsAbi {
+                minTimestamp: 0,
+                maxTimestamp: 0,
+                minBlockNumber: 0,
+                maxBlockNumber: 0,
+            },
+            dataLocation: 3,
+        };
+        rpc_log(BATCH_TARGET, ev.encode_log_data())
+    }
+
+    fn report_logs(index: u64, data: Vec<u8>) -> Vec<Log> {
+        let data_hash = keccak256(&data);
+        let delivered = MessageDelivered {
+            messageIndex: U256::from(index),
+            beforeInboxAcc: B256::ZERO,
+            inbox: INBOX,
+            kind: L1_MESSAGE_TYPE_BATCH_POSTING_REPORT,
+            sender: Address::ZERO,
+            messageDataHash: data_hash,
+            baseFeeL1: U256::ZERO,
+            timestamp: 0,
+        };
+        let inbox_data = InboxMessageDelivered {
+            messageNum: U256::from(index),
+            data: data.into(),
+        };
+        vec![
+            rpc_log(DELAYED_TARGET, delivered.encode_log_data()),
+            rpc_log(INBOX, inbox_data.encode_log_data()),
+        ]
+    }
+
+    fn report_body(data_hash: B256) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&[0u8; 32]);
+        body.extend_from_slice(&[0u8; 20]);
+        body.extend_from_slice(data_hash.as_slice());
+        body.extend_from_slice(&[0u8; 32]);
+        body.extend_from_slice(&[0u8; 32]);
+        body
+    }
+
+    fn make_delayed_msg(i: u64) -> DelayedInboxMessage {
+        let request_id = B256::from(U256::from(i).to_be_bytes::<32>());
+        DelayedInboxMessage {
+            block_hash: B256::ZERO,
+            before_inbox_acc: B256::ZERO,
+            message: arbos::types::L1IncomingMessage {
+                header: L1IncomingMessageHeader {
+                    request_id: Some(request_id),
+                    ..Default::default()
+                },
+                l2_msg: vec![i as u8].into(),
+                ..Default::default()
+            },
+            parent_chain_block_number: 0,
+        }
+    }
 
     #[tokio::test]
     async fn rejects_parent_hash_mismatch() {
@@ -224,7 +343,7 @@ mod tests {
             &input_state,
             &Header::default(),
             &DaReaderRegistry::new(),
-            &MockDelayedDb,
+            &MockDelayedDb::default(),
             &MockLogs::default(),
             &MockTx,
         )
@@ -246,7 +365,7 @@ mod tests {
             &input_state,
             &header,
             &DaReaderRegistry::new(),
-            &MockDelayedDb,
+            &MockDelayedDb::default(),
             &MockLogs::default(),
             &MockTx,
         )
@@ -259,5 +378,175 @@ mod tests {
         assert_eq!(out.post_state.parent_chain_prev_block_hash, B256::ZERO);
         assert_eq!(out.post_state.parent_chain_block_number, header.number);
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn extracts_force_inclusion_batch() -> MelResult<()> {
+        let logs = MockLogs {
+            block_logs: vec![force_inclusion_batch_log(0, 0)],
+            ..Default::default()
+        };
+        let out = extract_messages(
+            &wired_state(),
+            &Header::default(),
+            &DaReaderRegistry::new(),
+            &MockDelayedDb::default(),
+            &logs,
+            &MockTx,
+        )
+        .await?;
+        assert_eq!(out.post_state.batch_count, 1);
+        assert_eq!(out.post_state.msg_count, 1);
+        assert_eq!(out.post_state.delayed_messages_seen, 0);
+        assert_eq!(out.messages.len(), 1);
+        assert_eq!(out.batch_metas.len(), 1);
+        assert_eq!(out.batch_metas[0].accumulator, B256::repeat_byte(0x22));
+        assert!(out.delayed_messages.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rejects_too_many_batch_posting_reports() {
+        let logs = MockLogs {
+            block_logs: report_logs(0, b"x".to_vec()),
+            ..Default::default()
+        };
+        let result = extract_messages(
+            &wired_state(),
+            &Header::default(),
+            &DaReaderRegistry::new(),
+            &MockDelayedDb::default(),
+            &logs,
+            &MockTx,
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(MelError::TooManyBatchPostingReports {
+                reports: 1,
+                batches: 0
+            })
+        ));
+    }
+
+    #[tokio::test]
+    async fn rejects_unprocessed_batch_posting_report() {
+        let mut block_logs = vec![force_inclusion_batch_log(0, 0)];
+        block_logs.extend(report_logs(0, report_body(B256::repeat_byte(0xFF))));
+        let logs = MockLogs {
+            block_logs,
+            ..Default::default()
+        };
+        let result = extract_messages(
+            &wired_state(),
+            &Header::default(),
+            &DaReaderRegistry::new(),
+            &MockDelayedDb::default(),
+            &logs,
+            &MockTx,
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(MelError::BatchPostingReportsNotProcessed {
+                reports: 1,
+                processed: 0
+            })
+        ));
+    }
+
+    #[test]
+    fn move_unread_rebuilds_inbox_accumulator() -> MelResult<()> {
+        let mut state = MelState {
+            delayed_messages_read: 2,
+            delayed_messages_seen: 5,
+            ..Default::default()
+        };
+        let db = MockDelayedDb::with_messages([
+            (2, make_delayed_msg(2)),
+            (3, make_delayed_msg(3)),
+            (4, make_delayed_msg(4)),
+        ]);
+        move_unread_delayed_messages_to_inbox_accumulator(&mut state, &db)?;
+
+        let mut expected = MelState {
+            delayed_messages_read: 2,
+            delayed_messages_seen: 5,
+            ..Default::default()
+        };
+        for i in 2..5 {
+            accumulate_delayed_message(&mut expected, &make_delayed_msg(i))?;
+        }
+        assert_eq!(
+            state.delayed_message_inbox_acc,
+            expected.delayed_message_inbox_acc
+        );
+        assert_ne!(state.delayed_message_inbox_acc, B256::ZERO);
+        assert_eq!(state.delayed_message_outbox_acc, B256::ZERO);
+        Ok(())
+    }
+
+    #[test]
+    fn move_unread_no_messages_leaves_state_unchanged() -> MelResult<()> {
+        let mut state = MelState {
+            delayed_messages_read: 3,
+            delayed_messages_seen: 3,
+            ..Default::default()
+        };
+        move_unread_delayed_messages_to_inbox_accumulator(&mut state, &MockDelayedDb::default())?;
+        assert_eq!(state.delayed_message_inbox_acc, B256::ZERO);
+        assert_eq!(state.delayed_message_outbox_acc, B256::ZERO);
+        Ok(())
+    }
+
+    #[test]
+    fn move_unread_errors_when_inbox_accumulator_non_zero() {
+        let preexisting = B256::repeat_byte(0xBE);
+        let mut state = MelState {
+            delayed_messages_read: 0,
+            delayed_messages_seen: 1,
+            delayed_message_inbox_acc: preexisting,
+            ..Default::default()
+        };
+        let db = MockDelayedDb::with_messages([(0, make_delayed_msg(0))]);
+        let result = move_unread_delayed_messages_to_inbox_accumulator(&mut state, &db);
+        assert!(matches!(
+            result,
+            Err(MelError::NonZeroDelayedAccumulator { .. })
+        ));
+        assert_eq!(state.delayed_message_inbox_acc, preexisting);
+    }
+
+    #[test]
+    fn move_unread_errors_when_outbox_accumulator_non_zero() {
+        let preexisting = B256::repeat_byte(0xFA);
+        let mut state = MelState {
+            delayed_messages_read: 0,
+            delayed_messages_seen: 1,
+            delayed_message_outbox_acc: preexisting,
+            ..Default::default()
+        };
+        let db = MockDelayedDb::with_messages([(0, make_delayed_msg(0))]);
+        let result = move_unread_delayed_messages_to_inbox_accumulator(&mut state, &db);
+        assert!(matches!(
+            result,
+            Err(MelError::NonZeroDelayedAccumulator { .. })
+        ));
+        assert_eq!(state.delayed_message_outbox_acc, preexisting);
+    }
+
+    #[test]
+    fn move_unread_propagates_db_read_errors() {
+        let mut state = MelState {
+            delayed_messages_read: 0,
+            delayed_messages_seen: 2,
+            ..Default::default()
+        };
+        let result =
+            move_unread_delayed_messages_to_inbox_accumulator(&mut state, &MockDelayedDb::failing());
+        assert!(matches!(
+            result,
+            Err(MelError::DelayedAccumulatorCreation(_))
+        ));
     }
 }

@@ -2,7 +2,7 @@
 //! and the storage layer (`arb-mel-db`, `arb-consensus-db`). These mirror nitro's
 //! `arbnode/mel` types and are byte-faithful to its `arbitrumdata` RLP encoding.
 
-use alloy_primitives::{Address, B256};
+use alloy_primitives::{Address, B256, keccak256};
 use alloy_rlp::{RlpDecodable, RlpEncodable};
 use arbos_types::L1IncomingMessage;
 
@@ -40,6 +40,21 @@ pub struct DelayedInboxMessage {
     pub before_inbox_acc: B256,
     pub message: L1IncomingMessage,
     pub parent_chain_block_number: u64,
+}
+
+impl DelayedInboxMessage {
+    /// ABI-style commitment hash fed into the MEL delayed-inbox accumulator.
+    ///
+    /// TODO: packed concatenation, not yet reconciled with the on-chain
+    /// `abi.encode` layout (Nitro's `DelayedInboxMessage.Hash()` uses RLP).
+    pub fn abi_hash(&self) -> B256 {
+        let mut data = Vec::new();
+        data.extend_from_slice(self.block_hash.as_slice());
+        data.extend_from_slice(self.before_inbox_acc.as_slice());
+        data.extend_from_slice(&self.message.serialize());
+        data.extend_from_slice(&self.parent_chain_block_number.to_be_bytes());
+        keccak256(&data)
+    }
 }
 
 /// Metadata for a sequencer batch: its accumulator and message/delayed/parent-chain counts.
