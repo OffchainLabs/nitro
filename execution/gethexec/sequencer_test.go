@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/types"
+
 	"github.com/offchainlabs/nitro/execution"
 )
 
@@ -286,6 +288,52 @@ func TestBackgroundForwarderExpiresNonceFailuresWhileInactive(t *testing.T) {
 	}
 	if seq.nonceFailures.Len() != 0 {
 		t.Errorf("nonceFailures.Len() = %d, want 0", seq.nonceFailures.Len())
+	}
+}
+
+// failQueuedItems runs when the shutdown forwarder fails to initialize; it must resolve every
+// queued item so submitters fail fast instead of waiting out their abort deadlines.
+func TestFailQueuedItemsResolvesAllQueues(t *testing.T) {
+	engine := &ExecutionEngine{}
+	configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
+	seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pendingChan := make(chan error, 1)
+	tx := types.NewTx(&types.DynamicFeeTx{Gas: 21000})
+	seq.txQueue <- newRegularTxQueueItem(context.Background(), tx, nil, pendingChan, false, 0)
+
+	parkedChan := make(chan error, 1)
+	seq.nonceFailures.cache.Add(
+		addressAndNonce{nonce: 7},
+		&nonceFailure{
+			queueItem: txQueueItem{
+				resultChan:     parkedChan,
+				returnedResult: &atomic.Bool{},
+				ctx:            context.Background(),
+			},
+		},
+	)
+
+	seq.failQueuedItems()
+
+	for name, resultChan := range map[string]chan error{"pending tx": pendingChan, "parked nonce failure": parkedChan} {
+		select {
+		case res := <-resultChan:
+			if !errors.Is(res, ErrNoSequencer) {
+				t.Errorf("%s got %v, want ErrNoSequencer", name, res)
+			}
+		default:
+			t.Errorf("%s was never resolved", name)
+		}
+	}
+	if n := len(seq.txQueue); n != 0 {
+		t.Errorf("len(txQueue) = %d, want 0", n)
+	}
+	if n := seq.nonceFailures.Len(); n != 0 {
+		t.Errorf("nonceFailures.Len() = %d, want 0", n)
 	}
 }
 

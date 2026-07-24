@@ -1736,7 +1736,8 @@ func (s *Sequencer) StopAndWait() {
 	// fresh forwarder on the shutdown context for the final drain.
 	forwarder = NewForwarder(forwarder.targets, &s.config().Forwarder)
 	if err := forwarder.Initialize(shutdownCtx); err != nil {
-		log.Error("failed to initialize the shutdown forwarder; dropping the queued transactions", "err", err)
+		log.Error("failed to initialize the shutdown forwarder; failing the queued transactions", "err", err)
+		s.failQueuedItems()
 		return
 	}
 	defer forwarder.StopAndWait()
@@ -1753,6 +1754,21 @@ func (s *Sequencer) StopAndWait() {
 		"retryQueue", s.txRetryQueue.Len(),
 		"nonceFailures", s.nonceFailures.Len(),
 		"timeboostAuctionResolutionTxQueue", len(s.timeboostAuctionResolutionTxQueue))
+}
+
+// failQueuedItems resolves every queued tx and parked nonce failure with ErrNoSequencer so
+// submitters fail fast instead of waiting out their abort deadlines.
+func (s *Sequencer) failQueuedItems() {
+	for _, item := range s.drainQueueItems() {
+		item.returnResult(ErrNoSequencer)
+	}
+	for {
+		failure, ok := s.nonceFailures.TakeOldest()
+		if !ok {
+			return
+		}
+		failure.queueItem.returnResult(ErrNoSequencer)
+	}
 }
 
 func (s *Sequencer) MakeSameBlockSequencingHooksAndHeaderForTest(t *testing.T, txes types.Transactions) (*arbostypes.L1IncomingMessageHeader, *FullSequencingHooks) {
