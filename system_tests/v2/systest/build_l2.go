@@ -358,7 +358,7 @@ func createBlockChain(
 	}
 
 	initReader := statetransfer.NewMemoryInitDataReader(&l2Info.ArbInitData)
-	coreCacheConfig := gethexec.DefaultCacheConfigTrieNoFlushFor(&execCfg.Caching, false)
+	coreCacheConfig := gethexec.DefaultCacheConfigWithExtraFor(&execCfg.Caching, false, false)
 	blockchain, err := gethexec.WriteOrTestBlockChain(
 		executionDB, coreCacheConfig, initReader, chainConfig, arbOSInit, nil, initMsg,
 		&gethexec.ConfigDefault.TxIndexer, 0, execCfg.ExposeMultiGas)
