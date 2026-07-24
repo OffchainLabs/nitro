@@ -1,4 +1,4 @@
-use alloy_primitives::{Address, B256, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use arbos::{
     parse_l2::{
         L2_MESSAGE_KIND_BATCH, L2_MESSAGE_KIND_HEARTBEAT, L2_MESSAGE_KIND_NON_MUTATING_CALL,
@@ -314,8 +314,9 @@ fn incoming_l1_message_roundtrip_via_serialize() {
     assert_eq!(parsed.header.kind, L1_MESSAGE_TYPE_L2_MESSAGE);
     assert_eq!(parsed.header.block_number, 42);
     assert_eq!(parsed.header.timestamp, 1_700_000_000);
-    assert!(parsed.header.request_id.is_none());
-    assert!(parsed.header.l1_base_fee.is_none());
+    // Wire parse always populates these (nitro parity); a zero slot is `Some(ZERO)`, not absent.
+    assert_eq!(parsed.header.request_id, Some(B256::ZERO));
+    assert_eq!(parsed.header.l1_base_fee, Some(U256::ZERO));
     assert_eq!(parsed.l2_msg, vec![0xAB, 0xCD]);
     let serialized = parsed.serialize();
     assert_eq!(serialized, msg_bytes);
@@ -421,7 +422,7 @@ fn past_batches_for_nonreport_msg_is_empty() {
             request_id: None,
             l1_base_fee: None,
         },
-        l2_msg: vec![],
+        l2_msg: Bytes::new(),
         legacy_batch_gas_cost: None,
         batch_data_stats: None,
     };
@@ -452,7 +453,7 @@ fn past_batches_for_report_msg_has_number() {
             request_id: None,
             l1_base_fee: None,
         },
-        l2_msg: data,
+        l2_msg: data.into(),
         legacy_batch_gas_cost: None,
         batch_data_stats: None,
     };

@@ -5,9 +5,10 @@ use arb_consensus_db::{
     fixed_key,
     kv::KeyBuf,
     prefix_key, rlp_value,
-    schema::{self, BatchMetadata, BatchMetadataAt, ConsensusDbKey, L1IncomingMessage},
+    schema::{self, BatchMetadata, BatchMetadataAt, ConsensusDbKey},
 };
 use arb_mel::MelState;
+use arbos_types::L1IncomingMessage;
 
 /// A key accessible through [`MelDb`](crate::MelDb).
 ///

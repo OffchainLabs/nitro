@@ -5,16 +5,13 @@
 //! positional keys, a `u64` position) whose associated [`ConsensusDbValue`] defines the
 //! on-disk encoding. Keys are laid out as `prefix ++ big-endian(position)` (see [`key`]).
 
-use alloy_primitives::{Address, B256, Bytes, U256};
+use alloy_primitives::B256;
 use alloy_rlp::{RlpDecodable, RlpDecodableWrapper, RlpEncodable, RlpEncodableWrapper};
-use arbos_types::rlp::{NilList, NilString};
+use arbos_types::{L1IncomingMessage, MessageWithMetadata, parse_incoming_l1_message, rlp::NilString};
 
 use crate::{
     ConsensusDbError, Result,
-    codecs::{
-        legacy::{decode_l1_message_wire, encode_l1_message_wire},
-        strip_accumulator,
-    },
+    codecs::strip_accumulator,
     kv::KeyBuf,
 };
 
@@ -114,43 +111,8 @@ rlp_value!(BatchMetadata);
 #[derive(Debug)]
 pub struct MessageWithMetadataAt(pub u64);
 
-/// An L2 message together with the count of delayed messages read before it.
-#[derive(Debug, RlpEncodable, RlpDecodable)]
-pub struct MessageWithMetadata {
-    pub message: L1IncomingMessage,
-    pub delayed_messages_read: u64,
-}
-
 prefix_key!(MessageWithMetadataAt[MESSAGE_PREFIX] => MessageWithMetadata);
 rlp_value!(MessageWithMetadata);
-
-/// A message posted to the inbox on the parent chain, plus its L2 payload.
-#[derive(Debug, RlpEncodable, RlpDecodable)]
-#[rlp(trailing)]
-pub struct L1IncomingMessage {
-    pub header: L1IncomingMessageHeader,
-    pub l2msg: Bytes,
-    pub legacy_batch_gas_cost: Option<u64>,
-    pub batch_data_stats: Option<BatchDataStats>,
-}
-
-/// Header of an [`L1IncomingMessage`].
-#[derive(Debug, RlpEncodable, RlpDecodable)]
-pub struct L1IncomingMessageHeader {
-    pub kind: u8,
-    pub poster: Address,
-    pub block_number: u64,
-    pub timestamp: u64,
-    pub request_id: NilList<B256>,
-    pub l1_base_fee: U256,
-}
-
-/// Size statistics for batch data, used in L1 cost accounting.
-#[derive(Debug, RlpEncodable, RlpDecodable)]
-pub struct BatchDataStats {
-    pub length: u64,
-    pub non_zeros: u64,
-}
 
 /// Key under the `r` prefix: the execution result of a message.
 #[derive(Debug)]
@@ -302,13 +264,14 @@ prefix_key!(LegacyDelayedMessageAt[LEGACY_DELAYED_MESSAGE_PREFIX] => LegacyDelay
 impl ConsensusDbValue for LegacyDelayedMessage {
     fn encode(&self) -> Vec<u8> {
         let mut bytes = self.accumulator.to_vec();
-        bytes.extend_from_slice(&encode_l1_message_wire(&self.message));
+        bytes.extend_from_slice(&self.message.serialize());
         bytes
     }
 
     fn decode(bytes: &[u8]) -> Result<Self> {
         let (accumulator, rest) = strip_accumulator(bytes)?;
-        let message = decode_l1_message_wire(rest)?;
+        let message =
+            parse_incoming_l1_message(rest).map_err(|_| ConsensusDbError::InvalidStoredValue)?;
         Ok(Self {
             accumulator,
             message,
@@ -393,12 +356,12 @@ pub fn key<K: ConsensusDbKey>(key: &K) -> KeyBuf {
 #[cfg(test)]
 mod tests {
     use alloy_primitives::{Address, B256, U256};
-    use arbos_types::rlp::{NilList, NilString};
+    use arbos_types::{BatchDataStats, L1IncomingMessageHeader};
 
     use super::*;
 
     fn sample_message(
-        request_id: NilList<B256>,
+        request_id: Option<B256>,
         legacy_gas: Option<u64>,
         stats: Option<BatchDataStats>,
     ) -> L1IncomingMessage {
@@ -409,9 +372,9 @@ mod tests {
                 block_number: 10,
                 timestamp: 20,
                 request_id,
-                l1_base_fee: U256::from(50u64),
+                l1_base_fee: Some(U256::from(50u64)),
             },
-            l2msg: vec![1, 2, 3, 4].into(),
+            l2_msg: vec![1, 2, 3, 4].into(),
             legacy_batch_gas_cost: legacy_gas,
             batch_data_stats: stats,
         }
@@ -533,17 +496,17 @@ mod tests {
     #[test]
     fn message_with_metadata_roundtrips() {
         roundtrip(&MessageWithMetadata {
-            message: sample_message(NilList(Some(B256::repeat_byte(9))), None, None),
+            message: sample_message(Some(B256::repeat_byte(9)), None, None),
             delayed_messages_read: 5,
         });
     }
 
     #[test]
     fn l1_message_trailing_optional_combinations() {
-        let id = NilList(Some(B256::repeat_byte(1)));
+        let id = Some(B256::repeat_byte(1));
         // Valid trailing combos (a later optional cannot be present if an earlier is absent).
-        rlp_roundtrip(&sample_message(id.clone(), None, None));
-        rlp_roundtrip(&sample_message(id.clone(), Some(42), None));
+        rlp_roundtrip(&sample_message(id, None, None));
+        rlp_roundtrip(&sample_message(id, Some(42), None));
         rlp_roundtrip(&sample_message(
             id,
             Some(42),
@@ -556,7 +519,7 @@ mod tests {
 
     #[test]
     fn l1_message_nil_request_id_roundtrips() {
-        rlp_roundtrip(&sample_message(NilList(None), None, None));
+        rlp_roundtrip(&sample_message(None, None, None));
     }
 
     #[test]
@@ -592,7 +555,7 @@ mod tests {
     fn rlp_delayed_message_roundtrips() {
         let bytes = roundtrip(&RlpDelayedMessage {
             accumulator: B256::repeat_byte(7),
-            message: sample_message(NilList(Some(B256::repeat_byte(9))), None, None),
+            message: sample_message(Some(B256::repeat_byte(9)), None, None),
         });
         assert_eq!(&bytes[..32], B256::repeat_byte(7).as_slice());
     }
@@ -601,7 +564,7 @@ mod tests {
     fn legacy_delayed_message_roundtrips() {
         let bytes = roundtrip(&LegacyDelayedMessage {
             accumulator: B256::repeat_byte(8),
-            message: sample_message(NilList(Some(B256::repeat_byte(9))), None, None),
+            message: sample_message(Some(B256::repeat_byte(9)), None, None),
         });
         assert_eq!(&bytes[..32], B256::repeat_byte(8).as_slice());
     }

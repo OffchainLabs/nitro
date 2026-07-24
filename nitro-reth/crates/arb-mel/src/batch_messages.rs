@@ -201,7 +201,7 @@ fn produce_l2_message(
                 request_id: None,
                 l1_base_fee: Some(U256::ZERO),
             },
-            l2_msg: seg.unwrap_or(segment.to_vec()),
+            l2_msg: seg.unwrap_or(segment.to_vec()).into(),
             legacy_batch_gas_cost: None,
             batch_data_stats: None,
         },

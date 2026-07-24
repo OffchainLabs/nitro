@@ -3,12 +3,10 @@ use arb_consensus_db::{
     ConsensusDb, ConsensusDbBatch, ConsensusDbError,
     codecs::rlp::Rlp,
     kv,
-    schema::{
-        BatchMetadata, L1IncomingMessage, LegacyDelayedMessageAt, ParentChainBlockAt,
-        RlpDelayedMessageAt,
-    },
+    schema::{BatchMetadata, LegacyDelayedMessageAt, ParentChainBlockAt, RlpDelayedMessageAt},
 };
 use arb_mel::MelState;
+use arbos_types::L1IncomingMessage;
 
 pub mod schema;
 
@@ -258,12 +256,9 @@ mod tests {
     use alloy_primitives::{Address, U256};
     use arb_consensus_db::{
         kv::MemoryKvStore,
-        schema::{
-            BatchMetadataAt, L1IncomingMessageHeader, LegacyDelayedMessage, ParentChainBlock,
-            RlpDelayedMessage,
-        },
+        schema::{BatchMetadataAt, LegacyDelayedMessage, ParentChainBlock, RlpDelayedMessage},
     };
-    use arbos_types::rlp::NilList;
+    use arbos_types::L1IncomingMessageHeader;
 
     use super::*;
 
@@ -287,10 +282,10 @@ mod tests {
                 poster: Address::repeat_byte(kind),
                 block_number: 100 + kind as u64,
                 timestamp: 200,
-                request_id: NilList(Some(B256::repeat_byte(kind))),
-                l1_base_fee: U256::from(300),
+                request_id: Some(B256::repeat_byte(kind)),
+                l1_base_fee: Some(U256::from(300)),
             },
-            l2msg: vec![kind, kind, kind].into(),
+            l2_msg: vec![kind, kind, kind].into(),
             legacy_batch_gas_cost: None,
             batch_data_stats: None,
         }

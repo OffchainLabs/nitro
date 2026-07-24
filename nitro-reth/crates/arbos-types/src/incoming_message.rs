@@ -1,7 +1,9 @@
 use std::io::{self, Cursor, Read};
 
-use alloy_primitives::{Address, B256, U256};
-use alloy_rlp::{Decodable, Encodable, bytes::BufMut, length_of_length};
+use alloy_primitives::{Address, B256, Bytes, U256};
+use alloy_rlp::{
+    Decodable, Encodable, RlpDecodable, RlpEncodable, bytes::BufMut, length_of_length,
+};
 
 use crate::{
     rlp::NilList,
@@ -111,17 +113,18 @@ impl Decodable for L1IncomingMessageHeader {
 }
 
 /// Statistics about a batch of data (for L1 cost estimation).
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, RlpEncodable, RlpDecodable)]
 pub struct BatchDataStats {
     pub length: u64,
     pub non_zeros: u64,
 }
 
 /// An L1 incoming message containing the header and L2 payload.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, RlpEncodable, RlpDecodable)]
+#[rlp(trailing)]
 pub struct L1IncomingMessage {
     pub header: L1IncomingMessageHeader,
-    pub l2_msg: Vec<u8>,
+    pub l2_msg: Bytes,
     /// Only used for `L1_MESSAGE_TYPE_BATCH_POSTING_REPORT`. Filled lazily once
     /// the referenced batch has been serialized. Mirrors the Go
     /// `L1IncomingMessage.LegacyBatchGasCost` / `BatchDataStats` fields.
@@ -137,7 +140,7 @@ pub fn invalid_l1_message() -> L1IncomingMessage {
     };
     L1IncomingMessage {
         header,
-        l2_msg: Vec::new(),
+        l2_msg: Bytes::new(),
         legacy_batch_gas_cost: None,
         batch_data_stats: None,
     }
@@ -215,19 +218,11 @@ pub fn parse_incoming_l1_message(data: &[u8]) -> io::Result<L1IncomingMessage> {
     let poster = address_from_256_from_reader(&mut reader)?;
     let block_number = uint64_from_reader(&mut reader)?;
     let timestamp = uint64_from_reader(&mut reader)?;
-    let request_id = hash_from_reader(&mut reader)?;
-    let l1_base_fee = uint256_from_reader(&mut reader)?;
-
-    let request_id = if request_id == B256::ZERO {
-        None
-    } else {
-        Some(request_id)
-    };
-    let l1_base_fee = if l1_base_fee == U256::ZERO {
-        None
-    } else {
-        Some(l1_base_fee)
-    };
+    // Nitro's ParseIncomingL1Message always populates request_id and l1_base_fee from the
+    // wire, even when zero (`RequestId: &requestId`, `L1BaseFee: baseFeeL1.Big()`). Mirror
+    // that: a genuinely-absent field is only ever an in-code `None`, never a parsed zero.
+    let request_id = Some(hash_from_reader(&mut reader)?);
+    let l1_base_fee = Some(uint256_from_reader(&mut reader)?);
 
     let mut l2_msg = Vec::new();
     reader.read_to_end(&mut l2_msg)?;
@@ -241,7 +236,7 @@ pub fn parse_incoming_l1_message(data: &[u8]) -> io::Result<L1IncomingMessage> {
             request_id,
             l1_base_fee,
         },
-        l2_msg,
+        l2_msg: l2_msg.into(),
         legacy_batch_gas_cost: None,
         batch_data_stats: None,
     })
