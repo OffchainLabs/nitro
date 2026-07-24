@@ -599,10 +599,11 @@ func ProduceBlockAdvanced(
 			}
 
 			// Upstream geth's ApplyTransaction no longer takes a *usedGas pointer;
-			// callers must update header.GasUsed themselves. We use result.UsedGas
-			// rather than gasPool.Used() because Arbitrum's endTxNow paths
-			// (deposits, retryable submissions, internal txs) report gas via
-			// result.UsedGas without decreasing the gas pool's remaining.
+			// callers must update header.GasUsed themselves. result.UsedGas equals
+			// this tx's gas pool consumption (endTxNow paths like deposits and
+			// retryable submissions consume their reported gas from the pool too),
+			// keeping header.GasUsed consistent with gasPool.Used(), which
+			// ValidateState checks against ProcessResult.GasUsed on replay.
 			header.GasUsed += result.UsedGas
 
 			return receipt, result, nil
