@@ -5,7 +5,6 @@
 
 use std::fmt::Debug;
 
-use super::DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT;
 use arbutil::evm::api::{Gas, Ink};
 use derivative::Derivative;
 use fnv::FnvHashMap as HashMap;
@@ -25,6 +24,7 @@ use {
     wasmer_compiler_singlepass::Singlepass,
 };
 
+use super::DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT;
 use crate::{programs::meter, value::FunctionType};
 
 /// Minimum Stylus version that uses the spec-compliant `memory.fill` implementation.
