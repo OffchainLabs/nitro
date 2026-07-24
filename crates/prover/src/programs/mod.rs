@@ -11,10 +11,7 @@ pub mod meter;
 pub mod prelude;
 pub mod start;
 
-use std::{
-    fmt::Debug,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use std::fmt::Debug;
 
 use arbutil::{Bytes32, Color, evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum};
 use eyre::{Report, Result, WrapErr, bail, eyre};
@@ -44,17 +41,6 @@ pub const STYLUS_ENTRY_POINT: &str = "user_entrypoint";
 pub const STYLUS_VERSION_DISABLE_MULTIVALUE: u16 = 3;
 /// Default maximum emitted machine code and serialized Singlepass artifact size accepted by Stylus.
 pub const DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT: usize = 10 * 1024 * 1024;
-
-static SINGLEPASS_OUTPUT_SIZE_LIMIT: AtomicUsize =
-    AtomicUsize::new(DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT);
-
-pub fn set_singlepass_output_size_limit(limit: usize) {
-    SINGLEPASS_OUTPUT_SIZE_LIMIT.store(limit, Ordering::Relaxed);
-}
-
-pub fn singlepass_output_size_limit() -> usize {
-    SINGLEPASS_OUTPUT_SIZE_LIMIT.load(Ordering::Relaxed)
-}
 
 pub trait ModuleMod {
     fn add_global(&mut self, name: &str, ty: Type, init: GlobalInit) -> Result<GlobalIndex>;

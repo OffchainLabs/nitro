@@ -163,6 +163,7 @@ pub unsafe extern "C" fn stylus_compile(
     debug: bool,
     target: GoSliceData,
     cranelift: bool,
+    max_singlepass_output_size: u64,
     output: *mut RustBytes,
 ) -> UserOutcomeKind {
     unsafe {
@@ -177,7 +178,15 @@ pub unsafe extern "C" fn stylus_compile(
             Err(err) => return write_err(output, err),
         };
 
-        let asm = match native::compile(wasm, version, debug, target, cranelift) {
+        let asm = match native::compile(
+            wasm,
+            version,
+            debug,
+            target,
+            cranelift,
+            (max_singlepass_output_size != 0)
+                .then(|| usize::try_from(max_singlepass_output_size).unwrap_or(usize::MAX)),
+        ) {
             Ok(val) => val,
             Err(err) => return write_err(output, err),
         };
@@ -252,19 +261,6 @@ pub extern "C" fn stylus_set_native_stack_size(size: u64) {
 #[unsafe(no_mangle)]
 pub extern "C" fn stylus_get_native_stack_size() -> u64 {
     wasmer_vm::get_stack_size() as u64
-}
-
-/// Sets the process-wide Singlepass output size limit used for future compilations.
-#[unsafe(no_mangle)]
-pub extern "C" fn stylus_set_singlepass_output_size_limit(limit: u64) {
-    let limit = usize::try_from(limit).unwrap_or(usize::MAX);
-    prover::programs::set_singlepass_output_size_limit(limit);
-}
-
-/// Returns the current process-wide Singlepass output size limit.
-#[unsafe(no_mangle)]
-pub extern "C" fn stylus_get_singlepass_output_size_limit() -> u64 {
-    prover::programs::singlepass_output_size_limit() as u64
 }
 
 /// Calls an activated user program.

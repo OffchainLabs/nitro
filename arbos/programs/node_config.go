@@ -27,6 +27,11 @@ const WarnStylusOpenPagesThreshold uint16 = 4
 // and is almost certainly a misconfiguration.
 const WarnStylusCallDepthThreshold uint16 = 2
 
+// DefaultMaxSinglepassOutputSize is the default maximum output size for a
+// Singlepass-compiled Stylus module. It must match
+// DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT in Rust.
+const DefaultMaxSinglepassOutputSize uint64 = 10 * 1024 * 1024
+
 // ArbNodeConfig carries Nitro-defined, node-level configuration through the geth
 // state.Database boundary. Geth stores it as `any` (see state.Database.ArbNodeConfig);
 // Nitro reads it back via a type assertion at the call site. Add new node-level
@@ -41,6 +46,10 @@ type ArbNodeConfig struct {
 	// EVM frames between two Stylus frames are not counted and do not reset
 	// the counter. 0 disables the limit.
 	MaxStylusCallDepth uint16
+
+	// MaxSinglepassOutputSize is the maximum output size for each
+	// Singlepass-compiled Stylus module. 0 disables the limit.
+	MaxSinglepassOutputSize uint64
 }
 
 // Validate checks ArbNodeConfig fields and logs warnings if configured limits
@@ -72,4 +81,11 @@ func GetArbNodeConfig(statedb vm.StateDB) *ArbNodeConfig {
 		return nil
 	}
 	return cfg
+}
+
+func getMaxSinglepassOutputSize(statedb vm.StateDB) uint64 {
+	if cfg := GetArbNodeConfig(statedb); cfg != nil {
+		return cfg.MaxSinglepassOutputSize
+	}
+	return DefaultMaxSinglepassOutputSize
 }

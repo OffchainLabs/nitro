@@ -164,20 +164,6 @@ func GetNativeStackSize() uint64 {
 	return uint64(C.stylus_get_native_stack_size())
 }
 
-// DefaultMaxSinglepassOutputSize is the default process-wide maximum output size for a
-// Singlepass compiled Stylus module. It must match DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT in Rust.
-const DefaultMaxSinglepassOutputSize uint64 = 10 * 1024 * 1024
-
-// SetMaxSinglepassOutputSize configures the output size limit for future Singlepass compilations.
-func SetMaxSinglepassOutputSize(size uint64) {
-	C.stylus_set_singlepass_output_size_limit(u64(size))
-}
-
-// GetMaxSinglepassOutputSize returns the current Singlepass output size limit in bytes.
-func GetMaxSinglepassOutputSize() uint64 {
-	return uint64(C.stylus_get_singlepass_output_size_limit())
-}
-
 // DrainStackPool discards all cached Wasmer coroutine stacks so that
 // subsequent allocations use the current process-wide stack size.
 func DrainStackPool() {
@@ -220,7 +206,7 @@ func activateProgram(
 	suppliedGas := burner.GasLeft()
 	gasLeft := suppliedGas
 	shouldAllowFallback := GetAllowFallback() && runCtx.IsExecutedOnChain()
-	info, asmMap, err := activateProgramInternal(program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, &gasLeft, runCtx.WasmTargets(), moduleActivationMandatory, shouldAllowFallback)
+	info, asmMap, err := activateProgramInternal(program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, &gasLeft, runCtx.WasmTargets(), getMaxSinglepassOutputSize(db), moduleActivationMandatory, shouldAllowFallback)
 	if gasLeft < suppliedGas {
 		// Ignore the out-of-gas error because we want to return the error above
 		burner.Burn(multigas.ResourceKindComputation, suppliedGas-gasLeft) //nolint:errcheck
@@ -288,6 +274,7 @@ func compileNative(
 	debug bool,
 	target rawdb.WasmTarget,
 	cranelift bool,
+	maxSinglepassOutputSize uint64,
 	timeout time.Duration,
 ) ([]byte, error) {
 	result := containers.NewPromise[[]byte](func() {})
@@ -299,6 +286,7 @@ func compileNative(
 			cbool(debug),
 			goSlice([]byte(target)),
 			cbool(cranelift),
+			u64(maxSinglepassOutputSize),
 			output,
 		)
 		asm := rustBytesIntoBytes(output)
@@ -325,6 +313,7 @@ func activateProgramInternal(
 	debug bool,
 	gasLeft *uint64,
 	targets []rawdb.WasmTarget,
+	maxSinglepassOutputSize uint64,
 	moduleActivationMandatory bool,
 	useFallback bool,
 ) (*activationInfo, map[rawdb.WasmTarget][]byte, error) {
@@ -370,7 +359,7 @@ func activateProgramInternal(
 			} else {
 				cranelift := rawdb.IsCraneliftTarget(target)
 				timeout := time.Second * 15
-				asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, timeout)
+				asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, maxSinglepassOutputSize, timeout)
 				if err != nil {
 					var fallbackTarget rawdb.WasmTarget
 					var fallbackErr error
@@ -381,7 +370,7 @@ func activateProgramInternal(
 					}
 					if useFallback && fallbackErr == nil {
 						log.Warn("stylus compilation failed, falling back to alternative compiler", "address", addressForLogging, "target", target, "fallbackTarget", fallbackTarget, "timeout", timeout, "err", err)
-						asm, err = compileNative(wasm, stylusVersion, debug, fallbackTarget, !cranelift, timeout)
+						asm, err = compileNative(wasm, stylusVersion, debug, fallbackTarget, !cranelift, maxSinglepassOutputSize, timeout)
 						results <- result{target: fallbackTarget, asm: asm, err: err}
 						return
 					} else if !useFallback {
@@ -454,7 +443,7 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 	moduleActivationMandatory := false
 	// compile only missing targets
 	shouldAllowFallback := GetAllowFallback() && runCtx.IsExecutedOnChain()
-	info, newlyBuilt, err := activateProgramInternal(addressForLogging, codehash, wasm, params.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory, shouldAllowFallback)
+	info, newlyBuilt, err := activateProgramInternal(addressForLogging, codehash, wasm, params.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, getMaxSinglepassOutputSize(statedb), moduleActivationMandatory, shouldAllowFallback)
 	if err != nil {
 		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
@@ -723,7 +712,7 @@ func getCraneliftAsm(
 		return nil, fmt.Errorf("failed to get wasm for cranelift compilation: %w", err)
 	}
 
-	asm, err := compileNative(wasm, version, debug, craneliftTarget, true, 15*time.Second)
+	asm, err := compileNative(wasm, version, debug, craneliftTarget, true, getMaxSinglepassOutputSize(db), 15*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("cranelift compilation failed: %w", err)
 	}

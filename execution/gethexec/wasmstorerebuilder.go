@@ -71,7 +71,6 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, execut
 	}
 	targets := targetConfig.WasmTargets()
 	programs.SetAllowFallback(targetConfig.AllowFallback)
-	programs.SetMaxSinglepassOutputSize(targetConfig.MaxSinglepassOutputSize)
 	// Establishes the baseline for doubleNativeStackSize (overflow recovery).
 	programs.SetInitialNativeStackSize(targetConfig.NativeStackSize)
 

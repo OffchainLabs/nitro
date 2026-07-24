@@ -20,10 +20,9 @@ use eyre::{Result, bail, ensure};
 use prover::{
     Machine, binary,
     programs::{
-        MiddlewareWrapper, ModuleMod,
+        DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT, MiddlewareWrapper, ModuleMod,
         counter::{Counter, CountingMachine},
         prelude::*,
-        singlepass_output_size_limit,
         start::StartMover,
     },
 };
@@ -45,11 +44,22 @@ use crate::{
 
 #[test]
 fn singlepass_artifact_size_limit_is_inclusive() {
-    let limit = singlepass_output_size_limit();
-    assert!(ensure_singlepass_artifact_size(limit, false).is_ok());
-    assert!(ensure_singlepass_artifact_size(limit + 1, false).is_err());
+    let limit = DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT;
+    assert_eq!(
+        CompileConfig::default().max_singlepass_output_size(),
+        Some(limit)
+    );
+    assert_eq!(
+        CompileConfig::default()
+            .with_max_singlepass_output_size(None)
+            .max_singlepass_output_size(),
+        None
+    );
+    assert!(ensure_singlepass_artifact_size(limit, Some(limit), false).is_ok());
+    assert!(ensure_singlepass_artifact_size(limit + 1, Some(limit), false).is_err());
+    assert!(ensure_singlepass_artifact_size(usize::MAX, None, false).is_ok());
     assert!(
-        ensure_singlepass_artifact_size(usize::MAX, true).is_ok(),
+        ensure_singlepass_artifact_size(usize::MAX, Some(limit), true).is_ok(),
         "the Singlepass cap must not apply to Cranelift"
     );
 }

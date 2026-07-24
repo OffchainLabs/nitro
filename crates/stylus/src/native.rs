@@ -25,7 +25,6 @@ use prover::{
         depth::STYLUS_STACK_LEFT,
         meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
         prelude::*,
-        singlepass_output_size_limit,
         start::StartMover,
     },
 };
@@ -456,13 +455,23 @@ pub fn module(
     }
 
     let module = module.serialize()?;
-    ensure_singlepass_artifact_size(module.len(), cranelift)?;
+    ensure_singlepass_artifact_size(
+        module.len(),
+        compile.max_singlepass_output_size(),
+        cranelift,
+    )?;
     Ok(module.to_vec())
 }
 
-pub(crate) fn ensure_singlepass_artifact_size(size: usize, cranelift: bool) -> Result<()> {
-    let limit = singlepass_output_size_limit();
-    if !cranelift && size > limit {
+pub(crate) fn ensure_singlepass_artifact_size(
+    size: usize,
+    limit: Option<usize>,
+    cranelift: bool,
+) -> Result<()> {
+    if !cranelift
+        && let Some(limit) = limit
+        && size > limit
+    {
         bail!("singlepass compiler output exceeds limit: {size} > {limit} bytes");
     }
     Ok(())
@@ -496,7 +505,9 @@ pub fn compile(
     debug: bool,
     target: Target,
     cranelift: bool,
+    max_singlepass_output_size: Option<usize>,
 ) -> Result<Vec<u8>> {
-    let compile = CompileConfig::version(version, debug);
+    let compile = CompileConfig::version(version, debug)
+        .with_max_singlepass_output_size(max_singlepass_output_size);
     self::module(wasm, compile, target, cranelift)
 }

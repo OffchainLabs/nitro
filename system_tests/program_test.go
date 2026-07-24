@@ -3427,8 +3427,6 @@ func TestProgramMemoryFillOverflow(t *testing.T) {
 func TestProgramSinglepassOutputSizeLimit(t *testing.T) {
 	const maxOutputSize = 64 * 1024
 
-	savedLimit := programs.GetMaxSinglepassOutputSize()
-	defer programs.SetMaxSinglepassOutputSize(savedLimit)
 	savedFallback := programs.GetAllowFallback()
 	defer programs.SetAllowFallback(savedFallback)
 
@@ -3439,8 +3437,11 @@ func TestProgramSinglepassOutputSizeLimit(t *testing.T) {
 	})
 	defer cleanup()
 
-	if got := programs.GetMaxSinglepassOutputSize(); got != maxOutputSize {
-		t.Fatalf("expected Singlepass output limit %d, got %d", maxOutputSize, got)
+	statedb, err := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().State()
+	Require(t, err)
+	nodeConfig := programs.GetArbNodeConfig(statedb)
+	if nodeConfig == nil || nodeConfig.MaxSinglepassOutputSize != maxOutputSize {
+		t.Fatalf("expected Singlepass output limit %d, got: %+v", maxOutputSize, nodeConfig)
 	}
 
 	ctx := builder.ctx

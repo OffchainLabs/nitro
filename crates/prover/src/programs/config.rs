@@ -5,6 +5,7 @@
 
 use std::fmt::Debug;
 
+use super::DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT;
 use arbutil::evm::api::{Gas, Ink};
 use derivative::Derivative;
 use fnv::FnvHashMap as HashMap;
@@ -14,7 +15,7 @@ use wasmparser::Operator;
 use {
     super::{
         MiddlewareWrapper, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
-        heap::HeapBound, meter::Meter, singlepass_output_size_limit, start::StartMover,
+        heap::HeapBound, meter::Meter, start::StartMover,
     },
     std::sync::Arc,
     wasmer::{
@@ -96,7 +97,8 @@ impl PricingParams {
 pub type SigMap = HashMap<SignatureIndex, FunctionType>;
 pub type OpCosts = fn(&Operator, &SigMap) -> u64;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Derivative)]
+#[derivative(Default)]
 pub struct CompileConfig {
     /// Version of the compiler to use
     pub version: u16,
@@ -106,6 +108,9 @@ pub struct CompileConfig {
     pub bounds: CompileMemoryParams,
     /// Debug parameters for test chains
     pub debug: CompileDebugParams,
+    /// Maximum emitted machine code and serialized Singlepass artifact size
+    #[derivative(Default(value = "Some(DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT)"))]
+    max_singlepass_output_size: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -164,6 +169,15 @@ impl Default for CompileMemoryParams {
 }
 
 impl CompileConfig {
+    pub fn with_max_singlepass_output_size(mut self, limit: Option<usize>) -> Self {
+        self.max_singlepass_output_size = limit;
+        self
+    }
+
+    pub fn max_singlepass_output_size(&self) -> Option<usize> {
+        self.max_singlepass_output_size
+    }
+
     pub fn version(version: u16, debug_chain: bool) -> Self {
         let mut config = Self::default();
         config.version = version;
@@ -200,7 +214,11 @@ impl CompileConfig {
                 Box::new(wasmer_config)
             }
             false => {
-                Box::new(Singlepass::new().with_max_output_size(singlepass_output_size_limit()))
+                let mut wasmer_config = Singlepass::new();
+                if let Some(limit) = self.max_singlepass_output_size() {
+                    wasmer_config = wasmer_config.with_max_output_size(limit);
+                }
+                Box::new(wasmer_config)
             }
         };
         wasmer_config.canonicalize_nans(true);

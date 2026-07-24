@@ -64,17 +64,6 @@ func TestNativeStackSize(t *testing.T) {
 	}
 }
 
-func TestMaxSinglepassOutputSize(t *testing.T) {
-	saved := GetMaxSinglepassOutputSize()
-	defer SetMaxSinglepassOutputSize(saved)
-
-	const limit = 12 * 1024 * 1024
-	SetMaxSinglepassOutputSize(limit)
-	if got := GetMaxSinglepassOutputSize(); got != limit {
-		t.Fatalf("expected Singlepass output limit %d, got %d", limit, got)
-	}
-}
-
 func TestNativeStackSizeMaxCap(t *testing.T) {
 	defer SetInitialNativeStackSize(1024 * 1024)
 	err := testNativeStackSizeMaxCap()
