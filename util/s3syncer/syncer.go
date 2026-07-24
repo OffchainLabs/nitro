@@ -139,6 +139,15 @@ func (s *Syncer) DownloadAndLoad(ctx context.Context) error {
 
 // downloadAndHandle downloads the S3 object to a temporary file and streams it
 // to the data handler, so the object is never fully buffered in memory.
+//
+// The disk hop is for speed without increasing the memory footprint.
+// Streaming a single GET straight into memory would be capped by S3's
+// per-connection throughput, ~85-90 MB/s per AWS's performance guidelines:
+// ~3 minutes for a 16 GB object. The SDK downloader instead fetches parts
+// over concurrent connections (~900 MB/s at the default concurrency of 10,
+// ~18 s for 16 GB). Re-reading the assembled file adds only seconds on an
+// NVMe disk (~2-5 GB/s), so concurrent chunked download + disk read beats
+// one network stream several times over.
 func (s *Syncer) downloadAndHandle(ctx context.Context, etagDigest string) error {
 	downloader := manager.NewDownloader(s.client.Client(), func(d *manager.Downloader) {
 		d.PartSize = int64(s.config.ChunkSizeMB) * bytesInMB
