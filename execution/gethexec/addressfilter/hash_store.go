@@ -47,12 +47,13 @@ type hashData struct {
 // blocking the swap.
 //
 // When maxHashes > 0 the store preallocates two ping-pong hashData buffers and
-// reuses them on every Store, so a reload performs no large allocation. Store
-// recycles a buffer in place, so it must not clear one a reader still holds.
-// Each hashData carries an RWMutex: a reader holds the read lock for the whole
-// call, and Store write-locks the buffer it is about to recycle, blocking until
-// every in-flight reader of that buffer has released it. Store is single-writer
-// (serialized by the syncer mutex), so active needs no synchronization.
+// reuses them on every Store, so a reload performs no large allocation.
+// Store recycles a buffer in place, so it must not clear one a reader still
+// holds. Each hashData carries an RWMutex: a reader holds the read lock for the
+// whole call, and Store write-locks the buffer it is about to recycle,
+// blocking until every in-flight reader of that buffer has released it.
+// Store is single-writer (serialized by the syncer mutex), so active needs
+// no synchronization.
 type HashStore struct {
 	data      atomic.Pointer[hashData]
 	cacheSize int
@@ -142,7 +143,7 @@ func (d *hashData) setMeta(meta *ListMeta, digest string) {
 	d.loadedAt = time.Now()
 }
 
-// StoreFrom fills a new hash list via fill and atomically swaps it in only if
+// Store fills a new hash list via fill and atomically swaps it in only if
 // fill returns nil. On error nothing is published; in preallocated mode the
 // dirty buffer is re-cleared at the start of the next store. sizeHint is an
 // upper bound on the number of hashes, used to size the map when not
@@ -151,9 +152,9 @@ func (d *hashData) setMeta(meta *ListMeta, digest string) {
 // In preallocated mode it recycles a ping-pong buffer in place under the
 // buffer's write lock, which blocks until every in-flight reader of that buffer
 // has released it; otherwise it builds a new hashData. Either way the LRU cache
-// is reset so it stays consistent with the new data. StoreFrom is single-writer
+// is reset so it stays consistent with the new data. Store is single-writer
 // (serialized by the syncer mutex).
-func (h *HashStore) StoreFrom(digest string, sizeHint int, fill func(add func(common.Hash)) (*ListMeta, error)) error {
+func (h *HashStore) Store(digest string, sizeHint int, fill func(add func(common.Hash)) (*ListMeta, error)) error {
 	if h.maxHashes == 0 {
 		newData := &hashData{
 			hashes: make(map[common.Hash]struct{}, sizeHint),
@@ -185,18 +186,6 @@ func (h *HashStore) StoreFrom(digest string, sizeHint int, fill func(add func(co
 	h.data.Store(d) // publish under the write lock; the deferred Unlock releases readers
 	h.active = next
 	return nil
-}
-
-// Store atomically swaps in a new hash list.
-// This is called after a new hash list has been downloaded and parsed.
-func (h *HashStore) Store(id uuid.UUID, salt uuid.UUID, scheme HashingScheme, hashes []common.Hash, digest string) {
-	// The fill callback cannot fail, so neither can StoreFrom.
-	_ = h.StoreFrom(digest, len(hashes), func(add func(common.Hash)) (*ListMeta, error) {
-		for _, hash := range hashes {
-			add(hash)
-		}
-		return &ListMeta{Id: id, Salt: salt, Scheme: scheme}, nil
-	})
 }
 
 // IsRestricted returns whether the address is restricted and the filter set ID,

@@ -87,7 +87,7 @@ func (s *S3SyncManager) handleHashListStream(r io.Reader, size int64, digest str
 		})
 		return listMeta, err
 	}
-	err := s.hashStore.StoreFrom(digest, s3syncer.EstimateHashCount(size), fill)
+	err := s.hashStore.Store(digest, s3syncer.EstimateHashCount(size), fill)
 	if err != nil {
 		return fmt.Errorf("failed to parse hash list: %w", err)
 	}
