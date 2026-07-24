@@ -36,7 +36,7 @@ func TestDoublePinPanics(t *testing.T) {
 func TestWithTimeoutCarriesToSpec(t *testing.T) {
 	b := newBuilder()
 	if got := b.freeze("").Timeout; got != 0 {
-		t.Fatalf("default Spec.Timeout = %v, want 0 (CLI default applies)", got)
+		t.Fatalf("default Spec.Timeout = %v, want 0 (scheduleParams default applies)", got)
 	}
 	WithTimeout(3 * time.Second)(b)
 	if got := b.freeze("").Timeout; got != 3*time.Second {

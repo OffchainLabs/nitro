@@ -120,14 +120,14 @@ func TestExpandMatrix(t *testing.T) {
 	type tc struct {
 		name      string
 		setup     func(*builder)
-		cli       scheduleParams
+		sp        scheduleParams
 		wantNames []string
 	}
 	cases := []tc{
 		{
-			name:      "zero dims, no CLI",
+			name:      "zero dims, no params",
 			setup:     func(*builder) {},
-			cli:       scheduleParams{},
+			sp:        scheduleParams{},
 			wantNames: []string{"X"},
 		},
 		{
@@ -135,29 +135,29 @@ func TestExpandMatrix(t *testing.T) {
 			setup: func(b *builder) {
 				MatrixArbOS(params.ArbosVersion_30, params.ArbosVersion_40)(b)
 			},
-			cli:       scheduleParams{},
+			sp:        scheduleParams{},
 			wantNames: []string{"X/arbos30", "X/arbos40"},
 		},
 		{
-			name: "CLI matrix overrides declared dim",
+			name: "params matrix overrides declared dim",
 			setup: func(b *builder) {
 				MatrixArbOS(params.ArbosVersion_30)(b)
 			},
-			cli:       scheduleParams{MatrixArbOS: []uint64{params.ArbosVersion_40, params.ArbosVersion_50}},
+			sp:        scheduleParams{MatrixArbOS: []uint64{params.ArbosVersion_40, params.ArbosVersion_50}},
 			wantNames: []string{"X/arbos40", "X/arbos50"},
 		},
 		{
-			name: "pin suppresses CLI matrix on same axis",
+			name: "pin suppresses params matrix on same axis",
 			setup: func(b *builder) {
 				b.arbOS = containers.Some(params.ArbosVersion_31)
 			},
-			cli:       scheduleParams{MatrixArbOS: []uint64{params.ArbosVersion_40, params.ArbosVersion_50}},
+			sp:        scheduleParams{MatrixArbOS: []uint64{params.ArbosVersion_40, params.ArbosVersion_50}},
 			wantNames: []string{"X"},
 		},
 		{
-			name:      "two CLI dims cartesian",
+			name:      "two params dims cartesian",
 			setup:     func(*builder) {},
-			cli:       scheduleParams{MatrixArbOS: []uint64{params.ArbosVersion_30, params.ArbosVersion_40}, MatrixStates: []StateScheme{StateSchemeHash, StateSchemePath}},
+			sp:        scheduleParams{MatrixArbOS: []uint64{params.ArbosVersion_30, params.ArbosVersion_40}, MatrixStates: []StateScheme{StateSchemeHash, StateSchemePath}},
 			wantNames: []string{"X/arbos30/hash", "X/arbos30/path", "X/arbos40/hash", "X/arbos40/path"},
 		},
 		{
@@ -167,7 +167,7 @@ func TestExpandMatrix(t *testing.T) {
 				MatrixStateScheme("hash", "path")(b)
 				MatrixDBEngine("pebble")(b)
 			},
-			cli: scheduleParams{},
+			sp: scheduleParams{},
 			wantNames: []string{
 				"X/arbos30/hash/pebble", "X/arbos30/path/pebble",
 				"X/arbos40/hash/pebble", "X/arbos40/path/pebble",
@@ -179,7 +179,7 @@ func TestExpandMatrix(t *testing.T) {
 			b := newBuilder()
 			b.name = "X"
 			c.setup(b)
-			out := expandMatrix(b, c.cli)
+			out := expandMatrix(b, c.sp)
 			var got []string
 			for _, e := range out {
 				got = append(got, e.Spec.Name)
@@ -236,7 +236,7 @@ func TestMatrixCellConflictsWithCLIPin(t *testing.T) {
 			}
 		case StateSchemePath:
 			if cell.SkipReason == "" {
-				t.Fatal("path cell must skip under -v2.state-scheme=hash")
+				t.Fatal("path cell must skip under state scheme pin hash")
 			}
 		}
 	}

@@ -19,7 +19,7 @@ import (
 // axis variants. Example: MatrixArbOS(30, 40) × MatrixStateScheme("hash") =
 // two scheduled tests (arbos30/hash, arbos40/hash).
 //
-// CLI flags (-v2.matrix.arbos, etc.) can supply axis variants at runtime;
+// scheduleParams matrix axes can supply variants at runtime;
 // they override a declared axis on the same key unless the test pinned the
 // axis with WithArbOS / WithStateScheme / WithDBEngine.
 
@@ -165,8 +165,8 @@ func mkDBEngineAxis(es []DBEngine) []axisVariant {
 	return out
 }
 
-func expandMatrix(base *builder, cli scheduleParams) []scheduledTest {
-	dims := effectiveAxes(base, cli)
+func expandMatrix(base *builder, sp scheduleParams) []scheduledTest {
+	dims := effectiveAxes(base, sp)
 
 	total := 1
 	for _, variants := range dims {
@@ -192,40 +192,40 @@ func expandMatrix(base *builder, cli scheduleParams) []scheduledTest {
 			v.apply(clone)
 			parts = append(parts, v.name)
 		}
-		clone.mergeParams(cli)
+		clone.mergeParams(sp)
 		out = append(out, scheduledTest{
 			Spec:       clone.freeze(strings.Join(parts, "/")),
 			Scenario:   base.scenario,
 			PostHooks:  clone.postHooks,
-			SkipReason: clone.shouldSkip(cli),
+			SkipReason: clone.shouldSkip(sp),
 			overrides:  overrides{Node: clone.nodeOverrides, Exec: clone.execOverrides, Stack: clone.stackOverrides, InitData: clone.initDataOverrides, ChainConfig: clone.chainConfigOverrides},
 		})
 	}
 	return out
 }
 
-// effectiveAxes returns the declared axes plus any CLI-driven matrix axes,
-// emitted in deterministic axisOrder. CLI matrix overrides a declared axis
+// effectiveAxes returns the declared axes plus any params-driven matrix axes,
+// emitted in deterministic axisOrder. A params matrix overrides a declared axis
 // on the same key, but only when the axis isn't pinned by the test.
-func effectiveAxes(base *builder, cli scheduleParams) [][]axisVariant {
+func effectiveAxes(base *builder, sp scheduleParams) [][]axisVariant {
 	merged := maps.Clone(base.dims)
 	if merged == nil {
 		merged = map[axis][]axisVariant{}
 	}
-	replaceFromCLI := func(ax axis, name string, variants []axisVariant) {
+	replaceAxis := func(ax axis, name string, variants []axisVariant) {
 		if _, declared := merged[ax]; declared {
-			log.Printf("systest: -v2.matrix.%s overrides declared matrix for test %q", name, base.name)
+			log.Printf("systest: matrix param %s overrides declared matrix for test %q", name, base.name)
 		}
 		merged[ax] = variants
 	}
-	if len(cli.MatrixArbOS) > 0 && base.arbOS.IsNone() {
-		replaceFromCLI(axisArbOS, "arbos", mkArbOSAxis(cli.MatrixArbOS))
+	if len(sp.MatrixArbOS) > 0 && base.arbOS.IsNone() {
+		replaceAxis(axisArbOS, "arbos", mkArbOSAxis(sp.MatrixArbOS))
 	}
-	if len(cli.MatrixStates) > 0 && base.stateScheme.IsNone() {
-		replaceFromCLI(axisStateScheme, "state-scheme", mkStateSchemeAxis(cli.MatrixStates))
+	if len(sp.MatrixStates) > 0 && base.stateScheme.IsNone() {
+		replaceAxis(axisStateScheme, "state-scheme", mkStateSchemeAxis(sp.MatrixStates))
 	}
-	if len(cli.MatrixDBs) > 0 && base.dbEngine.IsNone() {
-		replaceFromCLI(axisDBEngine, "db-engine", mkDBEngineAxis(cli.MatrixDBs))
+	if len(sp.MatrixDBs) > 0 && base.dbEngine.IsNone() {
+		replaceAxis(axisDBEngine, "db-engine", mkDBEngineAxis(sp.MatrixDBs))
 	}
 	var out [][]axisVariant
 	for _, ax := range axisOrder {

@@ -36,7 +36,7 @@ func Named(name string) TestOption {
 	}
 }
 
-// WithArbOS pins ArbOS version. Conflicts with -v2.arbos cause skip. Panics
+// WithArbOS pins ArbOS version. Conflicts with a scheduleParams ArbOS pin cause skip. Panics
 // if applied twice or if combined with MatrixArbOS on the same axis.
 func WithArbOS(v uint64) TestOption {
 	return func(b *builder) {
@@ -86,7 +86,7 @@ func WithDBEngine(e DBEngine) TestOption {
 }
 
 // WithCategory tags this test with a named category; untagged tests are in the
-// default one. Tests run only when their category is enabled via -v2.categories.
+// default one. Tests run only when their category is enabled.
 // Panics if applied twice.
 func WithCategory(c string) TestOption {
 	return func(b *builder) {
@@ -128,7 +128,7 @@ func MaxArbOS(v uint64) TestOption {
 	}
 }
 
-// WithTimeout overrides the per-scenario wall-clock backstop (-v2.test-timeout)
+// WithTimeout overrides the per-scenario wall-clock backstop
 // for this test. Panics if non-positive or applied twice.
 func WithTimeout(d time.Duration) TestOption {
 	return func(b *builder) {
