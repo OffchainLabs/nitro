@@ -358,8 +358,7 @@ type ExecutionNode struct {
 	FilterSystem             *filters.FilterSystem
 	ArbInterface             *ArbInterface
 	ExecEngine               *ExecutionEngine
-	Recorder                 *BlockRecorder
-	ChainTipRecorder         *ChainTipBlockRecorder
+	Recorder                 ExecutionBlockRecorder
 	Sequencer                *Sequencer // either nil or same as TxPublisher
 	TxPreChecker             *TxPreChecker
 	TxPublisher              TransactionPublisher
@@ -421,14 +420,13 @@ func CreateExecutionNode(
 		execEngine.DisableStylusCacheMetricsCollection()
 	}
 
-	var recorder *BlockRecorder
-	var chainTipRecorder *ChainTipBlockRecorder
+	var recorder ExecutionBlockRecorder
 	switch config.RecordingDatabase.Mode {
 	case BlockRecorderModeOff:
 	case BlockRecorderModeLegacy:
 		recorder = NewBlockRecorder(&config.RecordingDatabase, execEngine, executionDB)
 	case BlockRecorderModeChainTip:
-		chainTipRecorder = NewChainTipBlockRecorder(execEngine)
+		recorder = NewChainTipBlockRecorder(execEngine)
 	default:
 		return nil, fmt.Errorf("unknown block recorder mode %q", config.RecordingDatabase.Mode)
 	}
@@ -526,7 +524,6 @@ func CreateExecutionNode(
 		ArbInterface:             arbInterface,
 		ExecEngine:               execEngine,
 		Recorder:                 recorder,
-		ChainTipRecorder:         chainTipRecorder,
 		Sequencer:                sequencer,
 		TxPreChecker:             txPreChecker,
 		TxPublisher:              txPublisher,
@@ -784,20 +781,17 @@ func (n *ExecutionNode) RecordBlockCreation(
 	wasmTargets []rawdb.WasmTarget,
 ) containers.PromiseInterface[*execution.RecordResult] {
 	return stopwaiter.LaunchPromiseThread(n, func(ctx context.Context) (*execution.RecordResult, error) {
-		if n.ChainTipRecorder != nil {
-			return n.ChainTipRecorder.Recording(pos, wasmTargets)
+		if n.Recorder == nil {
+			return nil, errors.New("block recorder unavailable")
 		}
-		if n.Recorder != nil {
-			return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
-		}
-		return nil, errors.New("block recorder unavailable")
+		return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
 	})
 }
 
 func (n *ExecutionNode) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(n, func(ctx context.Context) (struct{}, error) {
 		if n.Recorder == nil {
-			return struct{}{}, nil
+			return struct{}{}, errors.New("block recorder unavailable")
 		}
 		return struct{}{}, n.Recorder.PrepareForRecord(ctx, start, end)
 	})

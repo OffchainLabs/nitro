@@ -16,9 +16,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/trie"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator"
@@ -105,7 +107,7 @@ func TestValidationInputsAtChainTipIncludesReferencedTrieChildPreimages(t *testi
 	if len(preimages) == 0 {
 		t.Fatal("expected validation input to contain keccak preimages")
 	}
-	assertSomeReferencedTrieChildPreimage(t, preimages)
+	assertReferencedTrieChildPreimages(t, preimages)
 }
 
 func testValidationInputsAtExecutesInValidationWorker(t *testing.T) {
@@ -192,6 +194,17 @@ func testValidationInputsAtExecutesInValidationWorker(t *testing.T) {
 		t.Fatal("expected blockhash validation input json to include expected end state")
 	}
 
+	// Delayed L1 messages take a different path into block production.
+	l2info.GenerateAccount("DelayedUser")
+	delayedTx := l2info.PrepareTx("Owner", "DelayedUser", l2info.TransferGas, common.Big1, nil)
+	delayedReceipt := SendSignedTxViaL1(t, ctx, builder.L1Info, builder.L1.Client, l2client, delayedTx)
+	delayedInboxPos := arbutil.MessageIndex(delayedReceipt.BlockNumber.Uint64())
+	waitForBatchContainingMessage(t, builder.L2.ConsensusNode, delayedInboxPos, 10*time.Second, 250*time.Millisecond)
+	delayedInputJson, delayedValidationInput := validationInputsAtFromTip(t, ctx, builder, delayedInboxPos)
+	if delayedInputJson.ExpectedEndState == nil {
+		t.Fatal("expected delayed message validation input json to include expected end state")
+	}
+
 	validationConfig := builder.nodeConfig.BlockValidator.ValidationServerConfigs[0]
 	valClient := client.NewValidationClient(StaticFetcherFrom(t, &validationConfig), nil)
 	Require(t, valClient.Start(ctx))
@@ -200,6 +213,7 @@ func testValidationInputsAtExecutesInValidationWorker(t *testing.T) {
 	moduleRoot := builder.L2.ConsensusNode.StatelessBlockValidator.GetLatestWasmModuleRoot()
 	runValidationInput(t, ctx, valClient, storageValidationInput, moduleRoot, storageExpectedEndState)
 	runValidationInput(t, ctx, valClient, blockHashValidationInput, moduleRoot, blockHashInputJson.ExpectedEndState)
+	runValidationInput(t, ctx, valClient, delayedValidationInput, moduleRoot, delayedInputJson.ExpectedEndState)
 }
 
 func seedValidationRecordingTrieShape(t *testing.T, ctx context.Context, builder *NodeBuilder, programAddress common.Address) []string {
@@ -297,13 +311,14 @@ func validationInputsAtFromTip(t *testing.T, ctx context.Context, builder *NodeB
 	t.Helper()
 
 	var inputJson server_api.InputJSON
-	servedTipRecordingsBefore := builder.L2.ExecNode.ChainTipRecorder.ServedTipRecordings()
+	chainTipRecorder := builder.L2.ExecNode.Recorder.(*gethexec.ChainTipBlockRecorder)
+	servedTipRecordingsBefore := chainTipRecorder.ServedTipRecordings()
 	retryUntilFound(t, ctx, 40, 250*time.Millisecond, "ValidationInputsAt", "batch not found on L1", func() error {
 		var err error
 		inputJson, err = builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, rawdb.LocalTarget(), rawdb.TargetWavm)
 		return err
 	})
-	if builder.L2.ExecNode.ChainTipRecorder.ServedTipRecordings() == servedTipRecordingsBefore {
+	if chainTipRecorder.ServedTipRecordings() == servedTipRecordingsBefore {
 		t.Fatal("expected ValidationInputsAt to serve a chain-tip recording")
 	}
 	validationInput, err := server_api.ValidationInputFromJson(&inputJson)
@@ -368,50 +383,42 @@ func assertHeaderPreimages(t *testing.T, builder *NodeBuilder, firstHeaderNumber
 	}
 }
 
-func assertSomeReferencedTrieChildPreimage(t *testing.T, preimages map[common.Hash][]byte) {
+func assertReferencedTrieChildPreimages(t *testing.T, preimages map[common.Hash][]byte) {
 	t.Helper()
 	references := 0
-	recordedReferences := 0
+	fullyResolved := 0
 	for hash, preimage := range preimages {
 		if crypto.Keccak256Hash(preimage) != hash {
 			continue
 		}
-		var elems []rlp.RawValue
-		if err := rlp.DecodeBytes(preimage, &elems); err != nil {
+		total := 0
+		resolved := 0
+		if err := trie.ForEachHashChild(nil, preimage, func(_ []byte, child common.Hash) {
+			total++
+			if _, ok := preimages[child]; ok {
+				resolved++
+			}
+		}); err != nil {
 			continue
 		}
-		switch len(elems) {
-		case 17:
-			for i := 0; i < 16; i++ {
-				countTrieChildPreimageIfHash(preimages, elems[i], &references, &recordedReferences)
-			}
-		case 2:
-			var path []byte
-			if err := rlp.DecodeBytes(elems[0], &path); err != nil || len(path) == 0 {
-				continue
-			}
-			if path[0]>>4&2 != 0 {
-				continue // leaf node, second element is the value
-			}
-			countTrieChildPreimageIfHash(preimages, elems[1], &references, &recordedReferences)
+		references += total
+		if total == 0 {
+			continue
+		}
+		// Read nodes have all children eagerly recorded, and children of
+		// never read boundary nodes cannot be recorded at all, so partial
+		// resolution means child gathering dropped some.
+		if resolved != 0 && resolved != total {
+			t.Fatalf("trie node %s has %d of %d referenced children recorded", hash, resolved, total)
+		}
+		if resolved == total {
+			fullyResolved++
 		}
 	}
 	if references == 0 {
 		t.Fatal("expected trie node preimages to reference at least one hashed child")
 	}
-	if recordedReferences == 0 {
-		t.Fatal("expected at least one referenced trie child preimage to be recorded")
-	}
-}
-
-func countTrieChildPreimageIfHash(preimages map[common.Hash][]byte, raw rlp.RawValue, references *int, recordedReferences *int) {
-	var child []byte
-	if err := rlp.DecodeBytes(raw, &child); err != nil || len(child) != common.HashLength {
-		return
-	}
-	childHash := common.BytesToHash(child)
-	*references = *references + 1
-	if _, ok := preimages[childHash]; ok {
-		*recordedReferences = *recordedReferences + 1
+	if fullyResolved == 0 {
+		t.Fatal("expected at least one trie node with all referenced children recorded")
 	}
 }

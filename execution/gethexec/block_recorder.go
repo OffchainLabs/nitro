@@ -63,7 +63,7 @@ const (
 )
 
 var DefaultBlockRecorderConfig = BlockRecorderConfig{
-	Mode:           BlockRecorderModeOff,
+	Mode:           BlockRecorderModeLegacy,
 	TrieDirtyCache: 1024,
 	TrieCleanCache: 16,
 	MaxPrepared:    1000,
@@ -83,6 +83,13 @@ func (c *BlockRecorderConfig) Validate() error {
 	default:
 		return fmt.Errorf("unknown block recorder mode %q", c.Mode)
 	}
+}
+
+type ExecutionBlockRecorder interface {
+	RecordBlockCreation(ctx context.Context, pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, wasmTargets []rawdb.WasmTarget) (*execution.RecordResult, error)
+	PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error
+	MarkValid(pos arbutil.MessageIndex, blockHash common.Hash)
+	OrderlyShutdown()
 }
 
 func NewBlockRecorder(config *BlockRecorderConfig, execEngine *ExecutionEngine, ethDb ethdb.Database) *BlockRecorder {

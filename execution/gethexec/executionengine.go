@@ -791,31 +791,11 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, nil, err
 	}
 
-	var statedb *state.StateDB
-	var tipRecordingStateDatabase *arbitrum.TipRecordingStateDatabase
-	var recordingChainContext *arbitrum.RecordingChainContext
-	chainContext := core.ChainContext(s.bc)
-	recordAtTip := s.tipRecorder != nil
-	runCtx := core.NewMessageSequencingContext(s.wasmTargets)
-	if recordAtTip {
-		tipRecordingStateDatabase = arbitrum.NewTipRecordingStateDatabase(s.bc.StateCache())
-		recordingChainContext = arbitrum.NewRecordingChainContext(s.bc, lastBlockHeader)
-		chainContext = recordingChainContext
-		statedb, err = state.NewRecording(lastBlockHeader.Root, tipRecordingStateDatabase)
-		if err != nil {
-			return nil, nil, err
-		}
-		statedb.StartRecording()
-		if err := recordReplayInitialStatePreimages(statedb); err != nil {
-			return nil, nil, err
-		}
-		runCtx = core.NewTipRecordingContext(runCtx)
-	} else {
-		statedb, err = s.bc.StateAt(lastBlockHeader.Root)
-		if err != nil {
-			return nil, nil, err
-		}
+	session, err := s.beginTipRecording(lastBlockHeader, core.NewMessageSequencingContext(s.wasmTargets), s.tipRecorder != nil)
+	if err != nil {
+		return nil, nil, err
 	}
+	statedb := session.statedb
 	lastBlock := s.bc.GetBlock(lastBlockHeader.Hash(), lastBlockHeader.Number.Uint64())
 	if lastBlock == nil {
 		return nil, nil, errors.New("can't find block for current header")
@@ -841,10 +821,10 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		delayedMessagesRead,
 		lastBlockHeader,
 		statedb,
-		chainContext,
+		session.chainContext,
 		hooks,
 		false,
-		runCtx,
+		session.runCtx,
 		s.exposeMultiGas,
 		s.addressChecker,
 	)
@@ -889,7 +869,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	// Persist the chain-tip recording before the message is handed to
 	// consensus and before the block is appended, so the recording is durable
 	// by the time the chain is.
-	if err := s.recordChainTipCandidate(block, statedb, tipRecordingStateDatabase, recordingChainContext); err != nil {
+	if err := s.finishTipRecording(session, block, statedb); err != nil {
 		return nil, nil, err
 	}
 
@@ -1148,30 +1128,13 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		runCtx = core.NewMessageCommitContext(s.wasmTargets)
 	}
 
-	var statedb *state.StateDB
-	var tipRecordingStateDatabase *arbitrum.TipRecordingStateDatabase
-	var recordingChainContext *arbitrum.RecordingChainContext
-	chainContext := core.ChainContext(s.bc)
-	recordAtTip := s.tipRecorder != nil && !isMsgForPrefetch
-	if recordAtTip {
-		tipRecordingStateDatabase = arbitrum.NewTipRecordingStateDatabase(s.bc.StateCache())
-		recordingChainContext = arbitrum.NewRecordingChainContext(s.bc, currentHeader)
-		chainContext = recordingChainContext
-		statedb, err = state.NewRecording(currentHeader.Root, tipRecordingStateDatabase)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		statedb.StartRecording()
-		if err := recordReplayInitialStatePreimages(statedb); err != nil {
-			return nil, nil, nil, err
-		}
-		runCtx = core.NewTipRecordingContext(runCtx)
-	} else {
-		statedb, err = s.bc.StateAt(currentHeader.Root)
-		if err != nil {
-			return nil, nil, nil, err
-		}
+	session, err := s.beginTipRecording(currentHeader, runCtx, s.tipRecorder != nil && !isMsgForPrefetch)
+	if err != nil {
+		return nil, nil, nil, err
 	}
+	statedb := session.statedb
+	chainContext := session.chainContext
+	runCtx = session.runCtx
 
 	var witness *stateless.Witness
 	var witnessStats *stateless.WitnessStats
@@ -1250,7 +1213,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			}
 		}
 
-		if err := s.recordChainTipCandidate(block, statedb, tipRecordingStateDatabase, recordingChainContext); err != nil {
+		if err := s.finishTipRecording(session, block, statedb); err != nil {
 			return nil, nil, nil, err
 		}
 		return block, statedb, receipts, nil
@@ -1270,37 +1233,87 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		return nil, nil, nil, err
 	}
 
-	if err := s.recordChainTipCandidate(block, statedb, tipRecordingStateDatabase, recordingChainContext); err != nil {
+	if err := s.finishTipRecording(session, block, statedb); err != nil {
 		return nil, nil, nil, err
 	}
 	return block, statedb, receipts, nil
 }
 
-func (s *ExecutionEngine) recordChainTipCandidate(block *types.Block, statedb *state.StateDB, tipRecordingStateDatabase *arbitrum.TipRecordingStateDatabase, recordingChainContext *arbitrum.RecordingChainContext) error {
-	if block == nil || statedb == nil || tipRecordingStateDatabase == nil || recordingChainContext == nil || s.tipRecorder == nil {
+// tipRecordingSession carries the pieces wiring one block production run for
+// chain-tip recording. When recording is off it degrades to the plain statedb
+// and chain context, and finishTipRecording is a no-op.
+type tipRecordingSession struct {
+	statedb      *state.StateDB
+	chainContext core.ChainContext
+	runCtx       *core.MessageRunContext
+
+	recordingStateDatabase *arbitrum.TipRecordingStateDatabase
+	recordingChainContext  *arbitrum.RecordingChainContext
+}
+
+func (s *ExecutionEngine) beginTipRecording(parentHeader *types.Header, runCtx *core.MessageRunContext, recordAtTip bool) (*tipRecordingSession, error) {
+	if !recordAtTip {
+		statedb, err := s.bc.StateAt(parentHeader.Root)
+		if err != nil {
+			return nil, err
+		}
+		return &tipRecordingSession{statedb: statedb, chainContext: s.bc, runCtx: runCtx}, nil
+	}
+	recordingStateDatabase := arbitrum.NewTipRecordingStateDatabase(s.bc.StateCache())
+	recordingChainContext := arbitrum.NewRecordingChainContext(s.bc, parentHeader)
+	statedb, err := state.NewRecording(parentHeader.Root, recordingStateDatabase)
+	if err != nil {
+		return nil, err
+	}
+	statedb.StartRecording()
+	if err := recordReplayInitialStatePreimages(statedb, s.bc.Config()); err != nil {
+		return nil, err
+	}
+	return &tipRecordingSession{
+		statedb:                statedb,
+		chainContext:           recordingChainContext,
+		runCtx:                 core.NewTipRecordingContext(runCtx),
+		recordingStateDatabase: recordingStateDatabase,
+		recordingChainContext:  recordingChainContext,
+	}, nil
+}
+
+// finishTipRecording persists the chain-tip recording for the produced block,
+// using the statedb returned by block production, which may be a checkpoint
+// copy of the session's. Sessions that are not recording are a no-op.
+func (s *ExecutionEngine) finishTipRecording(session *tipRecordingSession, block *types.Block, statedb *state.StateDB) error {
+	if session == nil || session.recordingStateDatabase == nil || block == nil || statedb == nil || s.tipRecorder == nil {
 		return nil
 	}
 	// Record before consensus/block side effects; canonical validation prevents
 	// serving this candidate if a later side effect fails.
-	tipRecordingStateDatabase.StopRecording()
-	preimages := tipRecordingStateDatabase.Preimages()
+	session.recordingStateDatabase.StopRecording()
+	preimages := session.recordingStateDatabase.Preimages()
 	// StateDB owns VM SHA3 preimages and ArbOS preimages added during finalization.
 	for hash, preimage := range statedb.Preimages() {
 		preimages[hash] = preimage
 	}
-	return s.tipRecorder.RecordTip(block, preimages, recordingChainContext.GetMinBlockNumberAccessed(), tipRecordingStateDatabase.CodeHashes(), statedb.UserWasms())
+	return s.tipRecorder.RecordTip(block, preimages, session.recordingChainContext.GetMinBlockNumberAccessed(), session.recordingStateDatabase.CodeHashes(), statedb.UserWasms())
 }
 
-func recordReplayInitialStatePreimages(statedb *state.StateDB) error {
+func recordReplayInitialStatePreimages(statedb *state.StateDB, chainConfig *params.ChainConfig) error {
 	initialArbosState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 	if err != nil {
 		return fmt.Errorf("error opening initial ArbOS state: %w", err)
 	}
-	if _, err := initialArbosState.ChainId(); err != nil {
+	chainId, err := initialArbosState.ChainId()
+	if err != nil {
 		return fmt.Errorf("error getting chain ID from initial ArbOS state: %w", err)
 	}
-	if _, err := initialArbosState.GenesisBlockNum(); err != nil {
+	if chainId.Cmp(chainConfig.ChainID) != 0 {
+		return fmt.Errorf("unexpected chain ID %v in ArbOS state, expected %v", chainId, chainConfig.ChainID)
+	}
+	genesisNum, err := initialArbosState.GenesisBlockNum()
+	if err != nil {
 		return fmt.Errorf("error getting genesis block number from initial ArbOS state: %w", err)
+	}
+	if expectedNum := chainConfig.ArbitrumChainParams.GenesisBlockNum; genesisNum != expectedNum {
+		return fmt.Errorf("unexpected genesis block number %v in ArbOS state, expected %v", genesisNum, expectedNum)
 	}
 	if _, err := initialArbosState.ChainConfig(); err != nil {
 		return fmt.Errorf("error getting chain config from initial ArbOS state: %w", err)

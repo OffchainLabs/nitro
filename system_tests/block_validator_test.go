@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -268,8 +269,9 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		Fatal(t, "did not validate all blocks")
 	}
 	gethExec := testClientB.ExecNode
-	gethExec.Recorder.TrimAllPrepared(t)
-	finalRefCount := gethExec.Recorder.RecordingDBReferenceCount()
+	legacyRecorder := gethExec.Recorder.(*gethexec.BlockRecorder)
+	legacyRecorder.TrimAllPrepared(t)
+	finalRefCount := legacyRecorder.RecordingDBReferenceCount()
 	lastBlockNow, err := testClientB.Client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	// up to 3 extra references: awaiting validation, recently valid, lastValidatedHeader

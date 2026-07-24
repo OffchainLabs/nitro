@@ -3,6 +3,7 @@
 package gethexec
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -14,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -160,18 +162,44 @@ func (r *ChainTipBlockRecorder) Recording(pos arbutil.MessageIndex, wasmTargets 
 	if err := r.validateRecording(recording); err != nil {
 		return nil, err
 	}
-	if err := r.loadCodePreimages(recording.record, recording.codeHashes); err != nil {
+	// Serve a per call copy so callers cannot mutate or race the retained recording.
+	record := copyRecordResult(recording.record)
+	if err := r.loadCodePreimages(record, recording.codeHashes); err != nil {
 		return nil, err
 	}
-	if err := r.loadRecentHeaderPreimages(recording.record, recording.blockNumber, recording.parentHash, recording.firstHeaderNumber); err != nil {
+	if err := r.loadRecentHeaderPreimages(record, recording.blockNumber, recording.parentHash, recording.firstHeaderNumber); err != nil {
 		return nil, err
 	}
-	if err := r.loadUserWasms(recording.record, recording.wasmKeys, wasmTargets); err != nil {
+	if err := r.loadUserWasms(record, recording.wasmKeys, wasmTargets); err != nil {
 		return nil, err
 	}
 	r.servedTipRecordings.Add(1)
-	return recording.record, nil
+	return record, nil
 }
+
+func copyRecordResult(record *execution.RecordResult) *execution.RecordResult {
+	preimages := make(map[common.Hash][]byte, len(record.Preimages))
+	for hash, preimage := range record.Preimages {
+		preimages[hash] = preimage
+	}
+	return &execution.RecordResult{
+		Pos:       record.Pos,
+		BlockHash: record.BlockHash,
+		Preimages: preimages,
+	}
+}
+
+func (r *ChainTipBlockRecorder) RecordBlockCreation(_ context.Context, pos arbutil.MessageIndex, _ *arbostypes.MessageWithMetadata, wasmTargets []rawdb.WasmTarget) (*execution.RecordResult, error) {
+	return r.Recording(pos, wasmTargets)
+}
+
+func (r *ChainTipBlockRecorder) PrepareForRecord(context.Context, arbutil.MessageIndex, arbutil.MessageIndex) error {
+	return nil
+}
+
+func (r *ChainTipBlockRecorder) MarkValid(arbutil.MessageIndex, common.Hash) {}
+
+func (r *ChainTipBlockRecorder) OrderlyShutdown() {}
 
 func (r *ChainTipBlockRecorder) validateRecording(recording *chainTipRecording) error {
 	pos := recording.record.Pos
