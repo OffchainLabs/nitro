@@ -64,12 +64,11 @@ func setupFakeS3AddressFilterForConfig(t *testing.T, execConfig *gethexec.Config
 			SecretKey: "test-secret-key",
 			Endpoint:  endpoint,
 		},
-		Bucket:            bucket,
-		ObjectKey:         objectKey,
-		ChunkSizeMB:       s3syncer.DefaultS3Config.ChunkSizeMB,
-		MaxRetries:        s3syncer.DefaultS3Config.MaxRetries,
-		Concurrency:       s3syncer.DefaultS3Config.Concurrency,
-		PreallocateMemory: true,
+		Bucket:      bucket,
+		ObjectKey:   objectKey,
+		ChunkSizeMB: s3syncer.DefaultS3Config.ChunkSizeMB,
+		MaxRetries:  s3syncer.DefaultS3Config.MaxRetries,
+		Concurrency: s3syncer.DefaultS3Config.Concurrency,
 	}
 	return f
 }
