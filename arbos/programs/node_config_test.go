@@ -29,13 +29,37 @@ func TestGetArbNodeConfig_WrongTypeReturnsNil(t *testing.T) {
 
 func TestGetArbNodeConfig_RoundTrips(t *testing.T) {
 	db := state.NewDatabaseForTesting()
-	want := &ArbNodeConfig{MaxOpenPages: 42, MaxStylusCallDepth: 5}
+	want := &ArbNodeConfig{
+		MaxOpenPages:            42,
+		MaxStylusCallDepth:      5,
+		MaxSinglepassOutputSize: 12 * 1024 * 1024,
+	}
 	db.SetArbNodeConfig(want)
 	statedb, _ := state.New(types.EmptyRootHash, db)
 	got := GetArbNodeConfig(statedb)
 	require.NotNil(t, got)
 	require.Equal(t, want.MaxOpenPages, got.MaxOpenPages)
 	require.Equal(t, want.MaxStylusCallDepth, got.MaxStylusCallDepth)
+	require.Equal(t, want.MaxSinglepassOutputSize, got.MaxSinglepassOutputSize)
+}
+
+func TestGetMaxSinglepassOutputSize(t *testing.T) {
+	db := state.NewDatabaseForTesting()
+	statedb, _ := state.New(types.EmptyRootHash, db)
+	require.Equal(t, DefaultMaxSinglepassOutputSize, getMaxSinglepassOutputSize(statedb))
+
+	db.SetArbNodeConfig(&ArbNodeConfig{})
+	require.Zero(t, getMaxSinglepassOutputSize(statedb))
+
+	const limit = 64 * 1024
+	db.SetArbNodeConfig(&ArbNodeConfig{MaxSinglepassOutputSize: limit})
+	require.Equal(t, uint64(limit), getMaxSinglepassOutputSize(statedb))
+
+	otherDB := state.NewDatabaseForTesting()
+	otherStateDB, _ := state.New(types.EmptyRootHash, otherDB)
+	otherDB.SetArbNodeConfig(&ArbNodeConfig{MaxSinglepassOutputSize: 2 * limit})
+	require.Equal(t, uint64(2*limit), getMaxSinglepassOutputSize(otherStateDB))
+	require.Equal(t, uint64(limit), getMaxSinglepassOutputSize(statedb))
 }
 
 // Validate() only logs — we just assert it doesn't panic across the cases that

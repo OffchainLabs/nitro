@@ -455,7 +455,26 @@ pub fn module(
     }
 
     let module = module.serialize()?;
+    ensure_singlepass_artifact_size(
+        module.len(),
+        compile.max_singlepass_output_size(),
+        cranelift,
+    )?;
     Ok(module.to_vec())
+}
+
+pub(crate) fn ensure_singlepass_artifact_size(
+    size: usize,
+    limit: Option<usize>,
+    cranelift: bool,
+) -> Result<()> {
+    if !cranelift
+        && let Some(limit) = limit
+        && size > limit
+    {
+        bail!("singlepass compiler output exceeds limit: {size} > {limit} bytes");
+    }
+    Ok(())
 }
 
 pub fn activate(
@@ -486,7 +505,9 @@ pub fn compile(
     debug: bool,
     target: Target,
     cranelift: bool,
+    max_singlepass_output_size: Option<usize>,
 ) -> Result<Vec<u8>> {
-    let compile = CompileConfig::version(version, debug);
+    let compile = CompileConfig::version(version, debug)
+        .with_max_singlepass_output_size(max_singlepass_output_size);
     self::module(wasm, compile, target, cranelift)
 }

@@ -135,12 +135,12 @@ func testCompileArch(store bool, cranelift bool) error {
 		}
 	}
 
-	_, err = compileNative(wasm, 2, true, "booga", false, timeout)
+	_, err = compileNative(wasm, 2, true, "booga", false, DefaultMaxSinglepassOutputSize, timeout)
 	if err == nil {
 		return fmt.Errorf("succeeded compiling non-existent arch: %w", err)
 	}
 
-	outBytes, err := compileNative(wasm, 1, true, localTarget, cranelift, timeout)
+	outBytes, err := compileNative(wasm, 1, true, localTarget, cranelift, DefaultMaxSinglepassOutputSize, timeout)
 
 	if err != nil {
 		return fmt.Errorf("failed compiling native: %w", err)
@@ -157,7 +157,7 @@ func testCompileArch(store bool, cranelift bool) error {
 		}
 	}
 
-	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetArm64, cranelift, timeout)
+	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetArm64, cranelift, DefaultMaxSinglepassOutputSize, timeout)
 
 	if err != nil {
 		return fmt.Errorf("failed compiling arm: %w", err)
@@ -174,7 +174,7 @@ func testCompileArch(store bool, cranelift bool) error {
 		}
 	}
 
-	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetAmd64, cranelift, timeout)
+	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetAmd64, cranelift, DefaultMaxSinglepassOutputSize, timeout)
 
 	if err != nil {
 		return fmt.Errorf("failed compiling amd: %w", err)
@@ -293,7 +293,7 @@ func testNativeStackSize() error {
 		return fmt.Errorf("failed compiling WAT: %w", err)
 	}
 
-	localAsm, err := compileNative(wasm, 1, true, localTarget, false, time.Minute)
+	localAsm, err := compileNative(wasm, 1, true, localTarget, false, DefaultMaxSinglepassOutputSize, time.Minute)
 	if err != nil {
 		return fmt.Errorf("failed compiling native: %w", err)
 	}
@@ -399,7 +399,7 @@ func testNativeStackSizeMaxCap() error {
 		return fmt.Errorf("failed compiling WAT: %w", err)
 	}
 
-	localAsm, err := compileNative(wasm, 1, true, localTarget, false, time.Minute)
+	localAsm, err := compileNative(wasm, 1, true, localTarget, false, DefaultMaxSinglepassOutputSize, time.Minute)
 	if err != nil {
 		return fmt.Errorf("failed compiling native: %w", err)
 	}
@@ -504,7 +504,7 @@ func testHandleNativeStackOverflow() error {
 	}
 
 	// Compile cranelift ASM and pre-populate the wasm store for sub-test 3.
-	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, time.Minute)
+	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, DefaultMaxSinglepassOutputSize, time.Minute)
 	if err != nil {
 		return fmt.Errorf("failed compiling cranelift: %w", err)
 	}
@@ -630,7 +630,7 @@ func testHandleNativeStackOverflowAtMax() error {
 		return fmt.Errorf("failed compiling WAT: %w", err)
 	}
 
-	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, time.Minute)
+	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, DefaultMaxSinglepassOutputSize, time.Minute)
 	if err != nil {
 		return fmt.Errorf("failed compiling cranelift: %w", err)
 	}
@@ -701,7 +701,7 @@ func testRetryRestoresStylusPages() error {
 	}
 
 	// Compile cranelift ASM for the retry.
-	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, time.Minute)
+	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, DefaultMaxSinglepassOutputSize, time.Minute)
 	if err != nil {
 		return fmt.Errorf("failed compiling cranelift: %w", err)
 	}
@@ -853,7 +853,7 @@ func testCraneliftCompilationAndCache() error {
 	}
 
 	// Manually compile cranelift ASM and persist it.
-	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, time.Minute)
+	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, DefaultMaxSinglepassOutputSize, time.Minute)
 	if err != nil {
 		return fmt.Errorf("cranelift compilation failed: %w", err)
 	}
@@ -948,7 +948,7 @@ func testActivateWithCraneliftTarget() error {
 	_, asmMap, err := activateProgramInternal(
 		common.Address{}, common.Hash{}, wasm, 128, 1, 0, true, &gas,
 		[]rawdb.WasmTarget{craneliftTarget},
-		false, false,
+		DefaultMaxSinglepassOutputSize, false, false,
 	)
 	if err != nil {
 		return fmt.Errorf("activation with cranelift target failed: %w", err)
@@ -962,7 +962,7 @@ func testActivateWithCraneliftTarget() error {
 	_, asmMap, err = activateProgramInternal(
 		common.Address{}, common.Hash{}, wasm, 128, 1, 0, true, &gas,
 		[]rawdb.WasmTarget{localTarget, craneliftTarget},
-		false, false,
+		DefaultMaxSinglepassOutputSize, false, false,
 	)
 	if err != nil {
 		return fmt.Errorf("activation with both targets failed: %w", err)

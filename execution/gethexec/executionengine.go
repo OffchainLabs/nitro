@@ -406,8 +406,9 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 	s.wasmTargets = targetConfig.WasmTargets()
 	programs.SetAllowFallback(targetConfig.AllowFallback)
 	s.bc.StateCache().SetArbNodeConfig(&programs.ArbNodeConfig{
-		MaxOpenPages:       targetConfig.MaxStylusOpenPages,
-		MaxStylusCallDepth: targetConfig.MaxStylusCallDepth,
+		MaxOpenPages:            targetConfig.MaxStylusOpenPages,
+		MaxStylusCallDepth:      targetConfig.MaxStylusCallDepth,
+		MaxSinglepassOutputSize: targetConfig.MaxSinglepassOutputSize,
 	})
 	// Establishes the baseline for doubleNativeStackSize (overflow recovery).
 	programs.SetInitialNativeStackSize(targetConfig.NativeStackSize)

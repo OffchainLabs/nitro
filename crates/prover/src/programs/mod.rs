@@ -1,6 +1,16 @@
 // Copyright 2022-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+pub mod config;
+pub mod counter;
+pub mod depth;
+pub mod dynamic;
+pub mod heap;
+pub mod memory;
+pub mod meter;
+pub mod prelude;
+pub mod start;
+
 use std::fmt::Debug;
 
 use arbutil::{Bytes32, Color, evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES, math::SaturatingSum};
@@ -27,18 +37,10 @@ use crate::{
     value::{FunctionType as ArbFunctionType, Value},
 };
 
-pub mod config;
-pub mod counter;
-pub mod depth;
-pub mod dynamic;
-pub mod heap;
-pub mod memory;
-pub mod meter;
-pub mod prelude;
-pub mod start;
-
 pub const STYLUS_ENTRY_POINT: &str = "user_entrypoint";
 pub const STYLUS_VERSION_DISABLE_MULTIVALUE: u16 = 3;
+/// Default maximum emitted machine code and serialized Singlepass artifact size accepted by Stylus.
+pub const DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT: usize = 10 * 1024 * 1024;
 
 pub trait ModuleMod {
     fn add_global(&mut self, name: &str, ty: Type, init: GlobalInit) -> Result<GlobalIndex>;
