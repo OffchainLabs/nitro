@@ -103,18 +103,18 @@ func TestRetryableFilteringStylusSandwichRollback(t *testing.T) {
 	tx3 := builder.L2Info.PrepareTxTo("Sender2", &multicallAddr, 1e9, nil, tx3Args)
 
 	// --- Sequence all 3 txs in a single block (bypasses queue for determinism) ---
-	block, txErrors := sequenceTransactionsInTheSameBlock(
+	block, txResults := sequenceTransactionsInTheSameBlock(
 		t, builder, types.Transactions{tx1, tx2, tx3},
 	)
 	require.NotNil(t, block, "block should have been created")
-	require.Len(t, txErrors, 3, "should have 3 tx results")
+	require.Len(t, txResults, 3, "should have 3 tx results")
 
-	require.NoError(t, txErrors[0], "TX1 should have succeeded")
-	require.NoError(t, txErrors[2], "TX3 should have succeeded")
+	require.NoError(t, txResults[0].Err, "TX1 should have succeeded")
+	require.NoError(t, txResults[2].Err, "TX3 should have succeeded")
 
 	// TX2 should have failed (cascading redeem filtered)
-	require.Error(t, txErrors[1], "redeem should have been rejected by filter")
-	require.ErrorContains(t, txErrors[1], "cascading redeem filtered")
+	require.Error(t, txResults[1].Err, "redeem should have been rejected by filter")
+	require.ErrorContains(t, txResults[1].Err, "cascading redeem filtered")
 
 	// TX1 and TX3 are in the same block by construction (single SequenceTransactions call)
 	tx1Receipt, err := builder.L2.EnsureTxSucceeded(tx1)
@@ -183,13 +183,13 @@ func TestRetryableFilteringStylusGroupRollbackNoCacheLeak(t *testing.T) {
 	txB := builder.L2Info.PrepareTxTo("SenderB", &multicallAddr, 1e7, nil, multicallEmptyArgs())
 	txC := builder.L2Info.PrepareTxTo("SenderC", &multicallAddr, 1e7, nil, multicallEmptyArgs())
 
-	block, txErrors := sequenceTransactionsInTheSameBlock(t, builder, types.Transactions{txRedeem, txB, txC})
+	block, txResults := sequenceTransactionsInTheSameBlock(t, builder, types.Transactions{txRedeem, txB, txC})
 	require.NotNil(t, block)
-	require.Len(t, txErrors, 3)
-	require.Error(t, txErrors[0], "redeem group should be rolled back by the filter")
-	require.ErrorContains(t, txErrors[0], "cascading redeem filtered")
-	require.NoError(t, txErrors[1], "txB should commit")
-	require.NoError(t, txErrors[2], "txC should commit")
+	require.Len(t, txResults, 3)
+	require.Error(t, txResults[0].Err, "redeem group should be rolled back by the filter")
+	require.ErrorContains(t, txResults[0].Err, "cascading redeem filtered")
+	require.NoError(t, txResults[1].Err, "txB should commit")
+	require.NoError(t, txResults[2].Err, "txC should commit")
 
 	rcptB, err := builder.L2.EnsureTxSucceeded(txB)
 	require.NoError(t, err)

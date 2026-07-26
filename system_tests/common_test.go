@@ -2996,7 +2996,7 @@ func sequenceTransactions(
 	builder *NodeBuilder,
 	header *arbostypes.L1IncomingMessageHeader,
 	hooks *gethexec.FullSequencingHooks,
-) (*types.Block, []error) {
+) (*types.Block, []gethexec.TxResult) {
 	sequencedMsg, block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks)
 	Require(t, err)
 	if sequencedMsg == nil {
@@ -3006,24 +3006,24 @@ func sequenceTransactions(
 	Require(t, err)
 	err = builder.L2.ExecNode.AppendLastSequencedBlock()
 	Require(t, err)
-	return block, hooks.GetTxErrors()
+	return block, hooks.SequencedTxes()
 }
 
 // sequenceTransactionsInTheSameBlock sequences all the given transactions into a
 // single block, using the sequencer's real pre/post tx filters and bypassing the
-// txQueue. It returns the produced block and the per-transaction errors.
+// txQueue. It returns the produced block and the per-transaction results.
 func sequenceTransactionsInTheSameBlock(
 	t *testing.T,
 	builder *NodeBuilder,
 	txes types.Transactions,
-) (*types.Block, []error) {
+) (*types.Block, []gethexec.TxResult) {
 	sequencer := builder.L2.ExecNode.Sequencer
 	sequencer.Pause()
 	defer sequencer.Activate()
 	header, hooks := sequencer.MakeSameBlockSequencingHooksAndHeaderForTest(t, txes)
-	block, txErrors := sequenceTransactions(t, builder, header, hooks)
+	block, sequencedTxes := sequenceTransactions(t, builder, header, hooks)
 	sequencer.DispatchPendingFilteredTxReportsForTest(t)
-	return block, txErrors
+	return block, sequencedTxes
 }
 
 func waitForTCP(t *testing.T, addr string, timeout time.Duration) {
