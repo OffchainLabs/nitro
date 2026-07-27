@@ -7,7 +7,7 @@ runs:
 
   steps:
     - name: Install dependencies
-      run: sudo apt update && sudo apt install -y build-essential cmake clang wabt gotestsum protobuf-compiler python3 jq curl wget
+      run: sudo apt update && sudo apt install -y build-essential cmake clang wabt gotestsum protobuf-compiler python3 jq curl wget uuid-runtime
       shell: bash
 
     - name: Setup Node.js
