@@ -8,13 +8,11 @@
 use alloy_primitives::B256;
 use alloy_rlp::{RlpDecodable, RlpDecodableWrapper, RlpEncodable, RlpEncodableWrapper};
 use arb_mel_types::BatchMetadata;
-use arbos_types::{L1IncomingMessage, MessageWithMetadata, parse_incoming_l1_message, rlp::NilString};
-
-use crate::{
-    ConsensusDbError, Result,
-    codecs::strip_accumulator,
-    kv::KeyBuf,
+use arbos_types::{
+    L1IncomingMessage, MessageWithMetadata, parse_incoming_l1_message, rlp::NilString,
 };
+
+use crate::{ConsensusDbError, Result, codecs::strip_accumulator, kv::KeyBuf};
 
 pub(crate) const CURRENT_VERSION: u64 = 2;
 

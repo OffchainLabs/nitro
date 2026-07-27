@@ -148,7 +148,10 @@ impl<S: kv::KvStore> MelDb<S> {
             })?;
         let mut batch = ConsensusDbBatch::new();
         for (i, message) in messages.iter().enumerate() {
-            batch.put(schema::MelDelayedMessageAt(first + i as u64), &Rlp(message.clone()));
+            batch.put(
+                schema::MelDelayedMessageAt(first + i as u64),
+                &Rlp(message.clone()),
+            );
         }
         Ok(self.consensus_db.write_batch(batch)?)
     }

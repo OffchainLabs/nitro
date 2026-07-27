@@ -542,8 +542,10 @@ mod tests {
             delayed_messages_seen: 2,
             ..Default::default()
         };
-        let result =
-            move_unread_delayed_messages_to_inbox_accumulator(&mut state, &MockDelayedDb::failing());
+        let result = move_unread_delayed_messages_to_inbox_accumulator(
+            &mut state,
+            &MockDelayedDb::failing(),
+        );
         assert!(matches!(
             result,
             Err(MelError::DelayedAccumulatorCreation(_))
