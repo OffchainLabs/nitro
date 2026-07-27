@@ -4,9 +4,9 @@ use arb_storage::{StorageBackend, StorageError};
 
 use crate::{
     arbos_state::{ArbosState, ArbosStateError},
-    arbos_types::{BatchDataStats, legacy_cost_for_stats},
     blockhash::BlockhashesError,
     burn::Burner,
+    types::{BatchDataStats, legacy_cost_for_stats},
     util::BalanceError,
 };
 

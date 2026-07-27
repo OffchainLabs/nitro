@@ -1,22 +1,23 @@
 use alloy_consensus::Header;
 use alloy_primitives::{B256, keccak256};
 use arb_da_provider_client::DaReaderSource;
-use arbos::arbos_types::{
+use arbos::types::{
     L1_MESSAGE_TYPE_BATCH_POSTING_REPORT, MessageWithMetadata, get_data_stats,
     legacy_cost_for_stats, parse_batch_posting_report_fields,
 };
 
 use crate::{
-    BatchMeta, DelayedInboxMessage, DelayedMessageDB, LogsFetcher, MelError, MelResult, MelState,
-    TxFetcher, batch_lookup, batch_messages, delayed_message_lookup, mel_config_lookup,
-    parse_sequencer_message, serialize_batch,
+    BatchMetadata, DelayedInboxMessage, DelayedMessageDB, LogsFetcher, MelError, MelResult,
+    MelState, TxFetcher, accumulate_delayed_message, accumulate_message, batch_lookup,
+    batch_messages, delayed_message_lookup, mel_config_lookup,
+    move_unread_delayed_messages_to_inbox_accumulator, parse_sequencer_message, serialize_batch,
 };
 
 pub struct ExtractionOutput {
     pub post_state: MelState,
     pub messages: Vec<MessageWithMetadata>,
     pub delayed_messages: Vec<DelayedInboxMessage>,
-    pub batch_metas: Vec<BatchMeta>,
+    pub batch_metas: Vec<BatchMetadata>,
 }
 
 pub async fn extract_messages<R, D, L, T>(
@@ -117,7 +118,7 @@ where
 
     // Update the delayed message inbox accumulator in the MelState.
     for delayed in delayed_messages.iter() {
-        post_state.accumulate_delayed_message(delayed)?;
+        accumulate_delayed_message(&mut post_state, delayed)?;
         post_state.delayed_messages_seen += 1;
     }
 
@@ -149,12 +150,12 @@ where
             delayed_msg_db,
         )?;
         for msg in messages_in_batch.into_iter() {
-            post_state.accumulate_message(&msg)?;
+            accumulate_message(&mut post_state, &msg)?;
             messages.push(msg);
             post_state.msg_count += 1;
         }
         post_state.batch_count += 1;
-        batch_metas.push(BatchMeta {
+        batch_metas.push(BatchMetadata {
             accumulator: batch.after_inbox_acc,
             message_count: post_state.msg_count,
             delayed_message_count: batch.after_delayed_count,
@@ -182,7 +183,7 @@ where
             });
         }
         if post_state.version == 0 {
-            post_state.move_unread_delayed_messages_to_inbox_accumulator(delayed_msg_db)?;
+            move_unread_delayed_messages_to_inbox_accumulator(&mut post_state, delayed_msg_db)?;
         }
         post_state.version = mel_config.mel_version;
         post_state.delayed_message_posting_target_address = mel_config.inbox;
@@ -211,7 +212,7 @@ mod tests {
     use alloy_rpc_types_eth::Log;
     use alloy_sol_types::{SolEvent, sol};
     use arb_da_provider_client::DaReaderRegistry;
-    use arbos::arbos_types::{L1_MESSAGE_TYPE_BATCH_POSTING_REPORT, L1IncomingMessageHeader};
+    use arbos::types::{L1_MESSAGE_TYPE_BATCH_POSTING_REPORT, L1IncomingMessageHeader};
 
     use super::*;
     use crate::{
@@ -319,12 +320,12 @@ mod tests {
         DelayedInboxMessage {
             block_hash: B256::ZERO,
             before_inbox_acc: B256::ZERO,
-            message: arbos::arbos_types::L1IncomingMessage {
+            message: arbos::types::L1IncomingMessage {
                 header: L1IncomingMessageHeader {
                     request_id: Some(request_id),
                     ..Default::default()
                 },
-                l2_msg: vec![i as u8],
+                l2_msg: vec![i as u8].into(),
                 ..Default::default()
             },
             parent_chain_block_number: 0,
@@ -466,7 +467,7 @@ mod tests {
             (3, make_delayed_msg(3)),
             (4, make_delayed_msg(4)),
         ]);
-        state.move_unread_delayed_messages_to_inbox_accumulator(&db)?;
+        move_unread_delayed_messages_to_inbox_accumulator(&mut state, &db)?;
 
         let mut expected = MelState {
             delayed_messages_read: 2,
@@ -474,7 +475,7 @@ mod tests {
             ..Default::default()
         };
         for i in 2..5 {
-            expected.accumulate_delayed_message(&make_delayed_msg(i))?;
+            accumulate_delayed_message(&mut expected, &make_delayed_msg(i))?;
         }
         assert_eq!(
             state.delayed_message_inbox_acc,
@@ -492,7 +493,7 @@ mod tests {
             delayed_messages_seen: 3,
             ..Default::default()
         };
-        state.move_unread_delayed_messages_to_inbox_accumulator(&MockDelayedDb::default())?;
+        move_unread_delayed_messages_to_inbox_accumulator(&mut state, &MockDelayedDb::default())?;
         assert_eq!(state.delayed_message_inbox_acc, B256::ZERO);
         assert_eq!(state.delayed_message_outbox_acc, B256::ZERO);
         Ok(())
@@ -508,7 +509,7 @@ mod tests {
             ..Default::default()
         };
         let db = MockDelayedDb::with_messages([(0, make_delayed_msg(0))]);
-        let result = state.move_unread_delayed_messages_to_inbox_accumulator(&db);
+        let result = move_unread_delayed_messages_to_inbox_accumulator(&mut state, &db);
         assert!(matches!(
             result,
             Err(MelError::NonZeroDelayedAccumulator { .. })
@@ -526,7 +527,7 @@ mod tests {
             ..Default::default()
         };
         let db = MockDelayedDb::with_messages([(0, make_delayed_msg(0))]);
-        let result = state.move_unread_delayed_messages_to_inbox_accumulator(&db);
+        let result = move_unread_delayed_messages_to_inbox_accumulator(&mut state, &db);
         assert!(matches!(
             result,
             Err(MelError::NonZeroDelayedAccumulator { .. })
@@ -541,8 +542,10 @@ mod tests {
             delayed_messages_seen: 2,
             ..Default::default()
         };
-        let result =
-            state.move_unread_delayed_messages_to_inbox_accumulator(&MockDelayedDb::failing());
+        let result = move_unread_delayed_messages_to_inbox_accumulator(
+            &mut state,
+            &MockDelayedDb::failing(),
+        );
         assert!(matches!(
             result,
             Err(MelError::DelayedAccumulatorCreation(_))

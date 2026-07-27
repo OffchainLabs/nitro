@@ -7,10 +7,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use alloy_consensus::{Header, Transaction};
-use alloy_primitives::{Address, B256, U256, keccak256};
+use alloy_primitives::{Address, B256, Bytes, U256, keccak256};
 use alloy_rpc_types_eth::Log;
 use alloy_sol_types::{SolCall, SolEvent, sol};
-use arbos::arbos_types::{L1IncomingMessage, L1IncomingMessageHeader};
+use arbos::types::{L1IncomingMessage, L1IncomingMessageHeader};
 
 use crate::{DelayedInboxMessage, LogsFetcher, MelError, MelResult, MelState, TxFetcher};
 
@@ -110,7 +110,7 @@ where
         if keccak256(data) != ev.messageDataHash {
             return Err(MelError::MessageDataHashMismatch { message_index: key });
         }
-        scaffold.message.l2_msg = data.clone();
+        scaffold.message.l2_msg = data.clone().into();
     }
 
     scaffolds.sort_by_key(|m| m.message.header.request_id);
@@ -154,7 +154,7 @@ fn delayed_message_scaffolds_from_logs(
                     request_id: Some(request_id),
                     l1_base_fee: Some(ev.baseFeeL1),
                 },
-                l2_msg: Vec::new(),
+                l2_msg: Bytes::new(),
                 legacy_batch_gas_cost: None,
                 batch_data_stats: None,
             },
@@ -273,7 +273,7 @@ mod tests {
             &logs,
         )?;
         assert_eq!(out.len(), 1);
-        assert_eq!(out[0].message.l2_msg, data);
+        assert_eq!(out[0].message.l2_msg, data.to_vec());
         assert_eq!(out[0].message.header.kind, 3);
         assert_eq!(out[0].before_inbox_acc, B256::repeat_byte(0x01));
         assert_eq!(
@@ -418,7 +418,7 @@ mod tests {
             &logs,
         )?;
         assert_eq!(out.len(), 1);
-        assert_eq!(out[0].message.l2_msg, data);
+        assert_eq!(out[0].message.l2_msg.as_ref(), data);
         Ok(())
     }
 

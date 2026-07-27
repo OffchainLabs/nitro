@@ -66,7 +66,7 @@ impl MessageBuilder for HeartbeatBuilder {
 
 #[cfg(test)]
 mod tests {
-    use arbos::arbos_types::parse_init_message;
+    use arbos::types::parse_init_message;
 
     use super::*;
     use crate::messaging::test_support::{decode_body, round_trip};

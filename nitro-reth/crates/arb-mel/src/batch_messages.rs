@@ -1,10 +1,10 @@
 use alloy_primitives::U256;
 use arbos::{
-    arbos_types::{
+    l1_pricing::BATCH_POSTER_ADDRESS,
+    types::{
         L1_MESSAGE_TYPE_L2_MESSAGE, L1IncomingMessage, L1IncomingMessageHeader,
         MAX_L2_MESSAGE_SIZE, MessageWithMetadata, invalid_l1_message,
     },
-    l1_pricing::BATCH_POSTER_ADDRESS,
 };
 use tracing::{error, info, warn};
 
@@ -187,7 +187,7 @@ fn produce_l2_message(
                 request_id: None,
                 l1_base_fee: Some(U256::ZERO),
             },
-            l2_msg: seg.unwrap_or(segment.to_vec()),
+            l2_msg: seg.unwrap_or(segment.to_vec()).into(),
             legacy_batch_gas_cost: None,
             batch_data_stats: None,
         },
@@ -229,7 +229,7 @@ fn extract_delayed_msg_from_segment<D: DelayedMessageDB>(
 #[cfg(test)]
 mod tests {
     use alloy_primitives::B256;
-    use arbos::arbos_types::{L1_MESSAGE_TYPE_INVALID, L1IncomingMessage};
+    use arbos::types::{L1_MESSAGE_TYPE_INVALID, L1IncomingMessage};
 
     use super::*;
     use crate::{
@@ -245,7 +245,7 @@ mod tests {
             block_hash: B256::ZERO,
             before_inbox_acc: B256::ZERO,
             message: L1IncomingMessage {
-                l2_msg: l2.to_vec(),
+                l2_msg: l2.to_vec().into(),
                 ..Default::default()
             },
             parent_chain_block_number: 0,
@@ -281,7 +281,7 @@ mod tests {
         let mut state = MelState::default();
         let msgs = extract_batch_messages(&mut state, &mut seq_msg, &MockDelayedDb::default())?;
         assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0].message.l2_msg, b"foobar");
+        assert_eq!(msgs[0].message.l2_msg.as_ref(), b"foobar");
         assert_eq!(msgs[0].message.header.timestamp, 10);
         Ok(())
     }
@@ -298,9 +298,9 @@ mod tests {
         let mut state = MelState::default();
         let msgs = extract_batch_messages(&mut state, &mut seq_msg, &MockDelayedDb::default())?;
         assert_eq!(msgs.len(), 2);
-        assert_eq!(msgs[0].message.l2_msg, b"foobar");
+        assert_eq!(msgs[0].message.l2_msg.as_ref(), b"foobar");
         assert_eq!(msgs[0].message.header.timestamp, 10);
-        assert_eq!(msgs[1].message.l2_msg, b"foobar");
+        assert_eq!(msgs[1].message.l2_msg.as_ref(), b"foobar");
         assert_eq!(msgs[1].message.header.timestamp, 10);
         Ok(())
     }
@@ -315,8 +315,8 @@ mod tests {
         ]);
         let msgs = extract_batch_messages(&mut state, &mut seq_msg, &db)?;
         assert_eq!(msgs.len(), 2);
-        assert_eq!(msgs[0].message.l2_msg, b"foobar");
-        assert_eq!(msgs[1].message.l2_msg, b"barfoo");
+        assert_eq!(msgs[0].message.l2_msg.as_ref(), b"foobar");
+        assert_eq!(msgs[1].message.l2_msg.as_ref(), b"barfoo");
         Ok(())
     }
 
@@ -327,7 +327,7 @@ mod tests {
         let mut state = MelState::default();
         let msgs = extract_batch_messages(&mut state, &mut seq_msg, &MockDelayedDb::default())?;
         assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0].message.l2_msg, b"foobar");
+        assert_eq!(msgs[0].message.l2_msg.as_ref(), b"foobar");
         assert_eq!(msgs[0].message.header.timestamp, 50);
         Ok(())
     }
@@ -346,7 +346,7 @@ mod tests {
         let mut state = MelState::default();
         let msgs = extract_batch_messages(&mut state, &mut seq_msg, &MockDelayedDb::default())?;
         assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0].message.l2_msg, b"foobar");
+        assert_eq!(msgs[0].message.l2_msg.as_ref(), b"foobar");
         assert_eq!(msgs[0].message.header.block_number, 20);
         Ok(())
     }
@@ -360,7 +360,7 @@ mod tests {
         let mut state = MelState::default();
         let msgs = extract_batch_messages(&mut state, &mut seq_msg, &MockDelayedDb::default())?;
         assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0].message.l2_msg, b"foobar");
+        assert_eq!(msgs[0].message.l2_msg.as_ref(), b"foobar");
         Ok(())
     }
 
@@ -401,7 +401,7 @@ mod tests {
         let db = MockDelayedDb::with_messages([(0, delayed_with_l2(b"foobar"))]);
         let msgs = extract_batch_messages(&mut state, &mut seq_msg, &db)?;
         assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0].message.l2_msg, b"foobar");
+        assert_eq!(msgs[0].message.l2_msg.as_ref(), b"foobar");
         Ok(())
     }
 }

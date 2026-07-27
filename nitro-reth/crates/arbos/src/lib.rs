@@ -6,7 +6,6 @@
 pub mod address_set;
 pub mod address_table;
 pub mod arbos_state;
-pub mod arbos_types;
 pub mod block_metadata;
 pub mod block_processor;
 pub mod blockhash;
@@ -25,3 +24,5 @@ pub mod retryables;
 pub mod reverted_tx_gas;
 pub mod tx_processor;
 pub mod util;
+
+pub use arbos_types as types;

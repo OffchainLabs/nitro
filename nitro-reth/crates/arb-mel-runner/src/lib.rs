@@ -11,7 +11,7 @@
 //! are expressed as **traits**, each with a hand-written mock, so the FSM control
 //! flow can be unit-tested without their real implementations. Parent-chain reads
 //! reuse [`arb_parent_chain_client::ParentChainReader`]; the canonical MEL types
-//! (`MelState`, `DelayedInboxMessage`, `BatchMeta`) come from `arb-mel`.
+//! (`MelState`, `DelayedInboxMessage`, `BatchMetadata`) come from `arb-mel`.
 //!
 //! The entry point is [`MessageExtractor`]; [`MessageExtractor::act`] ticks the
 //! FSM once, and [`MessageExtractor::run`] drives it in a loop.
@@ -26,7 +26,7 @@ mod types;
 // The DA provider is the real `arb-da-provider-client`; re-export for convenience.
 pub use arb_da_provider_client::{DaReaderRegistry, DaReaderSource};
 // Canonical MEL types are owned by `arb-mel`; re-export for convenience.
-pub use arb_mel::{BatchMeta, DelayedInboxMessage, ExtractionOutput, MelState};
+pub use arb_mel::{BatchMetadata, DelayedInboxMessage, ExtractionOutput, MelState};
 pub use config::{MessageExtractionConfig, ReadMode};
 pub use consumer::{MessageConsumer, MockMessageConsumer};
 pub use database::{Database, MockDatabase};

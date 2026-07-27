@@ -7,7 +7,7 @@
 
 use std::{collections::HashMap, sync::Mutex};
 
-use arb_mel::{BatchMeta, DelayedInboxMessage, MelState};
+use arb_mel::{BatchMetadata, DelayedInboxMessage, MelState};
 use async_trait::async_trait;
 
 use crate::{MelRunnerError, Result};
@@ -26,7 +26,8 @@ pub trait Database: Send + Sync {
     /// Returns the delayed message at the given index.
     async fn fetch_delayed_message(&self, index: u64) -> Result<DelayedInboxMessage>;
     /// Persists batch metadata produced for `state`.
-    async fn save_batch_metas(&self, state: &MelState, batch_metas: &[BatchMeta]) -> Result<()>;
+    async fn save_batch_metas(&self, state: &MelState, batch_metas: &[BatchMetadata])
+    -> Result<()>;
     /// Persists delayed messages observed for `state`.
     async fn save_delayed_messages(
         &self,
@@ -143,7 +144,11 @@ impl Database for MockDatabase {
         Err(MelRunnerError::NotFound(format!("delayed message {index}")))
     }
 
-    async fn save_batch_metas(&self, _state: &MelState, _batch_metas: &[BatchMeta]) -> Result<()> {
+    async fn save_batch_metas(
+        &self,
+        _state: &MelState,
+        _batch_metas: &[BatchMetadata],
+    ) -> Result<()> {
         self.check_error()
     }
 

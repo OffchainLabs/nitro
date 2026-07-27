@@ -136,7 +136,7 @@ pub(crate) mod test_support {
             .expect("valid base64 in test fixture")
     }
 
-    pub fn round_trip(msg: &L1Message) -> arbos::arbos_types::L1IncomingMessage {
+    pub fn round_trip(msg: &L1Message) -> arbos::types::L1IncomingMessage {
         let body = decode_body(msg);
         let mut wire = Vec::with_capacity(1 + 32 + 8 + 8 + 32 + 32 + body.len());
         wire.push(msg.header.kind);
@@ -150,6 +150,6 @@ pub(crate) mod test_support {
         fee_buf[24..].copy_from_slice(&msg.header.base_fee_l1.to_be_bytes());
         wire.extend_from_slice(&fee_buf);
         wire.extend_from_slice(&body);
-        arbos::arbos_types::parse_incoming_l1_message(&wire).expect("parses cleanly")
+        arbos::types::parse_incoming_l1_message(&wire).expect("parses cleanly")
     }
 }
