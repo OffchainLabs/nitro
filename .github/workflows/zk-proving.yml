@@ -47,6 +47,35 @@ jobs:
       - name: Build
         run: make -C crates/sp1 build
 
+      - name: Record block inputs
+        run: make -C crates/sp1 record-blocks
+
+      # Ground-truth check: every recorded block must validate under JIT.
+      # Once the SP1 runner is ported, it joins this loop and its hash is
+      # compared against JIT's.
+      - name: Validate recorded blocks with JIT
+        run: |
+          set -e -o pipefail
+          for BLOCK in transfer solidity stylus stylus_heavy stylus_activation stylus_activation_multicall mixed signatures; do
+            echo "--- Running JIT validation ($BLOCK) ---"
+            LOG=$(mktemp)
+            if ! ./target/bin/jit \
+              --debug --cranelift \
+              --binary target/machines/latest/replay.wasm \
+              json --inputs="target/sp1/block-inputs/$BLOCK.json" >"$LOG" 2>&1; then
+              echo "::error::JIT validation failed for $BLOCK"
+              cat "$LOG"
+              exit 1
+            fi
+            JIT_HASH=$(grep "Completed in .* with hash" "$LOG" | awk '{print $NF}' | sed 's/\.$//')
+            if [ -z "$JIT_HASH" ]; then
+              echo "::error::Failed to capture JIT hash for $BLOCK"
+              cat "$LOG"
+              exit 1
+            fi
+            echo "$BLOCK JIT hash: $JIT_HASH"
+          done
+
       # Clippy runs after build because sp1-builder uses include_elf!(), which requires the SP1 ELF to exist at compile time.
       - name: Clippy check (SP1 crates)
         run: cargo clippy -p stylus-compiler-program -p stylus-compiler-runner -- -D warnings -A static_mut_refs -A clippy::too_many_arguments
