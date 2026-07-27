@@ -6,6 +6,7 @@ BROTLI_SRC_DIR   := $(TOP)/target/build-sp1/brotli-src
 BROTLI_BUILD_DIR := $(TOP)/target/build-sp1/brotli
 BROTLI_LIB_DIR   := $(TOP)/target/lib-sp1
 OUTPUT_DIR       := $(TOP)/target/sp1
+BLOCK_INPUTS_DIR := $(OUTPUT_DIR)/block-inputs
 
 # Bump SP1's maximum heap memory size.
 export SP1_ZKVM_MAX_MEMORY := 1099511627776
@@ -51,6 +52,35 @@ brotli: # Build brotli for RISC-V (SP1); artifacts go to $(BROTLI_LIB_DIR).
 nitro-deps: # Build necessary nitro dependencies, including replay.wasm
 nitro-deps: brotli
 	@cd $(TOP) && $(MAKE) test-go-deps
+
+.PHONY: record-blocks
+record-blocks: # Run all block-recording system tests; artifacts go to $(BLOCK_INPUTS_DIR).
+record-blocks: nitro-deps
+	@rm -rf $(BLOCK_INPUTS_DIR)
+	@mkdir -p $(BLOCK_INPUTS_DIR)
+	@if cd $(TOP) && go test \
+		-tags block_recording \
+		-run 'TestRecordBlock' \
+		-timeout 5m \
+		-parallel 1 \
+		./system_tests/ -- \
+		-recordBlockInputs.enable=true \
+		-recordBlockInputs.WithBaseDir=$(BLOCK_INPUTS_DIR) \
+		-recordBlockInputs.WithTimestampDirEnabled=false \
+		>$(BLOCK_INPUTS_DIR)/record.log 2>&1; then \
+		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockTransfer/*.json    $(BLOCK_INPUTS_DIR)/transfer.json; \
+		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockSolidity/*.json    $(BLOCK_INPUTS_DIR)/solidity.json; \
+		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockStylus/*.json      $(BLOCK_INPUTS_DIR)/stylus.json; \
+		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockStylusHeavy/*.json $(BLOCK_INPUTS_DIR)/stylus_heavy.json; \
+		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockStylusActivation/*.json $(BLOCK_INPUTS_DIR)/stylus_activation.json; \
+		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockStylusActivationMulticall/*.json $(BLOCK_INPUTS_DIR)/stylus_activation_multicall.json; \
+		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockMixed/*.json       $(BLOCK_INPUTS_DIR)/mixed.json; \
+		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockSignatures/*.json  $(BLOCK_INPUTS_DIR)/signatures.json; \
+		rm -rf $(BLOCK_INPUTS_DIR)/TestRecordBlock*/; \
+		echo "Blocks successfully recorded"; \
+	else \
+		echo "FAIL — record.log:" >&2; cat $(BLOCK_INPUTS_DIR)/record.log >&2; exit 1; \
+	fi
 
 .PHONY: build
 build: # Mocked system build (temporary solution until we have all the necessary crates available)
