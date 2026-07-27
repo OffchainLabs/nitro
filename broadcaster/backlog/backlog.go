@@ -29,6 +29,7 @@ var (
 // Backlog defines the interface for backlog.
 type Backlog interface {
 	Head() BacklogSegment
+	Tail() BacklogSegment
 	Append(*message.BroadcastMessage) error
 	Get(uint64, uint64) (*message.BroadcastMessage, error)
 	Count() uint64
@@ -57,6 +58,11 @@ func NewBacklog(c ConfigFetcher) Backlog {
 // Head return the head backlogSegment within the backlog.
 func (b *backlog) Head() BacklogSegment {
 	return b.head.Load()
+}
+
+// Tail returns the tail backlogSegment within the backlog.
+func (b *backlog) Tail() BacklogSegment {
+	return b.tail.Load()
 }
 
 func (b *backlog) backlogSizeInBytes() (uint64, error) {
