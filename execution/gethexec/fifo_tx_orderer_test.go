@@ -41,8 +41,8 @@ func TestFIFOTxOrdererStartBlockEmpty(t *testing.T) {
 }
 
 // TestFIFOTxOrdererBlockLifecycle covers one block: StartBlock arms the drained candidates,
-// NextQueueItem yields them in order, and TakeRemaining returns the requeued txs followed by the
-// never-yielded tail (preserving drain order), leaving the orderer empty.
+// NextQueueItem yields them in order, and TakeRemaining returns the never-yielded tail,
+// leaving the orderer empty.
 func TestFIFOTxOrdererBlockLifecycle(t *testing.T) {
 	var items []txQueueItem
 	for nonce := range uint64(4) {
@@ -62,11 +62,10 @@ func TestFIFOTxOrdererBlockLifecycle(t *testing.T) {
 	if !ok || second.tx.Nonce() != 1 {
 		t.Fatalf("second yield = (nonce %d, %v), want nonce 1", second.tx.Nonce(), ok)
 	}
-	o.Requeue(first)
 
 	remaining := o.TakeRemaining()
-	if got := queueItemNonces(remaining); !slices.Equal(got, []uint64{0, 2, 3}) {
-		t.Fatalf("TakeRemaining nonces = %v, want [0 2 3] (requeued, then never-yielded tail)", got)
+	if got := queueItemNonces(remaining); !slices.Equal(got, []uint64{2, 3}) {
+		t.Fatalf("TakeRemaining nonces = %v, want [2 3] (the never-yielded tail)", got)
 	}
 	if _, yielded := o.NextQueueItem(); yielded {
 		t.Fatal("NextQueueItem yielded after TakeRemaining")

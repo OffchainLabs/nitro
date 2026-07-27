@@ -1307,7 +1307,7 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrde
 		if errors.Is(err, context.Canceled) {
 			// thread closed. We'll later try to forward these messages.
 			for _, st := range hooks.sequencedTxs {
-				orderer.Requeue(st.queueItem)
+				s.txRetryQueue.Push(st.queueItem)
 			}
 			return nil, config.MaxBlockSpeed // don't return failure to avoid retrying immediately
 		}

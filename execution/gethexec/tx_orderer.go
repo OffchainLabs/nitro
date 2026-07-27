@@ -14,11 +14,7 @@ type txOrderer interface {
 	// any work.
 	StartBlock() (hasWork bool)
 
-	// Requeue returns one tx to the orderer to be retried; the orderer decides whether it may
-	// be yielded again in the current block or only handed back by TakeRemaining.
-	Requeue(item txQueueItem)
-
-	// TakeRemaining removes and returns the txs left in the orderer (the never-yielded
-	// candidates and the requeued txs) for the caller to dispose of.
+	// TakeRemaining removes and returns the never-yielded candidates for the caller to
+	// dispose of.
 	TakeRemaining() []txQueueItem
 }

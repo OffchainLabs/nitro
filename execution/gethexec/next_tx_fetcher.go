@@ -25,8 +25,8 @@ func (f *fixedTxFetcher) NextQueueItem() (txQueueItem, bool) {
 	return item, true
 }
 
-// takeAll removes and returns the not-yet-yielded candidates.
-func (f *fixedTxFetcher) takeAll() []txQueueItem {
+// TakeRemaining removes and returns the not-yet-yielded candidates.
+func (f *fixedTxFetcher) TakeRemaining() []txQueueItem {
 	items := f.items
 	f.items = nil
 	return items
