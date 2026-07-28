@@ -28,14 +28,12 @@ pub enum BlobCodecError {
     Rlp(alloy_rlp::Error),
 }
 
-fn field_elements() -> usize {
-    FIELD_ELEMENTS_PER_BLOB as usize
-}
+const FIELD_ELEMENTS: usize = FIELD_ELEMENTS_PER_BLOB as usize;
 
 /// Fills the 31-byte data region (`1..32`) of each field element from `data`,
 /// returning the unconsumed remainder.
 fn fill_blob_bytes<'a>(blob: &mut [u8; BYTES_PER_BLOB], mut data: &'a [u8]) -> &'a [u8] {
-    for field_element in 0..field_elements() {
+    for field_element in 0..FIELD_ELEMENTS {
         let start = field_element * 32 + 1;
         let n = data.len().min(31);
         blob[start..start + n].copy_from_slice(&data[..n]);
@@ -55,7 +53,7 @@ fn fill_blob_bits<'a>(
 ) -> Result<&'a [u8], BlobCodecError> {
     let mut acc: u16 = 0;
     let mut acc_bits: i32 = 0;
-    for field_element in 0..field_elements() {
+    for field_element in 0..FIELD_ELEMENTS {
         if acc_bits < SPARE_BLOB_BITS && !data.is_empty() {
             acc |= (data[0] as u16) << acc_bits;
             acc_bits += 8;
@@ -96,14 +94,14 @@ pub fn decode_blobs(blobs: &[Blob]) -> Result<Vec<u8>, BlobCodecError> {
     for blob in blobs {
         let bytes = &blob.0;
         // The 31 data bytes from each field element (positions 1..32).
-        for field_index in 0..field_elements() {
+        for field_index in 0..FIELD_ELEMENTS {
             let start = field_index * 32 + 1;
             rlp_data.extend_from_slice(&bytes[start..start + 31]);
         }
         // Reassemble the bytes packed 6-bits-at-a-time into each element's byte 0.
         let mut acc: u16 = 0;
         let mut acc_bits: i32 = 0;
-        for field_index in 0..field_elements() {
+        for field_index in 0..FIELD_ELEMENTS {
             acc |= (bytes[field_index * 32] as u16) << acc_bits;
             acc_bits += SPARE_BLOB_BITS;
             if acc_bits >= 8 {

@@ -57,22 +57,38 @@ impl<P: ParentChainReader> LogsAndHeadersFetcher<P> {
     }
 
     /// The parent-chain header at `number`, served from the prefetched range
-    /// cache when present, otherwise forwarded to the reader.
-    pub(crate) async fn get_header_by_number(&self, number: u64) -> Result<Option<Header>> {
-        if number >= self.from_block && number <= self.to_block {
-            let pos = (number - self.from_block) as usize;
-            if let Some(Some(header)) = self.headers.get(pos) {
-                return Ok(Some(header.clone()));
-            }
+    /// cache when present, otherwise fetched and written back into its slot.
+    /// Mirrors nitro's `getHeaderByNumber`.
+    pub(crate) async fn get_header_by_number(&mut self, number: u64) -> Result<Option<Header>> {
+        // `None` unless the cache holds one slot per block of the range and
+        // covers `number`; a cache out of step with the range would otherwise
+        // serve another block's header.
+        let range_len = self.to_block.saturating_sub(self.from_block) + 1;
+        let slot = (self.headers.len() as u64 == range_len
+            && (self.from_block..=self.to_block).contains(&number))
+        .then(|| (number - self.from_block) as usize);
+
+        if let Some(pos) = slot
+            && let Some(header) = &self.headers[pos]
+        {
+            return Ok(Some(header.clone()));
         }
-        Ok(self
+
+        let header = self
             .parent_chain_reader
             .header_by_number(BlockNumberOrTag::Number(number))
-            .await?)
+            .await?;
+
+        // `None` means not posted yet; the caller retries and wants a fresh read.
+        if let (Some(pos), Some(header)) = (slot, &header) {
+            self.headers[pos] = Some(header.clone());
+        }
+        Ok(header)
     }
 
     /// Prefetches the logs for the next block range, unless it is already cached.
-    /// Mirrors nitro's `fetch`.
+    /// Mirrors nitro's `fetch`, which splits headers from logs; here all five
+    /// range reads are issued at once, since they're merged in a fixed order.
     pub(crate) async fn fetch(&mut self, pre_state: &MelState) -> Result<()> {
         let next = pre_state.parent_chain_block_number + 1;
         if next <= self.to_block {
@@ -95,65 +111,53 @@ impl<P: ParentChainReader> LogsAndHeadersFetcher<P> {
             to = self.chain_height.min(to);
         }
 
-        // Prefetch the range's headers (one batch) so `get_header_by_number`
-        // serves from cache. Held in a local until every fallible fetch below
-        // succeeds, so an error leaves the fetcher in its reset (empty) state.
-        let headers = self
-            .parent_chain_reader
-            .headers_by_number_range(next, to)
-            .await?;
-
         // Sequencer batch delivery + data (no address filter, like nitro).
-        let seq_batch_logs = self
-            .parent_chain_reader
-            .filter_logs(
-                &Filter::new()
-                    .from_block(next)
-                    .to_block(to)
-                    .event_signature(vec![
-                        SequencerBatchDelivered::SIGNATURE_HASH,
-                        SequencerBatchData::SIGNATURE_HASH,
-                    ]),
-            )
-            .await?;
+        let seq_batch_filter = Filter::new()
+            .from_block(next)
+            .to_block(to)
+            .event_signature(vec![
+                SequencerBatchDelivered::SIGNATURE_HASH,
+                SequencerBatchData::SIGNATURE_HASH,
+            ]);
         // Delayed messages: `MessageDelivered` at the delayed-inbox target...
-        let delayed_delivered = self
-            .parent_chain_reader
-            .filter_logs(
-                &Filter::new()
-                    .from_block(next)
-                    .to_block(to)
-                    .address(pre_state.delayed_message_posting_target_address)
-                    .event_signature(MessageDelivered::SIGNATURE_HASH),
-            )
-            .await?;
+        let delayed_delivered_filter = Filter::new()
+            .from_block(next)
+            .to_block(to)
+            .address(pre_state.delayed_message_posting_target_address)
+            .event_signature(MessageDelivered::SIGNATURE_HASH);
         // ...and the inbox-message events (any address).
-        let delayed_inbox = self
-            .parent_chain_reader
-            .filter_logs(
-                &Filter::new()
-                    .from_block(next)
-                    .to_block(to)
-                    .event_signature(vec![
-                        InboxMessageDelivered::SIGNATURE_HASH,
-                        InboxMessageDeliveredFromOrigin::SIGNATURE_HASH,
-                    ]),
-            )
-            .await?;
-        // MEL config updates, only when a rollup address is configured.
-        let mel_config = if self.rollup_addr != Address::ZERO {
-            self.parent_chain_reader
-                .filter_logs(
-                    &Filter::new()
-                        .from_block(next)
-                        .to_block(to)
-                        .address(self.rollup_addr)
-                        .event_signature(MELConfigSet::SIGNATURE_HASH),
-                )
-                .await?
-        } else {
-            Vec::new()
-        };
+        let delayed_inbox_filter =
+            Filter::new()
+                .from_block(next)
+                .to_block(to)
+                .event_signature(vec![
+                    InboxMessageDelivered::SIGNATURE_HASH,
+                    InboxMessageDeliveredFromOrigin::SIGNATURE_HASH,
+                ]);
+        let mel_config_filter = Filter::new()
+            .from_block(next)
+            .to_block(to)
+            .address(self.rollup_addr)
+            .event_signature(MELConfigSet::SIGNATURE_HASH);
+
+        let reader = &self.parent_chain_reader;
+        let rollup_addr = self.rollup_addr;
+        // Results stay in locals until all five succeed, so an error leaves the
+        // fetcher in its reset (empty) state.
+        let (headers, seq_batch_logs, delayed_delivered, delayed_inbox, mel_config) = tokio::try_join!(
+            reader.headers_by_number_range(next, to),
+            reader.filter_logs(&seq_batch_filter),
+            reader.filter_logs(&delayed_delivered_filter),
+            reader.filter_logs(&delayed_inbox_filter),
+            // MEL config updates, only when a rollup address is configured.
+            async {
+                if rollup_addr != Address::ZERO {
+                    reader.filter_logs(&mel_config_filter).await
+                } else {
+                    Ok(Vec::new())
+                }
+            },
+        )?;
 
         // All fallible fetches succeeded; populate the caches together.
         self.headers = headers;
@@ -215,8 +219,13 @@ impl<P: ParentChainReader> LogsFetcher for LogsAndHeadersFetcher<P> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use alloy_primitives::{Address, B256, Bytes, LogData};
-    use arb_parent_chain_client::{MockParentChainReader, test_utils::header};
+    use alloy_rpc_types_eth::{Block, Transaction, TransactionReceipt};
+    use arb_parent_chain_client::{
+        MockParentChainReader, Result as ParentChainResult, test_utils::header,
+    };
 
     use super::*;
 
@@ -311,7 +320,7 @@ mod tests {
     async fn get_header_by_number_forwards_to_reader() {
         let mut mock = MockParentChainReader::new();
         mock.with_header(header(9, B256::repeat_byte(0x09)));
-        let fetcher = LogsAndHeadersFetcher::new(Arc::new(mock), 10, Address::ZERO);
+        let mut fetcher = LogsAndHeadersFetcher::new(Arc::new(mock), 10, Address::ZERO);
 
         let got = fetcher.get_header_by_number(9).await.unwrap();
         assert_eq!(got.unwrap().inner.number, 9);
@@ -338,6 +347,153 @@ mod tests {
         assert_eq!(fetcher.get_header_by_number(5).await.unwrap(), Some(h5));
         // A block outside the cached range forwards and hits the erroring reader.
         assert!(fetcher.get_header_by_number(50).await.is_err());
+    }
+
+    /// A [`ParentChainReader`] for asserting *how* the prefetcher reads.
+    ///
+    /// Its range batch always comes up empty, so header lookups fall through to
+    /// `header_by_number`, which is counted. Gated reads yield once, so peak
+    /// `in_flight` is the number issued concurrently (1 if awaited one by one).
+    /// Everything else delegates to an empty [`MockParentChainReader`].
+    #[derive(Default)]
+    struct ProbeReader {
+        inner: MockParentChainReader,
+        in_flight: AtomicUsize,
+        max_in_flight: AtomicUsize,
+        single_header_reads: AtomicUsize,
+    }
+
+    impl ProbeReader {
+        fn with_headers(headers: impl IntoIterator<Item = Header>) -> Self {
+            let mut inner = MockParentChainReader::new();
+            for header in headers {
+                inner.with_header(header);
+            }
+            Self {
+                inner,
+                ..Default::default()
+            }
+        }
+
+        async fn gate(&self) {
+            let now = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            self.max_in_flight.fetch_max(now, Ordering::SeqCst);
+            tokio::task::yield_now().await;
+            self.in_flight.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ParentChainReader for ProbeReader {
+        async fn headers_by_number_range(
+            &self,
+            from: u64,
+            to: u64,
+        ) -> ParentChainResult<Vec<Option<Header>>> {
+            self.gate().await;
+            Ok(vec![None; (to - from + 1) as usize])
+        }
+
+        async fn filter_logs(&self, _q: &Filter) -> ParentChainResult<Vec<Log>> {
+            self.gate().await;
+            Ok(Vec::new())
+        }
+
+        async fn header_by_number(
+            &self,
+            num: BlockNumberOrTag,
+        ) -> ParentChainResult<Option<Header>> {
+            self.single_header_reads.fetch_add(1, Ordering::SeqCst);
+            self.inner.header_by_number(num).await
+        }
+        async fn header_by_hash(&self, hash: B256) -> ParentChainResult<Option<Header>> {
+            self.inner.header_by_hash(hash).await
+        }
+        async fn block_by_number(&self, num: BlockNumberOrTag) -> ParentChainResult<Option<Block>> {
+            self.inner.block_by_number(num).await
+        }
+        async fn block_by_hash(&self, hash: B256) -> ParentChainResult<Option<Block>> {
+            self.inner.block_by_hash(hash).await
+        }
+        async fn transaction_in_block(
+            &self,
+            block: B256,
+            index: u64,
+        ) -> ParentChainResult<Option<Transaction>> {
+            self.inner.transaction_in_block(block, index).await
+        }
+        async fn transaction_receipt(
+            &self,
+            tx: B256,
+        ) -> ParentChainResult<Option<TransactionReceipt>> {
+            self.inner.transaction_receipt(tx).await
+        }
+        async fn transaction_by_hash(&self, hash: B256) -> ParentChainResult<Option<Transaction>> {
+            self.inner.transaction_by_hash(hash).await
+        }
+    }
+
+    #[tokio::test]
+    async fn range_reads_are_issued_concurrently() {
+        let probe = Arc::new(ProbeReader::default());
+        // A non-zero rollup address, so the MEL-config query is issued too.
+        let mut fetcher = LogsAndHeadersFetcher::new(probe.clone(), 10, Address::repeat_byte(0xaa));
+        fetcher.chain_height = 100; // skip the head lookup
+
+        let state = MelState {
+            parent_chain_block_number: 1,
+            ..Default::default()
+        };
+        fetcher.fetch(&state).await.unwrap();
+
+        // The header batch plus the four log filters, all in flight at once.
+        assert_eq!(probe.max_in_flight.load(Ordering::SeqCst), 5);
+    }
+
+    #[tokio::test]
+    async fn header_missed_by_the_range_batch_is_cached() {
+        let h5 = header(5, B256::repeat_byte(0x05));
+        let probe = Arc::new(ProbeReader::with_headers([h5.clone()]));
+        let mut fetcher = LogsAndHeadersFetcher::new(probe.clone(), 10, Address::ZERO);
+        fetcher.chain_height = 100; // skip the head lookup
+
+        let state = MelState {
+            parent_chain_block_number: 1,
+            ..Default::default()
+        };
+        fetcher.fetch(&state).await.unwrap();
+
+        // The first lookup misses the empty slot and falls through to the
+        // reader; the write-back serves the second.
+        for _ in 0..2 {
+            assert_eq!(
+                fetcher.get_header_by_number(5).await.unwrap(),
+                Some(h5.clone())
+            );
+        }
+        assert_eq!(probe.single_header_reads.load(Ordering::SeqCst), 1);
+
+        // A block that isn't posted yet must not be cached as absent.
+        for _ in 0..2 {
+            assert!(fetcher.get_header_by_number(6).await.unwrap().is_none());
+        }
+        assert_eq!(probe.single_header_reads.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn header_cache_out_of_step_with_range_falls_back() {
+        let h5 = header(5, B256::repeat_byte(0x05));
+        let mut mock = MockParentChainReader::new();
+        mock.with_header(h5.clone());
+        let mut fetcher = LogsAndHeadersFetcher::new(Arc::new(mock), 10, Address::ZERO);
+
+        // Three cached headers against a one-block range: slot 0 must not be
+        // read as block 5's header.
+        fetcher.headers = vec![Some(header(100, B256::repeat_byte(0x64))), None, None];
+        fetcher.from_block = 5;
+        fetcher.to_block = 5;
+
+        assert_eq!(fetcher.get_header_by_number(5).await.unwrap(), Some(h5));
     }
 
     #[tokio::test]

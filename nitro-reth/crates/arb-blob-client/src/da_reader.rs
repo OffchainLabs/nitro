@@ -39,14 +39,14 @@ impl ReaderForBlobReader {
         need_preimages: bool,
     ) -> Result<(Payload, Preimages)> {
         if sequencer_msg.len() < BLOB_HASHES_OFFSET {
-            return Err(DaError::Provider(format!(
+            return Err(DaError::MalformedSequencerMessage(format!(
                 "sequencer message too short for blob batch: expected at least {BLOB_HASHES_OFFSET} bytes, got {}",
                 sequencer_msg.len()
             )));
         }
         let blob_hashes = &sequencer_msg[BLOB_HASHES_OFFSET..];
         if !blob_hashes.len().is_multiple_of(32) {
-            return Err(DaError::Provider(
+            return Err(DaError::MalformedSequencerMessage(
                 "blob batch data is not a list of hashes as expected".to_string(),
             ));
         }
@@ -57,7 +57,7 @@ impl ReaderForBlobReader {
             .blob_reader
             .get_blobs(batch_block_hash, &versioned_hashes)
             .await
-            .map_err(|e| DaError::Provider(format!("failed to get blobs: {e}")))?;
+            .map_err(DaError::provider)?;
 
         let mut preimages = Preimages::new();
         if need_preimages {
@@ -130,7 +130,7 @@ impl DaReader for ReaderForBlobReader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{MockBlobReader, blobs::encode_blobs};
+    use crate::{BlobError, MockBlobReader, blobs::encode_blobs};
 
     fn block_hash() -> B256 {
         B256::repeat_byte(0x11)
@@ -197,7 +197,7 @@ mod tests {
             .recover_payload(1, block_hash(), &[0u8; 40])
             .await
             .unwrap_err();
-        assert!(matches!(err, DaError::Provider(_)));
+        assert!(matches!(err, DaError::MalformedSequencerMessage(_)));
     }
 
     #[tokio::test]
@@ -210,6 +210,32 @@ mod tests {
             .recover_payload(1, block_hash(), &msg)
             .await
             .unwrap_err();
-        assert!(matches!(err, DaError::Provider(_)));
+        assert!(matches!(err, DaError::MalformedSequencerMessage(_)));
+    }
+
+    #[tokio::test]
+    async fn blob_reader_failure_keeps_the_concrete_error() {
+        let hashes = vec![B256::repeat_byte(0xaa)];
+        let mut mock = MockBlobReader::new();
+        mock.with_error(block_hash(), &hashes, || BlobError::NotInitialized);
+        let reader = ReaderForBlobReader::new(Arc::new(mock));
+
+        let err = reader
+            .recover_payload(1, block_hash(), &sequencer_msg(&hashes))
+            .await
+            .unwrap_err();
+
+        let source = match &err {
+            DaError::Provider(source) => source,
+            other => panic!("expected Provider, got {other:?}"),
+        };
+        // The blob reader's own error survives the boxing, so a caller that
+        // knows the concrete type can act on the specific failure.
+        assert!(matches!(
+            source.downcast_ref::<BlobError>(),
+            Some(BlobError::NotInitialized)
+        ));
+        // ...and it still reads without downcasting.
+        assert!(err.to_string().contains("not initialized"));
     }
 }

@@ -33,7 +33,7 @@ impl ParentChainReader for RpcParentChainReader {
         // One JSON-RPC batch (geth's `BatchCallContext` equivalent): queue an
         // `eth_getHeaderByNumber` per block, send once, then collect in order.
         // Responses are matched to calls by request id, so `waiters` stays aligned
-        // with `from..=to`.
+        // with `from..=to`. This is a geth/reth specific RPC call
         let mut batch = BatchRequest::new(self.provider.client());
         let mut waiters = Vec::with_capacity((to - from + 1) as usize);
         for n in from..=to {

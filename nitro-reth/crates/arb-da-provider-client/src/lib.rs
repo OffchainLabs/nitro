@@ -9,7 +9,7 @@
 //! deterministic, no-IO processing is expected to pull what it needs through
 //! this reader first and then work on the results.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, error::Error};
 
 use alloy_primitives::B256;
 use alloy_transport::{RpcError, TransportErrorKind};
@@ -34,10 +34,33 @@ pub enum DaError {
     /// The provider returned a preimage type this client doesn't recognise.
     #[error("unknown preimage type: {0}")]
     UnknownPreimageType(u8),
-    /// A DA provider failed while recovering a batch payload (e.g. fetching or
-    /// parsing the underlying data). Carries the provider's error message.
+    /// The sequencer message isn't in the shape the DA provider registered for
+    /// its header byte expects, so no payload can be recovered from it.
+    ///
+    /// Permanent: the batch data is fixed on the parent chain, so reading again
+    /// yields the same bytes and fails the same way.
+    #[error("malformed sequencer message: {0}")]
+    MalformedSequencerMessage(String),
+    /// A DA provider failed while recovering a batch payload, e.g. while
+    /// fetching the underlying data.
+    ///
+    /// The source is the provider's own error (`BlobError` for the blob reader),
+    /// kept as a trait object because this crate sits below the providers that
+    /// implement [`DaReader`]. Callers needing more than the message can walk
+    /// [`Error::source`] or downcast the boxed error to the provider's concrete
+    /// type. Build one with [`DaError::provider`].
     #[error("data availability provider error: {0}")]
-    Provider(String),
+    Provider(#[source] Box<dyn Error + Send + Sync + 'static>),
+}
+
+impl DaError {
+    /// Wraps a DA provider's own error as [`DaError::Provider`].
+    pub fn provider<E>(err: E) -> Self
+    where
+        E: Error + Send + Sync + 'static,
+    {
+        Self::Provider(Box::new(err))
+    }
 }
 
 /// Return type of [`DaReader`].
