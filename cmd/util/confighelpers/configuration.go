@@ -242,6 +242,14 @@ func BeginCommonParse(f *pflag.FlagSet, args []string) (*koanf.Koanf, error) {
 		return nil, err
 	}
 
+	// Check the nitro version range the configuration declares before any other
+	// field is interpreted, so that a configuration written for a different
+	// nitro version reports that rather than surfacing later as EndCommonParse's
+	// "has invalid keys".
+	if err := CheckVersionRange(k.String("conf.min-version"), k.String("conf.max-version")); err != nil {
+		return nil, err
+	}
+
 	return k, nil
 }
 

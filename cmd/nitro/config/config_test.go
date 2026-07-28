@@ -145,6 +145,159 @@ func TestGenesisJsonFileDirectoryClearsDefaultEmptyInit(t *testing.T) {
 	}
 }
 
+func TestConfigVersionRange(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// nodeVersion empty means the ldflags are left unset, as in a local build
+		// or a test binary.
+		nodeVersion string
+		jsonConfig  string
+		// wantErr empty means the configuration is expected to parse.
+		wantErr string
+	}{
+
+		{
+			name:       "excluded from version checks - local build i.e. no version",
+			jsonConfig: `{"conf":{"min-version":"v3.9.9", "max-version":"v3.9.9"}}`,
+		},
+		{
+			name:        "excluded from version checks - untagged ci build is not checked",
+			nodeVersion: "dev-26b4b9b",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.9", "max-version":"v3.9.9"}}`,
+		},
+		{
+			name:        "excluded from version checks - untagged branch build is not checked",
+			nodeVersion: "branch-26b4b9b",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.9", "max-version":"v3.9.9"}}`,
+		},
+		{
+			name:        "version check passes - no version fields present",
+			nodeVersion: "v3.9.9",
+			jsonConfig:  `{"conf":{}}`,
+		},
+		{
+			name:        "version check passes - unknown key is reported",
+			nodeVersion: "v3.9.9",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.0", "totally-unknown-key":true}}`,
+			wantErr:     "invalid keys",
+		},
+		{
+			name:        "version check passes - build metadata ignored",
+			nodeVersion: "v3.9.9-26b4b9b",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.0","max-version":"v3.10.0"}}`,
+		},
+		{
+			name:        "version check passes - build metadata ignored with prerelease",
+			nodeVersion: "v3.9.9-rc.2-26b4b9b",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.0","max-version":"v3.10.0"}}`,
+		},
+		{
+			name:        "version check passes - simple",
+			nodeVersion: "v3.9.3",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.0","max-version":"v3.10.0"}}`,
+		},
+		{
+			name:        "version check passes - simple min",
+			nodeVersion: "v3.9.0",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.0","max-version":"v3.10.0"}}`,
+		},
+		{
+			name:        "version check passes - simple max",
+			nodeVersion: "v3.10.0",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.0","max-version":"v3.10.0"}}`,
+		},
+		{
+			name:        "version check passes - single",
+			nodeVersion: "v3.9.3",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.3","max-version":"v3.9.3"}}`,
+		},
+		{
+			name:        "version check passes - just max",
+			nodeVersion: "v2.9.3",
+			jsonConfig:  `{"conf":{"max-version":"v3.9.3"}}`,
+		},
+		{
+			name:        "version check passes - just min",
+			nodeVersion: "v4.9.3",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.3"}}`,
+		},
+		{
+			name:        "version check passes - short syntax",
+			nodeVersion: "v3.9",
+			jsonConfig:  `{"conf":{"min-version":"v3.8.0","max-version":"v3.10.0"}}`,
+		},
+		{
+			name:        "version check passes - short syntax in config",
+			nodeVersion: "v3.9.5",
+			jsonConfig:  `{"conf":{"min-version":"v3.9","max-version":"v3.10"}}`,
+		},
+		{
+			name:        "version check fails - even with unknown key present",
+			nodeVersion: "v3.10.1",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.0","max-version":"v3.10.0","totally-unknown-key":true}}`,
+			wantErr:     "conf.max-version",
+		},
+		{
+			name:        "version check fails - prerelease is before",
+			nodeVersion: "v3.9.0-rc.2",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.0","max-version":"v3.10.0"}}`,
+			wantErr:     "conf.min-version",
+		},
+		{
+			name:        "version check fails - prerelease is before",
+			nodeVersion: "v3.10.1-rc.2",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.0","max-version":"v3.10.0"}}`,
+			wantErr:     "conf.max-version",
+		},
+		{
+			name:        "version check fails - newer than max-version",
+			nodeVersion: "v3.9.1",
+			jsonConfig:  `{"conf":{"max-version":"v3.9.0"}}`,
+			wantErr:     "conf.max-version",
+		},
+		{
+			name:        "version check fails - invalid version bounds - min-version",
+			nodeVersion: "v3.9.9",
+			jsonConfig:  `{"conf":{"min-version":"3.9"}}`,
+			wantErr:     "invalid conf.min-version",
+		},
+		{
+			name:        "version check fails - invalid version bounds - max-version",
+			nodeVersion: "v3.9.9",
+			jsonConfig:  `{"conf":{"max-version":"3.9"}}`,
+			wantErr:     "invalid conf.max-version",
+		},
+		{
+			name:        "version check fails - invalid version bounds - min-version and max-version",
+			nodeVersion: "v3.9.9",
+			jsonConfig:  `{"conf":{"min-version":"abc", "max-version":"def"}}`,
+			wantErr:     "invalid conf.min-version",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.nodeVersion != "" {
+				defer confighelpers.SetVersionForTesting(tc.nodeVersion)()
+			}
+			configFile := filepath.Join(t.TempDir(), "config.json")
+			Require(t, WriteToConfigFile(configFile, tc.jsonConfig))
+
+			args := []string{"--persistent.chain", "/tmp/data", "--chain.id", "421613", "--conf.file", configFile}
+			_, _, err := ParseNode(context.Background(), args)
+
+			if tc.wantErr == "" {
+				Require(t, err)
+				return
+			}
+			if err == nil {
+				Fail(t, "expected error containing", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				Fail(t, "expected error containing", tc.wantErr, "got:", err.Error())
+			}
+		})
+	}
+}
+
 func TestReloads(t *testing.T) {
 	var check func(node reflect.Value, cold bool, path string)
 	check = func(node reflect.Value, cold bool, path string) {
