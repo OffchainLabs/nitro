@@ -958,7 +958,6 @@ where
     EthApiError: FromEvmError<N::Evm>,
     Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError, Evm = N::Evm>,
 {
-    // TODO(jsouto18): Is this currently supported in Arbitrum?
     /// `eth_getBlockAccessList*` is unsupported on Arbitrum for now.
     ///
     /// reth's default implementation reconstructs the access list by replaying
