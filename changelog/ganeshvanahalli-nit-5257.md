@@ -1,2 +1,2 @@
 ### Fixed
-- Bug where stale keys were not deleted at startup during a sequence number jump
+- Bug where stale keys were not deleted during a sequence number jump
