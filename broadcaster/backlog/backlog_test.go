@@ -4,6 +4,7 @@ package backlog
 
 import (
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 )
 
 func validateBacklog(t *testing.T, b *backlog, count, start, end uint64, lookupKeys []arbutil.MessageIndex) {
+	t.Helper()
 	if b.Count() != count {
 		t.Errorf("backlog message count (%d) does not equal expected message count (%d)", b.Count(), count)
 	}
@@ -29,16 +31,21 @@ func validateBacklog(t *testing.T, b *backlog, count, start, end uint64, lookupK
 		t.Errorf("tail of backlog (%d) does not equal expected tail (%d)", tail.End(), end)
 	}
 
+	// Must be exactly these keys: a stale entry keeps its whole forward segment
+	// chain reachable, and checking only for presence would miss it.
+	expKeys := make([]uint64, 0, len(lookupKeys))
 	for _, k := range lookupKeys {
-		if _, err := b.Lookup(uint64(k)); err != nil {
-			t.Errorf("failed to find message (%d) in lookup", k)
-		}
+		expKeys = append(expKeys, uint64(k))
+	}
+	actualKeys := b.lookupByIndex.Load().Keys()
+	slices.Sort(expKeys)
+	slices.Sort(actualKeys)
+	if !slices.Equal(expKeys, actualKeys) {
+		t.Errorf("lookupByIndex keys (%v) do not equal expected keys (%v)", actualKeys, expKeys)
 	}
 
-	expLen := uint64(len(lookupKeys))
-	actualLen := b.Count()
-	if expLen != actualLen {
-		t.Errorf("expected length of lookupByIndex map (%d) does not equal actual length (%d)", expLen, actualLen)
+	if uint64(len(lookupKeys)) != b.Count() {
+		t.Errorf("expected number of messages (%d) does not equal backlog message count (%d)", len(lookupKeys), b.Count())
 	}
 }
 
@@ -104,6 +111,17 @@ func TestAppend(t *testing.T) {
 			expectedStart:      45,
 			expectedEnd:        46,
 			expectedLookupKeys: []arbutil.MessageIndex{45, 46},
+		},
+		// Drop on the segment head also points at, so head.Start() has already
+		// moved by the time the drop is handled.
+		{
+			name:               "NonSequentialSingleSegment",
+			backlogIndexes:     []arbutil.MessageIndex{40, 41},
+			newIndexes:         []arbutil.MessageIndex{45},
+			expectedCount:      1,
+			expectedStart:      45,
+			expectedEnd:        45,
+			expectedLookupKeys: []arbutil.MessageIndex{45},
 		},
 		{
 			name:               "MessageSeen",
@@ -305,6 +323,72 @@ func TestDelete(t *testing.T) {
 }
 
 // make sure that an append, then delete, then append ends up with the correct messageCounts
+func TestAppendDeleteAppend(t *testing.T) {
+	b, err := createDummyBacklog([]arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46})
+	if err != nil {
+		t.Fatalf("error creating dummy backlog: %s", err)
+	}
+	validateBacklog(t, b, 7, 40, 46, []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46})
+
+	err = b.Append(&message.BroadcastMessage{
+		ConfirmedSequenceNumberMessage: &message.ConfirmedSequenceNumberMessage{SequenceNumber: 43},
+	})
+	if err != nil {
+		t.Fatalf("error appending confirmed sequence number: %s", err)
+	}
+	validateBacklog(t, b, 3, 44, 46, []arbutil.MessageIndex{44, 45, 46})
+
+	err = b.Append(message.CreateDummyBroadcastMessage([]arbutil.MessageIndex{47, 48}))
+	if err != nil {
+		t.Fatalf("error appending BroadcastMessage: %s", err)
+	}
+	validateBacklog(t, b, 5, 44, 48, []arbutil.MessageIndex{44, 45, 46, 47, 48})
+}
+
+// TestDropSegmentsReleasesOldSegments covers errDropSegments emptying the head
+// segment. Stale lookup entries must not survive: they keep their segment, and
+// every segment linked after it, alive while the gauges stay flat.
+func TestDropSegmentsReleasesOldSegments(t *testing.T) {
+	b, err := createDummyBacklog([]arbutil.MessageIndex{40, 41})
+	if err != nil {
+		t.Fatalf("error creating dummy backlog: %s", err)
+	}
+	dropped := b.head.Load()
+	if dropped != b.tail.Load() {
+		t.Fatal("test requires the backlog to be a single segment so that head is the segment being appended to")
+	}
+
+	// 45 is ahead of the expected sequence number, so the segment is emptied.
+	err = b.Append(message.CreateDummyBroadcastMessage([]arbutil.MessageIndex{45}))
+	if err != nil {
+		t.Fatalf("error appending BroadcastMessage: %s", err)
+	}
+	validateBacklog(t, b, 1, 45, 45, []arbutil.MessageIndex{45})
+
+	// Give the dropped segment a nextSegment, then confirm past it so it leaves
+	// the head to tail window.
+	err = b.Append(message.CreateDummyBroadcastMessage([]arbutil.MessageIndex{46, 47, 48, 49, 50}))
+	if err != nil {
+		t.Fatalf("error appending BroadcastMessage: %s", err)
+	}
+	err = b.Append(&message.BroadcastMessage{
+		ConfirmedSequenceNumberMessage: &message.ConfirmedSequenceNumberMessage{SequenceNumber: 47},
+	})
+	if err != nil {
+		t.Fatalf("error appending confirmed sequence number: %s", err)
+	}
+	if b.head.Load() == dropped {
+		t.Fatal("test setup: confirming 47 should have advanced head past the dropped segment")
+	}
+	validateBacklog(t, b, 3, 48, 50, []arbutil.MessageIndex{48, 49, 50})
+
+	lookup := b.lookupByIndex.Load()
+	for _, k := range lookup.Keys() {
+		if segment, ok := lookup.Load(k); ok && segment == dropped {
+			t.Errorf("lookupByIndex[%d] still references the segment emptied by the drop, keeping every later segment reachable", k)
+		}
+	}
+}
 
 func TestGetEmptyBacklog(t *testing.T) {
 	b, err := createDummyBacklog([]arbutil.MessageIndex{})

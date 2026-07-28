@@ -24,6 +24,10 @@ var (
 	confirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/sequencenumber/confirmed", nil)
 	backlogSizeInBytesGauge      = metrics.NewRegisteredGauge("arb/feed/backlog/bytes", nil)
 	backlogSizeGauge             = metrics.NewRegisteredGauge("arb/feed/backlog/messages", nil)
+
+	// The bytes and messages gauges only cover the head to tail window, so
+	// neither reacts to a drop. This counter is the only signal.
+	segmentsDroppedCounter = metrics.NewRegisteredCounter("arb/feed/backlog/segments/dropped", nil)
 )
 
 // Backlog defines the interface for backlog.
@@ -173,12 +177,15 @@ func (b *backlog) Append(bm *message.BroadcastMessage) error {
 
 		err := segment.append(prevMsgIdx, msgToAppend)
 		if errors.Is(err, errDropSegments) {
-			head := b.head.Load()
-			b.removeFromLookup(head.Start(), uint64(msg.SequenceNumber))
+			// msg is now the only message in the backlog, hence empty out lookupByIndex
+			// so that there aren't any stale messages being tracked
+			lookupByIndex = &containers.SyncMap[uint64, *backlogSegment]{}
+			b.lookupByIndex.Store(lookupByIndex)
 			b.head.Store(segment)
 			b.tail.Store(segment)
 			b.messageCount.Store(0)
 			backlogSizeInBytesGauge.Update(0)
+			segmentsDroppedCounter.Inc(1)
 			log.Warn(err.Error())
 		} else if err != nil {
 			return err
