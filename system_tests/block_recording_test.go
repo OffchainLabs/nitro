@@ -25,8 +25,13 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
+// fixedRecordGasLimit is used instead of eth_estimateGas for txs that are
+// batched or depend on prior unmined txs and therefore cannot be estimated
+// independently.
+const fixedRecordGasLimit = 32_000_000
+
 // ---------------------------------------------------------------------------
-// 1. Pure ETH transfer — no contract interactions
+// Pure ETH transfer — no contract interactions
 // ---------------------------------------------------------------------------
 
 func TestRecordBlockTransfer(t *testing.T) {
@@ -37,13 +42,13 @@ func TestRecordBlockTransfer(t *testing.T) {
 	l2info.GenerateAccount("Receiver")
 	tx := l2info.PrepareTx("Owner", "Receiver", l2info.TransferGas, big.NewInt(1e16), nil)
 	Require(t, builder.L2.Client.SendTransaction(builder.ctx, tx))
-	receipt := ensureTx(t, builder, tx)
+	receipt := requireTxSucceeded(t, builder, tx)
 
-	record(t, receipt.BlockNumber.Uint64(), builder)
+	recordBlockInputs(t, receipt.BlockNumber.Uint64(), builder)
 }
 
 // ---------------------------------------------------------------------------
-// 2. EVM contract calls — 20 Solidity SSTORE operations, no Stylus
+// EVM contract calls — 20 Solidity SSTORE operations, no Stylus
 // ---------------------------------------------------------------------------
 
 func TestRecordBlockSolidity(t *testing.T) {
@@ -53,7 +58,7 @@ func TestRecordBlockSolidity(t *testing.T) {
 
 	_, tx, simple, err := localgen.DeploySimple(&auth, l2client)
 	Require(t, err)
-	ensureTx(t, builder, tx)
+	requireTxSucceeded(t, builder, tx)
 
 	nonce, err := l2client.PendingNonceAt(builder.ctx, auth.From)
 	Require(t, err)
@@ -65,11 +70,11 @@ func TestRecordBlockSolidity(t *testing.T) {
 	}
 
 	blockNum, _ := sequenceInBlock(t, builder, txs)
-	record(t, blockNum, builder)
+	recordBlockInputs(t, blockNum, builder)
 }
 
 // ---------------------------------------------------------------------------
-// 3. Single Stylus call — one WASM storage write
+// Single Stylus call — one WASM storage write
 // ---------------------------------------------------------------------------
 
 func TestRecordBlockStylus(t *testing.T) {
@@ -85,13 +90,13 @@ func TestRecordBlockStylus(t *testing.T) {
 	value := testhelpers.RandomHash()
 	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, argsForStorageWrite(key, value))
 	Require(t, l2client.SendTransaction(ctx, tx))
-	receipt := ensureTx(t, builder, tx)
+	receipt := requireTxSucceeded(t, builder, tx)
 
-	record(t, receipt.BlockNumber.Uint64(), builder)
+	recordBlockInputs(t, receipt.BlockNumber.Uint64(), builder)
 }
 
 // ---------------------------------------------------------------------------
-// 4. Heavy Stylus — 32 cross-contract read/write pairs via multicall
+// Heavy Stylus — 32 cross-contract read/write pairs via multicall
 // ---------------------------------------------------------------------------
 
 func TestRecordBlockStylusHeavy(t *testing.T) {
@@ -114,13 +119,13 @@ func TestRecordBlockStylusHeavy(t *testing.T) {
 
 	tx := l2info.PrepareTxTo("Owner", &multicallAddr, 1e9, nil, args)
 	Require(t, l2client.SendTransaction(ctx, tx))
-	receipt := ensureTx(t, builder, tx)
+	receipt := requireTxSucceeded(t, builder, tx)
 
-	record(t, receipt.BlockNumber.Uint64(), builder)
+	recordBlockInputs(t, receipt.BlockNumber.Uint64(), builder)
 }
 
 // ---------------------------------------------------------------------------
-// 5. Mixed heavy block — ETH transfers + EVM call + multiple Stylus programs
+// Mixed heavy block — ETH transfers + EVM call + multiple Stylus programs
 // ---------------------------------------------------------------------------
 
 func TestRecordBlockMixed(t *testing.T) {
@@ -132,7 +137,7 @@ func TestRecordBlockMixed(t *testing.T) {
 
 	_, tx, simple, err := localgen.DeploySimple(&auth, l2client)
 	Require(t, err)
-	ensureTx(t, builder, tx)
+	requireTxSucceeded(t, builder, tx)
 
 	storageAddr := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
 	keccakAddr := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
@@ -149,12 +154,12 @@ func TestRecordBlockMixed(t *testing.T) {
 		txs = append(txs, l2info.PrepareTx("Owner", name, l2info.TransferGas, big.NewInt(1e18), nil))
 	}
 
-	txIncrementEmit, err := simple.IncrementEmit(noSendOpts(&auth, ownerNonce+3))
+	txIncrementEmit, err := simple.IncrementEmit(noSendOpts(&auth, ownerNonce+uint64(len(txs))))
 	Require(t, err)
 	txs = append(txs, txIncrementEmit)
 
 	// PrepareTxTo uses l2info's nonce counter; sync it past the NoSend tx above.
-	l2info.GetInfoWithPrivKey("Owner").Nonce.Store(ownerNonce + 4)
+	l2info.GetInfoWithPrivKey("Owner").Nonce.Store(ownerNonce + uint64(len(txs)))
 	txStorage := l2info.PrepareTxTo("Owner", &storageAddr, l2info.TransferGas, nil, argsForStorageWrite(testhelpers.RandomHash(), testhelpers.RandomHash()))
 	txs = append(txs, txStorage)
 
@@ -163,11 +168,11 @@ func TestRecordBlockMixed(t *testing.T) {
 	txs = append(txs, txKeccak)
 
 	blockNum, _ := sequenceInBlock(t, builder, txs)
-	record(t, blockNum, builder)
+	recordBlockInputs(t, blockNum, builder)
 }
 
 // ---------------------------------------------------------------------------
-// 6. Stylus activation — the recorded block contains the
+// Stylus activation — the recorded block contains the
 //    ArbWasm.activateProgram tx itself, exercising the activate_v2 hostio.
 // ---------------------------------------------------------------------------
 
@@ -190,7 +195,7 @@ func recordStylusActivation(t *testing.T, file string) {
 	defer cleanup()
 
 	wasm, _ := readWasmFile(t, file)
-	auth.GasLimit = 32000000 // skip gas estimation
+	auth.GasLimit = fixedRecordGasLimit
 	program := deployContract(t, ctx, auth, l2client, wasm)
 
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
@@ -198,13 +203,13 @@ func recordStylusActivation(t *testing.T, file string) {
 	auth.Value = oneEth
 	tx, err := arbWasm.ActivateProgram(&auth, program)
 	Require(t, err)
-	receipt := ensureTx(t, builder, tx)
+	receipt := requireTxSucceeded(t, builder, tx)
 
-	record(t, receipt.BlockNumber.Uint64(), builder)
+	recordBlockInputs(t, receipt.BlockNumber.Uint64(), builder)
 }
 
 // ---------------------------------------------------------------------------
-// 7. Signature-heavy block — many ETH transfers in a single block to amplify
+// Signature-heavy block — many ETH transfers in a single block to amplify
 //    ECRecover (sender recovery) signal in profile snapshots.
 // ---------------------------------------------------------------------------
 
@@ -222,23 +227,23 @@ func TestRecordBlockSignatures(t *testing.T) {
 	}
 
 	blockNum, _ := sequenceInBlock(t, builder, txs)
-	record(t, blockNum, builder)
+	recordBlockInputs(t, blockNum, builder)
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-// ensureTx waits for a transaction to be included and asserts success.
-func ensureTx(t *testing.T, builder *NodeBuilder, tx *types.Transaction) *types.Receipt {
+// requireTxSucceeded waits for a transaction to be included and asserts success.
+func requireTxSucceeded(t *testing.T, builder *NodeBuilder, tx *types.Transaction) *types.Receipt {
 	t.Helper()
 	receipt, err := EnsureTxSucceeded(builder.ctx, builder.L2.Client, tx)
 	Require(t, err)
 	return receipt
 }
 
-// record dumps block inputs for the given block number.
-func record(t *testing.T, blockNum uint64, builder *NodeBuilder) {
+// recordBlockInputs dumps block inputs for the given block number.
+func recordBlockInputs(t *testing.T, blockNum uint64, builder *NodeBuilder) {
 	t.Helper()
 	recordBlock(t, blockNum, builder, rawdb.TargetWavm, rawdb.TargetWasm, rawdb.LocalTarget())
 }
@@ -285,13 +290,12 @@ func syncOwnerNonce(t *testing.T, builder *NodeBuilder) {
 	builder.L2Info.GetInfoWithPrivKey("Owner").Nonce.Store(nonce)
 }
 
-// noSendOpts returns auth with NoSend=true, an explicit nonce, and a fixed gas
-// limit. The fixed gas limit skips eth_estimateGas, required when batched txs
-// depend on each other and cannot be estimated independently.
+// noSendOpts returns auth with NoSend=true, an explicit nonce, and a fixed
+// gas limit (see fixedRecordGasLimit).
 func noSendOpts(auth *bind.TransactOpts, nonce uint64) *bind.TransactOpts {
 	opts := *auth
 	opts.NoSend = true
 	opts.Nonce = new(big.Int).SetUint64(nonce)
-	opts.GasLimit = 32000000
+	opts.GasLimit = fixedRecordGasLimit
 	return &opts
 }
