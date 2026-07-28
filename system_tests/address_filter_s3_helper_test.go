@@ -69,6 +69,7 @@ func setupFakeS3AddressFilterForConfig(t *testing.T, execConfig *gethexec.Config
 		ChunkSizeMB: s3syncer.DefaultS3Config.ChunkSizeMB,
 		MaxRetries:  s3syncer.DefaultS3Config.MaxRetries,
 		Concurrency: s3syncer.DefaultS3Config.Concurrency,
+		DownloadDir: t.TempDir(),
 	}
 	return f
 }

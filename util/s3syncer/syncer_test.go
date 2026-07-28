@@ -50,6 +50,7 @@ func TestSyncer_FailedETagTracking(t *testing.T) {
 }
 
 func TestConfigValidate(t *testing.T) {
+	downloadDir := t.TempDir()
 	tests := []struct {
 		name    string
 		config  Config
@@ -58,33 +59,46 @@ func TestConfigValidate(t *testing.T) {
 		{
 			name: "valid config",
 			config: Config{
-				Config:    s3client.Config{Region: "us-east-1"},
-				Bucket:    "test-bucket",
-				ObjectKey: "path/to/file.json",
+				Config:      s3client.Config{Region: "us-east-1"},
+				Bucket:      "test-bucket",
+				ObjectKey:   "path/to/file.json",
+				DownloadDir: downloadDir,
 			},
 			wantErr: false,
 		},
 		{
 			name: "missing bucket",
 			config: Config{
-				Config:    s3client.Config{Region: "us-east-1"},
-				ObjectKey: "path/to/file.json",
+				Config:      s3client.Config{Region: "us-east-1"},
+				ObjectKey:   "path/to/file.json",
+				DownloadDir: downloadDir,
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing region",
 			config: Config{
-				Bucket:    "test-bucket",
-				ObjectKey: "path/to/file.json",
+				Bucket:      "test-bucket",
+				ObjectKey:   "path/to/file.json",
+				DownloadDir: downloadDir,
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing object key",
 			config: Config{
-				Config: s3client.Config{Region: "us-east-1"},
-				Bucket: "test-bucket",
+				Config:      s3client.Config{Region: "us-east-1"},
+				Bucket:      "test-bucket",
+				DownloadDir: downloadDir,
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing download dir",
+			config: Config{
+				Config:    s3client.Config{Region: "us-east-1"},
+				Bucket:    "test-bucket",
+				ObjectKey: "path/to/file.json",
 			},
 			wantErr: true,
 		},
@@ -96,8 +110,9 @@ func TestConfigValidate(t *testing.T) {
 					AccessKey: "AKIAIOSFODNN7EXAMPLE",
 					SecretKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
 				},
-				Bucket:    "test-bucket",
-				ObjectKey: "path/to/file.json",
+				Bucket:      "test-bucket",
+				ObjectKey:   "path/to/file.json",
+				DownloadDir: downloadDir,
 			},
 			wantErr: false,
 		},
@@ -107,6 +122,7 @@ func TestConfigValidate(t *testing.T) {
 				Config:        s3client.Config{Region: "us-east-1"},
 				Bucket:        "test-bucket",
 				ObjectKey:     "path/to/file.json",
+				DownloadDir:   downloadDir,
 				MaxFileSizeMB: -1,
 			},
 			wantErr: true,
@@ -406,6 +422,12 @@ func TestConfigValidate_DownloadDir(t *testing.T) {
 	cfg.DownloadDir = t.TempDir()
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("existing directory should validate: %v", err)
+	}
+
+	cfg = valid
+	cfg.DownloadDir = ""
+	if err := cfg.Validate(); err == nil {
+		t.Error("empty download-dir should fail validation")
 	}
 
 	cfg = valid

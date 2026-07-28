@@ -403,9 +403,10 @@ func TestConfig_Validate(t *testing.T) {
 	// Test valid config
 	validConfig := Config{
 		S3: s3syncer.Config{
-			Config:    s3client.Config{Region: "us-east-1"},
-			Bucket:    "test-bucket",
-			ObjectKey: "hashlists/current.json",
+			Config:      s3client.Config{Region: "us-east-1"},
+			Bucket:      "test-bucket",
+			ObjectKey:   "hashlists/current.json",
+			DownloadDir: t.TempDir(),
 		},
 		PollInterval:              5 * time.Minute,
 		CacheSize:                 10000,
@@ -495,7 +496,7 @@ func TestHashStore_LoadedAt(t *testing.T) {
 
 const filteringTestBucket = "addressfilter-test"
 
-func newFilteringTestConfig(endpoint, key string, maxFileSizeMB int) *Config {
+func newFilteringTestConfig(t *testing.T, endpoint, key string, maxFileSizeMB int) *Config {
 	cfg := DefaultConfig
 	cfg.S3 = s3syncer.Config{
 		Config: s3client.Config{
@@ -511,6 +512,7 @@ func newFilteringTestConfig(endpoint, key string, maxFileSizeMB int) *Config {
 		Concurrency:       s3syncer.DefaultS3Config.Concurrency,
 		MaxFileSizeMB:     maxFileSizeMB,
 		PreallocateMemory: true,
+		DownloadDir:       t.TempDir(),
 	}
 	return &cfg
 }
@@ -523,7 +525,7 @@ func TestFilterService_Initialize_RejectsOversizedFile(t *testing.T) {
 	tooLargeBefore := fileTooLargeCounter.Snapshot().Count()
 	syncFailureBefore := syncFailureCounter.Snapshot().Count()
 
-	service, err := NewFilterService(newFilteringTestConfig(endpoint, key, 1))
+	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, key, 1))
 	require.NoError(t, err)
 
 	err = service.Initialize(context.Background())
@@ -550,7 +552,7 @@ func TestFilterService_Initialize_GenericFailure(t *testing.T) {
 	tooLargeBefore := fileTooLargeCounter.Snapshot().Count()
 	syncFailureBefore := syncFailureCounter.Snapshot().Count()
 
-	service, err := NewFilterService(newFilteringTestConfig(endpoint, "missing.json", 1))
+	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, "missing.json", 1))
 	require.NoError(t, err)
 
 	err = service.Initialize(context.Background())
@@ -588,7 +590,7 @@ func TestFilterService_KeepsListOnOversizedSync(t *testing.T) {
 	endpoint, backend := s3syncertest.NewFakeS3(t, filteringTestBucket, map[string][]byte{key: initialBody})
 
 	// 1 MB limit; initial body is well under, the swap body will be 2 MB.
-	service, err := NewFilterService(newFilteringTestConfig(endpoint, key, 1))
+	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, key, 1))
 	require.NoError(t, err)
 
 	require.NoError(t, service.Initialize(context.Background()))
@@ -770,7 +772,7 @@ func TestFilterService_PreallocLoadAndReload(t *testing.T) {
 	key := "filter.json"
 	endpoint, backend := s3syncertest.NewFakeS3(t, filteringTestBucket, map[string][]byte{key: hashListBody(t, salt, h1)})
 
-	service, err := NewFilterService(newFilteringTestConfig(endpoint, key, 1))
+	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, key, 1))
 	require.NoError(t, err)
 
 	// Preallocation engaged: ping-pong buffers exist and are sized.

@@ -36,7 +36,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".max-retries", DefaultS3Config.MaxRetries, "maximum retries for S3 part body download")
 	f.Int(prefix+".max-file-size-mb", DefaultS3Config.MaxFileSizeMB, "maximum allowed S3 object size in MB; if the object is larger, skip the download (0 disables the check)")
 	f.Bool(prefix+".preallocate-memory", DefaultS3Config.PreallocateMemory, "preallocate the data structures the downloaded object is loaded into at startup, so reloads reuse them instead of allocating per download; engages only when max-file-size-mb is set")
-	f.String(prefix+".download-dir", DefaultS3Config.DownloadDir, "directory for the temporary download file, which must have room for the whole object (empty means the OS temp dir); point it at real disk — on many Linux systems /tmp is RAM-backed tmpfs, which would keep the download in memory")
+	f.String(prefix+".download-dir", DefaultS3Config.DownloadDir, "directory for the temporary download file, which must have room for the whole object (required); point it at real disk — on many Linux systems /tmp is RAM-backed tmpfs, which would keep the download in memory")
 }
 
 // Validate checks that required S3 configuration fields are set.
@@ -53,14 +53,15 @@ func (c *Config) Validate() error {
 	if c.MaxFileSizeMB < 0 {
 		return fmt.Errorf("s3 max-file-size-mb must be >= 0, got %d", c.MaxFileSizeMB)
 	}
-	if c.DownloadDir != "" {
-		info, err := os.Stat(c.DownloadDir)
-		if err != nil {
-			return fmt.Errorf("s3 download-dir: %w", err)
-		}
-		if !info.IsDir() {
-			return fmt.Errorf("s3 download-dir %q is not a directory", c.DownloadDir)
-		}
+	if c.DownloadDir == "" {
+		return errors.New("s3 download-dir is required")
+	}
+	info, err := os.Stat(c.DownloadDir)
+	if err != nil {
+		return fmt.Errorf("s3 download-dir: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("s3 download-dir %q is not a directory", c.DownloadDir)
 	}
 	return nil
 }

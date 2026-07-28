@@ -60,11 +60,6 @@ func (s *Syncer) Initialize(ctx context.Context) error {
 		return nil
 	}
 
-	if s.config.DownloadDir == "" {
-		log.Warn("s3 download-dir is not set, so downloads go to the OS temp dir; on many Linux systems that is RAM-backed tmpfs, which would hold the whole object in memory — point download-dir at real disk",
-			"osTempDir", os.TempDir(), "bucket", s.config.Bucket, "key", s.config.ObjectKey)
-	}
-
 	client, err := s3client.NewS3FullClientFromConfig(ctx, &s.config.Config)
 	if err != nil {
 		return fmt.Errorf("failed to create S3 client: %w", err)

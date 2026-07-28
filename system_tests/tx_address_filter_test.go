@@ -1316,9 +1316,10 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	// Create a filter service with valid config but without loaded rules
 	filterCfg := &addressfilter.Config{
 		S3: s3syncer.Config{
-			Config:    s3client.Config{Region: "us-east-1"},
-			Bucket:    "test-bucket",
-			ObjectKey: "test-key",
+			Config:      s3client.Config{Region: "us-east-1"},
+			Bucket:      "test-bucket",
+			ObjectKey:   "test-key",
+			DownloadDir: t.TempDir(),
 		},
 		PollInterval:              5 * time.Minute,
 		CacheSize:                 100,
