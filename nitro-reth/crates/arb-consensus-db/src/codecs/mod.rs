@@ -1,7 +1,6 @@
-//! Value codecs for the consensus DB: RLP field helpers ([`rlp`]), the legacy L1
-//! wire format ([`legacy`]), and small shared helpers.
+//! Value codecs for the consensus DB: an RLP field helper ([`rlp::Rlp`]) and small shared
+//! helpers.
 
-pub mod legacy;
 pub mod rlp;
 
 use alloy_primitives::B256;

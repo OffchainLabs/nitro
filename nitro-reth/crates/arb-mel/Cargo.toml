@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 # Internal crates
 arbos = { workspace = true }
+arb-mel-types = { workspace = true }
 arb-storage-errors = { workspace = true }
 arb-da-provider-client = { workspace = true }
 

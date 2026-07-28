@@ -3,12 +3,10 @@ use arb_consensus_db::{
     ConsensusDb, ConsensusDbBatch, ConsensusDbError,
     codecs::rlp::Rlp,
     kv,
-    schema::{
-        BatchMetadata, L1IncomingMessage, LegacyDelayedMessageAt, ParentChainBlockAt,
-        RlpDelayedMessageAt,
-    },
+    schema::{LegacyDelayedMessageAt, ParentChainBlockAt, RlpDelayedMessageAt},
 };
-use arb_mel::MelState;
+use arb_mel_types::{BatchMetadata, DelayedInboxMessage, MelState};
+use arbos_types::L1IncomingMessage;
 
 pub mod schema;
 
@@ -139,7 +137,7 @@ impl<S: kv::KvStore> MelDb<S> {
     pub fn save_delayed_messages(
         &mut self,
         state: &MelState,
-        messages: &[schema::DelayedInboxMessage],
+        messages: &[DelayedInboxMessage],
     ) -> Result<()> {
         let first = state
             .delayed_messages_seen
@@ -150,7 +148,10 @@ impl<S: kv::KvStore> MelDb<S> {
             })?;
         let mut batch = ConsensusDbBatch::new();
         for (i, message) in messages.iter().enumerate() {
-            batch.put(schema::MelDelayedMessageAt(first + i as u64), message);
+            batch.put(
+                schema::MelDelayedMessageAt(first + i as u64),
+                &Rlp(message.clone()),
+            );
         }
         Ok(self.consensus_db.write_batch(batch)?)
     }
@@ -193,9 +194,12 @@ impl<S: kv::KvStore> MelDb<S> {
     /// `legacyFetchDelayedMessage`): the message and its parent-chain block from
     /// `legacy_message_and_parent_block`, and `before_inbox_acc` from the previous
     /// index's accumulator. The legacy format did not store `block_hash`, so it is left zero.
-    pub fn delayed_message(&self, index: u64) -> Result<Option<schema::DelayedInboxMessage>> {
+    pub fn delayed_message(&self, index: u64) -> Result<Option<DelayedInboxMessage>> {
         if self.initial.is_none_or(|b| index >= b.delayed_count) {
-            return Ok(self.consensus_db.get(schema::MelDelayedMessageAt(index))?);
+            return Ok(self
+                .consensus_db
+                .get(schema::MelDelayedMessageAt(index))?
+                .map(|r| r.0));
         }
         let Some((message, parent_chain_block_number)) =
             self.legacy_message_and_parent_block(index)?
@@ -207,7 +211,7 @@ impl<S: kv::KvStore> MelDb<S> {
         } else {
             self.legacy_accumulator(index - 1)?
         };
-        Ok(Some(schema::DelayedInboxMessage {
+        Ok(Some(DelayedInboxMessage {
             block_hash: B256::ZERO,
             before_inbox_acc,
             message,
@@ -257,13 +261,10 @@ impl<S: kv::KvStore> MelDb<S> {
 mod tests {
     use alloy_primitives::{Address, U256};
     use arb_consensus_db::{
-        codecs::rlp::NilList,
         kv::MemoryKvStore,
-        schema::{
-            BatchMetadataAt, L1IncomingMessageHeader, LegacyDelayedMessage, ParentChainBlock,
-            RlpDelayedMessage,
-        },
+        schema::{BatchMetadataAt, LegacyDelayedMessage, ParentChainBlock, RlpDelayedMessage},
     };
+    use arbos_types::L1IncomingMessageHeader;
 
     use super::*;
 
@@ -287,17 +288,17 @@ mod tests {
                 poster: Address::repeat_byte(kind),
                 block_number: 100 + kind as u64,
                 timestamp: 200,
-                request_id: NilList(Some(B256::repeat_byte(kind))),
-                l1_base_fee: U256::from(300),
+                request_id: Some(B256::repeat_byte(kind)),
+                l1_base_fee: Some(U256::from(300)),
             },
-            l2msg: vec![kind, kind, kind].into(),
+            l2_msg: vec![kind, kind, kind].into(),
             legacy_batch_gas_cost: None,
             batch_data_stats: None,
         }
     }
 
-    fn delayed(kind: u8) -> schema::DelayedInboxMessage {
-        schema::DelayedInboxMessage {
+    fn delayed(kind: u8) -> DelayedInboxMessage {
+        DelayedInboxMessage {
             block_hash: B256::repeat_byte(0x10 + kind),
             before_inbox_acc: B256::repeat_byte(0x20 + kind),
             message: l1_msg(kind),

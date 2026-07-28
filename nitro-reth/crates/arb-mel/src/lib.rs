@@ -13,12 +13,14 @@ mod mel_config_lookup;
 mod message_extraction;
 mod parse_sequencer_message;
 mod serialize_batch;
+mod state;
 #[cfg(test)]
 mod test_utils;
 mod types;
 
 // Parent-chain event types, re-exported so downstream crates (the runner's log
 // prefetcher) build filters from the same `SIGNATURE_HASH` the extractor matches.
+pub use arb_mel_types::{BatchMetadata, DelayedInboxMessage, MelState};
 pub use batch_lookup::SequencerBatchDelivered;
 pub use delayed_message_lookup::{
     InboxMessageDelivered, InboxMessageDeliveredFromOrigin, MessageDelivered,
@@ -28,6 +30,7 @@ pub use mel_config_lookup::{MELConfigSet, MelConfig};
 pub use message_extraction::{ExtractionOutput, extract_messages};
 pub use parse_sequencer_message::SequencerMessage;
 pub use serialize_batch::SequencerBatchData;
+pub use state::*;
 pub use types::*;
 
 pub trait LogsFetcher {

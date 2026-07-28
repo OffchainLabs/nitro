@@ -25,10 +25,10 @@ use arb_rpc::block_producer::{
     BlockProducer, BlockProducerError, BlockProductionInput, ProducedBlock,
 };
 use arbos::{
-    arbos_types::parse_init_message,
     header::{ArbHeaderInfo, derive_arb_header_info},
     internal_tx,
     parse_l2::{ParsedTransaction, parse_l2_transactions, parsed_tx_to_signed},
+    types::parse_init_message,
 };
 use parking_lot::Mutex;
 use reth_chain_state::{CanonicalInMemoryState, ExecutedBlock, NewCanonicalChain};
@@ -160,7 +160,7 @@ pub struct ArbBlockProducer<Provider> {
     flushing_trie_input: Mutex<Option<Arc<TrieInputSorted>>>,
     pending_flush: AtomicBool,
     produce_lock: tokio::sync::Mutex<()>,
-    cached_init: Mutex<Option<arbos::arbos_types::ParsedInitMessage>>,
+    cached_init: Mutex<Option<arbos::types::ParsedInitMessage>>,
     /// Finality markers propagated by `nitroexecution_setFinalityData`.
     finality: Mutex<FinalityMarkers>,
     /// External shared slot pushed to on every set_finality update so

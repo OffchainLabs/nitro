@@ -14,8 +14,8 @@ mod process_next_block;
 mod reorg;
 mod save_messages;
 
-use arb_mel::{BatchMeta, DelayedInboxMessage, MelState};
-use arbos::arbos_types::MessageWithMetadata;
+use arb_mel::{BatchMetadata, DelayedInboxMessage, MelState};
+use arbos::types::MessageWithMetadata;
 
 /// The state of the extraction FSM, carrying the data each state needs.
 ///
@@ -51,7 +51,7 @@ pub enum FsmState {
         /// Delayed messages observed in the block.
         delayed_messages: Vec<DelayedInboxMessage>,
         /// Batch metadata recorded for the block.
-        batch_metas: Vec<BatchMeta>,
+        batch_metas: Vec<BatchMetadata>,
     },
 }
 

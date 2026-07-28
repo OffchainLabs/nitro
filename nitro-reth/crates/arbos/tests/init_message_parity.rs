@@ -1,5 +1,5 @@
 use alloy_primitives::U256;
-use arbos::arbos_types::{DEFAULT_INITIAL_L1_BASE_FEE, parse_init_message};
+use arbos::types::{DEFAULT_INITIAL_L1_BASE_FEE, parse_init_message};
 
 /// Nitro `ParseInitMessage` format (`arbos/arbostypes/incomingmessage.go:325`):
 ///   - 32 bytes: chain_id only, base_fee = DefaultInitialL1BaseFee

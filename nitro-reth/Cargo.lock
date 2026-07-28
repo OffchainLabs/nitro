@@ -1083,6 +1083,8 @@ version = "0.1.5"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
+ "arb-mel-types",
+ "arbos-types",
  "thiserror 2.0.18",
 ]
 
@@ -1218,6 +1220,7 @@ dependencies = [
  "alloy-rpc-types-eth",
  "alloy-sol-types",
  "arb-da-provider-client",
+ "arb-mel-types",
  "arb-storage-errors",
  "arbos",
  "async-trait",
@@ -1234,7 +1237,8 @@ dependencies = [
  "alloy-primitives",
  "alloy-rlp",
  "arb-consensus-db",
- "arb-mel",
+ "arb-mel-types",
+ "arbos-types",
  "thiserror 2.0.18",
 ]
 
@@ -1255,6 +1259,15 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "arb-mel-types"
+version = "0.1.5"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rlp",
+ "arbos-types",
 ]
 
 [[package]]
@@ -1637,6 +1650,7 @@ dependencies = [
  "arb-primitives",
  "arb-storage",
  "arb-test-utils",
+ "arbos-types",
  "cc",
  "proptest",
  "revm",
@@ -1646,6 +1660,14 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tracing",
+]
+
+[[package]]
+name = "arbos-types"
+version = "0.1.5"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rlp",
 ]
 
 [[package]]

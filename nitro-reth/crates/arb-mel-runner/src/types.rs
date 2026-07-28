@@ -1,6 +1,6 @@
 //! Supporting MEL types owned by the runner.
 //!
-//! The core MEL types (`MelState`, `DelayedInboxMessage`, `BatchMeta`) live in
+//! The core MEL types (`MelState`, `DelayedInboxMessage`, `BatchMetadata`) live in
 //! the `arb-mel` crate and are re-exported from the crate root. This module holds
 //! the runner-only types that `arb-mel` doesn't provide.
 
