@@ -5,6 +5,7 @@ package arbnode
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -19,8 +20,9 @@ import (
 )
 
 type pruningTestRecorder struct {
-	mutex  sync.Mutex
-	pruned []arbutil.MessageIndex
+	mutex    sync.Mutex
+	pruned   []arbutil.MessageIndex
+	pruneErr error
 }
 
 func (r *pruningTestRecorder) RecordBlockCreation(
@@ -38,8 +40,19 @@ func (r *pruningTestRecorder) PrepareForRecord(_, _ arbutil.MessageIndex) contai
 func (r *pruningTestRecorder) PruneBlockRecordings(before arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+	if r.pruneErr != nil {
+		err := r.pruneErr
+		r.pruneErr = nil
+		return containers.NewReadyPromise(struct{}{}, err)
+	}
 	r.pruned = append(r.pruned, before)
 	return containers.NewReadyPromise(struct{}{}, nil)
+}
+
+func (r *pruningTestRecorder) pruneErrConsumed() bool {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	return r.pruneErr == nil
 }
 
 func (r *pruningTestRecorder) prunedCalls() []arbutil.MessageIndex {
@@ -88,6 +101,37 @@ func TestBlockRecordingsPrunerThrottlesByMinPruneInterval(t *testing.T) {
 	pruned := recorder.prunedCalls()
 	if len(pruned) != 1 || pruned[0] != 1 {
 		t.Fatalf("expected only the first prune within the prune interval, got %v", pruned)
+	}
+}
+
+func TestBlockRecordingsPrunerRetriesAfterError(t *testing.T) {
+	config := DefaultBlockRecordingsPrunerConfig
+	config.MinPruneInterval = time.Hour
+	pruner, recorder := newTestBlockRecordingsPruner(config)
+	recorder.pruneErr = errors.New("prune failed")
+	pruner.Start(context.Background())
+	defer pruner.StopAndWait()
+
+	pruner.UpdateLatestConfirmed(1, validator.GoGlobalState{})
+	for start := time.Now(); !recorder.pruneErrConsumed(); {
+		if time.Since(start) > 10*time.Second {
+			t.Fatal("timed out waiting for the failing prune")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	for start := time.Now(); len(recorder.prunedCalls()) == 0; {
+		pruner.UpdateLatestConfirmed(2, validator.GoGlobalState{})
+		if time.Since(start) > 10*time.Second {
+			t.Fatal("timed out waiting for the retry to prune")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	pruner.StopAndWait()
+	pruned := recorder.prunedCalls()
+	if len(pruned) != 1 || pruned[0] != 2 {
+		t.Fatalf("expected the retry to prune before message 2, got %v", pruned)
 	}
 }
 

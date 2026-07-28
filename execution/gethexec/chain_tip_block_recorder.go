@@ -198,9 +198,6 @@ func (r *ChainTipBlockRecorder) ServedTipRecordings() uint64 {
 }
 
 func (r *ChainTipBlockRecorder) PruneRecordingsBefore(pos arbutil.MessageIndex) error {
-	if r.recordsFreezer == nil {
-		return nil
-	}
 	return r.recordsFreezer.pruneRecordingsBefore(pos)
 }
 
