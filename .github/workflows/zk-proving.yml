@@ -56,13 +56,20 @@ jobs:
       - name: Validate recorded blocks with JIT
         run: |
           set -e -o pipefail
-          for BLOCK in transfer solidity stylus stylus_heavy stylus_activation stylus_activation_multicall mixed signatures; do
+          shopt -s nullglob
+          INPUTS=(target/sp1/block-inputs/*.json)
+          if [ ${#INPUTS[@]} -eq 0 ]; then
+            echo "::error::No recorded block inputs found"
+            exit 1
+          fi
+          for INPUT in "${INPUTS[@]}"; do
+            BLOCK=$(basename "$INPUT" .json)
             echo "--- Running JIT validation ($BLOCK) ---"
             LOG=$(mktemp)
             if ! ./target/bin/jit \
               --debug --cranelift \
               --binary target/machines/latest/replay.wasm \
-              json --inputs="target/sp1/block-inputs/$BLOCK.json" >"$LOG" 2>&1; then
+              json --inputs="$INPUT" >"$LOG" 2>&1; then
               echo "::error::JIT validation failed for $BLOCK"
               cat "$LOG"
               exit 1
