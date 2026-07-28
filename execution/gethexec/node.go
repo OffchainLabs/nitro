@@ -45,6 +45,7 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/rpcserver"
@@ -438,7 +439,15 @@ func CreateExecutionNode(
 	case BlockRecorderModeChainTip:
 		ancientDir, ancientErr := executionDB.AncientDatadir()
 		if ancientErr != nil || ancientDir == "" {
-			log.Warn("Chain-tip block recordings freezer is in-memory and will not survive restarts", "err", ancientErr)
+			// An empty DataDir means geth kept the whole database in memory no matter
+			// which engine the config names.
+			if stack.Config().DBEngine != dbutil.MemoryDB && stack.Config().DataDir != "" {
+				if ancientErr != nil {
+					return nil, fmt.Errorf("chain-tip block recorder requires an ancient data directory: %w", ancientErr)
+				}
+				return nil, errors.New("chain-tip block recorder requires an ancient data directory, but the execution database reports none")
+			}
+			log.Warn("Chain-tip block recordings are kept in memory, so they are lost on restart and grow without bound", "dbEngine", stack.Config().DBEngine)
 			ancientDir = ""
 		}
 		chainTipBlockRecordsFreezer, err := rawdb.NewChainTipBlockRecordsFreezer(ancientDir, false)
@@ -449,6 +458,15 @@ func CreateExecutionNode(
 	default:
 		return nil, fmt.Errorf("unknown block recorder mode %q", config.RecordingDatabase.Mode)
 	}
+	created := false
+	defer func() {
+		if created || recorder == nil {
+			return
+		}
+		if err := recorder.Close(); err != nil {
+			log.Error("failed to close block recorder after a failed startup", "err", err)
+		}
+	}()
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 
@@ -625,6 +643,7 @@ func CreateExecutionNode(
 
 	stack.RegisterAPIs(apis)
 
+	created = true
 	return execNode, nil
 
 }
@@ -723,6 +742,7 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 
 func (n *ExecutionNode) StopAndWait() {
 	if !n.started.Load() {
+		n.closeRecorder()
 		return
 	}
 	if n.AddressFilterService != nil {
@@ -747,11 +767,6 @@ func (n *ExecutionNode) StopAndWait() {
 	if n.ExecEngine.Started() {
 		n.ExecEngine.StopAndWait()
 	}
-	if n.Recorder != nil {
-		if err := n.Recorder.Close(); err != nil {
-			log.Error("failed to close block recorder", "err", err)
-		}
-	}
 	if n.consensusRPCClient != nil {
 		n.consensusRPCClient.StopAndWait()
 	}
@@ -770,6 +785,16 @@ func (n *ExecutionNode) StopAndWait() {
 	// 	log.Error("error on stak close", "err", err)
 	// }
 	n.StopWaiter.StopAndWait()
+	n.closeRecorder()
+}
+
+func (n *ExecutionNode) closeRecorder() {
+	if n.Recorder == nil {
+		return
+	}
+	if err := n.Recorder.Close(); err != nil {
+		log.Error("failed to close block recorder", "err", err)
+	}
 }
 
 func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {

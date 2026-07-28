@@ -126,7 +126,6 @@ func stateLogFunc(targetHeader *types.Header) arbitrum.StateBuildingLogFunction 
 }
 
 // If msg is nil, this will record block creation up to the point where message would be accessed (for a "too far" proof)
-// If keepreference == true, reference to state of prevHeader is added (no reference added if an error is returned)
 func (r *BlockRecorder) RecordBlockCreation(
 	ctx context.Context,
 	pos arbutil.MessageIndex,

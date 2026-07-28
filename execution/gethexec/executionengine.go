@@ -1325,7 +1325,6 @@ func (s *ExecutionEngine) finishTipRecording(session *tipRecordingSession, block
 		return nil
 	}
 	// Persist before consensus/block side effects so write failures can abort cleanly.
-	// If a later side effect fails, canonical-hash validation prevents serving the stale record.
 	session.recordingStateDatabase.StopRecording()
 	preimages := session.recordingStateDatabase.Preimages()
 	// StateDB owns VM SHA3 preimages and ArbOS preimages added during finalization.

@@ -115,7 +115,10 @@ func TestReorgRewritesChainTipRecordings(t *testing.T) {
 	builder.L2.TransferBalance(t, "Owner", "User1", big.NewInt(params.Ether), builder.L2Info)
 
 	reorgPos := startHeadMsgIdx + 1
-	recorder := builder.L2.ExecNode.Recorder.(*gethexec.ChainTipBlockRecorder)
+	recorder, ok := builder.L2.ExecNode.Recorder.(*gethexec.ChainTipBlockRecorder)
+	if !ok {
+		Fatal(t, "expected chain-tip block recorder")
+	}
 	preReorg, err := recorder.Recording(reorgPos, nil)
 	Require(t, err)
 
