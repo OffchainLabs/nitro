@@ -21,6 +21,7 @@ mod consumer;
 mod database;
 mod extractor;
 mod fsm;
+mod logs_and_headers_fetcher;
 mod types;
 
 // The DA provider is the real `arb-da-provider-client`; re-export for convenience.

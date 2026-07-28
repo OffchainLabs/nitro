@@ -14,13 +14,16 @@ reqwest = { workspace = true, features = ["json", "rustls-tls"] }
 serde = { workspace = true, features = ["derive"] }
 sha2.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 
 # Alloy
 alloy-eips.workspace = true
-alloy-primitives.workspace = true
+alloy-primitives = { workspace = true, features = ["rlp"] }
+alloy-rlp.workspace = true
 alloy-rpc-types-beacon.workspace = true
 
 # Internal
+arb-da-provider-client.workspace = true
 arb-parent-chain-client.workspace = true
 
 [dev-dependencies]

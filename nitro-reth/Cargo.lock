@@ -1052,8 +1052,10 @@ version = "0.1.5"
 dependencies = [
  "alloy-eips",
  "alloy-primitives",
+ "alloy-rlp",
  "alloy-rpc-types-beacon",
  "alloy-rpc-types-eth",
+ "arb-da-provider-client",
  "arb-parent-chain-client",
  "async-trait",
  "c-kzg",
@@ -1063,6 +1065,7 @@ dependencies = [
  "sha2 0.11.0",
  "thiserror 2.0.18",
  "tokio",
+ "tracing",
  "wiremock",
 ]
 
@@ -1220,6 +1223,7 @@ dependencies = [
  "arb-mel-types",
  "arb-storage-errors",
  "arbos",
+ "async-trait",
  "brotli 8.0.2",
  "thiserror 2.0.18",
  "tokio",
@@ -1242,9 +1246,11 @@ dependencies = [
 name = "arb-mel-runner"
 version = "0.1.5"
 dependencies = [
+ "alloy-consensus",
  "alloy-eips",
  "alloy-primitives",
  "alloy-rpc-types-eth",
+ "alloy-sol-types",
  "arb-da-provider-client",
  "arb-mel",
  "arb-parent-chain-client",

@@ -1,6 +1,7 @@
 use alloy_eips::BlockNumberOrTag;
 use alloy_primitives::B256;
 use alloy_provider::{Provider, RootProvider};
+use alloy_rpc_client::BatchRequest;
 use alloy_rpc_types_eth::{Block, Filter, Header, Log, Transaction, TransactionReceipt};
 
 use super::{ParentChainReader, Result};
@@ -23,6 +24,30 @@ impl ParentChainReader for RpcParentChainReader {
     async fn header_by_number(&self, num: BlockNumberOrTag) -> Result<Option<Header>> {
         let header = self.provider.get_header_by_number(num).await?;
         Ok(header)
+    }
+
+    async fn headers_by_number_range(&self, from: u64, to: u64) -> Result<Vec<Option<Header>>> {
+        if from > to {
+            return Ok(Vec::new());
+        }
+        // One JSON-RPC batch (geth's `BatchCallContext` equivalent): queue an
+        // `eth_getHeaderByNumber` per block, send once, then collect in order.
+        // Responses are matched to calls by request id, so `waiters` stays aligned
+        // with `from..=to`. This is a geth/reth specific RPC call
+        let mut batch = BatchRequest::new(self.provider.client());
+        let mut waiters = Vec::with_capacity((to - from + 1) as usize);
+        for n in from..=to {
+            waiters.push(batch.add_call::<_, Option<Header>>(
+                "eth_getHeaderByNumber",
+                &(BlockNumberOrTag::Number(n),),
+            )?);
+        }
+        batch.send().await?;
+        let mut headers = Vec::with_capacity(waiters.len());
+        for waiter in waiters {
+            headers.push(waiter.await?);
+        }
+        Ok(headers)
     }
 
     // NOTE: Implemented using get_header_by_hash() so only works with geth/reth upstream.

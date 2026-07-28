@@ -9,11 +9,13 @@ license.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-tokio = { workspace = true }
+# `macros` for `try_join!`, used to issue the prefetcher's range reads concurrently.
+tokio = { workspace = true, features = ["macros"] }
 
 alloy-eips.workspace = true
 alloy-primitives.workspace = true
 alloy-rpc-types-eth.workspace = true
+alloy-sol-types.workspace = true
 
 arb-parent-chain-client.workspace = true
 arb-mel.workspace = true
@@ -23,6 +25,10 @@ arbos.workspace = true
 [dev-dependencies]
 # Enable the parent-chain client's test builders for our tests.
 arb-parent-chain-client = { workspace = true, features = ["test-utils"] }
+# `rt` for `#[tokio::test]` and the concurrency probe's `yield_now`.
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+# For building signed transactions in the logs/headers fetcher tests.
+alloy-consensus = { workspace = true }
 
 [lints]
 workspace = true

@@ -16,6 +16,7 @@ test-utils = []
 alloy-eips = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-provider = { workspace = true }
+alloy-rpc-client = { workspace = true }
 alloy-rpc-types-eth = { workspace = true }
 alloy-transport = { workspace = true }
 async-trait = { workspace = true }
@@ -23,7 +24,6 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 alloy-consensus = { workspace = true }
-alloy-rpc-client = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [lints]

@@ -54,13 +54,15 @@ where
         parent_chain_header,
         tx_fetcher,
         logs_fetcher,
-    )?;
+    )
+    .await?;
     let mut delayed_messages = delayed_message_lookup::parse_delayed_messages_from_block(
         &post_state,
         parent_chain_header,
         tx_fetcher,
         logs_fetcher,
-    )?;
+    )
+    .await?;
 
     // Save the indices of batch posting reports for later, once batches are
     // serialized and we need to fill in each report's batch gas stats. We track
