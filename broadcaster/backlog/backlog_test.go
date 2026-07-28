@@ -4,6 +4,7 @@ package backlog
 
 import (
 	"errors"
+	"reflect"
 	"slices"
 	"sync"
 	"testing"
@@ -384,7 +385,7 @@ func TestDropSegmentsReleasesOldSegments(t *testing.T) {
 
 	lookup := b.lookupByIndex.Load()
 	for _, k := range lookup.Keys() {
-		if segment, ok := lookup.Load(k); ok && segment == dropped {
+		if segment, ok := lookup.Load(k); ok && reflect.DeepEqual(segment, dropped) {
 			t.Errorf("lookupByIndex[%d] still references the segment emptied by the drop, keeping every later segment reachable", k)
 		}
 	}
