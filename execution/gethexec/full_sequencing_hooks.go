@@ -4,6 +4,7 @@
 package gethexec
 
 import (
+	"errors"
 	"fmt"
 	"math"
 
@@ -20,36 +21,44 @@ import (
 	"github.com/offchainlabs/nitro/transactionfeed"
 )
 
+// txNotFinalized marks a pulled tx whose result the block processor has not reported yet.
+// A surviving marker is a bug (every pulled tx is a user tx, and the block processor reports
+// every user tx's result); NextTxToSequence and the execution engine fail the block on one.
+var txNotFinalized = errors.New("tx was not finalized by the block processor")
+
+// sequencedTx pairs a pulled queue item with its sequencing result.
+type sequencedTx struct {
+	queueItem txQueueItem
+	err       error
+}
+
 type FullSequencingHooks struct {
-	queueItems               []txQueueItem
-	sequencedQueueItemsCount int
-	sequencedTxsSizeSoFar    int
-	maxSequencedTxsSize      int
-	txErrors                 []error
-	txFilter                 arbos.TxFilter
-	blockFilter              arbos.BlockFilter
-	txSizeLimitReached       bool
-	transactionFeedServer    transactionBroadcaster
+	// fetcher is the block's candidate source.
+	fetcher nextTxFetcher
+	// sequencedTxs records the items pulled from the fetcher so far, in order, with their results.
+	sequencedTxs          []sequencedTx
+	sequencedTxsSizeSoFar int
+	maxSequencedTxsSize   int
+	txFilter              arbos.TxFilter
+	blockFilter           arbos.BlockFilter // only used in testing
+	txSizeLimitReached    bool
+	transactionFeedServer transactionBroadcaster
 }
 
 var _ BlockSequencingHooks = (*FullSequencingHooks)(nil)
 
 func MakeSequencingHooks(
-	items []txQueueItem,
+	fetcher nextTxFetcher,
 	maxSequencedTxsSize int,
 	txFilter arbos.TxFilter,
 	transactionFeedServer transactionBroadcaster,
 ) *FullSequencingHooks {
-	res := &FullSequencingHooks{
-		queueItems:               items,
-		sequencedQueueItemsCount: 0,
-		sequencedTxsSizeSoFar:    0,
-		maxSequencedTxsSize:      maxSequencedTxsSize,
-		txFilter:                 txFilter,
-		blockFilter:              nil, // only used in testing
-		transactionFeedServer:    transactionFeedServer,
+	return &FullSequencingHooks{
+		fetcher:               fetcher,
+		maxSequencedTxsSize:   maxSequencedTxsSize,
+		txFilter:              txFilter,
+		transactionFeedServer: transactionFeedServer,
 	}
-	return res
 }
 
 // makeZeroTxSizeSequencingHooks creates hooks that include all transactions in
@@ -68,7 +77,7 @@ func makeZeroTxSizeSequencingHooks(
 			tx: tx,
 		})
 	}
-	hooks := MakeSequencingHooks(items, math.MaxInt, txFilter, transactionFeedServer)
+	hooks := MakeSequencingHooks(&fixedTxFetcher{items: items}, math.MaxInt, txFilter, transactionFeedServer)
 	hooks.blockFilter = blockFilter
 	return hooks
 }
@@ -88,35 +97,48 @@ func MakeZeroTxSizeSequencingHooksForTesting(
 	return makeZeroTxSizeSequencingHooks(txes, txFilter, blockFilter, nil)
 }
 
-func (s *FullSequencingHooks) SequencedTxes() ([]TxResult, error) {
-	// This is not supposed to happen, if so we have a bug
-	if len(s.txErrors) > s.sequencedQueueItemsCount {
-		return nil, fmt.Errorf("FullSequencingHooks: more tx results than sequenced txs. txErrors: %d, sequencedQueueItemsCount: %d", len(s.txErrors), s.sequencedQueueItemsCount)
-	}
-	res := make([]TxResult, 0, len(s.txErrors))
-	for i := range s.txErrors {
+func (s *FullSequencingHooks) SequencedTxes() []TxResult {
+	res := make([]TxResult, 0, len(s.sequencedTxs))
+	for _, st := range s.sequencedTxs {
 		res = append(res, TxResult{
-			Tx:          s.queueItems[i].tx,
-			Err:         s.txErrors[i],
-			Timeboosted: s.queueItems[i].isTimeboosted,
+			Tx:          st.queueItem.tx,
+			Err:         st.err,
+			Timeboosted: st.queueItem.isTimeboosted,
 		})
 	}
-	return res, nil
-}
-
-func (s *FullSequencingHooks) GetTxErrors() []error {
-	return s.txErrors
+	return res
 }
 
 func (s *FullSequencingHooks) TxSucceeded() {
-	s.txErrors = append(s.txErrors, nil)
+	if s.setLastTxResult(nil) {
+		// Only successful txs consume the block's size budget.
+		s.sequencedTxsSizeSoFar += s.sequencedTxs[len(s.sequencedTxs)-1].queueItem.txSize
+	}
 }
 
 func (s *FullSequencingHooks) TxFailed(err error) {
-	if len(s.txErrors) >= s.sequencedQueueItemsCount {
-		log.Error("TxFailed called but entry already exists", "existingErr", s.txErrors[len(s.txErrors)-1], "newErr", err)
+	s.setLastTxResult(err)
+}
+
+// setLastTxResult records the result of the last pulled tx, reporting whether it was recorded.
+func (s *FullSequencingHooks) setLastTxResult(err error) bool {
+	if len(s.sequencedTxs) == 0 {
+		log.Error("setLastTxResult called before any tx was sequenced", "err", err)
+		return false
 	}
-	s.txErrors = append(s.txErrors, err)
+	last := &s.sequencedTxs[len(s.sequencedTxs)-1]
+	switch {
+	case errors.Is(last.err, txNotFinalized):
+		last.err = err
+	case last.err == nil && err != nil:
+		// A late failure (e.g. a group rollback) overrides an earlier success; keeping the
+		// success would leave a rolled-back tx in the block message.
+		last.err = err
+	default:
+		log.Error("setLastTxResult called twice", "oldErr", last.err, "newErr", err)
+		return false
+	}
+	return true
 }
 
 func (s *FullSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt) {
@@ -136,25 +158,22 @@ func (s *FullSequencingHooks) TxAccepted(header *types.Header, tx *types.Transac
 func (s *FullSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error) {
 	for {
 		// This is not supposed to happen, if so we have a bug
-		if len(s.txErrors) != s.sequencedQueueItemsCount {
-			return nil, nil, fmt.Errorf("FullSequencingHooks: NextTxToSequence detected out of order request to sequence tx. txErrors: %d, sequencedQueueItemsCount: %d", len(s.txErrors), s.sequencedQueueItemsCount)
+		if n := len(s.sequencedTxs); n > 0 && errors.Is(s.sequencedTxs[n-1].err, txNotFinalized) {
+			return nil, nil, fmt.Errorf("NextTxToSequence called before the block processor reported tx %s's result", s.sequencedTxs[n-1].queueItem.tx.Hash())
 		}
-		if s.sequencedQueueItemsCount > 0 && s.txErrors[s.sequencedQueueItemsCount-1] == nil {
-			s.sequencedTxsSizeSoFar += s.queueItems[s.sequencedQueueItemsCount-1].txSize
-		}
-		if s.sequencedQueueItemsCount >= len(s.queueItems) {
+		item, ok := s.fetcher.NextQueueItem()
+		if !ok {
 			return nil, nil, nil
 		}
-		if s.sequencedTxsSizeSoFar+s.queueItems[s.sequencedQueueItemsCount].txSize > s.maxSequencedTxsSize {
-			s.sequencedQueueItemsCount += 1
-			s.TxFailed(core.ErrGasLimitReached)
+		s.sequencedTxs = append(s.sequencedTxs, sequencedTx{queueItem: item, err: txNotFinalized})
+		if s.sequencedTxsSizeSoFar+item.txSize > s.maxSequencedTxsSize {
+			s.setLastTxResult(core.ErrGasLimitReached)
 			s.txSizeLimitReached = true
-		} else {
-			s.sequencedQueueItemsCount += 1
-			break
+			// TODO(NIT-5041): in PGA, we should stop at this point and start a new block
+			continue
 		}
+		return item.tx, item.options, nil
 	}
-	return s.queueItems[s.sequencedQueueItemsCount-1].tx, s.queueItems[s.sequencedQueueItemsCount-1].options, nil
 }
 
 func (s *FullSequencingHooks) CanDiscardTx() bool {
