@@ -210,6 +210,7 @@ type transactionFeedTestEnv struct {
 	// for by helpers like assertFeedExactly.
 	setupTxs      []common.Hash
 	sentinelCount int
+	s3Filter      *fakeS3AddressFilter
 	cleanup       func()
 }
 
@@ -309,6 +310,10 @@ func setupTransactionFeedTest(t *testing.T, ctx context.Context, opts transactio
 	} else {
 		builder.execConfig.TransactionFeed = newTransactionFeedConfigTest()
 	}
+	var s3Filter *fakeS3AddressFilter
+	if opts.enableFiltering {
+		s3Filter = setupFakeS3AddressFilter(t, builder)
+	}
 
 	cleanup := builder.Build(t)
 
@@ -329,6 +334,7 @@ func setupTransactionFeedTest(t *testing.T, ctx context.Context, opts transactio
 		recorder: recorder,
 		server:   rfs,
 		conn:     conn,
+		s3Filter: s3Filter,
 	}
 	var cleanupOnce sync.Once
 	env.cleanup = func() {
@@ -674,8 +680,7 @@ func TestTransactionFeedCascadingRedeemRollback(t *testing.T) {
 	Require(t, err)
 
 	// Activate the address filter on the retryable's inner-call target.
-	filter := newHashedChecker([]common.Address{targetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	env.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{targetAddr})
 
 	// Sign the Redeem call without sending; the sequencer will reject the
 	// submission.
