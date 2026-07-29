@@ -243,6 +243,9 @@ func (c *Config) Validate() error {
 	if err := c.Caching.Validate(); err != nil {
 		return err
 	}
+	if err := c.RecordingDatabase.Validate(); err != nil {
+		return err
+	}
 	if err := c.Sequencer.Validate(); err != nil {
 		return err
 	}
@@ -363,7 +366,7 @@ type ExecutionNode struct {
 	FilterSystem             *filters.FilterSystem
 	ArbInterface             *ArbInterface
 	ExecEngine               *ExecutionEngine
-	Recorder                 *BlockRecorder
+	Recorder                 ExecutionBlockRecorder
 	Sequencer                *Sequencer // either nil or same as TxPublisher
 	TxPreChecker             *TxPreChecker
 	TxPublisher              TransactionPublisher
@@ -402,7 +405,6 @@ func CreateExecutionNode(
 	}
 	var addressFilterService *addressfilter.FilterService
 	var addressChecker state.AddressChecker
-	// Tests bypass the service by injecting via ExecEngine.SetAddressChecker.
 	if config.TransactionFiltering.Enable {
 		addressFilterService, err = addressfilter.NewFilterService(&config.TransactionFiltering.AddressFilter)
 		if err != nil {
@@ -427,7 +429,16 @@ func CreateExecutionNode(
 		execEngine.DisableStylusCacheMetricsCollection()
 	}
 
-	recorder := NewBlockRecorder(&config.RecordingDatabase, execEngine, executionDB)
+	var recorder ExecutionBlockRecorder
+	switch config.RecordingDatabase.Mode {
+	case BlockRecorderModeOff:
+	case BlockRecorderModeLegacy:
+		recorder = NewBlockRecorder(&config.RecordingDatabase, execEngine, executionDB)
+	case BlockRecorderModeChainTip:
+		recorder = NewChainTipBlockRecorder(execEngine)
+	default:
+		return nil, fmt.Errorf("unknown block recorder mode %q", config.RecordingDatabase.Mode)
+	}
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 
@@ -714,7 +725,9 @@ func (n *ExecutionNode) StopAndWait() {
 	if n.TxPublisher.Started() {
 		n.TxPublisher.StopAndWait()
 	}
-	n.Recorder.OrderlyShutdown()
+	if n.Recorder != nil {
+		n.Recorder.OrderlyShutdown()
+	}
 	if n.ParentChain != nil && n.ParentChain.Started() {
 		n.ParentChain.StopAndWait()
 	}
@@ -793,12 +806,18 @@ func (n *ExecutionNode) RecordBlockCreation(
 	wasmTargets []rawdb.WasmTarget,
 ) containers.PromiseInterface[*execution.RecordResult] {
 	return stopwaiter.LaunchPromiseThread(n, func(ctx context.Context) (*execution.RecordResult, error) {
+		if n.Recorder == nil {
+			return nil, errors.New("block recorder unavailable")
+		}
 		return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
 	})
 }
 
 func (n *ExecutionNode) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(n, func(ctx context.Context) (struct{}, error) {
+		if n.Recorder == nil {
+			return struct{}{}, errors.New("block recorder unavailable")
+		}
 		return struct{}{}, n.Recorder.PrepareForRecord(ctx, start, end)
 	})
 }

@@ -504,6 +504,16 @@ func (b *NodeBuilder) WithExtraArchs(targets []string) *NodeBuilder {
 	return b
 }
 
+func (b *NodeBuilder) WithChainTipBlockRecorder() *NodeBuilder {
+	b.execConfig.RecordingDatabase.Mode = gethexec.BlockRecorderModeChainTip
+	return b
+}
+
+func (b *NodeBuilder) WithLegacyBlockRecorder() *NodeBuilder {
+	b.execConfig.RecordingDatabase.Mode = gethexec.BlockRecorderModeLegacy
+	return b
+}
+
 // WithDelayBuffer sets the delay-buffer threshold, which is the number of blocks the batch-poster
 // is allowed to delay a batch with a delayed message.
 // Setting the threshold to zero disabled the delay buffer (default behaviour).

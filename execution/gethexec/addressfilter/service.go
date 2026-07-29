@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -100,6 +101,10 @@ func (s *FilterService) Start(ctx context.Context) {
 	log.Info("address-filter service started",
 		"poll_interval", s.config.PollInterval,
 	)
+}
+
+func (s *FilterService) TriggerSyncForTest(_ *testing.T, ctx context.Context) error {
+	return s.syncMgr.Syncer.CheckAndSync(ctx)
 }
 
 func (s *FilterService) GetHashCount() int {
