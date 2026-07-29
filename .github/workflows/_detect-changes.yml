@@ -31,12 +31,12 @@ jobs:
     name: Detect file changes
     runs-on: ubuntu-4
     outputs:
-      rust_changed: ${{ steps.changed.outputs.rust_any_changed }}
+      rust_changed: ${{ steps.changed.outputs.rust_any_changed == 'true' || steps.gitlinks.outputs.rust_changed == 'true' }}
       bold_legacy_changed: ${{ steps.changed.outputs.bold_legacy_any_changed }}
       changelog_added: ${{ steps.changed.outputs.changelog_added_files }}
-      code_changed: ${{ steps.changed.outputs.code_any_changed }}
+      code_changed: ${{ steps.changed.outputs.code_any_changed == 'true' || steps.gitlinks.outputs.any_changed == 'true' }}
       nitro_reth_changed: ${{ steps.changed.outputs.nitro_reth_any_changed }}
-      reth_only: ${{ steps.changed.outputs.nitro_reth_any_changed == 'true' && steps.changed.outputs.code_any_changed != 'true' }}
+      reth_only: ${{ steps.changed.outputs.nitro_reth_any_changed == 'true' && steps.changed.outputs.code_any_changed != 'true' && steps.gitlinks.outputs.any_changed != 'true' }}
 
     steps:
       - name: Checkout
@@ -52,10 +52,8 @@ jobs:
           files_yaml: |
             rust:
               - 'crates/**'
-              # Submodules aren't checked out here, so a contracts bump appears
-              # in diffs as the bare gitlink path 'contracts', which the glob
-              # form doesn't match. Keep both in case checkout behavior changes.
-              - 'contracts'
+              # Submodule bumps never appear in changed-files output; the
+              # gitlinks step below detects them instead.
               - 'contracts/**'
               - 'Makefile'
               - '**.toml'
@@ -82,3 +80,23 @@ jobs:
               - '!changelog/**'
               - '!nitro-reth/**'
               - '!.github/workflows/_nitro-reth*.yml'
+
+      - name: Detect submodule pointer changes
+        id: gitlinks
+        # changed-files diffs the parent repo with --ignore-submodules=all and
+        # can only expand a submodule's inner files when the submodule is
+        # checked out (it isn't here), so a PR whose only code change is a
+        # submodule bump would otherwise report no changes and skip CI.
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        run: |
+          changed=$(git config --file .gitmodules --get-regexp path | awk '{print $2}' \
+            | xargs -r git diff --name-only HEAD^1 HEAD --)
+          any=false
+          rust=false
+          while read -r path; do
+            [ -n "$path" ] || continue
+            any=true
+            case "$path" in crates/*|contracts) rust=true ;; esac
+          done <<< "$changed"
+          echo "any_changed=$any" >> "$GITHUB_OUTPUT"
+          echo "rust_changed=$rust" >> "$GITHUB_OUTPUT"
