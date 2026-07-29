@@ -1,0 +1,49 @@
+name: spec-tests
+
+on:
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    uses: ./.github/workflows/_build-release.yml
+    with:
+      artifact-name: spec-tests-binaries
+
+  spec:
+    name: arb-spec-tests
+    needs: build
+    runs-on: ocl-16cpu-64ram
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
+      - uses: dtolnay/rust-toolchain@1.93
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - uses: actions/download-artifact@v8
+        with:
+          name: spec-tests-binaries
+          path: target/release
+      - name: Make arb-reth executable
+        run: chmod +x target/release/arb-reth
+      - name: Run spec tests
+        env:
+          ARB_SPEC_BINARY: ${{ github.workspace }}/target/release/arb-reth
+          ARB_SPEC_REQUIRE_BINARY: "1"
+        run: cargo nextest run -p arb-spec-tests --features spec-binary --profile ci

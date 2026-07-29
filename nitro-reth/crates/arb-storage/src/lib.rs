@@ -1,0 +1,42 @@
+//! Storage-backed types for ArbOS state.
+//!
+//! Provides typed wrappers over raw storage slots — integers, addresses,
+//! byte arrays, queues, and vectors that persist in the state trie — and
+//! re-exports the [`StorageError`] surface from [`arb_storage_errors`].
+//!
+//! All read and write paths propagate database failures as typed
+//! [`StorageError::Database`] so callers can distinguish a genuine
+//! storage-level fault from a logical condition such as "slot is zero".
+
+mod backed_types;
+mod backend;
+mod bytes_storage;
+mod extra_types;
+mod gas;
+pub mod layout;
+pub mod queue;
+mod slot;
+mod state_ops;
+mod storage;
+pub mod vector;
+
+pub use arb_storage_errors::{AnyError, DatabaseError, DatabaseErrorInfo, StorageError};
+pub use backed_types::{
+    StorageBackedAddress, StorageBackedAddressOrNil, StorageBackedBigInt, StorageBackedBigUint,
+    StorageBackedInt64, StorageBackedUint64,
+};
+pub use backend::{StorageBackend, SystemStateBackend};
+pub use bytes_storage::StorageBackedBytes;
+pub use extra_types::{
+    StorageBackedBips, StorageBackedUBips, StorageBackedUint16, StorageBackedUint24,
+    StorageBackedUint32,
+};
+pub use gas::{STORAGE_READ_GAS, STORAGE_WRITE_GAS, STORAGE_WRITE_ZERO_GAS, write_cost};
+pub use queue::{Queue, initialize_queue, open_queue};
+pub use slot::storage_key_map;
+pub use state_ops::{
+    ARBOS_STATE_ADDRESS, FILTERED_TX_STATE_ADDRESS, get_account_balance, read_storage_at,
+    set_account_code, set_account_nonce, write_arbos_storage, write_storage_at,
+};
+pub use storage::{Detached, Storage};
+pub use vector::{SubStorageVector, open_sub_storage_vector};

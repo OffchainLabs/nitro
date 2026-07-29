@@ -1,0 +1,325 @@
+{
+  "name": "ten_l2_transfers",
+  "description": "Ten back-to-back L2 transfers fund ten distinct accounts with distinct amounts.",
+  "genesis": {
+    "alloc": {
+      "0x26E554a8acF9003b83495c7f45F06edCB803d4e3": {
+        "balance": "115792089237316195423570985008687907853269984665640564039457584007913129639927"
+      },
+      "0xaF24Ca6c2831f4d4F629418b50C227DF0885613A": {
+        "balance": "115792089237316195423570985008687907853269984665640564039457584007913129639927"
+      }
+    },
+    "coinbase": "0x0000000000000000000000000000000000000000",
+    "config": {
+      "chainId": 412346,
+      "homesteadBlock": 0,
+      "daoForkSupport": true,
+      "eip150Block": 0,
+      "eip155Block": 0,
+      "eip158Block": 0,
+      "byzantiumBlock": 0,
+      "constantinopleBlock": 0,
+      "petersburgBlock": 0,
+      "istanbulBlock": 0,
+      "muirGlacierBlock": 0,
+      "berlinBlock": 0,
+      "londonBlock": 0,
+      "depositContractAddress": "0x0000000000000000000000000000000000000000",
+      "clique": {
+        "period": 0,
+        "epoch": 0
+      },
+      "arbitrum": {
+        "EnableArbOS": true,
+        "AllowDebugPrecompiles": true,
+        "DataAvailabilityCommittee": false,
+        "InitialArbOSVersion": 51,
+        "InitialChainOwner": "0x0000000000000000000000000000000000000000",
+        "GenesisBlockNum": 0
+      }
+    },
+    "difficulty": "0x1",
+    "extraData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "gasLimit": "0x4000000000000",
+    "nonce": "0x1",
+    "timestamp": "0x0"
+  },
+  "messages": [
+    {
+      "msgIdx": 0,
+      "message": {
+        "header": {
+          "kind": 11,
+          "sender": "0x0000000000000000000000000000000000000000",
+          "blockNumber": 24,
+          "timestamp": 1776672003,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "baseFeeL1": 6303362410
+        },
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGSroBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAF7ImNoYWluSWQiOjQxMjM0NiwiaG9tZXN0ZWFkQmxvY2siOjAsImRhb0ZvcmtTdXBwb3J0Ijp0cnVlLCJlaXAxNTBCbG9jayI6MCwiZWlwMTU1QmxvY2siOjAsImVpcDE1OEJsb2NrIjowLCJieXphbnRpdW1CbG9jayI6MCwiY29uc3RhbnRpbm9wbGVCbG9jayI6MCwicGV0ZXJzYnVyZ0Jsb2NrIjowLCJpc3RhbmJ1bEJsb2NrIjowLCJtdWlyR2xhY2llckJsb2NrIjowLCJiZXJsaW5CbG9jayI6MCwibG9uZG9uQmxvY2siOjAsImRlcG9zaXRDb250cmFjdEFkZHJlc3MiOiIweDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLCJjbGlxdWUiOnsicGVyaW9kIjowLCJlcG9jaCI6MH0sImFyYml0cnVtIjp7IkVuYWJsZUFyYk9TIjp0cnVlLCJBbGxvd0RlYnVnUHJlY29tcGlsZXMiOnRydWUsIkRhdGFBdmFpbGFiaWxpdHlDb21taXR0ZWUiOmZhbHNlLCJJbml0aWFsQXJiT1NWZXJzaW9uIjo1MSwiSW5pdGlhbENoYWluT3duZXIiOiIweDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLCJHZW5lc2lzQmxvY2tOdW0iOjB9fQ=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 29,
+          "timestamp": 1776671980,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4boMGSrqAgIQL68IAgwGPSZQAAAAAAAAAAAAAAAAAAAAAAAAA/4CEDlu8EcCAoGXo68J2vTMOhFqV6j1TGX1q96Z8F5hYg44nQcYJ0RF8oETFae6eRX1Np2pyGaRHLSgqjOsK500fwQUkQGkLxg/5"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 29,
+          "timestamp": 1776671980,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL5AXCDBkq6AYCEC+vCAIMDZoiUAAAAAAAAAAAAAAAAAAAAAAAAAHCAuQEEzA1VagAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcnDgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMNQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOThwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYagDAgKCyH8qEwBWsmm9VFkklYSFtiro5eKAK6AO6c7MLfgk2D6AoPMSp7ziXAv3uqck2ncl2Pj3G69V+mIUzXjS4wRh/ew=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 29,
+          "timestamp": 1776671980,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4coMGSrqAhAvrwgCEC+vCAIN6EgCU1tOV+aCFvb99FrYVtarEvCx17W6EBfXhAIDAgKBgQWYAAi3jWr6sBseBaUjmpHM5lc0UI5tkJQPt+JzdjaAcD9NOM84f7aTKlWTbVAM7i69UY+k285xQS9Smret2CQ=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 30,
+          "timestamp": 1776671980,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4coMGSroBhAvrwgCEC+vCAIN6EgCUCVMKkZgaULojdJB9S+qXwNal7jOEC+vCAIDAgKCalHpsTARwLTemmk00firfiggLq8FKUKT4WCrf4OzE0aBgesZUjd6NofNFMI4UEBYyNHjZwLP9V9+Nt9/ORyxVAQ=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 31,
+          "timestamp": 1776671980,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4coMGSroChAvrwgCEC+vCAIN6EgCUL8ho8LQjN3lDwHLL9ZR51rEvEtyEEeGjAIDAgKAjekPhiYbQ2TOhKDbOFiZq1wiuhEaPTUDxBEl5RWE/v6BZN2cSBUEWhwo9qp6zNwsFTOH762ldtZhVag44b9p5oA=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 32,
+          "timestamp": 1776671980,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4coMGSroDhAvrwgCEC+vCAIN6EgCUh3oMskHSN3APkMZK5rnW1miYMlyEF9eEAIDAgKB7tLQxAysyCqMs1noTVAZbM1ELAwv1TTFCkee0tT72H6BsOHomuSzKJCtG+/hdQhvp25W6/8NyjPUQnMVZXrQqFA=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 33,
+          "timestamp": 1776671980,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4coMGSroEhAvrwgCEC+vCAIN6EgCUxbNdaKRCXqIvkJ1bdphmnfFtajGEHc1lAIDAAaC9JFaCM+hAvaTujkpLp3C8rjZ/7xXwcDI0Bz2KhgJtR6AwCyqsnchn4N0OOXUPSvE8ZaXFnpOHpfEuVrWZ7aR2cA=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 34,
+          "timestamp": 1776671980,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4coMGSroFhAvrwgCEC+vCAIN6EgCUxcN63FeHBngFu36jYyABqB0SCRyEI8NGAIDAAaA423NP4LBxUwkOKGRC5GTx6rRT9LqGkKunrIk2AlhcT6AlTF+XrzvlsRkuoro8yz3k6frDzMFa1Ro6E5A/hyEa/A=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 35,
+          "timestamp": 1776671980,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4coMGSroGhAvrwgCEC+vCAIN6EgCULrpSjKJq/ZfjfjOodrUzPsxyFhWEKbknAIDAgKAMDusW+375RCX8Sggu8Ky8W1yM/AD846dLJbvpiPaOCaBWVKy3Ge2Pgc65WJNhcpcTyKVd831numhoHyhMTgRTHg=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 35,
+          "timestamp": 1776671980,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4coMGSroHhAvrwgCEC+vCAIN6EgCUcc427mDWrqkI1sGKZvFsadWUhGuEL68IAIDAgKCA0Txd8cYufglsQP4balo/QNdo8Y+y4xGkxlyNwfzB9KAj+d/kyJKVM/DM/aAhaDTO8GvES/WGn/PtWGgHelLqJA=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 37,
+          "timestamp": 1776671980,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4coMGSroIhAvrwgCEC+vCAIN6EgCUY2zHU4gG+KF7tApAmXvdgQ628FSENaTpAIDAAaCIXqYLHa8iWMJFFqJ4ZAQo5hDmWtYQ3GelD8EHAkVbV6ACfgrHLTF5zsBxosZGuFiMKn3HPmGp3Y8NweLj4qkMNw=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 37,
+          "timestamp": 1776671980,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4coMGSroJhAvrwgCEC+vCAIN6EgCUMcqbWlgAR7q5Z13m+3CHY4ymAIiEO5rKAIDAAaCl8/HCNEX8YmGwciupO2R+q1k2nYkcB+mCJcbCeFH0PaB/mlbSuO6lLALTelLZ0m9m6RA9Xy7DoFyLOyuIFPtUgQ=="
+      },
+      "delayedMessagesRead": 1
+    }
+  ],
+  "expected": {
+    "blocks": [
+      {
+        "number": 1
+      },
+      {
+        "number": 2
+      },
+      {
+        "number": 3
+      },
+      {
+        "number": 4
+      },
+      {
+        "number": 5
+      },
+      {
+        "number": 6
+      },
+      {
+        "number": 7
+      },
+      {
+        "number": 8
+      },
+      {
+        "number": 9
+      },
+      {
+        "number": 10
+      },
+      {
+        "number": 11
+      },
+      {
+        "number": 12
+      }
+    ],
+    "balances": [
+      {
+        "address": "0xd6d395f9a085bdbf7d16b615b5aac4bc2c75ed6e",
+        "at_block": "latest",
+        "value": "100000000"
+      },
+      {
+        "address": "0x09530a91981a50ba2374907d4bea97c0d6a5ee33",
+        "at_block": "latest",
+        "value": "200000000"
+      },
+      {
+        "address": "0x2fc868f0b423377943c072cbf59479d6b12f12dc",
+        "at_block": "latest",
+        "value": "300000000"
+      },
+      {
+        "address": "0x877a0cb241d237700f90c64ae6b9d6d66898325c",
+        "at_block": "latest",
+        "value": "400000000"
+      },
+      {
+        "address": "0xc5b35d68a4425ea22f909d5b7698669df16d6a31",
+        "at_block": "latest",
+        "value": "500000000"
+      },
+      {
+        "address": "0xc5c37adc5787067805bb7ea3632001a81d12091c",
+        "at_block": "latest",
+        "value": "600000000"
+      },
+      {
+        "address": "0x2eba528ca26afd97e37e33a876b5333ecc721615",
+        "at_block": "latest",
+        "value": "700000000"
+      },
+      {
+        "address": "0x71ce36ee60d6aea908d6c18a66f16c69d594846b",
+        "at_block": "latest",
+        "value": "800000000"
+      },
+      {
+        "address": "0x636cc7538806f8a17bb40a40997bdd810eb6f054",
+        "at_block": "latest",
+        "value": "900000000"
+      },
+      {
+        "address": "0x31ca9b5a580047bab9675de6fb7087638ca60088",
+        "at_block": "latest",
+        "value": "1000000000"
+      }
+    ]
+  }
+}
