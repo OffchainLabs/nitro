@@ -1,5 +1,7 @@
 TOP              := $(abspath $(CURDIR)/../..)
 RISCV            := $(HOME)/.sp1/riscv
+# Keep in sync with the sp1-* crate versions in Cargo.lock.
+SP1_VERSION      := v6.2.1
 BROTLI_SRC_DIR   := $(TOP)/target/build-sp1/brotli-src
 BROTLI_BUILD_DIR := $(TOP)/target/build-sp1/brotli
 BROTLI_LIB_DIR   := $(TOP)/target/lib-sp1
@@ -15,7 +17,7 @@ help: # Show help for each of the Makefile recipes.
 .PHONY: install-sp1
 install-sp1: # Install the SP1 RISC-V toolchain.
 	@curl -L https://sp1up.succinct.xyz | bash
-	@$(HOME)/.sp1/bin/sp1up -c
+	@$(HOME)/.sp1/bin/sp1up --version $(SP1_VERSION) -c
 	@$(RISCV)/bin/riscv64-unknown-elf-gcc --version
 
 .PHONY: brotli

@@ -343,6 +343,18 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	if asserterGenesis.Hash() != challengerGenesis.Hash() {
 		Fatal(t, "asserter and challenger have different genesis hashes")
 	}
+	// makeBatch only feeds the consensus-side inbox tracker; execution digests
+	// the messages asynchronously (over JSON-RPC in some test configs). The
+	// challenge below is defined by each chain's head block, so both execution
+	// nodes must fully catch up first or the challenge covers a truncated range
+	// on which both parties genuinely agree.
+	expectedBlockNum := asserterGenesis.NumberU64() + uint64(makeBatch_MsgsPerBatch)*3
+	pollUntil(t, ctx, time.Minute, 100*time.Millisecond, "asserter execution to catch up to batches", func() bool {
+		return asserterExec.ArbInterface.BlockChain().CurrentBlock().Number.Uint64() >= expectedBlockNum
+	})
+	pollUntil(t, ctx, time.Minute, 100*time.Millisecond, "challenger execution to catch up to batches", func() bool {
+		return challengerExec.ArbInterface.BlockChain().CurrentBlock().Number.Uint64() >= expectedBlockNum
+	})
 	asserterLatestBlock := asserterExec.ArbInterface.BlockChain().CurrentBlock()
 	challengerLatestBlock := challengerExec.ArbInterface.BlockChain().CurrentBlock()
 	if asserterLatestBlock.Hash() == challengerLatestBlock.Hash() {

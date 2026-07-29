@@ -14,8 +14,14 @@ on:
         description: 'New changelog fragments.'
         value: ${{ jobs.changes.outputs.changelog_added }}
       code_changed:
-        description: 'True if any file other than CHANGELOG.md or changelog/** changed.'
+        description: 'True if any file other than CHANGELOG.md, changelog/**, or Nitro Reth files changed.'
         value: ${{ jobs.changes.outputs.code_changed }}
+      nitro_reth_changed:
+        description: 'True if Nitro Reth or related files changed.'
+        value: ${{ jobs.changes.outputs.nitro_reth_changed }}
+      reth_only:
+        description: 'True if only Nitro Reth and changelog files changed.'
+        value: ${{ jobs.changes.outputs.reth_only }}
 
 permissions:
   contents: read
@@ -29,12 +35,13 @@ jobs:
       bold_legacy_changed: ${{ steps.changed.outputs.bold_legacy_any_changed }}
       changelog_added: ${{ steps.changed.outputs.changelog_added_files }}
       code_changed: ${{ steps.changed.outputs.code_any_changed }}
+      nitro_reth_changed: ${{ steps.changed.outputs.nitro_reth_any_changed }}
+      reth_only: ${{ steps.changed.outputs.nitro_reth_any_changed == 'true' && steps.changed.outputs.code_any_changed != 'true' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
           fetch-depth: 10            # Will cover most PRs
           persist-credentials: true  # In case changed-files requires deeper depth
 
@@ -53,14 +60,25 @@ jobs:
               - 'Makefile'
               - '**.toml'
               - '**/Cargo.lock'
+              - '!nitro-reth/**'
               - '.github/workflows/_rust-tests.yml'
               - '.github/workflows/_detect-changes.yml'
             bold_legacy:
               - 'bold/legacy/**'
               - '.github/workflows/_bold-legacy.yml'
+            nitro_reth:
+              - 'nitro-reth/**'
+              - '.github/workflows/_nitro-reth*.yml'
+              - '.github/workflows/_detect-changes.yml'
+              # Root configs that nitro-reth builds inherit (no local copies),
+              # so toolchain/format bumps also run the reth suite.
+              - 'rust-toolchain.toml'
+              - 'rustfmt.toml'
             changelog:
               - 'changelog/**.md'
             code:
               - '**'
               - '!CHANGELOG.md'
               - '!changelog/**'
+              - '!nitro-reth/**'
+              - '!.github/workflows/_nitro-reth*.yml'
