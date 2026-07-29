@@ -552,16 +552,15 @@ func ProduceBlockAdvanced(
 				checkpoint.recentWasms = &rw
 			}
 
-			gasPool := gethGas
-			// Snapshot gasPool BEFORE running the tx so a later group rollback
+			// Snapshot the gas pool BEFORE running the tx so a later group rollback
 			// can restore the gas pool's cumulativeUsed (otherwise the rolled-back
 			// tx's gas leaks into subsequent receipts via DeriveFields).
-			preTxGasPool := gasPool.Snapshot()
+			preTxGasPool := gethGas.Snapshot()
 			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
 			evm := vm.NewEVM(blockContext, buildState.statedb, chainConfig, vm.Config{ExposeMultiGas: exposeMultiGas})
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
 				evm,
-				gasPool,
+				gethGas,
 				buildState.statedb,
 				header,
 				tx,
@@ -594,7 +593,7 @@ func ProduceBlockAdvanced(
 				// cumulativeUsed and remaining were charged for this discarded tx.
 				// Leaving them as-is would inflate subsequent receipts' CumulativeGasUsed
 				// and break receipt.GasUsed (computed via DeriveFields as a cumulative diff).
-				gasPool.Set(preTxGasPool)
+				gethGas.Set(preTxGasPool)
 				return nil, nil, err
 			}
 
@@ -602,7 +601,7 @@ func ProduceBlockAdvanced(
 			// callers must update header.GasUsed themselves. result.UsedGas equals
 			// this tx's gas pool consumption (endTxNow paths like deposits and
 			// retryable submissions consume their reported gas from the pool too),
-			// keeping header.GasUsed consistent with gasPool.Used(), which
+			// keeping header.GasUsed consistent with gethGas.Used(), which
 			// ValidateState checks against ProcessResult.GasUsed on replay.
 			header.GasUsed += result.UsedGas
 
