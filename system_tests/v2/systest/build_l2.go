@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -19,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
@@ -29,6 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/statetransfer"
 	arbtest "github.com/offchainlabs/nitro/system_tests"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
@@ -140,12 +144,9 @@ func l2Clients(t *testing.T, stack *node.Node, rpc bool) (client, httpClient, ws
 }
 
 // startL2Node starts h's nodes, wires the fatal watcher and clients into h,
-// and returns the full cleanup; closeL1 (nil = none) runs last.
-func startL2Node(t *testing.T, ctx context.Context, rb *rollbackGuard, h *L2Handle, fatalCh chan error, closeL1 func()) func() {
+// and returns the full cleanup.
+func startL2Node(t *testing.T, ctx context.Context, rb *rollbackGuard, h *L2Handle, fatalCh chan error) func() {
 	t.Helper()
-	if closeL1 == nil {
-		closeL1 = func() {}
-	}
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, h.Stack, h.ExecNode, h.Consensus)
 	if err != nil {
 		h.Consensus.StopAndWait()
@@ -158,16 +159,15 @@ func startL2Node(t *testing.T, ctx context.Context, rb *rollbackGuard, h *L2Hand
 	// Start the fatal watcher as soon as the nodes run, so a fatal during client
 	// setup or becomeChainOwner is reported rather than buffered then possibly lost.
 	stopWatcher := startFatalWatcher(ctx, t, fatalCh)
-	rb.stage(func() { cleanup(); stopWatcher(); closeL1() })
+	rb.stage(func() { cleanup(); stopWatcher() })
 
 	var closeClients func()
 	h.Client, h.HTTPClient, h.WSClient, closeClients = l2Clients(t, h.Stack, h.e.Spec.ExposeRPC)
-	// Stop nodes (joins fatalCh senders) → drain watcher → close clients → close L1.
+	// Stop nodes (joins fatalCh senders) → drain watcher → close clients.
 	h.cleanup = func() {
 		cleanup()
 		stopWatcher()
 		closeClients()
-		closeL1()
 	}
 	rb.stage(h.cleanup)
 	return h.cleanup
@@ -223,6 +223,86 @@ func startFatalWatcher(ctx context.Context, t *testing.T, fatalCh <-chan error) 
 	}
 }
 
+// buildGenericNode builds and starts one L2 node from explicit wiring; nil L1
+// pieces mean L2-only. info nil = the node's own fresh test info.
+func buildGenericNode(
+	t *testing.T,
+	ctx context.Context,
+	e *Env,
+	spec Spec,
+	o overrides,
+	name string,
+	nodeConfig *arbnode.Config,
+	chainConfig *params.ChainConfig,
+	execCfg *gethexec.Config,
+	stackCfg *node.Config,
+	initMsg *arbostypes.ParsedInitMessage,
+	info *arbtest.BlockchainTestInfo,
+	l1Client *ethclient.Client,
+	l1Info *arbtest.BlockchainTestInfo,
+	parentChain *parent.ParentChain,
+	addresses *chaininfo.RollupAddresses,
+	blobReader containers.Option[daprovider.BlobReader],
+	wasmRoot common.Hash,
+) (*L2Handle, func()) {
+	t.Helper()
+
+	var rb rollbackGuard
+	defer rb.run()
+
+	l2Info, stack, executionDB, consensusDB, blockchain := createBlockChain(
+		t, chainConfig, stackCfg, execCfg, initMsg, spec.arbOSInit, o.InitData)
+	rb.stage(func() { blockchain.Stop(); closeStack(name, stack) })
+
+	fatalCh := make(chan error, 10)
+	execFetcher := newConfigFetcher(execCfg)
+	l1ClientOpt := containers.None[*ethclient.Client]()
+	if l1Client != nil {
+		l1ClientOpt = containers.Some(l1Client)
+	}
+	execNode, err := gethexec.CreateExecutionNode(ctx, stack, executionDB, blockchain,
+		l1ClientOpt, execFetcher, 0, parentChain, fatalCh)
+	if err != nil {
+		t.Fatalf("%s CreateExecutionNode: %v", name, err)
+	}
+
+	// The sequencer account posts batches and signs feed data on L1 topologies.
+	var seqTxOpts *bind.TransactOpts
+	var dataSigner signature.DataSignerFunc
+	if l1Info != nil {
+		opts := l1Info.GetDefaultTransactOpts("Sequencer", ctx)
+		seqTxOpts = &opts
+		dataSigner = signature.DataSignerFromPrivateKey(l1Info.GetInfoWithPrivKey("Sequencer").PrivateKey)
+	}
+	nodeFetcher := newConfigFetcher(nodeConfig)
+	consensusNode, err := arbnode.CreateConsensusNode(
+		ctx, stack, execNode, consensusDB, nodeFetcher, blockchain.Config(), l1Client,
+		addresses, nil, seqTxOpts, dataSigner, fatalCh, blobReader, wasmRoot, parentChain)
+	if err != nil {
+		t.Fatalf("%s CreateConsensusNode: %v", name, err)
+	}
+
+	if initMsg == nil {
+		if err := consensusNode.TxStreamer.AddFakeInitMessage(); err != nil {
+			t.Fatalf("AddFakeInitMessage: %v", err)
+		}
+	}
+
+	if info == nil {
+		info = l2Info
+	}
+	handle := &L2Handle{
+		ChainHandle: ChainHandle{Info: info, e: e, name: name},
+		Stack:       stack,
+		ExecNode:    execNode,
+		Consensus:   consensusNode,
+	}
+	fullCleanup := startL2Node(t, ctx, &rb, handle, fatalCh)
+
+	rb.commit()
+	return handle, fullCleanup
+}
+
 // buildL2Node spins up an L2-only node per spec. Returns Env and cleanup.
 func buildL2Node(t *testing.T, ctx context.Context, spec Spec, overrides overrides) (*Env, func()) {
 	t.Helper()
@@ -230,51 +310,27 @@ func buildL2Node(t *testing.T, ctx context.Context, spec Spec, overrides overrid
 	nodeConfig := cloneConfig(arbnode.ConfigDefaultL2Test())
 	chainConfig, execCfg, stackCfg := seedConfigs(t, spec, overrides, nodeConfig)
 
-	var rb rollbackGuard
-	defer rb.run()
-
-	l2Info, stack, executionDB, consensusDB, blockchain := createBlockChain(
-		t, chainConfig, stackCfg, execCfg, nil, spec.arbOSInit, overrides.InitData)
-	rb.stage(func() { blockchain.Stop(); closeStack("l2", stack) })
-
-	fatalCh := make(chan error, 10)
-	execFetcher := newConfigFetcher(execCfg)
-	execNode, err := gethexec.CreateExecutionNode(ctx, stack, executionDB, blockchain, containers.None[*ethclient.Client](), execFetcher, 0, nil, fatalCh)
-	if err != nil {
-		t.Fatalf("CreateExecutionNode: %v", err)
-	}
-
 	locator, err := server_common.NewMachineLocator("")
 	if err != nil {
 		t.Fatalf("NewMachineLocator: %v", err)
 	}
-	nodeFetcher := newConfigFetcher(nodeConfig)
-	consensusNode, err := arbnode.CreateConsensusNode(
-		ctx, stack, execNode, consensusDB, nodeFetcher, blockchain.Config(),
-		nil, nil, nil, nil, nil, fatalCh, containers.None[daprovider.BlobReader](), locator.LatestWasmModuleRoot(), nil)
-	if err != nil {
-		t.Fatalf("CreateConsensusNode: %v", err)
-	}
 
-	if err := consensusNode.TxStreamer.AddFakeInitMessage(); err != nil {
-		t.Fatalf("AddFakeInitMessage: %v", err)
-	}
+	var rb rollbackGuard
+	defer rb.run()
 
 	e := &Env{
 		t:    t,
 		Ctx:  ctx,
 		Spec: spec,
 	}
-	handle := &L2Handle{
-		ChainHandle: ChainHandle{Info: l2Info, e: e, name: "l2"},
-		Stack:       stack,
-		ExecNode:    execNode,
-		Consensus:   consensusNode,
-	}
-	fullCleanup := startL2Node(t, ctx, &rb, handle, fatalCh, nil)
+	handle, fullCleanup := buildGenericNode(t, ctx, e, spec, overrides, "l2",
+		nodeConfig, chainConfig, execCfg, stackCfg,
+		nil, nil, nil, nil, nil, nil,
+		containers.None[daprovider.BlobReader](), locator.LatestWasmModuleRoot())
+	rb.stage(fullCleanup)
 
 	if !spec.SkipChainOwner {
-		becomeChainOwner(t, ctx, handle.Client, l2Info)
+		becomeChainOwner(t, ctx, handle.Client, handle.Info)
 	}
 
 	e.L2 = handle

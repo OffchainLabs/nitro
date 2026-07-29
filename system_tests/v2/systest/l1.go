@@ -16,7 +16,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
@@ -112,7 +111,7 @@ func (e *Env) LookupL2Tx(l1Receipt *types.Receipt) *types.Transaction {
 		types.ArbitrumContractTxType:        true,
 	}
 	var submissionTxs []*types.Transaction
-	chainID := chaininfo.ArbitrumDevTestChainConfig().ChainID
+	chainID := e.L2.ChainID()
 	for _, message := range messages {
 		if !msgTypes[message.Message.Header.Kind] {
 			continue

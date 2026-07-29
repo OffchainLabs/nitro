@@ -47,14 +47,6 @@ func (b backoff) until(ctx context.Context, fn func() (done bool, err error)) er
 	}
 }
 
-// joinPollErr appends the last poll error, if any, to a timed-out wait error.
-func joinPollErr(waitErr, lastErr error) error {
-	if waitErr == nil || lastErr == nil {
-		return waitErr
-	}
-	return fmt.Errorf("%w (last poll error: %w)", waitErr, lastErr)
-}
-
 // waitFor polls fn until true or ctx cancels. desc names the condition for
 // the failure message.
 func waitFor(ctx context.Context, desc string, fn func() bool) error {
