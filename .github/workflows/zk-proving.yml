@@ -41,6 +41,13 @@ jobs:
         with:
           llvm-version: 21
 
+      - name: Install nightly rustfmt
+        run: rustup toolchain install nightly --component rustfmt --profile minimal
+
+      - name: Rustfmt (SP1 crates)
+        working-directory: crates/sp1
+        run: cargo +nightly fmt -- --check
+
       - name: Install SP1 toolchain
         run: make -C crates/sp1 install-sp1
 

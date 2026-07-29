@@ -29,6 +29,7 @@ tracing = { version = "0.1.44" }
 prover = { path = "../prover", default-features = false }
 stylus-compiler-program = { path = "stylus-compiler-program" }
 
+# wasmer
 wasmer = { path = "../tools/wasmer/lib/api" }
 
 [patch.crates-io]
