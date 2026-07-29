@@ -857,9 +857,12 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, nil, nil
 	}
 
-	sequencedTxes, err := hooks.SequencedTxes()
-	if err != nil {
-		return nil, nil, err
+	sequencedTxes := hooks.SequencedTxes()
+	for _, res := range sequencedTxes {
+		// This is not supposed to happen, if so we have a bug
+		if errors.Is(res.Err, txNotFinalized) {
+			return nil, nil, fmt.Errorf("block processor never reported tx %s's result", res.Tx.Hash())
+		}
 	}
 	allTxsErrored := !slices.ContainsFunc(sequencedTxes, func(res TxResult) bool { return res.Err == nil })
 	if allTxsErrored {
