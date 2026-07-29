@@ -4,7 +4,6 @@ package backlog
 
 import (
 	"errors"
-	"reflect"
 	"slices"
 	"sync"
 	"testing"
@@ -384,10 +383,14 @@ func TestDropSegmentsReleasesOldSegments(t *testing.T) {
 	validateBacklog(t, b, 3, 48, 50, []arbutil.MessageIndex{48, 49, 50})
 
 	lookup := b.lookupByIndex.Load()
+	referencedBy := make(map[*backlogSegment][]uint64)
 	for _, k := range lookup.Keys() {
-		if segment, ok := lookup.Load(k); ok && reflect.DeepEqual(segment, dropped) {
-			t.Errorf("lookupByIndex[%d] still references the segment emptied by the drop, keeping every later segment reachable", k)
+		if segment, ok := lookup.Load(k); ok {
+			referencedBy[segment] = append(referencedBy[segment], k)
 		}
+	}
+	if keys, found := referencedBy[dropped]; found {
+		t.Errorf("lookupByIndex keys %v still reference the segment emptied by the drop, keeping every later segment reachable", keys)
 	}
 }
 
