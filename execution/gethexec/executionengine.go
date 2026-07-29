@@ -1327,8 +1327,7 @@ func (s *ExecutionEngine) finishTipRecording(session *tipRecordingSession, block
 	if session == nil || session.recordingStateDatabase == nil || block == nil || statedb == nil || s.tipRecorder == nil {
 		return nil
 	}
-	// Record before consensus/block side effects; canonical validation prevents
-	// serving this candidate if a later side effect fails.
+	// Persist before consensus/block side effects so write failures can abort cleanly.
 	session.recordingStateDatabase.StopRecording()
 	preimages := session.recordingStateDatabase.Preimages()
 	// StateDB owns VM SHA3 preimages and ArbOS preimages added during finalization.
