@@ -75,8 +75,7 @@ func TestRetryableFilteringStylusSandwichRollback(t *testing.T) {
 	processRetryableSubmission(t, p, ticketId, types.ReceiptStatusSuccessful)
 
 	// --- Step 2: Set filter and prepare sandwich txns ---
-	filter := newHashedChecker([]common.Address{filteredStylusAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredStylusAddr})
 
 	// Prepare TX1: write keyBefore=valueBefore to multicall M
 	tx1Args := multicallEmptyArgs()
@@ -161,7 +160,7 @@ func TestRetryableFilteringStylusGroupRollbackNoCacheLeak(t *testing.T) {
 	)
 	processRetryableSubmission(t, p, ticketId, types.ReceiptStatusSuccessful)
 
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, newHashedChecker([]common.Address{filteredStylusAddr}))
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredStylusAddr})
 
 	// txRedeem: a multicall that warms the program, then CALLs ArbRetryableTx.redeem,
 	// so the user tx warms the program before scheduling the (filtered) retry.
@@ -248,8 +247,7 @@ func TestRetryableFilteringStylusDelayedSandwichRollback(t *testing.T) {
 	valueAfter := common.HexToHash("0xcccc")
 
 	// Set filter on B's address BEFORE submitting any retryables
-	filter := newHashedChecker([]common.Address{filteredStylusAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredStylusAddr})
 
 	// --- Submit 3 retryables via L1 (all with auto-redeem) ---
 
