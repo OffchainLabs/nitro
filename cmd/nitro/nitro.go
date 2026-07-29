@@ -264,6 +264,11 @@ func mainImpl() int {
 		}
 	}
 
+	if nodeConfig.Node.BlockValidator.Enable && nodeConfig.Execution.RecordingDatabase.Mode == gethexec.BlockRecorderModeOff {
+		log.Error("validation requires a block recorder, set --execution.recording-database.mode to legacy or chain-tip")
+		return 1
+	}
+
 	if nodeConfig.Execution.RPC.MaxRecreateStateDepth == arbitrum.UninitializedMaxRecreateStateDepth {
 		if nodeConfig.Execution.Caching.Archive {
 			nodeConfig.Execution.RPC.MaxRecreateStateDepth = arbitrum.DefaultArchiveNodeMaxRecreateStateDepth
