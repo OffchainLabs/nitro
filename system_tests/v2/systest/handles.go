@@ -149,3 +149,12 @@ type L1Handle struct {
 	initMsg    *arbostypes.ParsedInitMessage
 	wasmRoot   common.Hash
 }
+
+// EnsureTxSucceeded waits for tx to succeed, then until its block is safe so
+// later reads observe its state (the simulated parent chain mines instantly).
+func (h *L1Handle) EnsureTxSucceeded(tx *types.Transaction) *types.Receipt {
+	h.e.t.Helper()
+	receipt := h.ChainHandle.EnsureTxSucceeded(tx)
+	h.e.Require(waitForSafeBlock(h.e.Ctx, h.Client, receipt.BlockNumber, DefaultTxWaitTimeout), "%s wait safe block for tx %s", h.name, tx.Hash())
+	return receipt
+}

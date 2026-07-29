@@ -24,8 +24,8 @@ type Env struct {
 	t   testing.TB
 	Ctx context.Context
 	L2  *L2Handle
-	// L2Follower is the non-sequencer follower handle. Nil unless TopologyMultiNode or TopologyFullStack.
-	L2Follower *L2Handle
+	// L2Followers are the non-sequencer follower handles. Empty unless TopologyMultiNode or TopologyFullStack.
+	L2Followers []*L2Handle
 	// L1 is the parent chain handle. Nil for TopologyL2Only scenarios.
 	L1   *L1Handle
 	Spec Spec
@@ -100,6 +100,62 @@ func (e *Env) Logf(format string, args ...any) {
 func (e *Env) WaitFor(desc string, fn func() bool) {
 	e.t.Helper()
 	e.Require(waitFor(e.Ctx, desc, fn))
+}
+
+// Follower returns the first non-sequencer follower handle.
+func (e *Env) Follower() *L2Handle {
+	e.t.Helper()
+	e.requireFollower()
+	return e.L2Followers[0]
+}
+
+// Followers returns all non-sequencer follower handles.
+func (e *Env) Followers() []*L2Handle {
+	e.t.Helper()
+	e.requireFollower()
+	return e.L2Followers
+}
+
+// WaitForFollowerSync blocks until every follower catches up to the sequencer.
+// Fails the test if there is no follower.
+func (e *Env) WaitForFollowerSync() {
+	e.t.Helper()
+	e.requireFollower()
+	e.Require(e.waitFollowersSynced())
+}
+
+// requireFollower fails the scenario if it has no follower node.
+func (e *Env) requireFollower() {
+	e.t.Helper()
+	e.NotEmpty(e.L2Followers, "follower helper called on a non-multi-node scenario; register it with systest.WithMultiNode()")
+}
+
+// waitFollowersSynced blocks until every follower executes the sequencer's
+// message count, mining an L1 block each poll so batches post and heads advance.
+func (e *Env) waitFollowersSynced() error {
+	target, err := e.L2.Consensus.TxStreamer.GetMessageCount()
+	if err != nil {
+		return err
+	}
+	for _, f := range e.L2Followers {
+		var lastErr error
+		var lastGot uint64
+		werr := waitFor(e.Ctx, "follower to execute sequencer message count", func() bool {
+			e.AdvanceL1(1)
+			got, err := f.Consensus.TxStreamer.GetProcessedMessageCount()
+			lastErr = err
+			lastGot = uint64(got)
+			return err == nil && got >= target
+		})
+		if werr == nil {
+			continue
+		}
+		if lastErr != nil {
+			return fmt.Errorf("%s: %w (last poll error: %w)", f.name, werr, lastErr)
+		}
+		return fmt.Errorf("%s: %w (at %d, want %d)", f.name, werr, lastGot, uint64(target))
+	}
+	return nil
 }
 
 // Go spawns fn in a goroutine. Errors and panics surface via t.Errorf;

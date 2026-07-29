@@ -52,13 +52,6 @@ func ensureTxSucceededWithin(ctx context.Context, client *ethclient.Client, tx *
 	if err != nil {
 		return nil, fmt.Errorf("wait tx %s: %w", tx.Hash(), err)
 	}
-	// On the simulated parent chain, wait until the tx's block is safe so later
-	// reads observe its state.
-	if receipt.Status == types.ReceiptStatusSuccessful && tx.ChainId().Cmp(simulatedParentChainID) == 0 {
-		if err := waitForSafeBlock(ctx, client, receipt.BlockNumber, timeout); err != nil {
-			return nil, fmt.Errorf("wait safe block for tx %s: %w", tx.Hash(), err)
-		}
-	}
 	// Single-gas projection of multi-dimensional gas must match gas used; skipped
 	// when multigas is disabled and reports zero.
 	if !receipt.MultiGasUsed.IsZero() && receipt.GasUsed != receipt.MultiGasUsed.SingleGas() {

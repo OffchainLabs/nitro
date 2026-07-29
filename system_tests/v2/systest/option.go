@@ -227,6 +227,33 @@ func WithChainConfigOverride(f func(*params.ChainConfig)) TestOption {
 	return func(b *builder) { b.chainConfigOverrides = append(b.chainConfigOverrides, f) }
 }
 
+// WithL1 builds the test on a real parent chain (L1 + sequencer L2 with batch
+// posting and inbox reading) instead of the default L2-only node.
+func WithL1() TestOption {
+	return func(b *builder) {
+		setTopology(b, TopologyL1L2, "WithL1")
+	}
+}
+
+// WithMultiNode builds an L1 + sequencer L2 plus a non-sequencer L2 syncing
+// via L1 (env.L2Followers).
+func WithMultiNode() TestOption {
+	return func(b *builder) {
+		setTopology(b, TopologyMultiNode, "WithMultiNode")
+	}
+}
+
+// setTopology pins the node layout, rejecting a second topology option.
+func setTopology(b *builder, topo Topology, name string) {
+	if b.topology == topo {
+		panic(fmt.Sprintf("systest: %s applied twice", name))
+	}
+	if b.topology != TopologyL2Only {
+		panic(fmt.Sprintf("systest: %s conflicts with another topology option", name))
+	}
+	b.topology = topo
+}
+
 // Compose collapses multiple TestOptions into one — used to define presets:
 //
 //	var Challenge = Compose(WithCategory("challenge"), WithMultiNode())

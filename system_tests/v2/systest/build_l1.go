@@ -6,7 +6,6 @@ package systest
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"math"
 	"math/big"
 	"testing"
@@ -32,14 +31,12 @@ import (
 	nitroinit "github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/deploy"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	arbtest "github.com/offchainlabs/nitro/system_tests"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
@@ -51,25 +48,6 @@ var defaultL1Accounts = []string{"RollupOwner", "Sequencer", "Validator", "User"
 
 // maxL1DataSize bounds sequencer-inbox batch data on the parent chain.
 const maxL1DataSize = 117964
-
-// WithL1 builds the test on a real parent chain (L1 + sequencer L2 with batch
-// posting and inbox reading) instead of the default L2-only node.
-func WithL1() TestOption {
-	return func(b *builder) {
-		setTopology(b, TopologyL1L2, "WithL1")
-	}
-}
-
-// setTopology pins the node layout, rejecting a second topology option.
-func setTopology(b *builder, topo Topology, name string) {
-	if b.topology == topo {
-		panic(fmt.Sprintf("systest: %s applied twice", name))
-	}
-	if b.topology != TopologyL2Only {
-		panic(fmt.Sprintf("systest: %s conflicts with another topology option", name))
-	}
-	b.topology = topo
-}
 
 // buildL1L2Node brings up an L1 parent chain, deploys the rollup, and starts a
 // sequencer L2 wired to it. Returns Env (with L1 populated) and cleanup.
@@ -88,7 +66,6 @@ func buildL1Stack(t *testing.T, ctx context.Context, spec Spec, overrides overri
 	var rb rollbackGuard
 	defer rb.run()
 
-	// Phase 1: parent chain.
 	l1Info, l1Client, l1Backend, l1Stack, l1BlobReader := createL1Chain(t)
 	closeL1Chain := func() {
 		l1Client.Close()
@@ -105,16 +82,10 @@ func buildL1Stack(t *testing.T, ctx context.Context, spec Spec, overrides overri
 		t.Fatalf("no wasm module root found under target/machines; run `make build-replay-env`")
 	}
 
-	// Phase 2: deploy rollup, derive the real init message from the L1 inbox.
 	addresses, initMsg := deployL1Rollup(t, ctx, l1Info, l1Client, chainConfig, wasmModuleRoot, disableValidatorWhitelist)
 
-	// Phase 3: L2 chain seeded with the deployed init message.
-	l2Info, stack, executionDB, consensusDB, blockchain := createBlockChain(
-		t, chainConfig, stackCfg, execCfg, initMsg, spec.arbOSInit, overrides.InitData)
-	rb.stage(func() { blockchain.Stop(); closeStack("l2", stack); closeL1Chain() })
-
-	// Phase 4: parent chain reader for the consensus node. This reader's poll
-	// loop is never started here; the node builds and owns its own started reader.
+	// This reader's poll loop is never started here; the consensus node builds
+	// and owns its own started reader.
 	nodeFetcher := newConfigFetcher(nodeConfig)
 	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
 	if err != nil {
@@ -129,39 +100,25 @@ func buildL1Stack(t *testing.T, ctx context.Context, spec Spec, overrides overri
 	parentChain := parent.NewParentChainWithConfig(ctx, simulatedParentChainID, l1Reader,
 		func() *parent.Config { return &parent.TestConfig })
 
-	// Phase 5: execution + consensus nodes.
-	fatalCh := make(chan error, 10)
-	execFetcher := newConfigFetcher(execCfg)
-	execNode, err := gethexec.CreateExecutionNode(ctx, stack, executionDB, blockchain,
-		containers.Some(l1Client), execFetcher, 0, parentChain, fatalCh)
-	if err != nil {
-		t.Fatalf("CreateExecutionNode: %v", err)
-	}
-
-	seqTxOpts := l1Info.GetDefaultTransactOpts("Sequencer", ctx)
-	dataSigner := signature.DataSignerFromPrivateKey(l1Info.GetInfoWithPrivKey("Sequencer").PrivateKey)
-	consensusNode, err := arbnode.CreateConsensusNode(
-		ctx, stack, execNode, consensusDB, nodeFetcher, blockchain.Config(), l1Client,
-		addresses, nil, &seqTxOpts, dataSigner, fatalCh, l1BlobReader, wasmModuleRoot, parentChain)
-	if err != nil {
-		t.Fatalf("CreateConsensusNode: %v", err)
-	}
-
 	e := &Env{
 		t:    t,
 		Ctx:  ctx,
 		Spec: spec,
 	}
-	l2Handle := &L2Handle{
-		ChainHandle: ChainHandle{Info: l2Info, e: e, name: "l2"},
-		Stack:       stack,
-		ExecNode:    execNode,
-		Consensus:   consensusNode,
+	l2Handle, nodeCleanup := buildGenericNode(t, ctx, e, spec, overrides, "l2",
+		nodeConfig, chainConfig, execCfg, stackCfg,
+		initMsg, nil,
+		l1Client, l1Info, parentChain, addresses,
+		l1BlobReader, wasmModuleRoot)
+	// Stop the L2 node (joins fatalCh senders) before closing the L1 it reads.
+	fullCleanup := func() {
+		nodeCleanup()
+		closeL1Chain()
 	}
-	fullCleanup := startL2Node(t, ctx, &rb, l2Handle, fatalCh, closeL1Chain)
+	rb.stage(fullCleanup)
 
 	if !spec.SkipChainOwner {
-		becomeChainOwner(t, ctx, l2Handle.Client, l2Info)
+		becomeChainOwner(t, ctx, l2Handle.Client, l2Handle.Info)
 	}
 
 	l1Handle := &L1Handle{
