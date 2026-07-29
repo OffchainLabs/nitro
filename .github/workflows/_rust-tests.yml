@@ -71,7 +71,7 @@ jobs:
         run: make build-replay-env
 
       - name: Clippy check (non-SP1)
-        run: cargo clippy --workspace --exclude stylus-compiler-program --exclude stylus-compiler-runner -- -D warnings
+        run: cargo clippy --workspace -- -D warnings
 
       - name: Run rust tests
         id: run-rust-tests
@@ -109,6 +109,10 @@ jobs:
 
       - name: Rustfmt - tools/stylus_benchmark
         run: cargo +nightly fmt --manifest-path crates/tools/stylus_benchmark/Cargo.toml -- --check
+
+      - name: Rustfmt - crates/sp1
+        working-directory: crates/sp1
+        run: cargo +nightly fmt -- --check
 
       - name: Make proofs from test cases
         run: make -j8 test-gen-proofs

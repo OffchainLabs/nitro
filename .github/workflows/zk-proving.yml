@@ -49,12 +49,12 @@ jobs:
 
       # Clippy runs after build because sp1-builder uses include_elf!(), which requires the SP1 ELF to exist at compile time.
       - name: Clippy check (SP1 crates)
-        run: cargo clippy -p stylus-compiler-program -p stylus-compiler-runner -- -D warnings -A static_mut_refs -A clippy::too_many_arguments
+        run: make -C crates/sp1 clippy
 
       - name: Run stylus-compiler-runner compare
         # Compare compilation consistency between running it natively and in the SP1 execution mode.
-        run: cargo run -p stylus-compiler-runner --release -- compare
+        run: make -C crates/sp1 compare
 
       - name: Run stylus-compiler-runner proving
         # Generate and verify a proof of correct Stylus compilation.
-        run: cargo run -p stylus-compiler-runner --release -- prove
+        run: make -C crates/sp1 prove

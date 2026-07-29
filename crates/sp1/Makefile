@@ -5,7 +5,6 @@ SP1_VERSION      := v6.2.1
 BROTLI_SRC_DIR   := $(TOP)/target/build-sp1/brotli-src
 BROTLI_BUILD_DIR := $(TOP)/target/build-sp1/brotli
 BROTLI_LIB_DIR   := $(TOP)/target/lib-sp1
-OUTPUT_DIR       := $(TOP)/target/sp1
 
 # Bump SP1's maximum heap memory size.
 export SP1_ZKVM_MAX_MEMORY := 1099511627776
@@ -55,8 +54,20 @@ nitro-deps: brotli
 .PHONY: build
 build: # Mocked system build (temporary solution until we have all the necessary crates available)
 build: nitro-deps
-	@cargo build -p stylus-compiler-runner --release
+	@cargo build --locked -p stylus-compiler-runner --release
+
+.PHONY: clippy
+clippy: # Run clippy on the sp1 workspace crates.
+	@cargo clippy --locked -p stylus-compiler-program -p stylus-compiler-runner -- -D warnings -A static_mut_refs -A clippy::too_many_arguments
+
+.PHONY: compare
+compare: # Compare compilation consistency between native and SP1 execution mode.
+	@cd $(TOP) && cargo run --locked --manifest-path $(CURDIR)/Cargo.toml -p stylus-compiler-runner --release -- compare
+
+.PHONY: prove
+prove: # Generate and verify a proof of correct Stylus compilation.
+	@cd $(TOP) && cargo run --locked --manifest-path $(CURDIR)/Cargo.toml -p stylus-compiler-runner --release -- prove
 
 .PHONY: clean
 clean: # Remove all generated artifacts.
-	@rm -rf $(BROTLI_SRC_DIR) $(BROTLI_BUILD_DIR) $(BROTLI_LIB_DIR) $(OUTPUT_DIR)
+	@rm -rf $(BROTLI_SRC_DIR) $(BROTLI_BUILD_DIR) $(BROTLI_LIB_DIR) target
