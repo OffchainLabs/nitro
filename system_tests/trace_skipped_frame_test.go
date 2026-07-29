@@ -32,6 +32,7 @@ func sequenceOnchainFilteredLegacyDelayedTx(t *testing.T, ctx context.Context) (
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
 
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	t.Cleanup(cleanup)
 
@@ -52,8 +53,7 @@ func sequenceOnchainFilteredLegacyDelayedTx(t *testing.T, ctx context.Context) (
 	// delayed sequencer, mirroring the production flow that lands a tx in the onchain
 	// filter before it is (re-)sequenced.
 	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
-	addrFilter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	// A legacy (type 0) value transfer to the filtered address, sent via the delayed inbox.
 	senderInfo := builder.L2Info.GetInfoWithPrivKey("Sender")

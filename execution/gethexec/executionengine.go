@@ -1734,10 +1734,6 @@ func (s *ExecutionEngine) MaintenanceStatus() *execution.MaintenanceStatus {
 	}
 }
 
-func (s *ExecutionEngine) SetAddressChecker(_ *testing.T, checker state.AddressChecker) {
-	s.addressChecker = checker
-}
-
 func (s *ExecutionEngine) SetEventFilter(ef *eventfilter.EventFilter) {
 	s.eventFilter = ef
 }

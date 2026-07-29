@@ -19,8 +19,8 @@ import (
 )
 
 // txFilterer implements core.TxFilterer for address-based transaction filtering
-// for node API calls such as eth_estimateGas and eth_call. It wraps ExecutionEngine to resolve the address
-// checker lazily, so tests can inject checkers via ExecEngine.SetAddressChecker.
+// for node API calls such as eth_estimateGas and eth_call. It wraps ExecutionEngine
+// to resolve the address checker lazily.
 type txFilterer struct {
 	execEngine  *ExecutionEngine
 	eventFilter *eventfilter.EventFilter
