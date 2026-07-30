@@ -21,6 +21,7 @@ import (
 type BlockRecordingsPruner struct {
 	stopwaiter.StopWaiter
 	recorder      execution.ExecutionRecorder
+	validated     func() arbutil.MessageIndex
 	config        BlockRecordingsPrunerConfigFetcher
 	pruningLock   sync.Mutex
 	lastPruneDone time.Time
@@ -48,10 +49,11 @@ func BlockRecordingsPrunerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".min-prune-interval", DefaultBlockRecordingsPrunerConfig.MinPruneInterval, "minimum time between runs of the block recordings pruner")
 }
 
-func NewBlockRecordingsPruner(recorder execution.ExecutionRecorder, config BlockRecordingsPrunerConfigFetcher) *BlockRecordingsPruner {
+func NewBlockRecordingsPruner(recorder execution.ExecutionRecorder, validated func() arbutil.MessageIndex, config BlockRecordingsPrunerConfigFetcher) *BlockRecordingsPruner {
 	return &BlockRecordingsPruner{
-		recorder: recorder,
-		config:   config,
+		recorder:  recorder,
+		validated: validated,
+		config:    config,
 	}
 }
 
@@ -59,7 +61,7 @@ func (p *BlockRecordingsPruner) Start(ctxIn context.Context) {
 	p.StopWaiter.Start(ctxIn, p)
 }
 
-func (p *BlockRecordingsPruner) UpdateLatestConfirmed(count arbutil.MessageIndex, globalState validator.GoGlobalState) {
+func (p *BlockRecordingsPruner) UpdateLatestConfirmed(count arbutil.MessageIndex, _ validator.GoGlobalState) {
 	locked := p.pruningLock.TryLock()
 	if !locked {
 		return
@@ -68,6 +70,9 @@ func (p *BlockRecordingsPruner) UpdateLatestConfirmed(count arbutil.MessageIndex
 	if time.Since(p.lastPruneDone) < p.config().MinPruneInterval {
 		p.pruningLock.Unlock()
 		return
+	}
+	if p.validated != nil {
+		count = min(count, p.validated())
 	}
 	err := p.LaunchThreadSafe(func(ctx context.Context) {
 		defer p.pruningLock.Unlock()

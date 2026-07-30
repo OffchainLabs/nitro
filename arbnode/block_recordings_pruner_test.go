@@ -63,8 +63,42 @@ func (r *pruningTestRecorder) prunedCalls() []arbutil.MessageIndex {
 
 func newTestBlockRecordingsPruner(config BlockRecordingsPrunerConfig) (*BlockRecordingsPruner, *pruningTestRecorder) {
 	recorder := &pruningTestRecorder{}
-	pruner := NewBlockRecordingsPruner(recorder, func() *BlockRecordingsPrunerConfig { return &config })
+	pruner := NewBlockRecordingsPruner(recorder, nil, func() *BlockRecordingsPrunerConfig { return &config })
 	return pruner, recorder
+}
+
+func TestBlockRecordingsPrunerRespectsLocalValidation(t *testing.T) {
+	config := DefaultBlockRecordingsPrunerConfig
+	config.MinPruneInterval = 0
+	recorder := &pruningTestRecorder{}
+	validated := arbutil.MessageIndex(10)
+	pruner := NewBlockRecordingsPruner(recorder, func() arbutil.MessageIndex { return validated }, func() *BlockRecordingsPrunerConfig { return &config })
+	pruner.Start(context.Background())
+	defer pruner.StopAndWait()
+
+	pruner.UpdateLatestConfirmed(42, validator.GoGlobalState{})
+	for start := time.Now(); len(recorder.prunedCalls()) == 0; {
+		if time.Since(start) > 10*time.Second {
+			t.Fatal("timed out waiting for prune")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if pruned := recorder.prunedCalls(); pruned[0] != 10 {
+		t.Fatalf("expected pruning clamped to the validated position, got %v", pruned)
+	}
+
+	validated = 100
+	for start := time.Now(); ; {
+		pruner.UpdateLatestConfirmed(43, validator.GoGlobalState{})
+		pruned := recorder.prunedCalls()
+		if len(pruned) > 1 && pruned[len(pruned)-1] == 43 {
+			break
+		}
+		if time.Since(start) > 10*time.Second {
+			t.Fatalf("timed out waiting for confirmed-clamped prune, got %v", pruned)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func TestBlockRecordingsPrunerPrunesBelowLatestConfirmed(t *testing.T) {

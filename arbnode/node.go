@@ -1118,7 +1118,11 @@ func getStaker(
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
 		}
 		if config.BlockRecordingsPruner.Enable && executionRecorder != nil {
-			blockRecordingsPruner = NewBlockRecordingsPruner(executionRecorder, func() *BlockRecordingsPrunerConfig { return &configFetcher.Get().BlockRecordingsPruner })
+			var validated func() arbutil.MessageIndex
+			if blockValidator != nil {
+				validated = blockValidator.GetValidated
+			}
+			blockRecordingsPruner = NewBlockRecordingsPruner(executionRecorder, validated, func() *BlockRecordingsPrunerConfig { return &configFetcher.Get().BlockRecordingsPruner })
 			confirmedNotifiers = append(confirmedNotifiers, blockRecordingsPruner)
 		}
 
