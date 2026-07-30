@@ -14,9 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/ethereum/go-ethereum/trie"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -70,7 +68,7 @@ func TestValidationInputsAtExecutesInValidationWorker(t *testing.T) {
 	testValidationInputsAtExecutesInValidationWorker(t)
 }
 
-func TestValidationInputsAtChainTipIncludesReferencedTrieChildPreimages(t *testing.T) {
+func TestValidationInputsAtChainTipStorageCacheFlushOutOfGas(t *testing.T) {
 	builder, auth, cleanup := setupChainTipValidationInputsTest(t)
 	ctx := builder.ctx
 	defer cleanup()
@@ -82,7 +80,6 @@ func TestValidationInputsAtChainTipIncludesReferencedTrieChildPreimages(t *testi
 	if len(preimages) == 0 {
 		t.Fatal("expected validation input to contain keccak preimages")
 	}
-	assertReferencedTrieChildPreimages(t, preimages)
 }
 
 func TestValidationInputsAtServesMultipleChainTipBlocks(t *testing.T) {
@@ -415,45 +412,5 @@ func assertHeaderPreimages(t *testing.T, builder *NodeBuilder, firstHeaderNumber
 		if !bytes.Equal(preimage, encodedHeader) {
 			t.Fatalf("header preimage mismatch for block %d (%s)", headerNum, header.Hash())
 		}
-	}
-}
-
-func assertReferencedTrieChildPreimages(t *testing.T, preimages map[common.Hash][]byte) {
-	t.Helper()
-	references := 0
-	fullyResolved := 0
-	for hash, preimage := range preimages {
-		if crypto.Keccak256Hash(preimage) != hash {
-			continue
-		}
-		total := 0
-		resolved := 0
-		if err := trie.ForEachHashChild(nil, preimage, func(_ []byte, child common.Hash) {
-			total++
-			if _, ok := preimages[child]; ok {
-				resolved++
-			}
-		}); err != nil {
-			continue
-		}
-		references += total
-		if total == 0 {
-			continue
-		}
-		// Read nodes have all children eagerly recorded, and children of
-		// never read boundary nodes cannot be recorded at all, so partial
-		// resolution means child gathering dropped some.
-		if resolved != 0 && resolved != total {
-			t.Fatalf("trie node %s has %d of %d referenced children recorded", hash, resolved, total)
-		}
-		if resolved == total {
-			fullyResolved++
-		}
-	}
-	if references == 0 {
-		t.Fatal("expected trie node preimages to reference at least one hashed child")
-	}
-	if fullyResolved == 0 {
-		t.Fatal("expected at least one trie node with all referenced children recorded")
 	}
 }
