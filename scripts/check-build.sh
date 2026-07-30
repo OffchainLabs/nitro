@@ -189,11 +189,12 @@ else
 fi
 
 # Check Foundry / forge installation and version compatibility
+forge_install_cmd="Run: foundryup -i $forge_version_needed${NC}"
 if ! command_exists foundryup; then
     echo -e "${RED}Foundry is not installed.${NC}"
     EXIT_CODE=1
 elif ! command_exists forge; then
-    echo -e "${RED}forge is not installed. Run: foundryup --version $forge_version_needed${NC}"
+    echo -e "${RED}forge is not installed. $forge_install_cmd"
     EXIT_CODE=1
 else
     FORGE_INSTALLED_VERSION=$(forge --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
@@ -203,7 +204,7 @@ else
     elif compare_versions "$forge_version_needed" "$FORGE_INSTALLED_VERSION" "exact"; then
         echo -e "${GREEN}forge version $FORGE_INSTALLED_VERSION is installed.${NC}"
     else
-        echo -e "${RED}forge version $FORGE_INSTALLED_VERSION is not compatible. Version $forge_version_needed is required (newer versions use solar instead of solc for Yul compilation). Run: foundryup --version $forge_version_needed${NC}"
+        echo -e "${RED}forge version $FORGE_INSTALLED_VERSION is not compatible. Version $forge_version_needed is required (newer versions use solar instead of solc for Yul compilation). $forge_install_cmd"
         EXIT_CODE=1
     fi
 fi
