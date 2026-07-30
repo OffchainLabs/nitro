@@ -460,7 +460,6 @@ fn parse_with_limits<'a>(
                 }
             }
             ExportSection(exports) => {
-                limit_section!(MAX_USER_EXPORTS, exports.count() as usize, "exports");
                 use ExternalKind as E;
                 for export in exports {
                     let export = export?;
