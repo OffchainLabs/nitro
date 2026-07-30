@@ -4,6 +4,7 @@
 package s3syncer
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -39,6 +40,8 @@ type Syncer struct {
 }
 
 const bytesInMB = 1024 * 1024
+
+const bufferedReaderSize = 1 * bytesInMB
 
 func NewSyncer(
 	config *Config,
@@ -187,7 +190,7 @@ func (s *Syncer) downloadAndHandle(ctx context.Context, etagDigest string) error
 			ErrObjectTooLarge, n, s.config.MaxFileSizeMB, s.config.Bucket, s.config.ObjectKey)
 	}
 
-	return s.applyHandled(etagDigest, io.NewSectionReader(f, 0, n), n)
+	return s.applyHandled(etagDigest, bufio.NewReaderSize(io.NewSectionReader(f, 0, n), bufferedReaderSize), n)
 }
 
 func (s *Syncer) applyHandled(etagDigest string, r io.Reader, size int64) error {
