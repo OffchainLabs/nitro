@@ -188,6 +188,32 @@ func (h *HashStore) Store(digest string, sizeHint int, fill func(add func(common
 	return nil
 }
 
+type HashStoreSet struct {
+	stores []*HashStore
+}
+
+func NewHashStoreSet(stores []*HashStore) *HashStoreSet {
+	return &HashStoreSet{stores: stores}
+}
+
+func (s *HashStoreSet) IsRestricted(addr common.Address) (bool, uuid.UUID) {
+	for _, store := range s.stores {
+		if restricted, id := store.IsRestricted(addr); restricted {
+			return true, id
+		}
+	}
+	return false, uuid.Nil
+}
+
+func (s *HashStoreSet) AllLoaded() bool {
+	for _, store := range s.stores {
+		if store.LoadedAt().IsZero() {
+			return false
+		}
+	}
+	return true
+}
+
 // IsRestricted returns whether the address is restricted and the filter set ID,
 // both read from the same snapshot.
 func (h *HashStore) IsRestricted(addr common.Address) (bool, uuid.UUID) {

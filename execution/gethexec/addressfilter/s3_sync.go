@@ -21,11 +21,18 @@ import (
 	"github.com/offchainlabs/nitro/util/s3syncer"
 )
 
+// Aggregate counters across all configured files; per-file counterparts are
+// registered dynamically by config-slice index in newFileMetrics.
 var (
-	fileSizeGauge       = metrics.NewRegisteredGauge("arb/addressfilter/file/size", nil)
 	fileTooLargeCounter = metrics.NewRegisteredCounter("arb/addressfilter/file/toolarge_total", nil)
 	syncFailureCounter  = metrics.NewRegisteredCounter("arb/addressfilter/sync/failure_total", nil)
 )
+
+// newFileSizeGauge registers the size gauge of one configured file, named by
+// its index in the files config slice.
+func newFileSizeGauge(idx int) *metrics.Gauge {
+	return metrics.GetOrRegisterGauge(fmt.Sprintf("arb/addressfilter/file/%d/size", idx), nil)
+}
 
 // jsonHash decodes a single hex hash string in place, with no Go-string allocation, supporting an optional "0x"/"0X".
 type jsonHash common.Hash
@@ -53,16 +60,20 @@ func (h *jsonHash) UnmarshalText(text []byte) error {
 type S3SyncManager struct {
 	Syncer    *s3syncer.Syncer
 	hashStore *HashStore
+	bucket    string
+	objectKey string
 }
 
-func NewS3SyncManager(config *Config, hashStore *HashStore) *S3SyncManager {
+func NewS3SyncManager(fileConfig *FileConfig, hashStore *HashStore, objectSizeGauge *metrics.Gauge) *S3SyncManager {
 	manager := &S3SyncManager{
 		hashStore: hashStore,
+		bucket:    fileConfig.Bucket,
+		objectKey: fileConfig.ObjectKey,
 	}
 	syncer := s3syncer.NewSyncer(
-		&config.S3,
+		&fileConfig.Config,
 		manager.handleHashListStream,
-		fileSizeGauge,
+		objectSizeGauge,
 	)
 
 	manager.Syncer = syncer
@@ -88,7 +99,7 @@ func (s *S3SyncManager) handleHashListStream(r io.Reader, size int64, digest str
 		return fmt.Errorf("failed to parse hash list: %w", err)
 	}
 
-	log.Info("loaded restricted addr list", "filterSetID", listMeta.Id, "hash_count", s.hashStore.Size(), "etag", digest, "size_bytes", size, "scheme", listMeta.Scheme)
+	log.Info("loaded restricted addr list", "bucket", s.bucket, "key", s.objectKey, "filterSetID", listMeta.Id, "hash_count", s.hashStore.Size(), "etag", digest, "size_bytes", size, "scheme", listMeta.Scheme)
 	return nil
 }
 

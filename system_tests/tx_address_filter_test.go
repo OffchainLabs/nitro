@@ -1315,13 +1315,15 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 
 	// Create a filter service with valid config but without loaded rules
 	filterCfg := &addressfilter.Config{
-		S3: s3syncer.Config{
-			Config:      s3client.Config{Region: "us-east-1"},
-			Bucket:      "test-bucket",
-			ObjectKey:   "test-key",
-			DownloadDir: t.TempDir(),
-		},
-		PollInterval:              5 * time.Minute,
+		Files: []addressfilter.FileConfig{{
+			Config: s3syncer.Config{
+				Config:      s3client.Config{Region: "us-east-1"},
+				Bucket:      "test-bucket",
+				ObjectKey:   "test-key",
+				DownloadDir: t.TempDir(),
+			},
+			PollInterval: 5 * time.Minute,
+		}},
 		CacheSize:                 100,
 		AddressCheckerWorkerCount: 1,
 		AddressCheckerQueueSize:   10,
@@ -1340,7 +1342,7 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	}
 
 	// Store hashes to the hashstore so FilteringReady returns true
-	storeFilterHashes(t, filterService.GetHashStore(), uuid.New(), testFilterSalt, addressfilter.HashingSchemeStringInput, nil, "test-digest")
+	storeFilterHashes(t, filterService.GetHashStore(0), uuid.New(), testFilterSalt, addressfilter.HashingSchemeStringInput, nil, "test-digest")
 
 	if !execNode.Sequencer.FilteringReady() {
 		t.Fatal("FilteringReady should be true after filter rules are loaded")
@@ -1396,6 +1398,48 @@ func TestAddressFilterDirectTransferStringInputScheme(t *testing.T) {
 	Require(t, err)
 
 	endpoint.AssertNoReport(t, 500*time.Millisecond)
+}
+
+func TestAddressFilterMultiFile(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	s3Filter := setupFakeS3AddressFilterMultiFile(t, builder, 2)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("FilteredUser1")
+	builder.L2Info.GenerateAccount("FilteredUser2")
+	builder.L2Info.GenerateAccount("NormalUser")
+	builder.L2Info.GenerateAccount("AnotherUser")
+	builder.L2.TransferBalance(t, "Owner", "NormalUser", big.NewInt(1e18), builder.L2Info)
+
+	s3Filter.setFilteredAddressesForFile(t, ctx, builder.L2.ExecNode, 0, []common.Address{builder.L2Info.GetAddress("FilteredUser1")})
+	s3Filter.setFilteredAddressesForFile(t, ctx, builder.L2.ExecNode, 1, []common.Address{builder.L2Info.GetAddress("FilteredUser2")})
+
+	// Tx to an address listed in the first file is rejected.
+	tx := builder.L2Info.PrepareTx("NormalUser", "FilteredUser1", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err := builder.L2.Client.SendTransaction(ctx, tx)
+	if err == nil || !isFilteredError(err) {
+		t.Fatalf("expected filtered error for address listed in first file, got: %v", err)
+	}
+
+	// Tx to an address listed only in the second file is rejected.
+	builder.L2Info.GetInfoWithPrivKey("NormalUser").Nonce.Store(0)
+	tx = builder.L2Info.PrepareTx("NormalUser", "FilteredUser2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
+	if err == nil || !isFilteredError(err) {
+		t.Fatalf("expected filtered error for address listed in second file, got: %v", err)
+	}
+
+	// Tx between unlisted addresses succeeds.
+	builder.L2Info.GetInfoWithPrivKey("NormalUser").Nonce.Store(0)
+	tx = builder.L2Info.PrepareTx("NormalUser", "AnotherUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	Require(t, builder.L2.Client.SendTransaction(ctx, tx))
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
 }
 
 func TestGenerateAddressHashesFixtureScript(t *testing.T) {

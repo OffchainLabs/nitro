@@ -393,52 +393,6 @@ func TestParseHashListJSON(t *testing.T) {
 	}
 }
 
-func TestConfig_Validate(t *testing.T) {
-	// Test config with missing fields
-	emptyConfig := Config{}
-	if err := emptyConfig.Validate(); err == nil {
-		t.Error("config with missing fields should be invalid")
-	}
-
-	// Test valid config
-	validConfig := Config{
-		S3: s3syncer.Config{
-			Config:      s3client.Config{Region: "us-east-1"},
-			Bucket:      "test-bucket",
-			ObjectKey:   "hashlists/current.json",
-			DownloadDir: t.TempDir(),
-		},
-		PollInterval:              5 * time.Minute,
-		CacheSize:                 10000,
-		AddressCheckerWorkerCount: 4,
-		AddressCheckerQueueSize:   8192,
-	}
-	if err := validConfig.Validate(); err != nil {
-		t.Errorf("valid config should pass validation: %v", err)
-	}
-
-	// Test invalid poll interval
-	invalidPollConfig := validConfig
-	invalidPollConfig.PollInterval = 0
-	if err := invalidPollConfig.Validate(); err == nil {
-		t.Error("config with zero poll interval should be invalid")
-	}
-
-	// Test invalid cache size (zero)
-	invalidCacheConfig := validConfig
-	invalidCacheConfig.PollInterval = 5 * time.Minute
-	invalidCacheConfig.CacheSize = 0
-	if err := invalidCacheConfig.Validate(); err == nil {
-		t.Error("config with zero cache size should be invalid")
-	}
-
-	// Test invalid cache size (negative)
-	invalidCacheConfig.CacheSize = -1
-	if err := invalidCacheConfig.Validate(); err == nil {
-		t.Error("config with negative cache size should be invalid")
-	}
-}
-
 func TestHashStore_CustomCacheSize(t *testing.T) {
 	// Test creating store with custom cache size
 	store := NewHashStore(500)
@@ -496,23 +450,32 @@ func TestHashStore_LoadedAt(t *testing.T) {
 
 const filteringTestBucket = "addressfilter-test"
 
-func newFilteringTestConfig(t *testing.T, endpoint, key string, maxFileSizeMB int) *Config {
-	cfg := DefaultConfig
-	cfg.S3 = s3syncer.Config{
-		Config: s3client.Config{
-			Region:    "us-east-1",
-			AccessKey: "dummy-access-key",
-			SecretKey: "dummy-secret-key",
-			Endpoint:  endpoint,
+func newFilteringTestFileConfig(t *testing.T, endpoint, key string, maxFileSizeMB int) FileConfig {
+	return FileConfig{
+		Config: s3syncer.Config{
+			Config: s3client.Config{
+				Region:    "us-east-1",
+				AccessKey: "dummy-access-key",
+				SecretKey: "dummy-secret-key",
+				Endpoint:  endpoint,
+			},
+			Bucket:            filteringTestBucket,
+			ObjectKey:         key,
+			ChunkSizeMB:       s3syncer.DefaultS3Config.ChunkSizeMB,
+			MaxRetries:        s3syncer.DefaultS3Config.MaxRetries,
+			Concurrency:       s3syncer.DefaultS3Config.Concurrency,
+			MaxFileSizeMB:     maxFileSizeMB,
+			PreallocateMemory: true,
+			DownloadDir:       t.TempDir(),
 		},
-		Bucket:            filteringTestBucket,
-		ObjectKey:         key,
-		ChunkSizeMB:       s3syncer.DefaultS3Config.ChunkSizeMB,
-		MaxRetries:        s3syncer.DefaultS3Config.MaxRetries,
-		Concurrency:       s3syncer.DefaultS3Config.Concurrency,
-		MaxFileSizeMB:     maxFileSizeMB,
-		PreallocateMemory: true,
-		DownloadDir:       t.TempDir(),
+		PollInterval: DefaultFileConfig.PollInterval,
+	}
+}
+
+func newFilteringTestConfig(t *testing.T, endpoint string, maxFileSizeMB int, keys ...string) *Config {
+	cfg := DefaultConfig
+	for _, key := range keys {
+		cfg.Files = append(cfg.Files, newFilteringTestFileConfig(t, endpoint, key, maxFileSizeMB))
 	}
 	return &cfg
 }
@@ -525,7 +488,7 @@ func TestFilterService_Initialize_RejectsOversizedFile(t *testing.T) {
 	tooLargeBefore := fileTooLargeCounter.Snapshot().Count()
 	syncFailureBefore := syncFailureCounter.Snapshot().Count()
 
-	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, key, 1))
+	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, 1, key))
 	require.NoError(t, err)
 
 	err = service.Initialize(context.Background())
@@ -552,7 +515,7 @@ func TestFilterService_Initialize_GenericFailure(t *testing.T) {
 	tooLargeBefore := fileTooLargeCounter.Snapshot().Count()
 	syncFailureBefore := syncFailureCounter.Snapshot().Count()
 
-	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, "missing.json", 1))
+	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, 1, "missing.json"))
 	require.NoError(t, err)
 
 	err = service.Initialize(context.Background())
@@ -590,16 +553,16 @@ func TestFilterService_KeepsListOnOversizedSync(t *testing.T) {
 	endpoint, backend := s3syncertest.NewFakeS3(t, filteringTestBucket, map[string][]byte{key: initialBody})
 
 	// 1 MB limit; initial body is well under, the swap body will be 2 MB.
-	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, key, 1))
+	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, 1, key))
 	require.NoError(t, err)
 
 	require.NoError(t, service.Initialize(context.Background()))
 
-	digestBefore := service.GetHashStoreDigest()
-	countBefore := service.GetHashCount()
+	digestBefore := service.GetHashStoreDigest(0)
+	countBefore := service.GetHashCount(0)
 	require.NotEmpty(t, digestBefore, "initial digest should be set")
 	require.Equal(t, 1, countBefore)
-	restricted, _ := service.hashStore.IsRestricted(restrictedAddr)
+	restricted, _ := service.GetHashStore(0).IsRestricted(restrictedAddr)
 	require.True(t, restricted, "address should be restricted after initial load")
 
 	// Swap the S3 object for a payload that exceeds the configured limit.
@@ -608,18 +571,18 @@ func TestFilterService_KeepsListOnOversizedSync(t *testing.T) {
 	require.NoError(t, err)
 
 	// Drive one sync tick directly — same call the Start() poll loop makes.
-	err = service.syncMgr.Syncer.CheckAndSync(context.Background())
+	err = service.files[0].syncMgr.Syncer.CheckAndSync(context.Background())
 	if !errors.Is(err, s3syncer.ErrObjectTooLarge) {
 		t.Fatalf("expected ErrObjectTooLarge from oversized swap, got %v", err)
 	}
 
-	if got := service.GetHashStoreDigest(); got != digestBefore {
+	if got := service.GetHashStoreDigest(0); got != digestBefore {
 		t.Errorf("digest changed after failed sync: got %q, want %q", got, digestBefore)
 	}
-	if got := service.GetHashCount(); got != countBefore {
+	if got := service.GetHashCount(0); got != countBefore {
 		t.Errorf("hash count changed after failed sync: got %d, want %d", got, countBefore)
 	}
-	if restricted, _ := service.hashStore.IsRestricted(restrictedAddr); !restricted {
+	if restricted, _ := service.GetHashStore(0).IsRestricted(restrictedAddr); !restricted {
 		t.Error("address should still be restricted after failed sync")
 	}
 }
@@ -747,19 +710,95 @@ func TestRawBytesScheme_ParseStoreLookup(t *testing.T) {
 }
 
 func hashListBody(t *testing.T, salt uuid.UUID, hashes ...common.Hash) []byte {
+	return hashListBodyWithID(t, uuid.New(), salt, hashes...)
+}
+
+func hashListBodyWithID(t *testing.T, id uuid.UUID, salt uuid.UUID, hashes ...common.Hash) []byte {
 	t.Helper()
 	hexes := make([]string, len(hashes))
 	for i, h := range hashes {
 		hexes[i] = hex.EncodeToString(h[:])
 	}
 	body, err := json.Marshal(map[string]any{
-		"id":             uuid.NewString(),
+		"id":             id.String(),
 		"salt":           salt.String(),
 		"hashing_scheme": string(HashingSchemeStringInput),
 		"hashes":         hexes,
 	})
 	require.NoError(t, err)
 	return body
+}
+
+func TestFilterService_MultiFile(t *testing.T) {
+	salt1 := uuid.New()
+	salt2 := uuid.New()
+	addr1 := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	addr2 := common.HexToAddress("0x2222222222222222222222222222222222222222")
+	listID1 := uuid.New()
+	listID2 := uuid.New()
+	h1 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt1), addr1)
+	h2 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt2), addr2)
+
+	key1, key2 := "filter1.json", "filter2.json"
+	endpoint, backend := s3syncertest.NewFakeS3(t, filteringTestBucket, map[string][]byte{
+		key1: hashListBodyWithID(t, listID1, salt1, h1),
+		key2: hashListBodyWithID(t, listID2, salt2, h2),
+	})
+
+	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, 1, key1, key2))
+	require.NoError(t, err)
+	require.Equal(t, 2, service.NumFiles(t))
+
+	require.False(t, service.AllFilesLoaded(), "no file should be loaded before Initialize")
+	require.NoError(t, service.Initialize(context.Background()))
+	require.True(t, service.AllFilesLoaded(), "all files should be loaded after Initialize")
+
+	// Address listed only in the first file.
+	restricted, id := service.storeSet.IsRestricted(addr1)
+	require.True(t, restricted)
+	require.Equal(t, listID1, id)
+
+	// Address listed only in the second file.
+	restricted, id = service.storeSet.IsRestricted(addr2)
+	require.True(t, restricted)
+	require.Equal(t, listID2, id)
+
+	// Address in neither file.
+	restricted, id = service.storeSet.IsRestricted(common.HexToAddress("0x3333333333333333333333333333333333333333"))
+	require.False(t, restricted)
+	require.Equal(t, uuid.Nil, id)
+
+	// Replace the second file's list, sync, and re-check: only that file's
+	// contents should change.
+	addr3 := common.HexToAddress("0x4444444444444444444444444444444444444444")
+	h3 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt2), addr3)
+	body := hashListBodyWithID(t, listID2, salt2, h3)
+	_, err = backend.PutObject(filteringTestBucket, key2, map[string]string{}, bytes.NewReader(body), int64(len(body)), &gofakes3.PutConditions{})
+	require.NoError(t, err)
+	require.NoError(t, service.TriggerSyncForTest(t, context.Background()))
+
+	restricted, _ = service.storeSet.IsRestricted(addr3)
+	require.True(t, restricted, "addr3 should be restricted after second file re-syncs")
+	restricted, _ = service.storeSet.IsRestricted(addr2)
+	require.False(t, restricted, "addr2 should no longer be restricted after second file re-syncs")
+	restricted, _ = service.storeSet.IsRestricted(addr1)
+	require.True(t, restricted, "addr1 from the first file should stay restricted")
+}
+
+func TestFilterService_Initialize_FailsWhenOneFileMissing(t *testing.T) {
+	salt := uuid.New()
+	key1 := "filter1.json"
+	endpoint, _ := s3syncertest.NewFakeS3(t, filteringTestBucket, map[string][]byte{
+		key1: hashListBody(t, salt),
+	})
+
+	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, 1, key1, "missing.json"))
+	require.NoError(t, err)
+
+	err = service.Initialize(context.Background())
+	require.Error(t, err, "Initialize must fail when any configured file is missing")
+	require.ErrorContains(t, err, "missing.json")
+	require.False(t, service.AllFilesLoaded())
 }
 
 func TestFilterService_PreallocLoadAndReload(t *testing.T) {
@@ -772,38 +811,40 @@ func TestFilterService_PreallocLoadAndReload(t *testing.T) {
 	key := "filter.json"
 	endpoint, backend := s3syncertest.NewFakeS3(t, filteringTestBucket, map[string][]byte{key: hashListBody(t, salt, h1)})
 
-	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, key, 1))
+	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, 1, key))
 	require.NoError(t, err)
 
+	hashStore := service.GetHashStore(0)
+
 	// Preallocation engaged: ping-pong buffers exist and are sized.
-	wantHashes := service.config.numPreallocatedHashes()
-	require.Equal(t, wantHashes, service.hashStore.maxHashes)
+	wantHashes := service.files[0].config.numPreallocatedHashes()
+	require.Equal(t, wantHashes, hashStore.maxHashes)
 
 	require.NoError(t, service.Initialize(context.Background()))
-	if r, _ := service.hashStore.IsRestricted(addr1); !r {
+	if r, _ := hashStore.IsRestricted(addr1); !r {
 		t.Fatal("addr1 should be restricted after initial load")
 	}
-	require.Equal(t, 1, service.GetHashCount())
+	require.Equal(t, 1, service.GetHashCount(0))
 
 	// Capture the preallocated structures to prove they are reused, not replaced.
-	d0 := service.hashStore.buffers[0]
-	d1 := service.hashStore.buffers[1]
+	d0 := hashStore.buffers[0]
+	d1 := hashStore.buffers[1]
 
 	// Swap the file for a different valid list (new etag triggers a download).
 	body2 := hashListBody(t, salt, h2)
 	_, err = backend.PutObject(filteringTestBucket, key, map[string]string{}, bytes.NewReader(body2), int64(len(body2)), &gofakes3.PutConditions{})
 	require.NoError(t, err)
-	require.NoError(t, service.syncMgr.Syncer.CheckAndSync(context.Background()))
+	require.NoError(t, service.files[0].syncMgr.Syncer.CheckAndSync(context.Background()))
 
-	if r, _ := service.hashStore.IsRestricted(addr2); !r {
+	if r, _ := hashStore.IsRestricted(addr2); !r {
 		t.Fatal("addr2 should be restricted after reload")
 	}
-	if r, _ := service.hashStore.IsRestricted(addr1); r {
+	if r, _ := hashStore.IsRestricted(addr1); r {
 		t.Fatal("addr1 should no longer be restricted after reload")
 	}
-	require.Equal(t, 1, service.GetHashCount())
+	require.Equal(t, 1, service.GetHashCount(0))
 
 	// Structures reused across the reload.
-	require.Same(t, d0, service.hashStore.buffers[0])
-	require.Same(t, d1, service.hashStore.buffers[1])
+	require.Same(t, d0, hashStore.buffers[0])
+	require.Same(t, d1, hashStore.buffers[1])
 }

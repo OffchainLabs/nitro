@@ -538,7 +538,7 @@ func (s *Sequencer) FilteringReady() bool {
 	if s.addressFilterService == nil {
 		return true
 	}
-	return !s.addressFilterService.GetLoadedAt().IsZero()
+	return s.addressFilterService.AllFilesLoaded()
 }
 
 func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.Header, filteredAddresses []filter.FilteredAddressRecord, positionInBlock int) {

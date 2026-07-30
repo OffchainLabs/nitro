@@ -14,12 +14,12 @@ import (
 )
 
 // HashedAddressChecker is a global, shared address checker that filters
-// transactions using a HashStore. Hashing and caching are delegated to
-// the HashStore; this checker only manages async execution and per-tx
-// aggregation.
+// transactions using a HashStoreSet spanning all configured files. Hashing
+// and caching are delegated to the stores; this checker only manages async
+// execution and per-tx aggregation.
 type HashedAddressChecker struct {
 	stopwaiter.StopWaiter
-	store       *HashStore
+	store       *HashStoreSet
 	workChan    chan workItem
 	workerCount int
 }
@@ -40,14 +40,14 @@ type workItem struct {
 	state *HashedAddressCheckerState
 }
 
-// NewHashedAddressChecker constructs a new checker backed by a HashStore.
+// NewHashedAddressChecker constructs a new checker backed by a HashStoreSet.
 func NewHashedAddressChecker(
-	store *HashStore,
+	store *HashStoreSet,
 	workerCount int,
 	queueSize int,
 ) *HashedAddressChecker {
 	if store == nil {
-		panic("HashStore cannot be nil")
+		panic("HashStoreSet cannot be nil")
 	}
 
 	c := &HashedAddressChecker{

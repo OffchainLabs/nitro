@@ -16,112 +16,160 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-// Service manages the address-filteress synchronization pipeline.
-// It periodically polls S3 for hash list updates and maintains an in-memory
-// copy for efficient address filtering.
+// fileSync bundles one configured hash-list file: its config, its own hash
+// store and its syncer.
+type fileSync struct {
+	config    FileConfig
+	hashStore *HashStore
+	syncMgr   *S3SyncManager
+}
+
+// FilterService manages the address-filter synchronization pipeline.
+// It periodically polls S3 for updates of each configured hash-list file,
+// each at its own interval, and maintains in-memory copies for efficient
+// address filtering. An address is restricted if it appears in any file.
 type FilterService struct {
 	stopwaiter.StopWaiter
 	config         *Config
-	hashStore      *HashStore
-	syncMgr        *S3SyncManager
+	files          []*fileSync
+	storeSet       *HashStoreSet
 	addressChecker *HashedAddressChecker
 }
 
-// NewFilterService creates a new address-filteress service.
+// NewFilterService creates a new address-filter service.
 func NewFilterService(config *Config) (*FilterService, error) {
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
-	maxHashes := config.numPreallocatedHashes()
-	if maxHashes > 0 {
-		log.Info("address-filter preallocating memory for hash list", "maxHashes", maxHashes)
+	files := make([]*fileSync, 0, len(config.Files))
+	stores := make([]*HashStore, 0, len(config.Files))
+	for i := range config.Files {
+		fileConfig := config.Files[i]
+		maxHashes := fileConfig.numPreallocatedHashes()
+		if maxHashes > 0 {
+			log.Info("address-filter preallocating memory for hash list",
+				"bucket", fileConfig.Bucket, "key", fileConfig.ObjectKey, "maxHashes", maxHashes)
+		}
+		hashStore := newHashStore(config.CacheSize, maxHashes)
+		// Record the index→object mapping so the per-file metric names can be decoded.
+		log.Info("address-filter file configured",
+			"index", i, "bucket", fileConfig.Bucket, "key", fileConfig.ObjectKey, "poll_interval", fileConfig.PollInterval)
+		fs := &fileSync{
+			config:    fileConfig,
+			hashStore: hashStore,
+		}
+		fs.syncMgr = NewS3SyncManager(&fs.config, hashStore, newFileSizeGauge(i))
+		files = append(files, fs)
+		stores = append(stores, hashStore)
 	}
-	hashStore := newHashStore(config.CacheSize, maxHashes)
+	storeSet := NewHashStoreSet(stores)
 
 	return &FilterService{
 		config:         config,
-		hashStore:      hashStore,
-		syncMgr:        NewS3SyncManager(config, hashStore),
-		addressChecker: NewHashedAddressChecker(hashStore, config.AddressCheckerWorkerCount, config.AddressCheckerQueueSize),
+		files:          files,
+		storeSet:       storeSet,
+		addressChecker: NewHashedAddressChecker(storeSet, config.AddressCheckerWorkerCount, config.AddressCheckerQueueSize),
 	}, nil
 }
 
-// Initialize downloads the initial hash list from S3.
-// This method blocks until the hash list is successfully loaded.
+func (f *fileSync) recordSyncFailure(err error) {
+	syncFailureCounter.Inc(1)
+	if errors.Is(err, s3syncer.ErrObjectTooLarge) {
+		fileTooLargeCounter.Inc(1)
+	}
+}
+
+// Initialize downloads the initial hash list of every configured file, one at
+// a time so at most one temporary download file occupies download-dir.
+// This method blocks until every hash list is successfully loaded.
 // If this fails, the node should not start.
 func (s *FilterService) Initialize(ctx context.Context) error {
-	log.Info("initializing address-filter service, downloading initial hash list",
-		"bucket", s.config.S3.Bucket,
-		"key", s.config.S3.ObjectKey,
-	)
+	for _, fs := range s.files {
+		log.Info("initializing address-filter file, downloading initial hash list",
+			"bucket", fs.config.Bucket,
+			"key", fs.config.ObjectKey,
+		)
 
-	err := s.syncMgr.Initialize(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to init S3 syncer: %w", err)
-	}
-
-	// Force download (ignore ETag check for initial load)
-	if err := s.syncMgr.Syncer.DownloadAndLoad(ctx); err != nil {
-		syncFailureCounter.Inc(1)
-		if errors.Is(err, s3syncer.ErrObjectTooLarge) {
-			fileTooLargeCounter.Inc(1)
+		if err := fs.syncMgr.Initialize(ctx); err != nil {
+			return fmt.Errorf("failed to init S3 syncer for s3://%s/%s: %w", fs.config.Bucket, fs.config.ObjectKey, err)
 		}
-		return fmt.Errorf("failed to load initial hash list: %w", err)
+
+		// Force download (ignore ETag check for initial load)
+		if err := fs.syncMgr.Syncer.DownloadAndLoad(ctx); err != nil {
+			fs.recordSyncFailure(err)
+			return fmt.Errorf("failed to load initial hash list from s3://%s/%s: %w", fs.config.Bucket, fs.config.ObjectKey, err)
+		}
+
+		log.Info("address-filter file loaded",
+			"bucket", fs.config.Bucket,
+			"key", fs.config.ObjectKey,
+			"hash_count", fs.hashStore.Size(),
+			"etag-digest", fs.hashStore.Digest(),
+		)
 	}
 
-	log.Info("address-filter service initialized",
-		"hash_count", s.hashStore.Size(),
-		"etag-digest", s.hashStore.Digest(),
-	)
+	log.Info("address-filter service initialized", "file_count", len(s.files))
 	return nil
 }
 
-// Start begins the background polling goroutine.
+// Start begins one background polling goroutine per configured file.
 // This should be called after Initialize() succeeds.
 func (s *FilterService) Start(ctx context.Context) {
 	s.StopWaiter.Start(ctx, s)
 
-	// Start periodic polling goroutine
-	s.CallIteratively(func(ctx context.Context) time.Duration {
-		if err := s.syncMgr.Syncer.CheckAndSync(ctx); err != nil {
-			syncFailureCounter.Inc(1)
-			if errors.Is(err, s3syncer.ErrObjectTooLarge) {
-				fileTooLargeCounter.Inc(1)
-				log.Error("address-filter S3 file exceeds max-file-size, skipping download; keeping previously loaded list", "err", err)
-			} else {
-				log.Error("failed to sync address-filter list; keeping previously loaded list", "err", err)
+	// Start one periodic polling goroutine per file, each at its own interval
+	for _, fs := range s.files {
+		s.CallIteratively(func(ctx context.Context) time.Duration {
+			if err := fs.syncMgr.Syncer.CheckAndSync(ctx); err != nil {
+				fs.recordSyncFailure(err)
+				if errors.Is(err, s3syncer.ErrObjectTooLarge) {
+					log.Error("address-filter S3 file exceeds max-file-size, skipping download; keeping previously loaded list",
+						"bucket", fs.config.Bucket, "key", fs.config.ObjectKey, "err", err)
+				} else {
+					log.Error("failed to sync address-filter list; keeping previously loaded list",
+						"bucket", fs.config.Bucket, "key", fs.config.ObjectKey, "err", err)
+				}
 			}
-		}
-		return s.config.PollInterval
-	})
+			return fs.config.PollInterval
+		})
+	}
 
 	s.StartAndTrackChild(s.addressChecker)
 
 	log.Info("address-filter service started",
-		"poll_interval", s.config.PollInterval,
+		"file_count", len(s.files),
 	)
 }
 
 func (s *FilterService) TriggerSyncForTest(_ *testing.T, ctx context.Context) error {
-	return s.syncMgr.Syncer.CheckAndSync(ctx)
+	var errs []error
+	for _, fs := range s.files {
+		errs = append(errs, fs.syncMgr.Syncer.CheckAndSync(ctx))
+	}
+	return errors.Join(errs...)
 }
 
-func (s *FilterService) GetHashCount() int {
-	return s.hashStore.Size()
+func (s *FilterService) NumFiles(_ *testing.T) int {
+	return len(s.files)
 }
 
-// GetHashStoreDigest GetETag returns the S3 ETag Digest of the currently loaded hash list.
-func (s *FilterService) GetHashStoreDigest() string {
-	return s.hashStore.Digest()
+func (s *FilterService) GetHashCount(i int) int {
+	return s.files[i].hashStore.Size()
 }
 
-func (s *FilterService) GetLoadedAt() time.Time {
-	return s.hashStore.LoadedAt()
+// GetHashStoreDigest returns the S3 ETag Digest of the hash list currently loaded for file i.
+func (s *FilterService) GetHashStoreDigest(i int) string {
+	return s.files[i].hashStore.Digest()
 }
 
-func (s *FilterService) GetHashStore() *HashStore {
-	return s.hashStore
+// AllFilesLoaded reports whether every configured file has loaded a hash list.
+func (s *FilterService) AllFilesLoaded() bool {
+	return s.storeSet.AllLoaded()
+}
+
+func (s *FilterService) GetHashStore(i int) *HashStore {
+	return s.files[i].hashStore
 }
 
 func (s *FilterService) GetAddressChecker() *HashedAddressChecker {

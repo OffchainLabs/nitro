@@ -16,14 +16,14 @@ import (
 // Config holds the S3 configuration for syncing data.
 type Config struct {
 	s3client.Config   `koanf:",squash"`
-	Bucket            string `koanf:"bucket"`
-	ObjectKey         string `koanf:"object-key"`
-	ChunkSizeMB       int    `koanf:"chunk-size-mb"`
-	MaxRetries        int    `koanf:"max-retries"`
-	Concurrency       int    `koanf:"concurrency"`
-	MaxFileSizeMB     int    `koanf:"max-file-size-mb"`
-	PreallocateMemory bool   `koanf:"preallocate-memory"`
-	DownloadDir       string `koanf:"download-dir"`
+	Bucket            string `json:"bucket,omitempty" koanf:"bucket"`
+	ObjectKey         string `json:"object-key,omitempty" koanf:"object-key"`
+	ChunkSizeMB       int    `json:"chunk-size-mb,omitempty" koanf:"chunk-size-mb"`
+	MaxRetries        int    `json:"max-retries,omitempty" koanf:"max-retries"`
+	Concurrency       int    `json:"concurrency,omitempty" koanf:"concurrency"`
+	MaxFileSizeMB     int    `json:"max-file-size-mb,omitempty" koanf:"max-file-size-mb"`
+	PreallocateMemory bool   `json:"preallocate-memory,omitempty" koanf:"preallocate-memory"`
+	DownloadDir       string `json:"download-dir,omitempty" koanf:"download-dir"`
 }
 
 // ConfigAddOptions adds S3 configuration flags to the given flag set.
