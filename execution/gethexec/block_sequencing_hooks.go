@@ -24,8 +24,8 @@ type TxResult struct {
 // BlockSequencingHooks is the per-block hooks view the execution engine uses to sequence transactions.
 type BlockSequencingHooks interface {
 	arbos.SequencingHooks
-	// SequencedTxes returns one entry per attempted tx, in order.
-	SequencedTxes() ([]TxResult, error)
+	// SequencedTxes returns one entry per tx pulled from the fetcher, in order.
+	SequencedTxes() []TxResult
 }
 
 // MessageFromTxes builds the L2 message from the txs that made it into the block.
