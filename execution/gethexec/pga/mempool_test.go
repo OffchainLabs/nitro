@@ -372,7 +372,7 @@ func TestPgaMempoolBoostFoldedIntoNextBlock(t *testing.T) {
 		t.Fatalf("first pop = %d, want included", top.tx.id)
 	}
 	env.mempool.RecordIncludedTx(top.cachedPriority) // 100
-	env.mempool.ApplyRoundBoost()                   // boost remaining by 100 / 4 = 25
+	env.mempool.ApplyRoundBoost()                    // boost remaining by 100 / 4 = 25
 
 	// The next block's mempool re-keys against base 50: remaining = fee(50) + boost = 7 + 25 = 32, proving the boost
 	// folds into the recomputed priority.

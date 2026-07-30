@@ -5,6 +5,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/execution/gethexec/pga"
 )
 

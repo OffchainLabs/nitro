@@ -14,6 +14,8 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
+
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 const (
@@ -215,8 +217,9 @@ func TestDrainAndValidateQueueItemsReturnsResultOnRejection(t *testing.T) {
 	s.txQueue <- rejectedItem
 	s.txQueue <- validItem
 	header := &types.Header{Number: big.NewInt(testBlockNumber)}
+	s.baseFee = containers.Some(big.NewInt(testBaseFee)) // normally set by setSequencingFields
 
-	items := s.drainAndValidateQueueItems(&config, header, big.NewInt(testBaseFee))
+	items := s.drainAndValidateQueueItems(&config, header)
 
 	if len(items) != 1 || items[0].tx.Nonce() != 1 {
 		t.Fatalf("drained items = %v, want only the valid item", items)

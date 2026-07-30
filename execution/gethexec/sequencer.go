@@ -1149,7 +1149,8 @@ func validateQueueItem(config *SequencerConfig, currentHeader *types.Header, bas
 
 // drainAndValidateQueueItems drains the queues and filters out the invalid items, returning the
 // validation failure to each dropped item's submitter.
-func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentHeader *types.Header, baseFee *big.Int) []txQueueItem {
+func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentHeader *types.Header) []txQueueItem {
+	baseFee := s.baseFee.Unwrap()
 	unvalidatedItems := s.drainQueueItems()
 	// Filter in place: unvalidatedItems is freshly allocated with no other reference.
 	queueItems := unvalidatedItems[:0]
@@ -1166,7 +1167,7 @@ func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentH
 func (s *Sequencer) drainValidatedTxs() []txQueueItem {
 	// This config snapshot can lag the block creator's if a hot reload lands in between, so the
 	// drain may validate with different limits than the rest of the block; that's acceptable.
-	queueItems := s.drainAndValidateQueueItems(s.config(), s.execEngine.bc.CurrentBlock(), s.baseFee.Unwrap())
+	queueItems := s.drainAndValidateQueueItems(s.config(), s.execEngine.bc.CurrentBlock())
 	if len(queueItems) == 0 {
 		return nil
 	}
