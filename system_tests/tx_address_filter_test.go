@@ -832,7 +832,7 @@ func TestStylusWarmStartCacheSurvivesRevert(t *testing.T) {
 	assertStylusInitGasDelta(t, rcptW1, rcptW2, 0)
 }
 
-func TestAddressFilterDisabled(t *testing.T) {
+func TestAddressFilterEmptyList(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -847,7 +847,6 @@ func TestAddressFilterDisabled(t *testing.T) {
 	builder.L2Info.GenerateAccount("TestUser")
 	builder.L2.TransferBalance(t, "Owner", "TestUser", big.NewInt(1e18), builder.L2Info)
 
-	// All transactions should succeed when filter is disabled
 	tx := builder.L2Info.PrepareTx("Owner", "TestUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	err := builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
