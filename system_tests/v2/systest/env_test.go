@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 )
@@ -36,6 +37,53 @@ func TestEqualBig(t *testing.T) {
 		if tb.errCount() != 1 {
 			t.Fatalf("EqualBig(%v, %v) must record exactly 1 error, got %d", tc.expected, tc.actual, tb.errCount())
 		}
+	}
+}
+
+func TestEqual(t *testing.T) {
+	tb := &recordingT{}
+	e := &Env{t: tb}
+	e.Equal(42, 42)
+	if tb.errCount() != 0 {
+		t.Fatalf("equal values must not record errors, got %d", tb.errCount())
+	}
+
+	tb2 := &recordingT{}
+	e2 := &Env{t: tb2}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		e2.Equal(42, 43)
+	}()
+	<-done
+	if tb2.errCount() != 1 {
+		t.Fatalf("unequal values must record exactly 1 error, got %d", tb2.errCount())
+	}
+}
+
+func TestWaitFor(t *testing.T) {
+	tb := &recordingT{}
+	e := &Env{t: tb, Ctx: context.Background()}
+	e.WaitFor("condition already true", func() bool { return true })
+	if tb.errCount() != 0 {
+		t.Fatalf("satisfied condition must not record errors, got %d", tb.errCount())
+	}
+
+	tb2 := &recordingT{}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	e2 := &Env{t: tb2, Ctx: ctx}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		e2.WaitFor("never satisfied", func() bool { return false })
+	}()
+	<-done
+	if tb2.errCount() != 1 {
+		t.Fatalf("cancelled wait must record exactly 1 error, got %d", tb2.errCount())
+	}
+	if !strings.Contains(tb2.errors[0], "never satisfied") {
+		t.Fatalf("failure must name the condition, got %q", tb2.errors[0])
 	}
 }
 

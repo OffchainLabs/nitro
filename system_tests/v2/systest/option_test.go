@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 func TestDoublePinPanics(t *testing.T) {
@@ -75,6 +78,8 @@ func TestDoubleAppliedSilentOptionsNowPanic(t *testing.T) {
 		{"MinArbOS twice", []TestOption{MinArbOS(params.ArbosVersion_30), MinArbOS(params.ArbosVersion_40)}, "MinArbOS applied twice"},
 		{"MaxArbOS twice", []TestOption{MaxArbOS(params.ArbosVersion_30), MaxArbOS(params.ArbosVersion_40)}, "MaxArbOS applied twice"},
 		{"WithTimeout twice", []TestOption{WithTimeout(time.Second), WithTimeout(2 * time.Second)}, "WithTimeout applied twice"},
+		{"WithArbOSInit twice", []TestOption{WithArbOSInit(params.ArbOSInit{}), WithArbOSInit(params.ArbOSInit{})}, "WithArbOSInit applied twice"},
+		{"WithoutChainOwner twice", []TestOption{WithoutChainOwner(), WithoutChainOwner()}, "WithoutChainOwner applied twice"},
 		{"MinArbOS zero", []TestOption{MinArbOS(0)}, "MinArbOS version must be positive"},
 		{"MaxArbOS zero", []TestOption{MaxArbOS(0)}, "MaxArbOS version must be positive"},
 		{"Named empty", []TestOption{Named("")}, "must be non-empty"},
@@ -92,6 +97,70 @@ func TestDoubleAppliedSilentOptionsNowPanic(t *testing.T) {
 	}
 }
 
+func TestSkipOnStateSchemesSkipsMatchingPin(t *testing.T) {
+	b := newBuilder()
+	SkipOnStateSchemes(StateSchemePath)(b)
+	if got := b.shouldSkip(scheduleParams{StateScheme: containers.Some(StateSchemePath)}); got != `incompatible with state scheme "path"` {
+		t.Fatalf("matching scheme pin: got %q, want skip reason", got)
+	}
+	if got := b.shouldSkip(scheduleParams{StateScheme: containers.Some(StateSchemeHash)}); got != "" {
+		t.Fatalf("non-matching scheme pin must not skip, got %q", got)
+	}
+}
+
+func TestSkipOnRace(t *testing.T) {
+	b := newBuilder()
+	SkipOnRace()(b)
+	saved := raceEnabled
+	defer func() { raceEnabled = saved }()
+	raceEnabled = true
+	if got := b.shouldSkip(scheduleParams{}); got != "skipped under -race" {
+		t.Fatalf("race build: got %q, want race skip reason", got)
+	}
+	raceEnabled = false
+	if got := b.shouldSkip(scheduleParams{}); got != "" {
+		t.Fatalf("non-race build must not skip, got %q", got)
+	}
+}
+
+func TestOptionsCarryToSpec(t *testing.T) {
+	b := newBuilder()
+	WithArbOSInit(params.ArbOSInit{})(b)
+	WithoutChainOwner()(b)
+	WithRPCEndpoints()(b)
+	spec := b.freeze("")
+	if spec.arbOSInit == nil || spec.arbOSInit != b.arbOSInit {
+		t.Fatalf("Spec.arbOSInit = %v, want builder's %v", spec.arbOSInit, b.arbOSInit)
+	}
+	if !spec.SkipChainOwner {
+		t.Fatal("WithoutChainOwner did not set Spec.SkipChainOwner")
+	}
+	if !spec.ExposeRPC {
+		t.Fatal("WithRPCEndpoints did not set Spec.ExposeRPC")
+	}
+}
+
+func TestWithInitDataOverrideAccumulates(t *testing.T) {
+	b := newBuilder()
+	WithInitDataOverride(func(*statetransfer.ArbosInitializationInfo) {})(b)
+	WithInitDataOverride(func(*statetransfer.ArbosInitializationInfo) {})(b)
+	if got := len(b.initDataOverrides); got != 2 {
+		t.Fatalf("initDataOverrides: got %d, want 2", got)
+	}
+}
+
+func TestComposeAppliesAllOptions(t *testing.T) {
+	preset := Compose(WithCategory("challenge"), WithMultiNode())
+	b := newBuilder()
+	preset(b)
+	if b.category != "challenge" {
+		t.Fatalf("category = %q, want challenge", b.category)
+	}
+	if b.topology != TopologyMultiNode {
+		t.Fatalf("topology = %v, want TopologyMultiNode", b.topology)
+	}
+}
+
 func TestOptionValueValidation(t *testing.T) {
 	cases := []struct {
 		name string
@@ -99,6 +168,7 @@ func TestOptionValueValidation(t *testing.T) {
 		want string
 	}{
 		{"WithStateScheme invalid", []TestOption{WithStateScheme("bogus")}, "WithStateScheme invalid"},
+		{"SkipOnStateSchemes invalid", []TestOption{SkipOnStateSchemes("bogus")}, "SkipOnStateSchemes invalid"},
 		{"WithDBEngine invalid", []TestOption{WithDBEngine("rocksdb")}, "WithDBEngine invalid"},
 		{"WithTimeout zero", []TestOption{WithTimeout(0)}, "must be positive"},
 		{"WithTimeout negative", []TestOption{WithTimeout(-time.Second)}, "must be positive"},
