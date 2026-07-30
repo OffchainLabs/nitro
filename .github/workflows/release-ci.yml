@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build_and_run:
-    runs-on: ocl-16cpu-64ram-dind
+    runs-on: ocl-16cpu-64ram-dind-500gi
 
     steps:
       - name: Checkout

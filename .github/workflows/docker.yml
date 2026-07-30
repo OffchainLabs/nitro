@@ -25,7 +25,7 @@ jobs:
 
   docker:
     name: Docker build
-    runs-on: ocl-16cpu-64ram-dind
+    runs-on: ocl-16cpu-64ram-dind-500gi
     needs: changes
     # Skip the build for changelog-only PRs. merge_group and manual runs always
     # build, since detect-changes has no PR diff base for those events.
