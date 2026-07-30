@@ -141,6 +141,8 @@ func (e *Env) waitFollowersSynced() error {
 		var lastErr error
 		var lastGot uint64
 		werr := waitFor(e.Ctx, "follower to execute sequencer message count", func() bool {
+			// The follower has no feed: it syncs from the L1 inbox, and the
+			// simulated L1 only mines on demand.
 			e.AdvanceL1(1)
 			got, err := f.Consensus.TxStreamer.GetProcessedMessageCount()
 			lastErr = err
