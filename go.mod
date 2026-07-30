@@ -23,6 +23,7 @@ require (
 	github.com/ccoveille/go-safecast v1.1.0
 	github.com/cockroachdb/pebble v1.1.5
 	github.com/codeclysm/extract/v3 v3.0.2
+	github.com/coder/websocket v1.8.14
 	github.com/enescakir/emoji v1.0.0
 	github.com/ethereum/go-ethereum v1.16.2
 	github.com/fatih/structtag v1.2.0
@@ -67,7 +68,6 @@ require (
 	cloud.google.com/go/iam v1.1.8 // indirect
 	github.com/ProjectZKM/Ziren/crates/go-runtime/zkvm_runtime v0.0.0-20251001021608-1fe7b43fc4d6 // indirect
 	github.com/cockroachdb/fifo v0.0.0-20240606204812-0bbfbd93a7ce // indirect
-	github.com/coder/websocket v1.8.14 // indirect
 	github.com/crate-crypto/go-eth-kzg v1.4.0 // indirect
 	github.com/dchest/siphash v1.2.3 // indirect
 	github.com/emicklei/dot v1.6.2 // indirect

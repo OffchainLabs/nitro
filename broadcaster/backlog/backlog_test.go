@@ -37,7 +37,7 @@ func validateBacklog(t *testing.T, b *backlog, count, start, end uint64, lookupK
 	for _, k := range lookupKeys {
 		expKeys = append(expKeys, uint64(k))
 	}
-	actualKeys := b.lookupByIndex.Load().Keys()
+	actualKeys := b.lookupByIndex.Keys()
 	slices.Sort(expKeys)
 	slices.Sort(actualKeys)
 	if !slices.Equal(expKeys, actualKeys) {
@@ -69,7 +69,7 @@ func createDummyBacklog(indexes []arbutil.MessageIndex) (*backlog, error) {
 	b := &backlog{
 		config: func() *Config { return &DefaultTestConfig },
 	}
-	b.lookupByIndex.Store(&containers.SyncMap[uint64, *backlogSegment]{})
+	b.lookupByIndex = containers.SyncMap[uint64, *backlogSegment]{}
 	bm := &message.BroadcastMessage{Messages: message.CreateDummyBroadcastMessages(indexes)}
 	err := b.Append(bm)
 	return b, err
@@ -112,13 +112,11 @@ func TestAppend(t *testing.T) {
 			expectedEnd:        46,
 			expectedLookupKeys: []arbutil.MessageIndex{45, 46},
 		},
-		// Drop on the segment head also points at, so head.Start() has already
-		// moved by the time the drop is handled.
 		{
 			name:               "NonSequentialSingleSegment",
 			backlogIndexes:     []arbutil.MessageIndex{40, 41},
 			newIndexes:         []arbutil.MessageIndex{45},
-			expectedCount:      1,
+			expectedCount:      1, // Message 45 is non sequential and the backlog is a single segment, so head is the segment being emptied
 			expectedStart:      45,
 			expectedEnd:        45,
 			expectedLookupKeys: []arbutil.MessageIndex{45},
@@ -199,12 +197,11 @@ func TestDeleteInvalidBacklog(t *testing.T) {
 		messages: message.CreateDummyBroadcastMessages([]arbutil.MessageIndex{40, 42}),
 	}
 
-	lookup := &containers.SyncMap[uint64, *backlogSegment]{}
-	lookup.Store(40, s)
 	b := &backlog{
 		config: func() *Config { return &DefaultTestConfig },
 	}
-	b.lookupByIndex.Store(lookup)
+	b.lookupByIndex = containers.SyncMap[uint64, *backlogSegment]{}
+	b.lookupByIndex.Store(40, s)
 	b.messageCount.Store(2)
 	b.head.Store(s)
 	b.tail.Store(s)
@@ -353,8 +350,10 @@ func TestDropSegmentsReleasesOldSegments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error creating dummy backlog: %s", err)
 	}
-	dropped := b.head.Load()
-	if dropped != b.tail.Load() {
+	// The drop empties this segment and reuses it as the new head, so the object
+	// outlives the drop and only ages out when the confirm below advances head.
+	emptied := b.head.Load()
+	if emptied != b.tail.Load() {
 		t.Fatal("test requires the backlog to be a single segment so that head is the segment being appended to")
 	}
 
@@ -365,7 +364,7 @@ func TestDropSegmentsReleasesOldSegments(t *testing.T) {
 	}
 	validateBacklog(t, b, 1, 45, 45, []arbutil.MessageIndex{45})
 
-	// Give the dropped segment a nextSegment, then confirm past it so it leaves
+	// Give the emptied segment a nextSegment, then confirm past it so it leaves
 	// the head to tail window.
 	err = b.Append(message.CreateDummyBroadcastMessage([]arbutil.MessageIndex{46, 47, 48, 49, 50}))
 	if err != nil {
@@ -377,19 +376,18 @@ func TestDropSegmentsReleasesOldSegments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error appending confirmed sequence number: %s", err)
 	}
-	if b.head.Load() == dropped {
-		t.Fatal("test setup: confirming 47 should have advanced head past the dropped segment")
+	if b.head.Load() == emptied {
+		t.Fatal("test setup: confirming 47 should have advanced head past the emptied segment")
 	}
 	validateBacklog(t, b, 3, 48, 50, []arbutil.MessageIndex{48, 49, 50})
 
-	lookup := b.lookupByIndex.Load()
 	referencedBy := make(map[*backlogSegment][]uint64)
-	for _, k := range lookup.Keys() {
-		if segment, ok := lookup.Load(k); ok {
+	for _, k := range b.lookupByIndex.Keys() {
+		if segment, ok := b.lookupByIndex.Load(k); ok {
 			referencedBy[segment] = append(referencedBy[segment], k)
 		}
 	}
-	if keys, found := referencedBy[dropped]; found {
+	if keys, found := referencedBy[emptied]; found {
 		t.Errorf("lookupByIndex keys %v still reference the segment emptied by the drop, keeping every later segment reachable", keys)
 	}
 }
@@ -516,7 +514,7 @@ func TestBacklogSizeInBytesReleasesLockOnError(t *testing.T) {
 
 	newBacklog := func() *backlog {
 		b := &backlog{config: func() *Config { return &DefaultTestConfig }}
-		b.lookupByIndex.Store(&containers.SyncMap[uint64, *backlogSegment]{})
+		b.lookupByIndex = containers.SyncMap[uint64, *backlogSegment]{}
 		return b
 	}
 
