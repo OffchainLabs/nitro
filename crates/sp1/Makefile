@@ -60,12 +60,12 @@ build: nitro-deps
 clippy: # Run clippy on the sp1 workspace crates.
 	@cargo clippy --locked -p stylus-compiler-program -p stylus-compiler-runner -- -D warnings -A static_mut_refs -A clippy::too_many_arguments
 
-.PHONY: compare
-compare: # Compare compilation consistency between native and SP1 execution mode.
+.PHONY: stylus-compiler-compare
+stylus-compiler-compare: # Compare Stylus compilation consistency between native and SP1 execution mode.
 	@cd $(TOP) && cargo run --locked --manifest-path $(CURDIR)/Cargo.toml -p stylus-compiler-runner --release -- compare
 
-.PHONY: prove
-prove: # Generate and verify a proof of correct Stylus compilation.
+.PHONY: stylus-compiler-prove
+stylus-compiler-prove: # Generate and verify a proof of correct Stylus compilation.
 	@cd $(TOP) && cargo run --locked --manifest-path $(CURDIR)/Cargo.toml -p stylus-compiler-runner --release -- prove
 
 .PHONY: clean

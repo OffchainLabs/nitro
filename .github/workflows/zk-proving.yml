@@ -60,8 +60,8 @@ jobs:
 
       - name: Run stylus-compiler-runner compare
         # Compare compilation consistency between running it natively and in the SP1 execution mode.
-        run: make -C crates/sp1 compare
+        run: make -C crates/sp1 stylus-compiler-compare
 
       - name: Run stylus-compiler-runner proving
         # Generate and verify a proof of correct Stylus compilation.
-        run: make -C crates/sp1 prove
+        run: make -C crates/sp1 stylus-compiler-prove
