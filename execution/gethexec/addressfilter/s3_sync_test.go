@@ -89,7 +89,7 @@ func TestParseHashListStreamFieldOrder(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			meta, hashes, err := parseHashListBytes([]byte(c.jsonDoc))
 			require.NoError(t, err)
-			require.Equal(t, uuid.MustParse(id), meta.Id)
+			require.Equal(t, uuid.MustParse(id), meta.ID)
 			require.Equal(t, uuid.MustParse(salt), meta.Salt)
 			require.Equal(t, HashingSchemeStringInput, meta.Scheme)
 			require.Equal(t, []common.Hash{h1, h2}, hashes)

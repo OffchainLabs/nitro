@@ -129,13 +129,13 @@ func newHashStore(cacheSize int, maxHashes int) *HashStore {
 
 // ListMeta holds the scalar metadata of a hash list.
 type ListMeta struct {
-	Id     uuid.UUID
+	ID     uuid.UUID
 	Salt   uuid.UUID
 	Scheme HashingScheme
 }
 
 func (d *hashData) setMeta(meta *ListMeta, digest string) {
-	d.id = meta.Id
+	d.id = meta.ID
 	d.salt = meta.Salt
 	d.useRawBytesInput = meta.Scheme == HashingSchemeRawBytesInput
 	d.hashStringInputPrefix = GetHashStringInputPrefix(meta.Salt)

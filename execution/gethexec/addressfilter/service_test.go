@@ -246,8 +246,8 @@ func TestParseHashListJSON(t *testing.T) {
 		t.Errorf("expected salt '%s', got '%s'", expectedSalt.String(), meta.Salt.String())
 	}
 
-	if meta.Id != id {
-		t.Errorf("expected id '%s', got '%s'", id.String(), meta.Id.String())
+	if meta.ID != id {
+		t.Errorf("expected id '%s', got '%s'", id.String(), meta.ID.String())
 	}
 
 	if len(hashes) != 2 {
@@ -735,7 +735,7 @@ func TestRawBytesScheme_ParseStoreLookup(t *testing.T) {
 	require.NoError(t, err)
 
 	store := NewHashStore(8)
-	storeHashes(t, store, meta.Id, meta.Salt, meta.Scheme, hashes, "etag")
+	storeHashes(t, store, meta.ID, meta.Salt, meta.Scheme, hashes, "etag")
 
 	if restricted, _ := store.IsRestricted(addr); !restricted {
 		t.Fatal("vendor address must be restricted after parse+Store under raw bytes scheme")

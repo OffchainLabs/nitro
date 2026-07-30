@@ -88,7 +88,7 @@ func (s *S3SyncManager) handleHashListStream(r io.Reader, size int64, digest str
 		return fmt.Errorf("failed to parse hash list: %w", err)
 	}
 
-	log.Info("loaded restricted addr list", "filterSetID", listMeta.Id, "hash_count", s.hashStore.Size(), "etag", digest, "size_bytes", size, "scheme", listMeta.Scheme)
+	log.Info("loaded restricted addr list", "filterSetID", listMeta.ID, "hash_count", s.hashStore.Size(), "etag", digest, "size_bytes", size, "scheme", listMeta.Scheme)
 	return nil
 }
 
@@ -234,7 +234,7 @@ func parseHashListStream(r io.Reader, addHash func(common.Hash)) (*ListMeta, err
 	}
 
 	return &ListMeta{
-		Id:     id,
+		ID:     id,
 		Salt:   salt,
 		Scheme: scheme,
 	}, nil

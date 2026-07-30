@@ -43,7 +43,7 @@ func storeFilterHashes(t *testing.T, store *addressfilter.HashStore, id uuid.UUI
 		for _, h := range hashes {
 			addHash(h)
 		}
-		return &addressfilter.ListMeta{Id: id, Salt: salt, Scheme: scheme}, nil
+		return &addressfilter.ListMeta{ID: id, Salt: salt, Scheme: scheme}, nil
 	}))
 }
 
