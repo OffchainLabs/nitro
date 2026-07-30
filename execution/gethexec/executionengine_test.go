@@ -95,3 +95,25 @@ func TestPrefetchNextBlockRecoversFromPanic(t *testing.T) {
 		t.Fatalf("panic sneaked out: %v", recovered)
 	}
 }
+
+func msgIndexOf(msgs []arbostypes.MessageWithMetadataAndBlockInfo, msg *arbostypes.MessageWithMetadata) int {
+	for i := range msgs {
+		if &msgs[i].MessageWithMeta == msg {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestMsgToPrefetchIsSuccessor(t *testing.T) {
+	msgs := make([]arbostypes.MessageWithMetadataAndBlockInfo, 3)
+
+	for i := 0; i < len(msgs)-1; i++ {
+		if got := msgToPrefetch(msgs, i); got != &msgs[i+1].MessageWithMeta {
+			t.Errorf("message %d: prefetched message %d, want message %d", i, msgIndexOf(msgs, got), i+1)
+		}
+	}
+	if got := msgToPrefetch(msgs, len(msgs)-1); got != nil {
+		t.Errorf("last message: prefetched message %d, want none", msgIndexOf(msgs, got))
+	}
+}
