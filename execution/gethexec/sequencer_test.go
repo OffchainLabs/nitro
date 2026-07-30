@@ -10,7 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/types"
+
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
 func TestSequencerConfigValidatePGA(t *testing.T) {
@@ -133,12 +136,10 @@ func TestEndSequencingDelayedCommitOutcome(t *testing.T) {
 func TestEndSequencingClearsPendingQueueItemsResults(t *testing.T) {
 	tests := []struct {
 		name        string
-		forwarder   *TxForwarder
 		errWhileSeq error
 	}{
-		{"retry with forwarder", &TxForwarder{}, execution.ErrRetrySequencer},
-		{"retry without forwarder", nil, execution.ErrRetrySequencer},
-		{"success", nil, nil},
+		{"retry", execution.ErrRetrySequencer},
+		{"success", nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -148,7 +149,6 @@ func TestEndSequencingClearsPendingQueueItemsResults(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			seq.forwarder = tt.forwarder
 			seq.pendingQueueItemsResults = &pendingQueueItemsResults{hooks: &FullSequencingHooks{}}
 
 			seq.EndSequencing(context.Background(), tt.errWhileSeq)
@@ -170,8 +170,9 @@ func TestEndSequencingRoutesStagedQueueItems(t *testing.T) {
 		}
 		resultChan := make(chan error, 1)
 		seq.pendingQueueItemsResults = &pendingQueueItemsResults{
-			hooks:      &FullSequencingHooks{},
-			queueItems: []txQueueItem{{resultChan: resultChan, returnedResult: &atomic.Bool{}}},
+			hooks: &FullSequencingHooks{
+				sequencedTxs: []sequencedTx{{queueItem: txQueueItem{resultChan: resultChan, returnedResult: &atomic.Bool{}}}},
+			},
 		}
 		return seq, resultChan
 	}
@@ -183,6 +184,22 @@ func TestEndSequencingRoutesStagedQueueItems(t *testing.T) {
 
 		if seq.txRetryQueue.Len() != 1 {
 			t.Fatalf("staged item should be re-queued for retry, txRetryQueue len = %d", seq.txRetryQueue.Len())
+		}
+		select {
+		case err := <-resultChan:
+			t.Errorf("item should be retried, not returned to submitter; got result %v", err)
+		default:
+		}
+	})
+
+	t.Run("retry with forwarder re-queues the item without forwarding", func(t *testing.T) {
+		seq, resultChan := newSeqWithStagedItem(t)
+		seq.forwarder = &TxForwarder{}
+
+		seq.EndSequencing(context.Background(), execution.ErrRetrySequencer)
+
+		if seq.txRetryQueue.Len() != 1 {
+			t.Fatalf("staged item should be re-queued for the backgroundForwarder, txRetryQueue len = %d", seq.txRetryQueue.Len())
 		}
 		select {
 		case err := <-resultChan:
@@ -251,6 +268,111 @@ func TestCheckHealthChosenSequencerDeadline(t *testing.T) {
 	}
 }
 
+// A block-creation turn that exits after the orderer is armed must leave the never-attempted
+// txs in txRetryQueue via the deferred sweep, not fail them back to their submitters.
+func TestCreateBlockRequeuesNeverAttemptedTxs(t *testing.T) {
+	engine := &ExecutionEngine{}
+	configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
+	// A non-nil l1Reader with no known L1 block forces the early exit after StartBlock.
+	seq, err := NewSequencer(engine, &headerreader.HeaderReader{}, configFetcher, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
+	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}})
+
+	sequencedMsg, _ := seq.createBlockWithTxOrderer(context.Background(), orderer)
+
+	if sequencedMsg != nil {
+		t.Fatal("expected no block to be sequenced")
+	}
+	if seq.txRetryQueue.Len() != 1 {
+		t.Fatalf("txRetryQueue.Len() = %d, want 1 (never-attempted tx re-queued)", seq.txRetryQueue.Len())
+	}
+	select {
+	case res := <-resultChan:
+		t.Errorf("never-attempted tx was resolved with %v; it should only be re-queued", res)
+	default:
+	}
+}
+
+// A panic during block creation must fail the orderer's remaining txs with an internal error
+// rather than requeue them: a requeue could resurrect a tx that panics the sequencer in a loop.
+func TestCreateBlockPanicFailsTxsInsteadOfRequeueing(t *testing.T) {
+	engine := &ExecutionEngine{} // nil blockchain: SequenceTransactions panics
+	configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
+	seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
+	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}})
+
+	sequencedMsg, throttle := seq.createBlockWithTxOrderer(context.Background(), orderer)
+
+	if sequencedMsg != nil {
+		t.Fatal("expected no block to be sequenced")
+	}
+	if throttle != DefaultSequencerConfig.MaxBlockSpeed {
+		t.Errorf("throttle = %v, want MaxBlockSpeed %v", throttle, DefaultSequencerConfig.MaxBlockSpeed)
+	}
+	select {
+	case res := <-resultChan:
+		if !errors.Is(res, sequencerInternalError) {
+			t.Errorf("tx got %v, want sequencerInternalError", res)
+		}
+	default:
+		t.Error("tx from the panicked block was never resolved")
+	}
+	if seq.txRetryQueue.Len() != 0 {
+		t.Errorf("txRetryQueue.Len() = %d, want 0 (failed txs must not be requeued)", seq.txRetryQueue.Len())
+	}
+}
+
+// While inactive, backgroundForwarder is the only path that moves queued txs to the forwarder.
+// With the forwarder temporarily disabled (ErrNoSequencer), the drained items must be re-queued
+// for retry, not resolved or dropped.
+func TestBackgroundForwarderDrainsQueuesWhileInactive(t *testing.T) {
+	engine := &ExecutionEngine{}
+	configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
+	seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seq.forwarder = &TxForwarder{}
+
+	queued, queuedChan := makeTestQueueItem(t, 0, testBaseFee)
+	seq.txQueue <- queued
+	retried, retriedChan := makeTestQueueItem(t, 1, testBaseFee)
+	seq.txRetryQueue.Push(retried)
+	parked, parkedChan := makeTestQueueItem(t, 2, testBaseFee)
+	seq.nonceFailures.cache.Add(
+		addressAndNonce{nonce: 2},
+		&nonceFailure{queueItem: parked, expiry: time.Now().Add(time.Hour)},
+	)
+
+	seq.backgroundForwarder(context.Background())
+
+	if n := len(seq.txQueue); n != 0 {
+		t.Errorf("len(txQueue) = %d, want 0", n)
+	}
+	if n := seq.nonceFailures.Len(); n != 0 {
+		t.Errorf("nonceFailures.Len() = %d, want 0", n)
+	}
+	if n := seq.txRetryQueue.Len(); n != 3 {
+		t.Errorf("txRetryQueue.Len() = %d, want 3", n)
+	}
+	for name, ch := range map[string]chan error{"queued": queuedChan, "retried": retriedChan, "parked": parkedChan} {
+		select {
+		case res := <-ch:
+			t.Errorf("%s tx was resolved with %v; it should only be re-queued", name, res)
+		default:
+		}
+	}
+}
+
 func TestBackgroundForwarderExpiresNonceFailuresWhileInactive(t *testing.T) {
 	engine := &ExecutionEngine{}
 	configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
@@ -286,6 +408,52 @@ func TestBackgroundForwarderExpiresNonceFailuresWhileInactive(t *testing.T) {
 	}
 	if seq.nonceFailures.Len() != 0 {
 		t.Errorf("nonceFailures.Len() = %d, want 0", seq.nonceFailures.Len())
+	}
+}
+
+// failQueuedItems runs when the shutdown forwarder fails to initialize; it must resolve every
+// queued item so submitters fail fast instead of waiting out their abort deadlines.
+func TestFailQueuedItemsResolvesAllQueues(t *testing.T) {
+	engine := &ExecutionEngine{}
+	configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
+	seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pendingChan := make(chan error, 1)
+	tx := types.NewTx(&types.DynamicFeeTx{Gas: 21000})
+	seq.txQueue <- newRegularTxQueueItem(context.Background(), tx, nil, pendingChan, false, 0)
+
+	parkedChan := make(chan error, 1)
+	seq.nonceFailures.cache.Add(
+		addressAndNonce{nonce: 7},
+		&nonceFailure{
+			queueItem: txQueueItem{
+				resultChan:     parkedChan,
+				returnedResult: &atomic.Bool{},
+				ctx:            context.Background(),
+			},
+		},
+	)
+
+	seq.failQueuedItems()
+
+	for name, resultChan := range map[string]chan error{"pending tx": pendingChan, "parked nonce failure": parkedChan} {
+		select {
+		case res := <-resultChan:
+			if !errors.Is(res, ErrNoSequencer) {
+				t.Errorf("%s got %v, want ErrNoSequencer", name, res)
+			}
+		default:
+			t.Errorf("%s was never resolved", name)
+		}
+	}
+	if n := len(seq.txQueue); n != 0 {
+		t.Errorf("len(txQueue) = %d, want 0", n)
+	}
+	if n := seq.nonceFailures.Len(); n != 0 {
+		t.Errorf("nonceFailures.Len() = %d, want 0", n)
 	}
 }
 

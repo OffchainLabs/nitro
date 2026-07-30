@@ -265,19 +265,19 @@ func TestAddressFilterMultipleTxsInBlock(t *testing.T) {
 
 	// sequenceTransactionsInTheSameBlock bypasses the tx queue and sequences every
 	// tx into a single block.
-	block, txErrors := sequenceTransactionsInTheSameBlock(
+	block, txResults := sequenceTransactionsInTheSameBlock(
 		t, builder, types.Transactions{clean1, badA, clean3, badB, clean5},
 	)
 	require.NotNil(t, block, "block should have been produced")
-	require.Len(t, txErrors, 5)
+	require.Len(t, txResults, 5)
 
-	require.NoError(t, txErrors[0], "clean tx 1 should have been sequenced")
-	require.Error(t, txErrors[1], "tx to FilteredUserA should have been rejected")
-	require.Truef(t, isFilteredError(txErrors[1]), "tx 2 rejection should be a filter error, got: %v", txErrors[1])
-	require.NoErrorf(t, txErrors[2], "clean tx 3 must not inherit filter state from tx 2, got: %v", txErrors[2])
-	require.Error(t, txErrors[3], "tx to FilteredUserB should have been rejected")
-	require.Truef(t, isFilteredError(txErrors[3]), "tx 4 rejection should be a filter error, got: %v", txErrors[3])
-	require.NoErrorf(t, txErrors[4], "clean tx 5 must not inherit filter state from tx 4, got: %v", txErrors[4])
+	require.NoError(t, txResults[0].Err, "clean tx 1 should have been sequenced")
+	require.Error(t, txResults[1].Err, "tx to FilteredUserA should have been rejected")
+	require.Truef(t, isFilteredError(txResults[1].Err), "tx 2 rejection should be a filter error, got: %v", txResults[1].Err)
+	require.NoErrorf(t, txResults[2].Err, "clean tx 3 must not inherit filter state from tx 2, got: %v", txResults[2].Err)
+	require.Error(t, txResults[3].Err, "tx to FilteredUserB should have been rejected")
+	require.Truef(t, isFilteredError(txResults[3].Err), "tx 4 rejection should be a filter error, got: %v", txResults[3].Err)
+	require.NoErrorf(t, txResults[4].Err, "clean tx 5 must not inherit filter state from tx 4, got: %v", txResults[4].Err)
 
 	cleanReceipt1, err := builder.L2.EnsureTxSucceeded(clean1)
 	require.NoError(t, err)
@@ -731,13 +731,13 @@ func TestAddressFilterStylusCacheNoLeak(t *testing.T) {
 	txB := builder.L2Info.PrepareTxTo("SenderB", &multicallAddr, 1e7, nil, multicallEmptyArgs())
 	txC := builder.L2Info.PrepareTxTo("SenderC", &multicallAddr, 1e7, nil, multicallEmptyArgs())
 
-	block, txErrors := sequenceTransactionsInTheSameBlock(t, builder, types.Transactions{txA, txB, txC})
+	block, txResults := sequenceTransactionsInTheSameBlock(t, builder, types.Transactions{txA, txB, txC})
 	require.NotNil(t, block, "block should have been created")
-	require.Len(t, txErrors, 3)
-	require.Error(t, txErrors[0], "txA should be dropped by the filter")
-	require.Truef(t, isFilteredError(txErrors[0]), "txA must fail with a filter error (not be included), got: %v", txErrors[0])
-	require.NoError(t, txErrors[1], "txB should commit")
-	require.NoError(t, txErrors[2], "txC should commit")
+	require.Len(t, txResults, 3)
+	require.Error(t, txResults[0].Err, "txA should be dropped by the filter")
+	require.Truef(t, isFilteredError(txResults[0].Err), "txA must fail with a filter error (not be included), got: %v", txResults[0].Err)
+	require.NoError(t, txResults[1].Err, "txB should commit")
+	require.NoError(t, txResults[2].Err, "txC should commit")
 
 	rcptB, err := builder.L2.EnsureTxSucceeded(txB)
 	require.NoError(t, err)
@@ -806,13 +806,13 @@ func TestStylusWarmStartCacheSurvivesRevert(t *testing.T) {
 	txW1 := builder.L2Info.PrepareTxTo("SenderW1", &multicallAddr, 1e7, nil, multicallEmptyArgs())
 	txW2 := builder.L2Info.PrepareTxTo("SenderW2", &multicallAddr, 1e7, nil, multicallEmptyArgs())
 
-	block, txErrors := sequenceTransactionsInTheSameBlock(t, builder, types.Transactions{txRevert, txW1, txW2})
+	block, txResults := sequenceTransactionsInTheSameBlock(t, builder, types.Transactions{txRevert, txW1, txW2})
 	require.NotNil(t, block)
-	require.Len(t, txErrors, 3)
+	require.Len(t, txResults, 3)
 	// A reverted tx is still included (not a sequencing drop), so no error here.
-	require.NoError(t, txErrors[0])
-	require.NoError(t, txErrors[1])
-	require.NoError(t, txErrors[2])
+	require.NoError(t, txResults[0].Err)
+	require.NoError(t, txResults[1].Err)
+	require.NoError(t, txResults[2].Err)
 
 	// txRevert is included with failed status (reverted), proving it ran and warmed
 	// the program rather than being dropped.
@@ -832,7 +832,7 @@ func TestStylusWarmStartCacheSurvivesRevert(t *testing.T) {
 	assertStylusInitGasDelta(t, rcptW1, rcptW2, 0)
 }
 
-func TestAddressFilterDisabled(t *testing.T) {
+func TestAddressFilterEmptyList(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -847,7 +847,6 @@ func TestAddressFilterDisabled(t *testing.T) {
 	builder.L2Info.GenerateAccount("TestUser")
 	builder.L2.TransferBalance(t, "Owner", "TestUser", big.NewInt(1e18), builder.L2Info)
 
-	// All transactions should succeed when filter is disabled
 	tx := builder.L2Info.PrepareTx("Owner", "TestUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	err := builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
