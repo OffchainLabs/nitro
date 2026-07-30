@@ -125,12 +125,12 @@ func TestSkipOnRace(t *testing.T) {
 
 func TestOptionsCarryToSpec(t *testing.T) {
 	b := newBuilder()
-	WithArbOSInit(params.ArbOSInit{})(b)
+	WithArbOSInit(params.ArbOSInit{TransactionFilteringEnabled: true})(b)
 	WithoutChainOwner()(b)
 	WithRPCEndpoints()(b)
 	spec := b.freeze("")
-	if spec.arbOSInit == nil || spec.arbOSInit != b.arbOSInit {
-		t.Fatalf("Spec.arbOSInit = %v, want builder's %v", spec.arbOSInit, b.arbOSInit)
+	if spec.arbOSInit == nil || !spec.arbOSInit.TransactionFilteringEnabled {
+		t.Fatalf("Spec.arbOSInit = %+v, want WithArbOSInit's value", spec.arbOSInit)
 	}
 	if !spec.SkipChainOwner {
 		t.Fatal("WithoutChainOwner did not set Spec.SkipChainOwner")
