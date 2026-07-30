@@ -252,26 +252,50 @@ func TestEthCallFilterPreservesResultWithScheduledTxes(t *testing.T) {
 		Data: redeemData,
 	}
 
-	// Pin all eth_calls to the same block to avoid flakiness from state changes
-	blockNum, err := builder.L2.Client.BlockNumber(ctx)
-	Require(t, err)
-	block := new(big.Int).SetUint64(blockNum)
+	// Build a second node with transaction filtering fully disabled to obtain
+	// a true unfiltered baseline: filtering is enabled at node construction
+	// time, so it cannot be turned off on the primary node.
+	execConfigB := builder.ExecConfigDefaultTest(t, false)
+	unfilteredNode, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{execConfig: execConfigB})
+	defer cleanupB()
 
-	// eth_call without address checker
-	resultWithoutChecker, err := builder.L2.Client.CallContract(ctx, callMsg, block)
+	// Pin all eth_calls to the ticket's block to avoid flakiness from state
+	// changes. The primary node's head can be ahead of the last posted batch,
+	// so the ticket block is used because it is guaranteed to be available on
+	// the unfiltered node once it syncs the ticket.
+	ticketReceipt, err := builder.L2.Client.TransactionReceipt(ctx, ticketId)
 	Require(t, err)
+	block := ticketReceipt.BlockNumber
+
+	// Wait for the unfiltered node to sync the ticket
+	_, err = WaitForTx(ctx, unfilteredNode.Client, ticketId, 30*time.Second)
+	Require(t, err)
+
+	// eth_call on the unfiltered node — filtering fully disabled
+	resultUnfiltered, err := unfilteredNode.Client.CallContract(ctx, callMsg, block)
+	Require(t, err)
+
+	// eth_call with filtering enabled and an empty filter list
+	resultEmptyFilterList, err := builder.L2.Client.CallContract(ctx, callMsg, block)
+	Require(t, err)
+
+	// Enabling filtering must not alter the return value
+	if !bytes.Equal(resultUnfiltered, resultEmptyFilterList) {
+		t.Fatalf("eth_call results differ with filtering enabled:\n  unfiltered:        %x\n  empty filter list: %x",
+			resultUnfiltered, resultEmptyFilterList)
+	}
 
 	// Set address checker with an unrelated address (not involved in the call)
 	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{unrelatedAddr})
 
-	// eth_call with address checker
-	resultWithChecker, err := builder.L2.Client.CallContract(ctx, callMsg, block)
+	// eth_call with filtering enabled and an unrelated address in the filter list
+	resultUnrelatedFiltered, err := builder.L2.Client.CallContract(ctx, callMsg, block)
 	Require(t, err)
 
-	// Results must be identical — filtering must not alter the return value
-	if !bytes.Equal(resultWithoutChecker, resultWithChecker) {
-		t.Fatalf("eth_call results differ with filtering active:\n  without checker: %x\n  with checker:    %x",
-			resultWithoutChecker, resultWithChecker)
+	// Filtering an uninvolved address must not alter the return value
+	if !bytes.Equal(resultEmptyFilterList, resultUnrelatedFiltered) {
+		t.Fatalf("eth_call results differ with populated filter list:\n  empty filter list: %x\n  unrelated filtered: %x",
+			resultEmptyFilterList, resultUnrelatedFiltered)
 	}
 
 	// Set address checker to filter userAddr
