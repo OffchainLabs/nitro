@@ -23,38 +23,40 @@ func TestSequencerConfigValidatePGA(t *testing.T) {
 		wantErr bool
 	}{
 		{"default config", func(c *SequencerConfig) {}, false},
-		{"pga enabled", func(c *SequencerConfig) {
-			c.ExperimentalPGA.Enable = true
+		{"forced fifo", func(c *SequencerConfig) {
+			c.ExperimentalPGA.DangerousForceFIFO = true
 		}, false},
 		{"timeboost enabled", func(c *SequencerConfig) {
 			c.Timeboost.Enable = true
 		}, false},
-		{"pga and timeboost enabled", func(c *SequencerConfig) {
-			c.ExperimentalPGA.Enable = true
+		{"forced fifo and timeboost enabled", func(c *SequencerConfig) {
+			c.ExperimentalPGA.DangerousForceFIFO = true
 			c.Timeboost.Enable = true
-		}, true},
+		}, false},
 		{"zero value pga config", func(c *SequencerConfig) {
 			c.ExperimentalPGA = PGAConfig{}
 		}, true},
-		{"pga enabled with zero rounds per block", func(c *SequencerConfig) {
-			c.ExperimentalPGA.Enable = true
+		{"zero rounds per block", func(c *SequencerConfig) {
 			c.ExperimentalPGA.RoundsPerBlock = 0
 		}, true},
-		{"pga enabled with one round per block", func(c *SequencerConfig) {
-			c.ExperimentalPGA.Enable = true
+		{"one round per block", func(c *SequencerConfig) {
 			c.ExperimentalPGA.RoundsPerBlock = 1
 		}, false},
 		{"round length below minimum", func(c *SequencerConfig) {
-			c.ExperimentalPGA.Enable = true
 			c.MaxBlockSpeed = 250 * time.Millisecond
 			c.ExperimentalPGA.RoundsPerBlock = 6
 		}, true},
 		{"round length at minimum", func(c *SequencerConfig) {
-			c.ExperimentalPGA.Enable = true
 			c.MaxBlockSpeed = 250 * time.Millisecond
 			c.ExperimentalPGA.RoundsPerBlock = 5
 		}, false},
-		{"fast blocks with pga disabled", func(c *SequencerConfig) {
+		{"forced fifo skips the round length check", func(c *SequencerConfig) {
+			c.ExperimentalPGA.DangerousForceFIFO = true
+			c.MaxBlockSpeed = 10 * time.Millisecond
+			c.ExperimentalPGA.RoundsPerBlock = 1
+		}, false},
+		{"timeboost skips the round length check", func(c *SequencerConfig) {
+			c.Timeboost.Enable = true
 			c.MaxBlockSpeed = 10 * time.Millisecond
 			c.ExperimentalPGA.RoundsPerBlock = 1
 		}, false},

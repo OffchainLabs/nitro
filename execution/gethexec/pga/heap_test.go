@@ -5,7 +5,6 @@ package pga
 
 import (
 	"context"
-	"math/big"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -64,70 +63,6 @@ func TestTxHeapPopConcreteBreaksTiesByArrival(t *testing.T) {
 	}
 }
 
-func TestTxHeapPushBatch(t *testing.T) {
-	var h txHeap[mockTx]
-	seed, _ := newMockEntry(0, nil, 4)
-	h.pushConcrete(seed)
-
-	batch := make([]PrioritizedTx[mockTx], 0, 3)
-	for i, p := range []uint64{8, 2, 6} {
-		entry, _ := newMockEntry(i+1, nil, p)
-		batch = append(batch, entry)
-	}
-	h.pushBatch(batch)
-
-	if h.Len() != 4 {
-		t.Fatalf("len = %d, want 4", h.Len())
-	}
-	for _, want := range []uint64{8, 6, 4, 2} {
-		if got := h.popConcrete(); got.cachedPriority != want {
-			t.Fatalf("popConcrete priority = %d, want %d", got.cachedPriority, want)
-		}
-	}
-}
-
-func TestTxHeapPushBatchEmptyKeepsHeapValid(t *testing.T) {
-	var h txHeap[mockTx]
-	seed, _ := newMockEntry(0, nil, 5)
-	h.pushConcrete(seed)
-
-	h.pushBatch(nil) // empty round must still leave a valid heap
-
-	if h.Len() != 1 {
-		t.Fatalf("len = %d, want 1", h.Len())
-	}
-	if got := h.popConcrete(); got.cachedPriority != 5 {
-		t.Fatalf("priority = %d, want 5", got.cachedPriority)
-	}
-}
-
-func TestTxHeapRekeyRecomputesPriority(t *testing.T) {
-	var h txHeap[mockTx]
-
-	// A is tip-bound (constant 10); B is cap-bound: 50 at base 10, 5 otherwise. Their order flips with the basefee.
-	entryA, _ := newMockEntry(1, constFee(10), 10)
-	entryB, _ := newMockEntry(2, func(baseFee *big.Int) (uint64, error) {
-		if baseFee.Cmp(big.NewInt(10)) == 0 {
-			return 50, nil
-		}
-		return 5, nil
-	}, 50) // seeded with the stale base-10 priority
-	h.pushConcrete(entryA)
-	h.pushConcrete(entryB)
-
-	h.rekey(big.NewInt(55)) // base 55: A=10, B=5 -> A on top
-
-	if h.Len() != 2 {
-		t.Fatalf("len = %d, want 2", h.Len())
-	}
-	if got := h.popConcrete(); got.tx.id != entryA.tx.id || got.cachedPriority != 10 {
-		t.Fatalf("top = (id %d, prio %d), want A with prio 10", got.tx.id, got.cachedPriority)
-	}
-	if got := h.popConcrete(); got.tx.id != entryB.tx.id || got.cachedPriority != 5 {
-		t.Fatalf("second = (id %d, prio %d), want B with prio 5", got.tx.id, got.cachedPriority)
-	}
-}
-
 func TestTxHeapAddBoost(t *testing.T) {
 	var h txHeap[mockTx]
 	// Three entries with distinct priorities; addBoost lifts every key by the same delta and leaves the order intact.
@@ -152,25 +87,5 @@ func TestTxHeapAddBoost(t *testing.T) {
 		if got.boost != 5 {
 			t.Fatalf("tx %d boost = %d, want 5", got.tx.id, got.boost)
 		}
-	}
-}
-
-func TestTxHeapRekeyDropsFeeCapTooLow(t *testing.T) {
-	var h txHeap[mockTx]
-
-	good, goodResult := newMockEntry(1, constFee(10), 10)
-	bad, badResult := newMockEntry(2, failFee(errFeeCapTooLow), 20)
-	h.pushConcrete(good)
-	h.pushConcrete(bad)
-
-	h.rekey(big.NewInt(40))
-
-	expectResult(t, badResult, errFeeCapTooLow)
-	expectNoResult(t, goodResult)
-	if h.Len() != 1 {
-		t.Fatalf("len = %d, want 1", h.Len())
-	}
-	if got := h.popConcrete(); got.tx.id != good.tx.id {
-		t.Fatalf("survivor = %d, want good", got.tx.id)
 	}
 }

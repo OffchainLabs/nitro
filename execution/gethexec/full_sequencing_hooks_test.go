@@ -18,7 +18,7 @@ func TestFullSequencingHooksTxResultLifecycle(t *testing.T) {
 	item0, _ := makeTestQueueItem(t, 0, testBaseFee)
 	item1, _ := makeTestQueueItem(t, 1, testBaseFee)
 	item2, _ := makeTestQueueItem(t, 2, testBaseFee)
-	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item0, item1, item2}}, math.MaxInt, nil, nil)
+	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item0, item1, item2}}, math.MaxInt, nil, nil, nil)
 
 	pull := func() {
 		t.Helper()
@@ -56,7 +56,7 @@ func TestFullSequencingHooksTxResultLifecycle(t *testing.T) {
 func TestFullSequencingHooksLateFailureOverridesSuccess(t *testing.T) {
 	item0, _ := makeTestQueueItem(t, 0, testBaseFee)
 	item1, _ := makeTestQueueItem(t, 1, testBaseFee)
-	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item0, item1}}, math.MaxInt, nil, nil)
+	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item0, item1}}, math.MaxInt, nil, nil, nil)
 
 	rollback := errors.New("group rolled back")
 	if tx, _, err := hooks.NextTxToSequence(); err != nil || tx == nil {
@@ -91,7 +91,7 @@ func TestFullSequencingHooksFailedTxDoesNotConsumeBudget(t *testing.T) {
 	failed.txSize = 20
 	fits, _ := makeTestQueueItem(t, 1, testBaseFee)
 	fits.txSize = 20
-	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{failed, fits}}, 25, nil, nil)
+	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{failed, fits}}, 25, nil, nil, nil)
 
 	tx, _, err := hooks.NextTxToSequence()
 	if err != nil || tx.Nonce() != 0 {
@@ -111,7 +111,7 @@ func TestFullSequencingHooksFailedTxDoesNotConsumeBudget(t *testing.T) {
 func TestFullSequencingHooksFailsOnUnreportedResult(t *testing.T) {
 	item0, _ := makeTestQueueItem(t, 0, testBaseFee)
 	item1, _ := makeTestQueueItem(t, 1, testBaseFee)
-	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item0, item1}}, math.MaxInt, nil, nil)
+	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item0, item1}}, math.MaxInt, nil, nil, nil)
 
 	tx, _, err := hooks.NextTxToSequence()
 	if err != nil || tx == nil {
@@ -133,7 +133,7 @@ func TestFullSequencingHooksSkipsOversizedTx(t *testing.T) {
 	big.txSize = 100
 	fits, _ := makeTestQueueItem(t, 2, testBaseFee)
 	fits.txSize = 10
-	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{small, big, fits}}, 25, nil, nil)
+	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{small, big, fits}}, 25, nil, nil, nil)
 
 	tx, _, err := hooks.NextTxToSequence()
 	if err != nil || tx.Nonce() != 0 {

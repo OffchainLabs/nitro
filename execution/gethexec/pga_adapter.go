@@ -38,6 +38,4 @@ func (i txQueueItem) ReportError(err error) { i.returnResult(err) }
 
 func (i txQueueItem) GetContext() context.Context { return i.ctx }
 
-func (i txQueueItem) GetSize() int { return i.txSize }
-
 func (i txQueueItem) GetFirstAppearance() time.Time { return i.firstAppearance }

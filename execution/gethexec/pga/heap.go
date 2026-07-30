@@ -6,7 +6,6 @@ package pga
 import (
 	"container/heap"
 	"fmt"
-	"math/big"
 )
 
 // txHeap implements heap.Interface as a max-heap on priority, ties broken by earliest GetFirstAppearance. It owns the
@@ -29,7 +28,7 @@ func (h txHeap[T]) Swap(i, j int) {
 }
 
 // Push implements heap.Interface and is only meant to be called by container/heap (via heap.Push and heap.Init).
-// Callers should use pushConcrete or pushBatch instead.
+// Callers should use pushConcrete instead.
 func (h *txHeap[T]) Push(x any) {
 	item, ok := x.(PrioritizedTx[T])
 	if !ok {
@@ -63,32 +62,6 @@ func (h *txHeap[T]) popConcrete() PrioritizedTx[T] {
 		panic("txHeap.popConcrete: unexpected heap element type") // impossible
 	}
 	return entry
-}
-
-// rekey recomputes every entry's priority against baseFee, dropping those whose fee cap fell below it, then
-// re-establishes the heap invariant.
-func (h *txHeap[T]) rekey(baseFee *big.Int) {
-	kept := 0
-	for _, entry := range *h {
-		if !entry.setPriority(baseFee) {
-			continue
-		}
-		(*h)[kept] = entry
-		kept++
-	}
-	// Clear the vacated tail so dropped or moved entries aren't pinned.
-	for i := kept; i < len(*h); i++ {
-		(*h)[i] = PrioritizedTx[T]{}
-	}
-	*h = (*h)[:kept]
-	heap.Init(h)
-}
-
-// pushBatch appends entries and re-establishes the heap invariant in a single O(n) pass, cheaper than pushing one at a
-// time when promoting a whole round. It always re-heapifies, so an empty batch still leaves a valid heap.
-func (h *txHeap[T]) pushBatch(entries []PrioritizedTx[T]) {
-	*h = append(*h, entries...)
-	heap.Init(h)
 }
 
 // addBoost adds delta to every entry's accumulated boost and priority key, applying the anti-starvation boost to the

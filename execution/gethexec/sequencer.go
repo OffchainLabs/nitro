@@ -109,8 +109,8 @@ type DangerousConfig struct {
 }
 
 type PGAConfig struct {
-	Enable         bool `koanf:"enable"`
-	RoundsPerBlock uint `koanf:"rounds-per-block"`
+	DangerousForceFIFO bool `koanf:"dangerous-force-fifo"`
+	RoundsPerBlock     uint `koanf:"rounds-per-block"`
 }
 
 const minPGARoundLength = 50 * time.Millisecond
@@ -176,10 +176,8 @@ func (c *SequencerConfig) Validate() error {
 	if c.ExperimentalPGA.RoundsPerBlock == 0 {
 		return errors.New("experimental-pga.rounds-per-block must be at least 1")
 	}
-	if c.ExperimentalPGA.Enable {
-		if c.Timeboost.Enable {
-			return errors.New("experimental-pga.enable and timeboost.enable are mutually exclusive")
-		}
+	// Timeboost and forced FIFO both preclude PGA, so the round length only matters without them.
+	if !c.ExperimentalPGA.DangerousForceFIFO && !c.Timeboost.Enable {
 		if roundLength := c.PGARoundLength(); roundLength < minPGARoundLength {
 			return fmt.Errorf("PGA round length %v (max-block-speed / experimental-pga.rounds-per-block) is below the minimum supported %v", roundLength, minPGARoundLength)
 		}
@@ -223,8 +221,8 @@ var DefaultDangerousConfig = DangerousConfig{
 }
 
 var DefaultPGAConfig = PGAConfig{
-	Enable:         false,
-	RoundsPerBlock: 2,
+	DangerousForceFIFO: false,
+	RoundsPerBlock:     2,
 }
 
 func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -257,7 +255,7 @@ func DangerousAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 func PGAAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultPGAConfig.Enable, "EXPERIMENTAL: enable priority gas auction (PGA) transaction ordering; mutually exclusive with timeboost")
+	f.Bool(prefix+".dangerous-force-fifo", DefaultPGAConfig.DangerousForceFIFO, "EXPERIMENTAL: force FIFO transaction ordering even when the chain collects tips, disabling the priority gas auction (PGA)")
 	f.Uint(prefix+".rounds-per-block", DefaultPGAConfig.RoundsPerBlock, "EXPERIMENTAL: number of PGA rounds per block; the round length is max-block-speed divided by this value")
 }
 
@@ -276,6 +274,7 @@ type txQueueItem struct {
 	isTimeboosted       bool
 	isAuctionResolution bool
 	blockStamp          uint64 // block number at which timeboosted tx was added to the txQueue
+	pgaBoost            uint64 // accumulated PGA anti-starvation boost; survives requeue across blocks
 }
 
 func newTxQueueItem(
@@ -490,6 +489,9 @@ type Sequencer struct {
 	// sequencingState tracks turn alternation between regular tx and delayed
 	// message sequencing.
 	sequencingState sequencingState
+
+	baseFee     containers.Option[*big.Int]
+	collectTips containers.Option[bool]
 }
 
 func NewSequencer(
@@ -1129,7 +1131,7 @@ func validateTimeboostExpiry(config *SequencerConfig, currentHeader *types.Heade
 
 // validateQueueItem returns the reason a drained item must be dropped (canceled item ctx,
 // oversized tx, timeboost block-age expiry, fee cap below basefee), or nil to sequence it.
-func validateQueueItem(config *SequencerConfig, currentHeader *types.Header, queueItem txQueueItem) error {
+func validateQueueItem(config *SequencerConfig, currentHeader *types.Header, baseFee *big.Int, queueItem txQueueItem) error {
 	if err := queueItem.ctx.Err(); err != nil {
 		return err
 	}
@@ -1139,20 +1141,20 @@ func validateQueueItem(config *SequencerConfig, currentHeader *types.Header, que
 	if err := validateTimeboostExpiry(config, currentHeader, queueItem); err != nil {
 		return err
 	}
-	if arbmath.BigLessThan(queueItem.tx.GasFeeCap(), currentHeader.BaseFee) {
-		return fmt.Errorf("%w: maxFeePerGas: %s baseFee: %s", core.ErrFeeCapTooLow, queueItem.tx.GasFeeCap(), currentHeader.BaseFee)
+	if arbmath.BigLessThan(queueItem.tx.GasFeeCap(), baseFee) {
+		return fmt.Errorf("%w: maxFeePerGas: %s baseFee: %s", core.ErrFeeCapTooLow, queueItem.tx.GasFeeCap(), baseFee)
 	}
 	return nil
 }
 
 // drainAndValidateQueueItems drains the queues and filters out the invalid items, returning the
 // validation failure to each dropped item's submitter.
-func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentHeader *types.Header) []txQueueItem {
+func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentHeader *types.Header, baseFee *big.Int) []txQueueItem {
 	unvalidatedItems := s.drainQueueItems()
 	// Filter in place: unvalidatedItems is freshly allocated with no other reference.
 	queueItems := unvalidatedItems[:0]
 	for _, queueItem := range unvalidatedItems {
-		if err := validateQueueItem(config, currentHeader, queueItem); err != nil {
+		if err := validateQueueItem(config, currentHeader, baseFee, queueItem); err != nil {
 			queueItem.returnResult(err)
 		} else {
 			queueItems = append(queueItems, queueItem)
@@ -1164,22 +1166,73 @@ func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentH
 func (s *Sequencer) drainValidatedTxs() []txQueueItem {
 	// This config snapshot can lag the block creator's if a hot reload lands in between, so the
 	// drain may validate with different limits than the rest of the block; that's acceptable.
-	queueItems := s.drainAndValidateQueueItems(s.config(), s.execEngine.bc.CurrentBlock())
+	queueItems := s.drainAndValidateQueueItems(s.config(), s.execEngine.bc.CurrentBlock(), s.baseFee.Unwrap())
 	if len(queueItems) == 0 {
 		return nil
 	}
 	return s.precheckNonces(queueItems)
 }
 
+func (s *Sequencer) setSequencingFields() error {
+	statedb, err := s.execEngine.bc.State()
+	if err != nil {
+		return err
+	}
+	l2Pricing, err := arbosState.L2PricingState(statedb)
+	if err != nil {
+		return err
+	}
+	// Replay the commit ProduceBlockAdvanced will make so BaseFeeWei matches the block's basefee.
+	// It only mutates this throwaway statedb, never the canonical state.
+	err = l2Pricing.CommitMultiGasFees()
+	if err != nil {
+		return err
+	}
+	baseFee, err := l2Pricing.BaseFeeWei()
+	if err != nil {
+		return err
+	}
+	collectTips, err := arbosState.CollectTips(statedb)
+	if err != nil {
+		return err
+	}
+
+	s.baseFee = containers.Some(baseFee)
+	s.collectTips = containers.Some(collectTips)
+
+	return nil
+}
+
+func (s *Sequencer) clearSequencingFields() {
+	s.baseFee = containers.None[*big.Int]()
+	s.collectTips = containers.None[bool]()
+}
+
 func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
-	return s.createBlockWithTxOrderer(ctx, newFIFOTxOrderer(s))
+	s.createBlockMutex.Lock()
+	defer s.createBlockMutex.Unlock()
+
+	config := s.config()
+
+	err := s.setSequencingFields()
+	if err != nil {
+		log.Error("failed to read sequencing fields from latest state", "err", err)
+		return nil, config.MaxBlockSpeed
+	}
+	defer s.clearSequencingFields()
+
+	var orderer txOrderer = newFIFOTxOrderer(s)
+	// Timeboost and forced FIFO both take precedence over PGA.
+	if s.collectTips.Unwrap() && !config.ExperimentalPGA.DangerousForceFIFO && !config.Timeboost.Enable {
+		orderer = NewPGATxOrderer(ctx, s, s.config, s.baseFee.Unwrap())
+	}
+
+	return s.createBlockWithTxOrderer(ctx, orderer)
 }
 
 // createBlockWithTxOrderer creates one block from the txs yielded by the orderer; split from
 // createBlockWithRegularTxs so tests can inject the orderer.
 func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrderer) (sequencedMsg *execution.SequencedMsg, throttleRegularSequencingFor time.Duration) {
-	s.createBlockMutex.Lock()
-	defer s.createBlockMutex.Unlock()
 
 	s.pendingQueueItemsResults = nil
 
@@ -1244,6 +1297,7 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrde
 		config.MaxTxDataSize,
 		s,
 		s.execEngine.transactionBroadcaster,
+		orderer,
 	)
 
 	timestamp := time.Now().Unix()

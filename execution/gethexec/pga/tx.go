@@ -8,8 +8,6 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ethereum/go-ethereum/core/txpool"
-
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -22,8 +20,6 @@ type Tx interface {
 	ReportError(err error)
 	// GetContext returns the submission context, used to drop expired entries.
 	GetContext() context.Context
-	// GetSize returns the size in bytes of the marshalled transaction.
-	GetSize() int
 	// GetFirstAppearance returns when the transaction first reached the sequencer; it breaks ties between
 	// equal-priority entries.
 	GetFirstAppearance() time.Time
@@ -45,6 +41,9 @@ func (item PrioritizedTx[T]) Tx() T { return item.tx }
 // Priority returns the entry's priority key.
 func (item PrioritizedTx[T]) Priority() uint64 { return item.cachedPriority }
 
+// Boost returns the entry's accumulated anti-starvation boost.
+func (item PrioritizedTx[T]) Boost() uint64 { return item.boost }
+
 // setPriority recomputes the base priority from ComputePgaPriority and folds in the accumulated boost. On error it
 // returns false, signalling that the transaction was dropped.
 func (item *PrioritizedTx[T]) setPriority(baseFee *big.Int) bool {
@@ -65,13 +64,9 @@ func (item *PrioritizedTx[T]) addBoost(delta uint64) {
 }
 
 // validate returns false if the transaction was dropped.
-func (item *PrioritizedTx[T]) validate(maxTxDataSize int) bool {
+func (item *PrioritizedTx[T]) validate() bool {
 	if err := item.tx.GetContext().Err(); err != nil {
 		item.tx.ReportError(err)
-		return false
-	}
-	if item.tx.GetSize() > maxTxDataSize {
-		item.tx.ReportError(txpool.ErrOversizedData)
 		return false
 	}
 	return true

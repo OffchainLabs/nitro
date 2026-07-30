@@ -46,6 +46,9 @@ type txOrderer interface {
 	// TakeRemaining removes and returns the never-yielded candidates for the caller to
 	// dispose of.
 	TakeRemaining() []txQueueItem
+
+	// OnTxInclusion notifies the orderer that the last yielded tx made it into the block.
+	OnTxInclusion()
 }
 
 // txOrdererSequencer is the sequencer functionality the tx orderers depend on.
@@ -76,3 +79,6 @@ func (o *fifoTxOrderer) StartBlock() bool {
 	o.fixedTxFetcher = fixedTxFetcher{items: items}
 	return len(items) > 0
 }
+
+// OnTxInclusion is a no-op: FIFO ordering doesn't react to inclusions.
+func (o *fifoTxOrderer) OnTxInclusion() {}

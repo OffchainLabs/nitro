@@ -178,6 +178,31 @@ func ArbOSVersion(stateDB vm.StateDB) uint64 {
 	return arbosVersion
 }
 
+// CollectTips reports whether the chain collects tips; it is always false before ArbOS 60.
+func CollectTips(stateDB vm.StateDB) (bool, error) {
+	backingStorage := storage.NewGeth(stateDB, burn.NewSystemBurner(nil, false))
+	arbosVersion, err := backingStorage.GetUint64ByUint64(uint64(versionOffset))
+	if err != nil {
+		return false, err
+	}
+	if arbosVersion < params.ArbosVersion_60 {
+		return false, nil
+	}
+	sbu := backingStorage.OpenStorageBackedUint64(uint64(collectTipsOffset))
+	val, err := sbu.Get()
+	return val != 0, err
+}
+
+// L2PricingState opens the L2 pricing state backed by stateDB.
+func L2PricingState(stateDB vm.StateDB) (*l2pricing.L2PricingState, error) {
+	backingStorage := storage.NewGeth(stateDB, burn.NewSystemBurner(nil, false))
+	arbosVersion, err := backingStorage.GetUint64ByUint64(uint64(versionOffset))
+	if err != nil {
+		return nil, err
+	}
+	return l2pricing.OpenL2PricingState(backingStorage.OpenCachedSubStorage(l2PricingSubspace), arbosVersion), nil
+}
+
 type Offset uint64
 
 const (
