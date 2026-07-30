@@ -81,9 +81,11 @@ jobs:
   go-tests:
     name: Go tests
     runs-on: arbitrator-ci
-    # Per-job hard cap so a hung test terminates with a Go stack trace rather
-    # than GitHub killing the runner (which yields no useful diagnostics).
-    timeout-minutes: 150
+    # Hard cap well above the slowest observed mode (~50m p95) so a hung job is
+    # killed at 1.5h instead of GitHub's 6h default. Note this is below the
+    # per-step Go `--timeout` values (up to 120m), so on a true hang the runner
+    # is killed before the Go stack trace prints.
+    timeout-minutes: 90
     env:
       COVER: ${{ github.event_name != 'merge_group' && '--cover' || '' }}
     services:

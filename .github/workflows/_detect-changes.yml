@@ -30,6 +30,7 @@ jobs:
   changes:
     name: Detect file changes
     runs-on: ubuntu-4
+    timeout-minutes: 10
     outputs:
       rust_changed: ${{ steps.changed.outputs.rust_any_changed }}
       bold_legacy_changed: ${{ steps.changed.outputs.bold_legacy_any_changed }}
