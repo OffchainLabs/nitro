@@ -430,15 +430,15 @@ func TestPgaMempoolPushPrioritizedPreservesBoost(t *testing.T) {
 	}
 }
 
-// TestPgaMempoolPushDropsBoost covers Push, the entry point for a transaction revived from the nonce-failure cache: it
-// re-enters keyed on its fee alone, dropping any boost it accumulated before being cached.
+// TestPgaMempoolPushDropsBoost covers Push: the transaction re-enters keyed on its fee alone, without any boost it
+// accumulated before.
 func TestPgaMempoolPushDropsBoost(t *testing.T) {
 	env := newPgaMempoolTestEnv(40)
 
 	revived, _ := env.makePgaTestItem(context.Background(), constFee(50), defaultArrival)
 	env.mempool.Push(revived)
 
-	// Accumulate a boost on the queued tx, then pop it as if it were sent to the nonce-failure cache.
+	// Accumulate a boost on the queued tx, then pop it.
 	env.mempool.RecordIncludedTx(40)
 	env.mempool.ApplyRoundBoost() // delta 10
 	popped := mustPopEntry(t, env.mempool)
@@ -446,7 +446,7 @@ func TestPgaMempoolPushDropsBoost(t *testing.T) {
 		t.Fatalf("boost before re-add = %d, want 10", popped.boost)
 	}
 
-	// Push re-adds the bare transaction, as the nonce-failure cache does, so the boost is dropped.
+	// Push re-adds the bare transaction, so the boost is dropped.
 	env.mempool.Push(popped.tx)
 	got := mustPopEntry(t, env.mempool)
 	if got.tx.id != revived.id || got.cachedPriority != 50 || got.boost != 0 {

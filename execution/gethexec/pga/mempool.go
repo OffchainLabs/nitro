@@ -58,8 +58,7 @@ func (m *Mempool[T]) Pop() (PrioritizedTx[T], bool) {
 	return PrioritizedTx[T]{}, false
 }
 
-// Push adds a boost-free transaction, keying it against the current basefee. Use it for a transaction revived from the
-// nonce-failure cache, which re-enters the queue fresh without any boost it accumulated before being cached.
+// Push adds a transaction with no accumulated boost, keying it against the mempool's basefee.
 func (m *Mempool[T]) Push(item T) {
 	m.PushPrioritized(item, 0)
 }
