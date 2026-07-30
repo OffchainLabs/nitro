@@ -741,6 +741,8 @@ impl<'a> WasmBinary<'a> {
             Some(arbos_version_for_activation),
         )?;
 
+        let stylus_data = bin.instrument(compile, codehash)?;
+
         let Some(memory) = bin.memories.first() else {
             bail!("missing memory with export name \"memory\"")
         };
@@ -801,7 +803,6 @@ impl<'a> WasmBinary<'a> {
         if bin.start.is_some() {
             bail!("wasm start functions not allowed");
         }
-        let stylus_data = bin.instrument(compile, codehash)?;
         Ok((bin, stylus_data))
     }
 
