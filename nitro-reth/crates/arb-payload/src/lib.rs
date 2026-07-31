@@ -5,11 +5,8 @@
 
 use std::{marker::PhantomData, sync::Arc};
 
-use alloy_eips::{
-    eip4895::{Withdrawal, Withdrawals},
-    eip7685::Requests,
-};
-use alloy_primitives::{Address, B256, Bytes, U256};
+use alloy_eips::{eip4895::Withdrawal, eip7685::Requests};
+use alloy_primitives::{B256, Bytes, U256};
 use alloy_rpc_types_engine::{
     BlobsBundleV1, BlobsBundleV2, ExecutionData, ExecutionPayload as AlloyExecutionPayload,
     ExecutionPayloadEnvelopeV2, ExecutionPayloadEnvelopeV3, ExecutionPayloadEnvelopeV4,
@@ -19,8 +16,7 @@ use alloy_rpc_types_engine::{
 use arb_primitives::ArbPrimitives;
 use reth_engine_primitives::EngineTypes;
 use reth_payload_primitives::{
-    BuiltPayload, PayloadAttributes as PayloadAttributesTrait, PayloadBuilderAttributes,
-    PayloadTypes,
+    BuiltPayload, PayloadAttributes as PayloadAttributesTrait, PayloadTypes,
 };
 use reth_primitives_traits::{NodePrimitives, SealedBlock};
 use serde::{Deserialize, Serialize};
@@ -57,91 +53,13 @@ impl PayloadAttributesTrait for ArbPayloadAttributes {
     fn parent_beacon_block_root(&self) -> Option<B256> {
         self.inner.parent_beacon_block_root
     }
-}
 
-// ── Payload Builder Attributes ────────────────────────────────────────────────
-
-/// Builder attributes for constructing Arbitrum payloads.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ArbPayloadBuilderAttributes {
-    /// Payload identifier.
-    pub id: PayloadId,
-    /// Parent block hash.
-    pub parent: B256,
-    /// Target timestamp.
-    pub timestamp: u64,
-    /// Fee recipient address.
-    pub suggested_fee_recipient: Address,
-    /// Randomness value.
-    pub prev_randao: B256,
-    /// Withdrawals to include.
-    pub withdrawals: Withdrawals,
-    /// Parent beacon block root.
-    pub parent_beacon_block_root: Option<B256>,
-    /// Whether to exclude the transaction pool.
-    pub no_tx_pool: bool,
-    /// Forced transactions from the sequencer.
-    pub transactions: Vec<Bytes>,
-}
-
-impl PayloadBuilderAttributes for ArbPayloadBuilderAttributes {
-    type RpcPayloadAttributes = ArbPayloadAttributes;
-    type Error = PayloadIdComputeError;
-
-    fn try_new(
-        parent: B256,
-        attributes: ArbPayloadAttributes,
-        _version: u8,
-    ) -> Result<Self, Self::Error> {
-        let id = arb_payload_id(&parent, &attributes);
-        Ok(Self {
-            id,
-            parent,
-            timestamp: attributes.inner.timestamp,
-            suggested_fee_recipient: attributes.inner.suggested_fee_recipient,
-            prev_randao: attributes.inner.prev_randao,
-            withdrawals: attributes.inner.withdrawals.unwrap_or_default().into(),
-            parent_beacon_block_root: attributes.inner.parent_beacon_block_root,
-            no_tx_pool: attributes.no_tx_pool,
-            transactions: attributes.transactions.unwrap_or_default(),
-        })
-    }
-
-    fn payload_id(&self) -> PayloadId {
-        self.id
-    }
-
-    fn parent(&self) -> B256 {
-        self.parent
-    }
-
-    fn timestamp(&self) -> u64 {
-        self.timestamp
-    }
-
-    fn parent_beacon_block_root(&self) -> Option<B256> {
-        self.parent_beacon_block_root
-    }
-
-    fn suggested_fee_recipient(&self) -> Address {
-        self.suggested_fee_recipient
-    }
-
-    fn prev_randao(&self) -> B256 {
-        self.prev_randao
-    }
-
-    fn withdrawals(&self) -> &Withdrawals {
-        &self.withdrawals
+    fn payload_id(&self, parent_hash: &B256) -> PayloadId {
+        arb_payload_id(parent_hash, self)
     }
 }
 
 // ── Payload ID Computation ────────────────────────────────────────────────────
-
-/// Error when computing payload IDs (infallible in practice).
-#[derive(Debug, Clone, Copy, thiserror::Error)]
-#[error("payload id computation failed")]
-pub struct PayloadIdComputeError;
 
 /// Compute a unique payload ID from the parent hash and attributes.
 pub fn arb_payload_id(parent: &B256, attributes: &ArbPayloadAttributes) -> PayloadId {
@@ -333,7 +251,6 @@ impl PayloadTypes for ArbPayloadTypes {
     type ExecutionData = ExecutionData;
     type BuiltPayload = ArbBuiltPayload;
     type PayloadAttributes = ArbPayloadAttributes;
-    type PayloadBuilderAttributes = ArbPayloadBuilderAttributes;
 
     fn block_to_payload(
         block: SealedBlock<
@@ -362,7 +279,6 @@ where
     type ExecutionData = T::ExecutionData;
     type BuiltPayload = T::BuiltPayload;
     type PayloadAttributes = T::PayloadAttributes;
-    type PayloadBuilderAttributes = T::PayloadBuilderAttributes;
 
     fn block_to_payload(
         block: SealedBlock<

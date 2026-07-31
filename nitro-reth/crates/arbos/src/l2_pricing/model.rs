@@ -798,7 +798,7 @@ mod tests {
         }
 
         // Commit empty EVM state for StartBlock (internal tx has no EVM changes)
-        let empty_changes: HashMap<Address, revm::state::Account> = Default::default();
+        let empty_changes: revm::state::EvmState = Default::default();
         state.commit(empty_changes);
 
         // ================================================================
@@ -843,7 +843,7 @@ mod tests {
         }
 
         // Commit empty EVM state for SubmitRetryable (endTxNow=true, no EVM execution)
-        let empty_changes2: HashMap<Address, revm::state::Account> = Default::default();
+        let empty_changes2: revm::state::EvmState = Default::default();
         state.commit(empty_changes2);
 
         // Clear scratch slots (as done in commit_transaction)
@@ -901,7 +901,7 @@ mod tests {
         // many logs — the regression needed ~11 logs across 7+ contracts to
         // reproduce.
         {
-            let mut evm_changes: HashMap<Address, revm::state::Account> = Default::default();
+            let mut evm_changes: revm::state::EvmState = Default::default();
 
             // Sender account
             let sender = address!("fd86e9a33fd52e4085fb94d24b759448a621cd36");
@@ -1203,7 +1203,7 @@ mod tests {
 
         // EVM commit that INCLUDES the ArbOS account (the critical difference!)
         {
-            let mut evm_changes: HashMap<Address, revm::state::Account> = Default::default();
+            let mut evm_changes: revm::state::EvmState = Default::default();
 
             // Sender
             let sender = address!("fd86e9a33fd52e4085fb94d24b759448a621cd36");
@@ -1471,7 +1471,8 @@ mod tests {
                 if let Some(cached_acc) = state.cache.accounts.get(&arbos)
                     && let Some(ref plain) = cached_acc.account
                 {
-                    let mut storage_changes: HashMap<U256, StorageSlot> = HashMap::default();
+                    let mut storage_changes: revm::database::StorageWithOriginalValues =
+                        Default::default();
                     for (key, value) in &plain.storage {
                         let original = state.database.storage(arbos, *key).unwrap_or(U256::ZERO);
                         if *value != original {
@@ -1582,8 +1583,7 @@ mod tests {
             );
 
             // Step 5: EVM commit with empty HashMap
-            let empty_state: alloy_primitives::map::HashMap<Address, revm::state::Account> =
-                Default::default();
+            let empty_state: revm::state::EvmState = Default::default();
             state.commit(empty_state);
 
             // Check cache after commit
@@ -1655,7 +1655,7 @@ mod tests {
                     }
                 } else {
                     // Account not in bundle — add if changed
-                    let storage_changes: alloy_primitives::map::HashMap<U256, StorageSlot> =
+                    let storage_changes: revm::database::StorageWithOriginalValues =
                         current_storage
                             .iter()
                             .filter_map(|(key, value)| {
@@ -1761,8 +1761,7 @@ mod tests {
             };
             arbos_evm_account.mark_touch();
             // No storage entries — EVM read slots but didn't write them
-            let mut evm_changes: alloy_primitives::map::HashMap<Address, revm::state::Account> =
-                Default::default();
+            let mut evm_changes: revm::state::EvmState = Default::default();
             evm_changes.insert(ARBOS_STATE_ADDRESS, arbos_evm_account);
             state.commit(evm_changes);
 
@@ -1905,8 +1904,7 @@ mod tests {
                 // new() sets original_value = present_value, so is_changed() = false
             );
 
-            let mut evm_changes: alloy_primitives::map::HashMap<Address, revm::state::Account> =
-                Default::default();
+            let mut evm_changes: revm::state::EvmState = Default::default();
             evm_changes.insert(ARBOS_STATE_ADDRESS, arbos_evm_account);
             state.commit(evm_changes);
 
@@ -2028,8 +2026,7 @@ mod tests {
             let _ = state.load_cache_account(sender);
             let _ = state.load_cache_account(receiver);
 
-            let mut user_changes: alloy_primitives::map::HashMap<Address, revm::state::Account> =
-                Default::default();
+            let mut user_changes: revm::state::EvmState = Default::default();
             let mut sender_acct = revm::state::Account::default();
             sender_acct.info.balance = U256::from(999_000u64);
             sender_acct.info.nonce = 1;
@@ -2101,7 +2098,7 @@ mod tests {
                         }
                     }
                 } else {
-                    let storage_changes: alloy_primitives::map::HashMap<U256, StorageSlot> =
+                    let storage_changes: revm::database::StorageWithOriginalValues =
                         current_storage
                             .iter()
                             .filter_map(|(key, value)| {
@@ -2241,8 +2238,7 @@ mod tests {
             // EVM commit: empty (StartBlock internal tx)
             {
                 use revm::DatabaseCommit;
-                let empty: alloy_primitives::map::HashMap<Address, revm::state::Account> =
-                    Default::default();
+                let empty: revm::state::EvmState = Default::default();
                 state.commit(empty);
             }
 
@@ -2251,10 +2247,7 @@ mod tests {
                 use revm::DatabaseCommit;
                 let sender = address!("1111111111111111111111111111111111111111");
                 let _ = state.load_cache_account(sender);
-                let mut user_changes: alloy_primitives::map::HashMap<
-                    Address,
-                    revm::state::Account,
-                > = Default::default();
+                let mut user_changes: revm::state::EvmState = Default::default();
                 let mut sender_acct = revm::state::Account::default();
                 sender_acct.info.balance = U256::from(999_000u64);
                 sender_acct.info.nonce = 1;
@@ -2327,7 +2320,7 @@ mod tests {
                     }
                 } else {
                     // Account not in bundle
-                    let storage_changes: alloy_primitives::map::HashMap<U256, StorageSlot> =
+                    let storage_changes: revm::database::StorageWithOriginalValues =
                         current_storage
                             .iter()
                             .filter_map(|(key, value)| {
