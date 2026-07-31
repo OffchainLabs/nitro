@@ -9,6 +9,14 @@ env:
 phases:
   pre_build:
     commands:
+      # CODEBUILD_CLONE_REF checks out the source action's BranchName, not the
+      # revision the execution resolved, so pin the tree before anything reads git.
+      - |
+        set -euo pipefail
+        REF=${SOURCE_REF:-auto}
+        if [ "$REF" = auto ]; then REF=$CODEBUILD_RESOLVED_SOURCE_VERSION; fi
+        git fetch --force --tags origin '+refs/heads/*:refs/remotes/origin/*'
+        git checkout --force --detach "$REF"
       - |
         set -euo pipefail
         if [ -n "${GITHUB_APP_KEY:-}" ]; then
