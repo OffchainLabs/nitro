@@ -861,6 +861,15 @@ func (n *ExecutionNode) PrepareForRecord(start, end arbutil.MessageIndex) contai
 	})
 }
 
+func (n *ExecutionNode) PruneBlockRecordings(before arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread(n, func(ctx context.Context) (struct{}, error) {
+		if n.Recorder == nil {
+			return struct{}{}, nil
+		}
+		return struct{}{}, n.Recorder.PruneRecordingsBefore(before)
+	})
+}
+
 func (n *ExecutionNode) Pause() {
 	if n.Sequencer != nil {
 		n.Sequencer.Pause()

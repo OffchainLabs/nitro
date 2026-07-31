@@ -77,3 +77,8 @@ func (c *Server) PrepareForRecord(ctx context.Context, start, end arbutil.Messag
 	_, err := c.executionRecorder.PrepareForRecord(start, end).Await(ctx)
 	return err
 }
+
+func (c *Server) PruneBlockRecordings(ctx context.Context, before arbutil.MessageIndex) error {
+	_, err := c.executionRecorder.PruneBlockRecordings(before).Await(ctx)
+	return err
+}
