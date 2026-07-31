@@ -21,7 +21,9 @@ use serde::{Deserialize, Serialize};
 
 use super::{BlockInput, RunnerConfig, Workload};
 use crate::metrics::{
-    BlockMetric, HostInfo, RunResult, SummaryMetrics, clock::Stopwatch, memory::RssMonitor,
+    BlockMetric, HostInfo, RunResult, SummaryMetrics,
+    clock::{CpuClock, Stopwatch},
+    memory::RssMonitor,
     rolling::build_windows,
 };
 
@@ -75,16 +77,33 @@ impl SubprocessConfig {
 pub struct SubprocessRunner {
     config: RunnerConfig,
     sub: SubprocessConfig,
+}
+
+/// Per-block CPU and RSS samplers bound to the node's pid.
+struct NodeProbes {
+    cpu: CpuClock,
     rss: RssMonitor,
+}
+
+impl NodeProbes {
+    fn for_pid(pid: u32) -> Self {
+        let cpu = CpuClock::for_pid(pid).unwrap_or_else(|| {
+            tracing::warn!(
+                node_pid = pid,
+                "node CPU clock unavailable; cpu_ns will be reported as 0"
+            );
+            CpuClock::unavailable()
+        });
+        Self {
+            cpu,
+            rss: RssMonitor::for_pid(pid),
+        }
+    }
 }
 
 impl SubprocessRunner {
     pub fn new(config: RunnerConfig, sub: SubprocessConfig) -> Self {
-        Self {
-            config,
-            sub,
-            rss: RssMonitor::new(),
-        }
+        Self { config, sub }
     }
 
     pub fn run(&mut self, workload: Workload) -> eyre::Result<RunResult> {
@@ -104,6 +123,7 @@ impl SubprocessRunner {
             "spawning arb-reth subprocess"
         );
         let mut node = NodeProcess::spawn(&sub)?;
+        let mut probes = NodeProbes::for_pid(node.pid());
         let url = format!("http://127.0.0.1:{}", self.sub.http_port);
         let client = reqwest::blocking::Client::builder()
             .timeout(self.sub.request_timeout)
@@ -115,7 +135,7 @@ impl SubprocessRunner {
 
         let mut blocks = Vec::with_capacity(workload.blocks.len());
         for block in &workload.blocks {
-            let metric = self.execute_one_block(&client, &url, &mut msg_idx, block)?;
+            let metric = self.execute_one_block(&client, &url, &mut msg_idx, block, &mut probes)?;
             blocks.push(metric);
         }
 
@@ -133,11 +153,12 @@ impl SubprocessRunner {
     }
 
     fn execute_one_block(
-        &mut self,
+        &self,
         client: &reqwest::blocking::Client,
         url: &str,
         msg_idx: &mut u64,
         block: &BlockInput,
+        probes: &mut NodeProbes,
     ) -> eyre::Result<BlockMetric> {
         let l2_msg = encode_l2_batch(&block.txs);
         let body = serde_json::json!({
@@ -164,7 +185,7 @@ impl SubprocessRunner {
             ],
         });
 
-        let sw = Stopwatch::start();
+        let sw = Stopwatch::start_with(probes.cpu);
         let resp = client.post(url).json(&body).send()?.error_for_status()?;
         let json: serde_json::Value = resp.json()?;
         let (wall, cpu) = sw.elapsed_ns();
@@ -172,7 +193,7 @@ impl SubprocessRunner {
         if let Some(err) = json.get("error") {
             return Err(eyre::eyre!("digestMessage error: {err}"));
         }
-        let rss = self.rss.current_rss();
+        let rss = probes.rss.current_rss();
         *msg_idx += 1;
 
         // Pull the actual gas + tx count from the produced block.
@@ -466,6 +487,10 @@ impl NodeProcess {
             log_thread,
             stop,
         })
+    }
+
+    fn pid(&self) -> u32 {
+        self.child.id()
     }
 
     fn shutdown(&mut self) {
