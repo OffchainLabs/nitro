@@ -113,3 +113,7 @@ func (c *Client) RecordBlockCreation(pos arbutil.MessageIndex, msg *arbostypes.M
 func (c *Client) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
 	return sendRequest[struct{}](c, "_prepareForRecord", start, end)
 }
+
+func (c *Client) PruneBlockRecordings(before arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
+	return sendRequest[struct{}](c, "_pruneBlockRecordings", before)
+}
