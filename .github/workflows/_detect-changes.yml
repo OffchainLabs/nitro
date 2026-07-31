@@ -90,9 +90,18 @@ jobs:
         # Runs on every event with a PR diff base; only workflow_dispatch
         # lacks one.
         if: github.event_name != 'workflow_dispatch'
+        # Diff event-payload SHAs rather than HEAD^1: pull_request_target
+        # checks out the base branch, so a HEAD-relative diff doesn't see the
+        # PR at all, and on merge_group the payload SHAs span the whole group
+        # being validated. Neither SHA is guaranteed to be in the shallow
+        # clone, hence the explicit fetch.
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
         run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA" "$HEAD_SHA"
           changed=$(git config --file .gitmodules --get-regexp path | awk '{print $2}' \
-            | xargs -r git diff --name-only HEAD^1 HEAD --)
+            | xargs -r git diff --name-only "$BASE_SHA" "$HEAD_SHA" --)
           any=false
           rust=false
           while read -r path; do
