@@ -68,15 +68,11 @@ record-blocks: nitro-deps
 		-recordBlockInputs.WithBaseDir=$(BLOCK_INPUTS_DIR) \
 		-recordBlockInputs.WithTimestampDirEnabled=false \
 		>$(BLOCK_INPUTS_DIR)/record.log 2>&1; then \
-		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockTransfer/*.json    $(BLOCK_INPUTS_DIR)/transfer.json; \
-		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockSolidity/*.json    $(BLOCK_INPUTS_DIR)/solidity.json; \
-		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockStylus/*.json      $(BLOCK_INPUTS_DIR)/stylus.json; \
-		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockStylusHeavy/*.json $(BLOCK_INPUTS_DIR)/stylus_heavy.json; \
-		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockStylusActivation/*.json $(BLOCK_INPUTS_DIR)/stylus_activation.json; \
-		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockStylusActivationMulticall/*.json $(BLOCK_INPUTS_DIR)/stylus_activation_multicall.json; \
-		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockMixed/*.json       $(BLOCK_INPUTS_DIR)/mixed.json; \
-		mv $(BLOCK_INPUTS_DIR)/TestRecordBlockSignatures/*.json  $(BLOCK_INPUTS_DIR)/signatures.json; \
-		rm -rf $(BLOCK_INPUTS_DIR)/TestRecordBlock*/; \
+		for dir in $(BLOCK_INPUTS_DIR)/TestRecordBlock*/; do \
+			name=$$(basename "$$dir" | sed -e 's/^TestRecordBlock//' -e 's/\([a-z0-9]\)\([A-Z]\)/\1_\2/g' | tr '[:upper:]' '[:lower:]'); \
+			mv "$$dir"*.json "$(BLOCK_INPUTS_DIR)/$$name.json"; \
+			rmdir "$$dir"; \
+		done; \
 		echo "Blocks successfully recorded"; \
 	else \
 		echo "FAIL — record.log:" >&2; cat $(BLOCK_INPUTS_DIR)/record.log >&2; exit 1; \
