@@ -82,6 +82,7 @@ type ExecutionRecorder interface {
 		wasmTargets []rawdb.WasmTarget,
 	) containers.PromiseInterface[*RecordResult]
 	PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}]
+	PruneBlockRecordings(before arbutil.MessageIndex) containers.PromiseInterface[struct{}]
 }
 
 // ExecutionSequencer is implemented by the execution node and driven by the

@@ -45,6 +45,7 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/rpcserver"
@@ -243,6 +244,9 @@ func (c *Config) Validate() error {
 	if err := c.Caching.Validate(); err != nil {
 		return err
 	}
+	if err := c.RecordingDatabase.Validate(); err != nil {
+		return err
+	}
 	if err := c.Sequencer.Validate(); err != nil {
 		return err
 	}
@@ -363,7 +367,7 @@ type ExecutionNode struct {
 	FilterSystem             *filters.FilterSystem
 	ArbInterface             *ArbInterface
 	ExecEngine               *ExecutionEngine
-	Recorder                 *BlockRecorder
+	Recorder                 ExecutionBlockRecorder
 	Sequencer                *Sequencer // either nil or same as TxPublisher
 	TxPreChecker             *TxPreChecker
 	TxPublisher              TransactionPublisher
@@ -402,7 +406,6 @@ func CreateExecutionNode(
 	}
 	var addressFilterService *addressfilter.FilterService
 	var addressChecker state.AddressChecker
-	// Tests bypass the service by injecting via ExecEngine.SetAddressChecker.
 	if config.TransactionFiltering.Enable {
 		addressFilterService, err = addressfilter.NewFilterService(&config.TransactionFiltering.AddressFilter)
 		if err != nil {
@@ -427,7 +430,42 @@ func CreateExecutionNode(
 		execEngine.DisableStylusCacheMetricsCollection()
 	}
 
-	recorder := NewBlockRecorder(&config.RecordingDatabase, execEngine, executionDB)
+	var recorder ExecutionBlockRecorder
+	switch config.RecordingDatabase.Mode {
+	case BlockRecorderModeOff:
+	case BlockRecorderModeLegacy:
+		recorder = NewBlockRecorder(&config.RecordingDatabase, execEngine, executionDB)
+	case BlockRecorderModeChainTip:
+		ancientDir, ancientErr := executionDB.AncientDatadir()
+		if ancientErr != nil || ancientDir == "" {
+			// An empty DataDir means geth kept the whole database in memory no matter
+			// which engine the config names.
+			if stack.Config().DBEngine != dbutil.MemoryDB && stack.Config().DataDir != "" {
+				if ancientErr != nil {
+					return nil, fmt.Errorf("chain-tip block recorder requires an ancient data directory: %w", ancientErr)
+				}
+				return nil, errors.New("chain-tip block recorder requires an ancient data directory, but the execution database reports none")
+			}
+			log.Warn("Chain-tip block recordings are kept in memory, so they are lost on restart and grow without bound", "dbEngine", stack.Config().DBEngine)
+			ancientDir = ""
+		}
+		chainTipBlockRecordsFreezer, err := rawdb.NewChainTipBlockRecordsFreezer(ancientDir, false)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open chain-tip block records freezer: %w", err)
+		}
+		recorder = NewChainTipBlockRecorder(execEngine, newBlockRecordsFreezer(chainTipBlockRecordsFreezer))
+	default:
+		return nil, fmt.Errorf("unknown block recorder mode %q", config.RecordingDatabase.Mode)
+	}
+	created := false
+	defer func() {
+		if created || recorder == nil {
+			return
+		}
+		if err := recorder.Close(); err != nil {
+			log.Error("failed to close block recorder after a failed startup", "err", err)
+		}
+	}()
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 
@@ -604,6 +642,7 @@ func CreateExecutionNode(
 
 	stack.RegisterAPIs(apis)
 
+	created = true
 	return execNode, nil
 
 }
@@ -702,6 +741,7 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 
 func (n *ExecutionNode) StopAndWait() {
 	if !n.started.Load() {
+		n.closeRecorder()
 		return
 	}
 	if n.AddressFilterService != nil {
@@ -714,7 +754,9 @@ func (n *ExecutionNode) StopAndWait() {
 	if n.TxPublisher.Started() {
 		n.TxPublisher.StopAndWait()
 	}
-	n.Recorder.OrderlyShutdown()
+	if n.Recorder != nil {
+		n.Recorder.OrderlyShutdown()
+	}
 	if n.ParentChain != nil && n.ParentChain.Started() {
 		n.ParentChain.StopAndWait()
 	}
@@ -742,6 +784,16 @@ func (n *ExecutionNode) StopAndWait() {
 	// 	log.Error("error on stak close", "err", err)
 	// }
 	n.StopWaiter.StopAndWait()
+	n.closeRecorder()
+}
+
+func (n *ExecutionNode) closeRecorder() {
+	if n.Recorder == nil {
+		return
+	}
+	if err := n.Recorder.Close(); err != nil {
+		log.Error("failed to close block recorder", "err", err)
+	}
 }
 
 func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
@@ -793,13 +845,28 @@ func (n *ExecutionNode) RecordBlockCreation(
 	wasmTargets []rawdb.WasmTarget,
 ) containers.PromiseInterface[*execution.RecordResult] {
 	return stopwaiter.LaunchPromiseThread(n, func(ctx context.Context) (*execution.RecordResult, error) {
+		if n.Recorder == nil {
+			return nil, errors.New("block recorder unavailable")
+		}
 		return n.Recorder.RecordBlockCreation(ctx, pos, msg, wasmTargets)
 	})
 }
 
 func (n *ExecutionNode) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(n, func(ctx context.Context) (struct{}, error) {
+		if n.Recorder == nil {
+			return struct{}{}, errors.New("block recorder unavailable")
+		}
 		return struct{}{}, n.Recorder.PrepareForRecord(ctx, start, end)
+	})
+}
+
+func (n *ExecutionNode) PruneBlockRecordings(before arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread(n, func(ctx context.Context) (struct{}, error) {
+		if n.Recorder == nil {
+			return struct{}{}, nil
+		}
+		return struct{}{}, n.Recorder.PruneRecordingsBefore(before)
 	})
 }
 
