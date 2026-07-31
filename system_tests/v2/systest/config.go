@@ -54,7 +54,11 @@ var defaultSequencerConfig = gethexec.SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	ExpectedSurplusGasPriceMode:  "CalldataPrice",
 	EnableProfiling:              false,
-	ExperimentalPGA:              gethexec.DefaultPGAConfig,
+	// Test block speeds are far below the minimum PGA round length, so force FIFO ordering.
+	ExperimentalPGA: gethexec.PGAConfig{
+		DangerousForceFIFO: true,
+		RoundsPerBlock:     gethexec.DefaultPGAConfig.RoundsPerBlock,
+	},
 }
 
 func defaultExecConfig(t *testing.T, stateScheme containers.Option[StateScheme]) *gethexec.Config {
