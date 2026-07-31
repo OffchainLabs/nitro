@@ -107,7 +107,7 @@ jobs:
           while read -r path; do
             [ -n "$path" ] || continue
             any=true
-            case "$path" in crates/*|contracts) rust=true ;; esac
+            case "$path" in crates/*|contracts|brotli) rust=true ;; esac
           done <<< "$changed"
           echo "any_changed=$any" >> "$GITHUB_OUTPUT"
           echo "rust_changed=$rust" >> "$GITHUB_OUTPUT"
