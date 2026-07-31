@@ -1293,7 +1293,8 @@ func (s *ExecutionEngine) beginTipRecording(parentHeader *types.Header, runCtx *
 		}
 		return &tipRecordingSession{statedb: statedb, chainContext: s.bc, runCtx: runCtx}, nil
 	}
-	recordingStateDatabase := arbitrum.NewTipRecordingStateDatabase(s.bc.StateCache())
+	stateDatabase := state.NewDatabase(s.bc.TrieDB(), s.bc.CodeDB()).WithSnapshot(s.bc.Snapshots())
+	recordingStateDatabase := arbitrum.NewTipRecordingStateDatabase(stateDatabase)
 	recordingChainContext := arbitrum.NewRecordingChainContext(s.bc, parentHeader)
 	statedb, err := state.NewRecording(parentHeader.Root, recordingStateDatabase)
 	if err != nil {
