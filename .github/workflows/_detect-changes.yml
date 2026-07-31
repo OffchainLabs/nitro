@@ -87,7 +87,9 @@ jobs:
         # can only expand a submodule's inner files when the submodule is
         # checked out (it isn't here), so a PR whose only code change is a
         # submodule bump would otherwise report no changes and skip CI.
-        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        # Runs on every event with a PR diff base; only workflow_dispatch
+        # lacks one.
+        if: github.event_name != 'workflow_dispatch'
         run: |
           changed=$(git config --file .gitmodules --get-regexp path | awk '{print $2}' \
             | xargs -r git diff --name-only HEAD^1 HEAD --)
