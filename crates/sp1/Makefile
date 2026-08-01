@@ -1,3 +1,5 @@
+# Copyright 2026, Offchain Labs, Inc.
+# For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 TOP              := $(abspath $(CURDIR)/../..)
 RISCV            := $(HOME)/.sp1/riscv
 # Keep in sync with the sp1-* crate versions in Cargo.lock.
