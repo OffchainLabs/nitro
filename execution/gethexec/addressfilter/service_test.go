@@ -558,8 +558,8 @@ func TestFilterService_KeepsListOnOversizedSync(t *testing.T) {
 
 	require.NoError(t, service.Initialize(context.Background()))
 
-	digestBefore := service.GetHashStoreDigest(0)
-	countBefore := service.GetHashCount(0)
+	digestBefore := service.getHashStoreDigest(0)
+	countBefore := service.getHashCount(0)
 	require.NotEmpty(t, digestBefore, "initial digest should be set")
 	require.Equal(t, 1, countBefore)
 	restricted, _ := service.GetHashStore(0).IsRestricted(restrictedAddr)
@@ -576,10 +576,10 @@ func TestFilterService_KeepsListOnOversizedSync(t *testing.T) {
 		t.Fatalf("expected ErrObjectTooLarge from oversized swap, got %v", err)
 	}
 
-	if got := service.GetHashStoreDigest(0); got != digestBefore {
+	if got := service.getHashStoreDigest(0); got != digestBefore {
 		t.Errorf("digest changed after failed sync: got %q, want %q", got, digestBefore)
 	}
-	if got := service.GetHashCount(0); got != countBefore {
+	if got := service.getHashCount(0); got != countBefore {
 		t.Errorf("hash count changed after failed sync: got %d, want %d", got, countBefore)
 	}
 	if restricted, _ := service.GetHashStore(0).IsRestricted(restrictedAddr); !restricted {
@@ -747,7 +747,7 @@ func TestFilterService_MultiFile(t *testing.T) {
 
 	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, 1, key1, key2))
 	require.NoError(t, err)
-	require.Equal(t, 2, service.NumFiles(t))
+	require.Equal(t, 2, service.numFiles())
 
 	require.False(t, service.AllFilesLoaded(), "no file should be loaded before Initialize")
 	require.NoError(t, service.Initialize(context.Background()))
@@ -824,7 +824,7 @@ func TestFilterService_PreallocLoadAndReload(t *testing.T) {
 	if r, _ := hashStore.IsRestricted(addr1); !r {
 		t.Fatal("addr1 should be restricted after initial load")
 	}
-	require.Equal(t, 1, service.GetHashCount(0))
+	require.Equal(t, 1, service.getHashCount(0))
 
 	// Capture the preallocated structures to prove they are reused, not replaced.
 	d0 := hashStore.buffers[0]
@@ -842,7 +842,7 @@ func TestFilterService_PreallocLoadAndReload(t *testing.T) {
 	if r, _ := hashStore.IsRestricted(addr1); r {
 		t.Fatal("addr1 should no longer be restricted after reload")
 	}
-	require.Equal(t, 1, service.GetHashCount(0))
+	require.Equal(t, 1, service.getHashCount(0))
 
 	// Structures reused across the reload.
 	require.Same(t, d0, hashStore.buffers[0])

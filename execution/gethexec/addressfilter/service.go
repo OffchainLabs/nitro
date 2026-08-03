@@ -150,16 +150,16 @@ func (s *FilterService) TriggerSyncForTest(_ *testing.T, ctx context.Context) er
 	return errors.Join(errs...)
 }
 
-func (s *FilterService) NumFiles(_ *testing.T) int {
+func (s *FilterService) numFiles() int {
 	return len(s.files)
 }
 
-func (s *FilterService) GetHashCount(i int) int {
+func (s *FilterService) getHashCount(i int) int {
 	return s.files[i].hashStore.Size()
 }
 
-// GetHashStoreDigest returns the S3 ETag Digest of the hash list currently loaded for file i.
-func (s *FilterService) GetHashStoreDigest(i int) string {
+// getHashStoreDigest returns the S3 ETag Digest of the hash list currently loaded for file i.
+func (s *FilterService) getHashStoreDigest(i int) string {
 	return s.files[i].hashStore.Digest()
 }
 
