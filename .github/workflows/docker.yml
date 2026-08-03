@@ -26,6 +26,7 @@ jobs:
   docker:
     name: Docker build
     runs-on: arbitrator-ci
+    timeout-minutes: 60
     needs: changes
     # Skip the build for changelog-only PRs. merge_group and manual runs always
     # build, since detect-changes has no PR diff base for those events.
