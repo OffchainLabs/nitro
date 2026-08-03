@@ -204,16 +204,17 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 		// case the backlog is very large
 		segment := cc.backlog.Head()
 		if !backlog.IsBacklogSegmentNil(segment) && segment.Start() < uint64(cc.requestedSeqNum) {
-			// The end of the backlog only has to be read once: a concurrent
-			// Append can only move it forward and any messages added after this
-			// read are sent by the catch up below, so the re-read that Get uses
-			// to avoid racing with a delete is not needed here.
+			// The end only has to be read once, as messages appended after
+			// this read are sent by the catch up below. A zero end means
+			// unknown rather than zero: Append publishes a tail segment before
+			// appending to it, so a segment read in that window is empty and
+			// End reports zero for it. Lookup handles a zero end instead.
 			var backlogEnd uint64
 			if tail := cc.backlog.Tail(); !backlog.IsBacklogSegmentNil(tail) {
 				backlogEnd = tail.End()
 			}
 
-			if uint64(cc.requestedSeqNum) > backlogEnd {
+			if backlogEnd != 0 && uint64(cc.requestedSeqNum) > backlogEnd {
 				// The client has requested a sequence number after the end of
 				// the backlog, so there is nothing in the backlog to send. The
 				// end of the backlog is recorded as the last sequence number
@@ -221,7 +222,7 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 				// backlog as a gap and send it anyway. The requested sequence
 				// number is not used for this as it can be arbitrarily far
 				// ahead, which would drop every message sent to the client.
-				log.Debug("client requested sequence number after the end of the backlog, no backlog to send", "client", cc.Name, "requestedSeqNum", cc.requestedSeqNum, "backlogEnd", backlogEnd)
+				log.Warn("client requested sequence number after the end of the backlog, no backlog to send", "client", cc.Name, "requestedSeqNum", cc.requestedSeqNum, "backlogEnd", backlogEnd)
 				cc.LastSentSeqNum.Store(backlogEnd)
 				segment = nil
 			} else if s, err := cc.backlog.Lookup(uint64(cc.requestedSeqNum)); err != nil {
