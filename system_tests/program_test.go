@@ -481,8 +481,10 @@ func storageTest(t *testing.T, jit bool) {
 	validateBlocks(t, 2, jit, builder)
 
 	// Captures a block_inputs json file for the block that included the
-	// storage write transaction. Include wasm targets necessary for arbitrator prover and jit binaries
-	recordBlock(t, receipt.BlockNumber.Uint64(), builder, rawdb.TargetWavm, rawdb.LocalTarget())
+	// storage write transaction. Include wasm targets necessary for arbitrator
+	// prover and jit binaries, plus the original wasm source so runners that
+	// compile stylus programs on the fly (e.g. SP1) can use the recording.
+	recordBlock(t, receipt.BlockNumber.Uint64(), builder, rawdb.TargetWavm, rawdb.TargetWasm, rawdb.LocalTarget())
 }
 
 func TestProgramTransientStorage(t *testing.T) {
@@ -1512,12 +1514,12 @@ func testMaxStylusOpenPages(t *testing.T, jit bool) {
 	// On-chain over limit should fail.
 	// FilterTx() causes the sequencer to reject the tx entirely (not included in a block),
 	// so SendTransaction itself returns an error rather than producing a failed receipt.
-	// We match on state.ErrArbTxFilter.Error() (rather than a literal string) so that
+	// We match on state.ErrSeqFilter.Error() (rather than a literal string) so that
 	// the test tracks the sentinel if it's ever reworded.
 	tx = l2info.PrepareTxTo("Owner", &memWriteAddr, 1e9, nil, overLimitArgs)
 	err = l2client.SendTransaction(ctx, tx)
-	if err == nil || !strings.Contains(err.Error(), state.ErrArbTxFilter.Error()) {
-		Fatal(t, "on-chain tx over limit should have been rejected with", state.ErrArbTxFilter.Error(), ", got:", err)
+	if err == nil || !strings.Contains(err.Error(), state.ErrSeqFilter.Error()) {
+		Fatal(t, "on-chain tx over limit should have been rejected with", state.ErrSeqFilter.Error(), ", got:", err)
 	}
 }
 
@@ -1539,7 +1541,7 @@ func TestProgramDelayedInboxPageLimitBypassNative(t *testing.T) {
 // producing a MessageRunContext where IsSequencing() is false, which causes
 // addPages to fall through to the exempt branch. If that wiring regresses
 // (e.g. back to NewMessageSequencingContext), FilterTx fires inside
-// ProduceBlock, block production fails with ErrArbTxFilter, the delayed
+// ProduceBlock, block production fails with ErrSeqFilter, the delayed
 // message never lands, and EnsureTxSucceeded below times out.
 func testDelayedInboxPageLimitBypass(t *testing.T, jit bool) {
 	const pageLimit uint16 = 20
@@ -1558,7 +1560,7 @@ func testDelayedInboxPageLimitBypass(t *testing.T, jit bool) {
 	// SendSignedTxViaL1 posts delayedTx to the delayed inbox on L1, advances
 	// L1 to trigger delayed-message sequencing on L2, and asserts the L2 tx
 	// succeeded. With the fix, it lands and runs normally; without the fix,
-	// block production would stall on ErrArbTxFilter and this would fail.
+	// block production would stall on ErrSeqFilter and this would fail.
 	builder.L1.SendSignedTx(t, builder.L2.Client, delayedTx, builder.L1Info)
 }
 
@@ -1602,8 +1604,8 @@ func testMaxStylusOpenPagesInitialFootprint(t *testing.T, jit bool) {
 	// Sequenced tx: sequencing branch → FilterTx, sequencer rejects before inclusion.
 	tx := l2info.PrepareTxTo("Owner", &fixed120Addr, 1e9, nil, nil)
 	err = l2client.SendTransaction(ctx, tx)
-	if err == nil || !strings.Contains(err.Error(), state.ErrArbTxFilter.Error()) {
-		Fatal(t, "on-chain tx over limit should have been rejected with", state.ErrArbTxFilter.Error(), ", got:", err)
+	if err == nil || !strings.Contains(err.Error(), state.ErrSeqFilter.Error()) {
+		Fatal(t, "on-chain tx over limit should have been rejected with", state.ErrSeqFilter.Error(), ", got:", err)
 	}
 }
 
@@ -1727,7 +1729,7 @@ func TestProgramNestedStylusCumulativeFootprintNodeLevelNative(t *testing.T) {
 // Same nested-call scenario, but exercises the node-level MaxOpenPages
 // cap rather than the consensus cap. In a sequencing runCtx, FilterTx
 // fires inside the inner frame, marking the whole tx for exclusion so
-// the sequencer rejects it with ErrArbTxFilter before inclusion.
+// the sequencer rejects it with ErrSeqFilter before inclusion.
 func testNestedStylusCumulativeFootprintNodeLevel(t *testing.T, jit bool) {
 	const pageLimit uint16 = 128
 	// The consensus cumulative-pages cap (ArbOS >= 59) would
@@ -1753,7 +1755,7 @@ func testNestedStylusCumulativeFootprintNodeLevel(t *testing.T, jit bool) {
 	// in a sequencing runCtx → FilterTx + OOG. The whole tx is dropped.
 	tx := l2info.PrepareTxTo("Owner", &outerAddr, 1e9, nil, calldata)
 	err := l2client.SendTransaction(ctx, tx)
-	if err == nil || !strings.Contains(err.Error(), state.ErrArbTxFilter.Error()) {
+	if err == nil || !strings.Contains(err.Error(), state.ErrSeqFilter.Error()) {
 		Fatal(t, "sequenced tx exceeding cumulative MaxOpenPages should have been filtered, got:", err)
 	}
 }
@@ -2250,7 +2252,15 @@ func TestReturnDataCost_StylusFixes(t *testing.T) {
 	testReturnDataCost(t, params.ArbosVersion_StylusFixes)
 }
 
+// setupProgramTest is being called by tests that validate blocks.
+// For now validation only works with HashScheme set.
 func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) (
+	*NodeBuilder, bind.TransactOpts, func(),
+) {
+	return setupProgramTestWithScheme(t, jit, rawdb.HashScheme, builderOpts...)
+}
+
+func setupProgramTestWithScheme(t *testing.T, jit bool, stateScheme string, builderOpts ...func(*NodeBuilder)) (
 	*NodeBuilder, bind.TransactOpts, func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -2261,9 +2271,9 @@ func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder))
 		opt(builder)
 	}
 
-	// setupProgramTest is being called by tests that validate blocks.
-	// For now validation only works with HashScheme set.
-	builder.RequireScheme(t, rawdb.HashScheme)
+	if stateScheme != "" {
+		builder.RequireScheme(t, stateScheme)
+	}
 	builder.nodeConfig.BlockValidator.Enable = false
 	builder.nodeConfig.Staker.Enable = true
 	builder.nodeConfig.BatchPoster.Enable = true
@@ -3419,7 +3429,7 @@ func TestProgramMemoryFillOverflow(t *testing.T) {
 
 	tx := l2info.PrepareTxTo("Owner", &overflowAddr, 1e9, nil, nil)
 	err := l2client.SendTransaction(ctx, tx)
-	if err == nil || !strings.Contains(err.Error(), state.ErrArbTxFilter.Error()) {
+	if err == nil || !strings.Contains(err.Error(), state.ErrSeqFilter.Error()) {
 		t.Fatal("should get filtered, got: ", err)
 	}
 }

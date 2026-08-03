@@ -117,6 +117,9 @@ var nativeStackBaseline atomic.Uint64
 // Storing a non-zero baseline re-enables doubleNativeStackSize.
 func SetInitialNativeStackSize(size uint64) {
 	SetNativeStackSize(size)
+	// Stacks pooled before the size change keep their old size, so drop them
+	// the same way doubleNativeStackSize does.
+	DrainStackPool()
 	// Always capture the true Wasmer stack size (whether newly set or the
 	// existing default when size == 0) so doubleNativeStackSize can
 	// double from a real baseline.
@@ -167,6 +170,14 @@ func GetNativeStackSize() uint64 {
 // WasmerSerializeVersion returns wasmer's MetadataHeader::CURRENT_VERSION
 func WasmerSerializeVersion() uint32 {
 	return uint32(C.stylus_wasmer_serialize_version())
+}
+
+// RustWavmFormatVersion returns the WAVM wire-format version Rust will
+// produce and accept. `reconcileWavmSerializeVersion` in
+// cmd/nitro/init compares this against `WavmSerializeVersion` on startup
+// and refuses to proceed on mismatch.
+func RustWavmFormatVersion() uint32 {
+	return uint32(C.stylus_wavm_format_version())
 }
 
 // DrainStackPool discards all cached Wasmer coroutine stacks so that

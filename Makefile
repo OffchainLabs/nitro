@@ -43,6 +43,15 @@ ifeq ($(STRIP),1)
  GOLANG_PARAMS += -trimpath
 endif
 
+# Tool pins, so a fresh checkout builds and lints identically to CI (which
+# runs lint through `make lint`; see .github/actions/lint-go). GOTOOLCHAIN
+# makes every go invocation under make use exactly this toolchain — the
+# `toolchain` directive in go.mod only upgrades older installs, never
+# downgrades newer ones. Bump these two and go.mod's toolchain together.
+export GOTOOLCHAIN := go1.25.12
+GOLANGCI_LINT_VERSION := v2.5.0
+golangci_lint := target/bin/golangci-lint
+
 UNAME_S := $(shell uname -s)
 
 # In Mac OSX, there are a lot of warnings emitted if these environment variables aren't set.
@@ -273,6 +282,12 @@ fmt: format
 lint: .make/lint
 	@printf $(done)
 
+.PHONY: lint-fix ## Run linters and apply automatic fixes.
+lint-fix: build-node-deps .make/golangci-lint-$(GOLANGCI_LINT_VERSION)
+	go run ./linters ./...
+	$(golangci_lint) run --fix
+	@printf $(done)
+
 ##@ Test
 
 .PHONY: stylus-benchmarks ## Run Stylus benchmarks.
@@ -497,7 +512,7 @@ crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a: $(DEP_P
 		crates/wasm-libraries/soft-float/SoftFloat/source/include/*.h \
 		crates/wasm-libraries/soft-float/SoftFloat/source/8086/*.c \
 		crates/wasm-libraries/soft-float/SoftFloat/source/8086/*.h
-	cd crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang && make $(MAKEFLAGS)
+	cd crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang && $(MAKE)
 
 crates/wasm-libraries/soft-float/bindings32.o: $(DEP_PREDICATE) crates/wasm-libraries/soft-float/bindings32.c
 	clang crates/wasm-libraries/soft-float/bindings32.c --sysroot $(WASI_SYSROOT) -I crates/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasip1 -Wconversion -c -o $@
@@ -689,14 +704,20 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 
 # strategic rules to minimize dependency building
 
-.make/lint: $(DEP_PREDICATE) build-node-deps $(ORDER_ONLY_PREDICATE) .make
+# The version is part of the stamp name so bumping GOLANGCI_LINT_VERSION
+# triggers a reinstall without spurious reinstalls on other Makefile edits.
+.make/golangci-lint-$(GOLANGCI_LINT_VERSION): $(ORDER_ONLY_PREDICATE) .make
+	GOBIN=$(abspath target/bin) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	@touch $@
+
+.make/lint: $(DEP_PREDICATE) build-node-deps .make/golangci-lint-$(GOLANGCI_LINT_VERSION) $(ORDER_ONLY_PREDICATE) .make
 	go run ./linters ./...
-	golangci-lint run --fix
+	$(golangci_lint) run
 	yarn --cwd contracts solhint
 	@touch $@
 
-.make/fmt: $(DEP_PREDICATE) build-node-deps .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
-	golangci-lint fmt
+.make/fmt: $(DEP_PREDICATE) build-node-deps .make/yarndeps .make/golangci-lint-$(GOLANGCI_LINT_VERSION) $(ORDER_ONLY_PREDICATE) .make
+	$(golangci_lint) fmt
 	cargo +nightly fmt -- --check
 	cargo +nightly fmt --manifest-path crates/wasm-testsuite/Cargo.toml -- --check
 	forge fmt --root contracts-local
@@ -725,7 +746,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	@touch $@
 
 .make/yarndeps: $(DEP_PREDICATE) */package.json */yarn.lock $(ORDER_ONLY_PREDICATE) .make
-	npm --prefix safe-smart-account install
+	npm --prefix safe-smart-account ci
 	yarn --cwd contracts install
 	yarn --cwd contracts-legacy install
 	+make -C contracts-local install

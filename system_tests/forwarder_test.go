@@ -5,6 +5,7 @@ package arbtest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -20,12 +21,169 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 var transferAmount = big.NewInt(1e12) // amount of ether to use for transactions in tests
 
 const nodesCount = 5 // number of testnodes to create in tests
+
+func TestInactiveSequencerProducesNoBlocks(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.execConfig.Sequencer.MaxBlockSpeed = time.Millisecond * 100
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("User2")
+
+	// Pause the sequencer: IsActive() must report false, which gates triggerSequencing.
+	builder.L2.ExecNode.Pause()
+	if builder.L2.ExecNode.IsActive() {
+		t.Fatal("paused sequencer should not be active")
+	}
+
+	blockBefore, err := builder.L2.Client.BlockNumber(ctx)
+	Require(t, err)
+
+	// Submit a tx while paused. It sits in the queue; SendTransaction blocks until
+	// the sequencer is active again, so run it in the background.
+	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	sendErr := make(chan error, 1)
+	go func() { sendErr <- builder.L2.Client.SendTransaction(ctx, tx) }()
+
+	// Give the sequencer several block intervals; no block should be produced while inactive.
+	time.Sleep(2 * time.Second)
+	blockWhilePaused, err := builder.L2.Client.BlockNumber(ctx)
+	Require(t, err)
+	if blockWhilePaused != blockBefore {
+		t.Fatalf("no blocks should be produced while inactive: before=%d, while paused=%d", blockBefore, blockWhilePaused)
+	}
+	balance, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
+	Require(t, err)
+	if balance.Sign() != 0 {
+		t.Fatalf("tx must not be sequenced while inactive, balance=%s", balance.String())
+	}
+
+	// Activate: the queued tx must now be sequenced.
+	builder.L2.ExecNode.Activate()
+	if !builder.L2.ExecNode.IsActive() {
+		t.Fatal("activated sequencer should be active")
+	}
+
+	select {
+	case err := <-sendErr:
+		Require(t, err)
+	case <-time.After(20 * time.Second):
+		t.Fatal("timeout waiting for SendTransaction to return after activation")
+	}
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	Require(t, err)
+	balance, err = builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
+	Require(t, err)
+	if balance.Cmp(big.NewInt(1e12)) != 0 {
+		t.Fatalf("tx should be sequenced after activation, balance=%s", balance.String())
+	}
+}
+
+func TestSetForwardToWhilePaused(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	// creates node A
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
+	builder.nodeConfig.BatchPoster.Enable = false
+	builder.execConfig.Sequencer.MaxBlockSpeed = time.Hour // rate-limits node A to one locally sequenced block per hour
+	cleanupA := builder.Build(t)
+	defer cleanupA()
+	clientA := builder.L2.Client
+
+	// creates node B
+	ipcPathB := tmpPath(t, "test.ipc")
+	nodeConfigB := arbnode.ConfigDefaultL1Test()
+	nodeConfigB.Sequencer = true
+	nodeConfigB.BatchPoster.Enable = false
+	execConfigB := *builder.execConfig
+	execConfigB.Sequencer.MaxBlockSpeed = time.Millisecond * 100
+	stackConfigB := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfigB.IPCPath = ipcPathB
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{
+		nodeConfig:  nodeConfigB,
+		execConfig:  &execConfigB,
+		stackConfig: stackConfigB,
+	})
+	defer cleanupB()
+	clientB := testClientB.Client
+
+	// Sequence one block in node A before pausing it. Pause is not synchronized
+	// with the consensus node's sequencing loop: a triggerSequencing iteration
+	// that observed IsActive()==true just before the Pause below can still call
+	// StartSequencing afterwards and sequence a transaction that was queued after
+	// Pause returned. That window is wide enough to flake in CI when consensus
+	// and execution communicate over RPC. MaxBlockSpeed rate-limits block
+	// production only after the first block, so producing a block here engages
+	// the one-block-per-hour rate limit and guarantees that no sequencing turn --
+	// even one already past its IsActive check -- can sequence the transaction
+	// sent below. The Faucet self-transfer leaves the Owner nonce and the User2
+	// balance (asserted on both nodes later) untouched, and node B never sees
+	// this block because it builds its own chain from the shared genesis.
+	builder.L2.TransferBalance(t, "Faucet", "Faucet", big.NewInt(1), builder.L2Info)
+
+	// pauses node A
+	builder.L2.ExecNode.Pause()
+
+	builder.L2Info.GenerateAccount("User2")
+	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+
+	// sends a transaction to node A
+	errChan := make(chan error)
+	go func() {
+		err := clientA.SendTransaction(ctx, tx)
+		errChan <- err
+	}()
+	// it should not be processed since it is paused and there is no forwarder set
+	err := <-errChan
+	if err == nil || err.Error() != "context deadline exceeded" {
+		t.Fatalf("Expected timeout error, got: %v", err)
+	}
+
+	// sends a transaction to node A
+	go func() {
+		err := clientA.SendTransaction(ctx, tx)
+		errChan <- err
+	}()
+	// give some time for the transaction to be included in the sequencer's queue
+	time.Sleep(time.Second)
+	// sets forwarder to node B
+	err = builder.L2.ExecNode.ForwardTo(ipcPathB)
+	Require(t, err)
+	// it should be processed now
+	err = <-errChan
+	Require(t, err)
+
+	// should not be updated in node A
+	_, err = EnsureTxSucceeded(ctx, clientA, tx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Expected timeout error, got: %v", err)
+	}
+	balance, err := clientA.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
+	Require(t, err)
+	if balance.Cmp(big.NewInt(0)) != 0 {
+		t.Fatalf("Expected User2 to have 0 L2 balance in 1st node, got %s", balance.String())
+	}
+
+	// should be updated in node B
+	_, err = EnsureTxSucceeded(ctx, clientB, tx)
+	Require(t, err)
+	balance, err = clientB.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
+	Require(t, err)
+	if balance.Cmp(big.NewInt(1e12)) != 0 {
+		t.Fatalf("Expected User2 to have 1e12 L2 balance in 2nd node, got %s", balance.String())
+	}
+}
 
 func TestStaticForwarder(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -37,9 +195,9 @@ func TestStaticForwarder(t *testing.T) {
 	builder.l2StackConfig.IPCPath = ipcPath
 	cleanupA := builder.Build(t)
 	defer cleanupA()
-
 	clientA := builder.L2.Client
 
+	// node B forwards to node A
 	nodeConfigB := arbnode.ConfigDefaultL1Test()
 	execConfigB := ExecConfigDefaultTest(t, env.GetTestStateScheme())
 	execConfigB.Sequencer.Enable = false
@@ -48,7 +206,6 @@ func TestStaticForwarder(t *testing.T) {
 	execConfigB.Forwarder.RedisUrl = ""
 	execConfigB.ForwardingTarget = ipcPath
 	nodeConfigB.BatchPoster.Enable = false
-
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{
 		nodeConfig: nodeConfigB,
 		execConfig: execConfigB,
@@ -56,18 +213,29 @@ func TestStaticForwarder(t *testing.T) {
 	defer cleanupB()
 	clientB := testClientB.Client
 
+	// sends transaction to node B
 	builder.L2Info.GenerateAccount("User2")
 	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, transferAmount, nil)
 	err := clientB.SendTransaction(ctx, tx)
 	Require(t, err)
 
+	// checks that transaction is processed by node A
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
-
 	l2balance, err := clientA.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
 	Require(t, err)
-
 	if l2balance.Cmp(transferAmount) != 0 {
+		Fatal(t, "Unexpected balance:", l2balance)
+	}
+
+	// checks that transaction is not processed by node B
+	_, err = testClientB.EnsureTxSucceeded(tx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Expected timeout error, got: %v", err)
+	}
+	l2balance, err = clientB.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
+	Require(t, err)
+	if l2balance.Cmp(big.NewInt(0)) != 0 {
 		Fatal(t, "Unexpected balance:", l2balance)
 	}
 }

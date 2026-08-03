@@ -7,7 +7,7 @@ pub mod binary;
 pub mod cbytes;
 mod host;
 pub(crate) mod internal_func;
-#[cfg(feature = "native")]
+#[cfg(feature = "kzg")]
 mod kzg;
 pub mod machine;
 /// cbindgen:ignore
@@ -22,8 +22,12 @@ mod reinterpret;
 pub mod utils;
 pub mod value;
 pub mod wavm;
+pub mod wavm_serialize;
 
 #[cfg(test)]
 mod test;
+
+#[cfg(test)]
+mod wavm_format_tests;
 
 pub use machine::Machine;

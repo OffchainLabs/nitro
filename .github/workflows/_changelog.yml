@@ -12,17 +12,16 @@ jobs:
   changelog-check:
     name: Check if changelog is updated
     runs-on: ubuntu-4
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
       - name: Download unclog binary
-        uses: dsaltares/fetch-gh-release-asset@1.1.2
-        with:
-          repo: OffchainLabs/unclog
-          version: "tags/v0.1.8"
-          file: "unclog"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download v0.1.8 --repo OffchainLabs/unclog --pattern unclog --clobber
 
       - name: Check changelog fragments
         env:

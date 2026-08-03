@@ -3,7 +3,7 @@
 use std::{future::Future, sync::Arc};
 
 use anyhow::Result;
-use axum::{Router, routing::post};
+use axum::{Router, extract::DefaultBodyLimit, routing::post};
 use tokio::{net::TcpListener, signal};
 use tower_http::trace::TraceLayer;
 use tracing::info;
@@ -36,6 +36,10 @@ fn create_router(state: Arc<ServerState>) -> Router {
             state.clone(),
             jwt::auth_middleware,
         ))
+        // Validation inputs carry all block preimages inline and routinely exceed
+        // axum's 2 MB default body limit. The Go validation node removes the limit
+        // as well (cmd/nitro-val sets HTTPBodyLimit = math.MaxInt).
+        .layer(DefaultBodyLimit::disable())
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
@@ -190,6 +194,37 @@ mod tests {
             .latest_wasm_module_root()
             .module_root;
         verify_and_shutdown_server(test_config, module_root).await
+    }
+
+    #[tokio::test]
+    async fn test_request_body_over_2mb_not_rejected() -> Result<()> {
+        let config = ServerConfig::try_parse_from(["server", "--mode", "native"])?;
+        let test_config = spinup_server(&config).await?;
+
+        // 3 MB of padding in params — over axum's 2 MB default body limit,
+        // which used to make the server reply 413 before the limit was disabled.
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "validation_name",
+            "params": ["x".repeat(3 * 1024 * 1024)],
+        });
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("http://{}/", test_config.addr))
+            .header("Content-Type", "application/json")
+            .body(serde_json::to_string(&body)?)
+            .send()
+            .await?;
+
+        assert_eq!(resp.status(), 200);
+        let resp: serde_json::Value = serde_json::from_str(&resp.text().await?)?;
+        assert_eq!(resp["result"], "Rust JIT validator");
+
+        let _ = test_config.sender.send(());
+        test_config.server_handle.await??;
+        Ok(())
     }
 
     #[tokio::test]

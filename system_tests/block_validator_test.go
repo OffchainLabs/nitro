@@ -23,7 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/solgen/go/localgen"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -124,7 +124,6 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 
 	perTransfer := big.NewInt(1e12)
 
-	var simple *localgen.Simple
 	if opts.workload != upgradeArbOs {
 		for i := 0; i < opts.workloadLoops; i++ {
 			var tx *types.Transaction
@@ -178,9 +177,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	} else {
 		auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 		// deploy a test contract
-		var err error
-		_, _, simple, err = localgen.DeploySimple(&auth, builder.L2.Client)
-		Require(t, err, "could not deploy contract")
+		_, simple := builder.L2.DeploySimple(t, auth)
 
 		tx, err := simple.StoreDifficulty(&auth)
 		Require(t, err)
@@ -272,8 +269,12 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		Fatal(t, "did not validate all blocks")
 	}
 	gethExec := testClientB.ExecNode
-	gethExec.Recorder.TrimAllPrepared(t)
-	finalRefCount := gethExec.Recorder.RecordingDBReferenceCount()
+	legacyRecorder, ok := gethExec.Recorder.(*gethexec.BlockRecorder)
+	if !ok {
+		Fatal(t, "expected legacy block recorder")
+	}
+	legacyRecorder.TrimAllPrepared(t)
+	finalRefCount := legacyRecorder.RecordingDBReferenceCount()
 	lastBlockNow, err := testClientB.Client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	// up to 3 extra references: awaiting validation, recently valid, lastValidatedHeader

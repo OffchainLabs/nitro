@@ -37,6 +37,13 @@ jobs:
     uses: ./.github/workflows/_bold-legacy.yml
     secrets: inherit
 
+  # --- Run Nitro Reth tests (not required by can_proceed) ---
+  nitro-reth-tests:
+    needs: changes
+    if: needs.changes.outputs.nitro_reth_changed == 'true'
+    uses: ./.github/workflows/_nitro-reth-tests.yml
+    secrets: inherit
+
   # --- Full GO tests (not required by can_proceed) ---
   go-tests:
     needs: changes
@@ -47,6 +54,7 @@ jobs:
   # --- Record the tested tree so the merge queue can skip an identical re-run ---
   record-tested-tree:
     runs-on: ubuntu-4
+    timeout-minutes: 10
     needs: go-tests
     steps:
       - name: Checkout
@@ -88,7 +96,6 @@ jobs:
     secrets: inherit
     permissions:
       contents: read
-      pull-requests: write
     with:
       post_comment: true
       upload_report: false
@@ -104,15 +111,19 @@ jobs:
   can_proceed:
     name: can_proceed
     runs-on: ubuntu-4
+    timeout-minutes: 5
+    if: always()
     needs: [fast, changelog]
     steps:
-      - name: OK
-        run: exit 0
+      - name: Verify required jobs passed
+        run: |
+          [[ "${{ needs.changelog.result }}" == "success" ]] || exit 1
+          [[ "${{ needs.fast.result }}" =~ ^(success|skipped)$ ]] || exit 1
 
   can_see_status:
-    # This job is just to make sure that the "can_proceed" job's status is visible
-    # on the pull request page, even if it is skipped due to all its dependencies being
-    # skipped. It does not depend on any other jobs, so it always runs.
+    # Depends on nothing, so it always runs and always reports a status on the
+    # pull request page regardless of which other jobs were skipped.
     runs-on: ubuntu-4
+    timeout-minutes: 5
     steps:
       - run: true

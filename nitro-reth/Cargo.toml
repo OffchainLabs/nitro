@@ -1,0 +1,57 @@
+# MOCK workspace (NIT-5205): stand-in until the arbitrum-reth sources are
+# migrated here. The members mirror crate names that the ported CI invokes
+# (see .github/workflows/_nitro-reth-*.yml) so the workflows exercise real
+# build/test/lint plumbing against stub crates.
+[workspace]
+members = [
+    "bin/arb-reth",
+    "crates/arb-context",
+    "crates/arb-spec-tests",
+    "crates/arb-storage",
+]
+resolver = "3"
+
+[workspace.package]
+authors = ["0xBloctopus", "Offchain Labs"]
+edition = "2024"
+license = "BUSL-1.1"
+repository = "https://github.com/OffchainLabs/nitro-private"
+rust-version = "1.93"
+version = "0.1.5"
+
+[workspace.lints.rust]
+unused_must_use = "deny"
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "allow"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+
+# Structural complexity — acceptable for this codebase
+too_many_arguments = "allow"
+type_complexity = "allow"
+result_unit_err = "allow"
+new_without_default = "allow"
+
+[profile.dev]
+debug = 0
+
+[profile.test]
+debug = 0
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+
+[profile.maxperf]
+inherits = "release"
+lto = "fat"
+
+[profile.fastdev]
+inherits = "release"
+lto = false
+codegen-units = 256
+incremental = true

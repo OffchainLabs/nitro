@@ -66,8 +66,8 @@ func (c *Client) DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.Mess
 	return sendRequest[*execution.MessageResult](c, "_digestMessage", msgIdx, msg, msgForPrefetch)
 }
 
-func (c *Client) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
-	return sendRequest[[]*execution.MessageResult](c, "_reorg", msgIdxOfFirstMsgToAdd, newMessages, oldMessages)
+func (c *Client) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) containers.PromiseInterface[[]*execution.MessageResult] {
+	return sendRequest[[]*execution.MessageResult](c, "_reorg", msgIdxOfFirstMsgToAdd, newMessages)
 }
 
 func (c *Client) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
@@ -112,4 +112,8 @@ func (c *Client) RecordBlockCreation(pos arbutil.MessageIndex, msg *arbostypes.M
 
 func (c *Client) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
 	return sendRequest[struct{}](c, "_prepareForRecord", start, end)
+}
+
+func (c *Client) PruneBlockRecordings(before arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
+	return sendRequest[struct{}](c, "_pruneBlockRecordings", before)
 }

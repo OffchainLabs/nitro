@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -32,7 +33,11 @@ func NewFilterService(config *Config) (*FilterService, error) {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
-	hashStore := NewHashStore(config.CacheSize)
+	maxHashes := config.S3.NumPreallocatedHashes()
+	if maxHashes > 0 {
+		log.Info("address-filter preallocating memory for hash list", "maxHashes", maxHashes)
+	}
+	hashStore := newHashStore(config.CacheSize, maxHashes)
 
 	return &FilterService{
 		config:         config,
@@ -96,6 +101,10 @@ func (s *FilterService) Start(ctx context.Context) {
 	log.Info("address-filter service started",
 		"poll_interval", s.config.PollInterval,
 	)
+}
+
+func (s *FilterService) TriggerSyncForTest(_ *testing.T, ctx context.Context) error {
+	return s.syncMgr.Syncer.CheckAndSync(ctx)
 }
 
 func (s *FilterService) GetHashCount() int {

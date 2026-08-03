@@ -54,12 +54,13 @@ jobs:
     name: Notify Slack on failure
     needs: [tests-scheduled, mel-tests-scheduled]
     runs-on: ubuntu-4
+    timeout-minutes: 10
     if: ${{ failure() }}
     env:
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - name: Send Slack notification
-        uses: slackapi/slack-github-action@91efab103c0de0a537f72a35f6b8cda0ee76bf0a  # v2.1.1
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c  # v3.0.3
         with:
           errors: true
           method: chat.postMessage
@@ -67,5 +68,5 @@ jobs:
           payload: |
             {
               "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
-              "text": "⚠️ CI job failed! ${{ env.RUN_URL }}",
+              "text": "⚠️ CI job failed! ${{ env.RUN_URL }}"
             }

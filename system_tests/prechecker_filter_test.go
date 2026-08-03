@@ -56,8 +56,9 @@ func waitForForwarderSync(t *testing.T, ctx context.Context, forwarder *TestClie
 // buildPrecheckerFilterNodes creates a sequencer node A and a forwarder node B
 // for prechecker filter testing. Node B forwards to A via IPC. If reportURL is
 // non-empty, the forwarder's TxPreChecker is wired to send filtered tx reports
-// to that URL.
-func buildPrecheckerFilterNodes(t *testing.T, ctx context.Context, withDelayedSeq bool, reportURL string, eventRules ...eventfilter.EventRule) (builder *NodeBuilder, forwarder *TestClient, cleanup func()) {
+// to that URL. The forwarder runs with transaction filtering enabled, backed by
+// the returned fake S3 address filter.
+func buildPrecheckerFilterNodes(t *testing.T, ctx context.Context, withDelayedSeq bool, reportURL string, eventRules ...eventfilter.EventRule) (builder *NodeBuilder, forwarder *TestClient, s3Filter *fakeS3AddressFilter, cleanup func()) {
 	t.Helper()
 	ipcPath := tmpPath(t, "test.ipc")
 
@@ -91,25 +92,18 @@ func buildPrecheckerFilterNodes(t *testing.T, ctx context.Context, withDelayedSe
 	if reportURL != "" {
 		execConfigB.TransactionFiltering.FilteringReportRPCClient.URL = reportURL
 	}
+	s3Filter = setupFakeS3AddressFilterForConfig(t, execConfigB, addressfilter.HashingSchemeRawBytesInput)
 
 	forwarder, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{
 		nodeConfig: nodeConfigB,
 		execConfig: execConfigB,
 	})
 
-	var ef *eventfilter.EventFilter
-	if len(eventRules) > 0 {
-		var err error
-		ef, err = eventfilter.NewEventFilterFromConfig(eventfilter.EventFilterConfig{Rules: eventRules})
-		Require(t, err)
-	}
-	forwarder.ExecNode.TxPreChecker.SetTxFiltererForTest(t, forwarder.ExecNode.ExecEngine, ef)
-
 	cleanup = func() {
 		cleanupB()
 		cleanupA()
 	}
-	return builder, forwarder, cleanup
+	return builder, forwarder, s3Filter, cleanup
 }
 
 // syncForwarderToHead waits until the forwarder catches up to the sequencer's
@@ -201,13 +195,13 @@ func checkPrecheckerReportFields(t *testing.T, ctx context.Context, builder *Nod
 }
 
 // TestPrecheckerFilterDirectAddress verifies the forwarder's prechecker rejects txs sent to/from a
-// filtered address (Scenario 1: preTxFilter via from/to) AND emits a matching report.
+// filtered address (Scenario 1: PreTxFilter via from/to) AND emits a matching report.
 func TestPrecheckerFilterDirectAddress(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	stack, externalEndpoint := SetupFilteringReport(t)
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, stack.HTTPEndpoint())
+	builder, forwarder, s3Filter, cleanup := buildPrecheckerFilterNodes(t, ctx, false, stack.HTTPEndpoint())
 	defer cleanup()
 
 	builder.L2Info.GenerateAccount("FilteredUser")
@@ -217,7 +211,7 @@ func TestPrecheckerFilterDirectAddress(t *testing.T) {
 	waitForForwarderSync(t, ctx, forwarder, fundReceipt.BlockNumber.Uint64())
 
 	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
-	forwarder.ExecNode.ExecEngine.SetAddressChecker(t, newHashedChecker([]common.Address{filteredAddr}))
+	s3Filter.setFilteredAddresses(t, ctx, forwarder.ExecNode, []common.Address{filteredAddr})
 
 	// tx TO filtered address via forwarder should be rejected and reported with ReasonTo
 	txTo := builder.L2Info.PrepareTx("NormalUser", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
@@ -262,7 +256,7 @@ func TestPrecheckerFilterCleanTxPasses(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, "")
+	builder, forwarder, s3Filter, cleanup := buildPrecheckerFilterNodes(t, ctx, false, "")
 	defer cleanup()
 
 	builder.L2Info.GenerateAccount("User1")
@@ -272,8 +266,7 @@ func TestPrecheckerFilterCleanTxPasses(t *testing.T) {
 	waitForForwarderSync(t, ctx, forwarder, fundReceipt.BlockNumber.Uint64())
 
 	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	forwarder.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, forwarder.ExecNode, []common.Address{filteredAddr})
 
 	tx := builder.L2Info.PrepareTx("User1", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	err := forwarder.Client.SendTransaction(ctx, tx)
@@ -282,13 +275,13 @@ func TestPrecheckerFilterCleanTxPasses(t *testing.T) {
 	Require(t, err)
 }
 
-// TestPrecheckerFilterDisabled verifies that all transactions pass when no
-// address checker is set on the forwarder's prechecker.
+// TestPrecheckerFilterDisabled verifies that all transactions pass when the
+// forwarder's address filter list is empty.
 func TestPrecheckerFilterDisabled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, "")
+	builder, forwarder, _, cleanup := buildPrecheckerFilterNodes(t, ctx, false, "")
 	defer cleanup()
 
 	builder.L2Info.GenerateAccount("User1")
@@ -296,7 +289,7 @@ func TestPrecheckerFilterDisabled(t *testing.T) {
 	_, fundReceipt := builder.L2.TransferBalance(t, "Owner", "User1", big.NewInt(1e18), builder.L2Info)
 	waitForForwarderSync(t, ctx, forwarder, fundReceipt.BlockNumber.Uint64())
 
-	// No address checker set on forwarder -- all txs should pass
+	// Empty address filter list on forwarder -- all txs should pass
 	tx := builder.L2Info.PrepareTx("User1", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	err := forwarder.Client.SendTransaction(ctx, tx)
 	Require(t, err)
@@ -305,7 +298,7 @@ func TestPrecheckerFilterDisabled(t *testing.T) {
 }
 
 // TestPrecheckerFilterEvents verifies the forwarder's prechecker catches txs whose execution emits
-// events referencing filtered addresses (Scenario 2: postTxFilter via EventFilter rule) AND emits a
+// events referencing filtered addresses (Scenario 2: PostTxFilter via EventFilter rule) AND emits a
 // matching report.
 func TestPrecheckerFilterEvents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -323,7 +316,7 @@ func TestPrecheckerFilterEvents(t *testing.T) {
 	}
 
 	stack, externalEndpoint := SetupFilteringReport(t)
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, stack.HTTPEndpoint(), rules...)
+	builder, forwarder, s3Filter, cleanup := buildPrecheckerFilterNodes(t, ctx, false, stack.HTTPEndpoint(), rules...)
 	defer cleanup()
 
 	// Deploy contract through sequencer and wait for forwarder to sync
@@ -343,7 +336,7 @@ func TestPrecheckerFilterEvents(t *testing.T) {
 	filteredAddr := builder.L2Info.GetAddress("FilteredAddr")
 	cleanAddr := builder.L2Info.GetAddress("CleanAddr")
 
-	forwarder.ExecNode.ExecEngine.SetAddressChecker(t, newHashedChecker([]common.Address{filteredAddr}))
+	s3Filter.setFilteredAddresses(t, ctx, forwarder.ExecNode, []common.Address{filteredAddr})
 
 	// Transfer to filtered address via forwarder should be rejected and reported with ReasonEventRule
 	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -383,7 +376,7 @@ func TestPrecheckerFilterManualRedeem(t *testing.T) {
 	defer cancel()
 
 	stack, externalEndpoint := SetupFilteringReport(t)
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, true, stack.HTTPEndpoint())
+	builder, forwarder, s3Filter, cleanup := buildPrecheckerFilterNodes(t, ctx, true, stack.HTTPEndpoint())
 	defer cleanup()
 
 	// Deploy contract through sequencer as retryable destination
@@ -398,7 +391,7 @@ func TestPrecheckerFilterManualRedeem(t *testing.T) {
 
 	syncForwarderToHead(t, ctx, builder, forwarder)
 
-	forwarder.ExecNode.ExecEngine.SetAddressChecker(t, newHashedChecker([]common.Address{contractAddr}))
+	s3Filter.setFilteredAddresses(t, ctx, forwarder.ExecNode, []common.Address{contractAddr})
 
 	// Build redeem tx and send through forwarder -- prechecker should reject
 	redeemTx := buildForwarderRedeemTx(t, ctx, builder, forwarder, "Redeemer", ticketId, 1_000_000)
@@ -426,7 +419,7 @@ func TestPrecheckerFilterContractTriggeredRedeem(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, true, "")
+	builder, forwarder, s3Filter, cleanup := buildPrecheckerFilterNodes(t, ctx, true, "")
 	defer cleanup()
 
 	// Contract A: the retryable destination (will be filtered)
@@ -446,8 +439,7 @@ func TestPrecheckerFilterContractTriggeredRedeem(t *testing.T) {
 	syncForwarderToHead(t, ctx, builder, forwarder)
 
 	// Set filter on forwarder's prechecker targeting contract A
-	filter := newHashedChecker([]common.Address{destAddr})
-	forwarder.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, forwarder.ExecNode, []common.Address{destAddr})
 
 	// Bind wrapper contract to forwarder client and send through forwarder
 	wrapperOnForwarder, err := localgen.NewAddressFilterTest(wrapperAddr, forwarder.Client)
@@ -469,7 +461,7 @@ func testPrecheckerFilterCascadingRedeem(t *testing.T, depth int) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, true, "")
+	builder, forwarder, s3Filter, cleanup := buildPrecheckerFilterNodes(t, ctx, true, "")
 	defer cleanup()
 
 	// Deploy wrapper (neutral) and filteredTarget contracts
@@ -513,8 +505,7 @@ func testPrecheckerFilterCascadingRedeem(t *testing.T, depth int) {
 	syncForwarderToHead(t, ctx, builder, forwarder)
 
 	// Set filter on forwarder's prechecker targeting filteredTarget
-	filter := newHashedChecker([]common.Address{filteredTarget})
-	forwarder.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, forwarder.ExecNode, []common.Address{filteredTarget})
 
 	// Manual redeem of the top ticket through forwarder — prechecker must
 	// execute the full cascade including the deepest redeem to discover the
@@ -547,7 +538,7 @@ func TestPrecheckerFilterContractCall(t *testing.T) {
 	defer cancel()
 
 	stack, externalEndpoint := SetupFilteringReport(t)
-	builder, forwarder, cleanup := buildPrecheckerFilterNodes(t, ctx, false, stack.HTTPEndpoint())
+	builder, forwarder, s3Filter, cleanup := buildPrecheckerFilterNodes(t, ctx, false, stack.HTTPEndpoint())
 	defer cleanup()
 
 	wrapperAddr, _ := deployAddressFilterTestContract(t, ctx, builder)
@@ -555,7 +546,7 @@ func TestPrecheckerFilterContractCall(t *testing.T) {
 
 	syncForwarderToHead(t, ctx, builder, forwarder)
 
-	forwarder.ExecNode.ExecEngine.SetAddressChecker(t, newHashedChecker([]common.Address{filteredTargetAddr}))
+	s3Filter.setFilteredAddresses(t, ctx, forwarder.ExecNode, []common.Address{filteredTargetAddr})
 
 	wrapperOnForwarder, err := localgen.NewAddressFilterTest(wrapperAddr, forwarder.Client)
 	Require(t, err)

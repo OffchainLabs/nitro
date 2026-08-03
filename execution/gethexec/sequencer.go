@@ -5,7 +5,6 @@ package gethexec
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -59,7 +58,6 @@ var (
 	nonceCacheRejectedCounter               = metrics.NewRegisteredCounter("arb/sequencer/noncecache/rejected", nil)
 	nonceCacheClearedCounter                = metrics.NewRegisteredCounter("arb/sequencer/noncecache/cleared", nil)
 	nonceFailureCacheSizeGauge              = metrics.NewRegisteredGauge("arb/sequencer/noncefailurecache/size", nil)
-	nonceFailureCacheOverflowCounter        = metrics.NewRegisteredCounter("arb/sequencer/noncefailurecache/overflow", nil)
 	blockCreationTimer                      = metrics.NewRegisteredHistogram("arb/sequencer/block/creation", nil, metrics.NewBoundedHistogramSample())
 	successfulBlocksCounter                 = metrics.NewRegisteredCounter("arb/sequencer/block/successful", nil)
 	blockTxSizeHistogram                    = metrics.NewRegisteredHistogram("arb/sequencer/block/txsize", nil, metrics.NewBoundedHistogramSample())
@@ -70,21 +68,22 @@ var (
 	callDataUnitsBacklogGauge               = metrics.NewRegisteredGauge("arb/sequencer/calldataunitsbacklog", nil)
 	currentSurplusGauge                     = metrics.NewRegisteredGauge("arb/sequencer/currentsurplus", nil)
 	expectedSurplusGauge                    = metrics.NewRegisteredGauge("arb/sequencer/expectedsurplus", nil)
-	waitForTxHistogram                      = metrics.NewRegisteredHistogram("arb/sequencer/waitfortx", nil, metrics.NewBoundedHistogramSample())
 	// number of blocks ended because of block gas limit at least one tx wasn't included in block because of gas limit)
 	gasLimitedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/gaslimited", nil)
 	// number of blocks ended because of txes data size limit
 	dataLimitedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/datalimited", nil)
 	// number of blocks ended because of exhausting the transactions to sequence
 	txExhaustedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/txexhausted", nil)
+	// forwarder/pause wait + validation before sequencing an express lane submission
+	expressLanePreSequenceWaitHistogram = metrics.NewRegisteredHistogram("arb/sequencer/timeboost/expresslane/presequencewait", nil, metrics.NewBoundedHistogramSample())
 )
 
 type SequencerConfig struct {
 	Enable                       bool             `koanf:"enable"`
 	MaxBlockSpeed                time.Duration    `koanf:"max-block-speed" reload:"hot"`
-	ReadFromTxQueueTimeout       time.Duration    `koanf:"read-from-tx-queue-timeout" reload:"hot"`
 	MaxRevertGasReject           uint64           `koanf:"max-revert-gas-reject" reload:"hot"`
 	MaxAcceptableTimestampDelta  time.Duration    `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
+	PollInterval                 time.Duration    `koanf:"poll-interval" reload:"hot"`
 	SenderWhitelist              []string         `koanf:"sender-whitelist"`
 	Forwarder                    ForwarderConfig  `koanf:"forwarder"`
 	QueueSize                    int              `koanf:"queue-size"`
@@ -185,8 +184,8 @@ func (c *SequencerConfig) Validate() error {
 			return fmt.Errorf("PGA round length %v (max-block-speed / experimental-pga.rounds-per-block) is below the minimum supported %v", roundLength, minPGARoundLength)
 		}
 	}
-	if c.ReadFromTxQueueTimeout >= c.MaxBlockSpeed {
-		log.Warn("Sequencer ReadFromTxQueueTimeout is higher than MaxBlockSpeed", "ReadFromTxQueueTimeout", c.ReadFromTxQueueTimeout, "MaxBlockSpeed", c.MaxBlockSpeed)
+	if c.PollInterval <= 0 {
+		return fmt.Errorf("sequencer poll-interval must be positive, got %v", c.PollInterval)
 	}
 
 	return nil
@@ -197,9 +196,9 @@ type SequencerConfigFetcher func() *SequencerConfig
 var DefaultSequencerConfig = SequencerConfig{
 	Enable:                      false,
 	MaxBlockSpeed:               time.Millisecond * 250,
-	ReadFromTxQueueTimeout:      time.Millisecond * 10,
 	MaxRevertGasReject:          0,
 	MaxAcceptableTimestampDelta: time.Hour,
+	PollInterval:                10 * time.Millisecond,
 	SenderWhitelist:             []string{},
 	Forwarder:                   DefaultSequencerForwarderConfig,
 	QueueSize:                   1024,
@@ -230,10 +229,10 @@ var DefaultPGAConfig = PGAConfig{
 
 func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSequencerConfig.Enable, "act and post to l1 as sequencer")
-	f.Duration(prefix+".read-from-tx-queue-timeout", DefaultSequencerConfig.ReadFromTxQueueTimeout, "timeout for reading new messages")
 	f.Duration(prefix+".max-block-speed", DefaultSequencerConfig.MaxBlockSpeed, "minimum delay between blocks (sets a maximum speed of block production)")
 	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
+	f.Duration(prefix+".poll-interval", DefaultSequencerConfig.PollInterval, "interval the sequencer waits before re-checking for pending work when idle")
 	f.StringSlice(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
 	timeboost.AddOptions(prefix+".timeboost", f)
@@ -267,15 +266,57 @@ func EventFilterAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 type txQueueItem struct {
-	tx              *types.Transaction
-	txSize          int // size in bytes of the marshalled transaction
-	options         *arbitrum_types.ConditionalOptions
-	resultChan      chan<- error
-	returnedResult  *atomic.Bool
-	ctx             context.Context
-	firstAppearance time.Time
-	isTimeboosted   bool
-	blockStamp      uint64 // block number at which timeboosted tx was added to the txQueue
+	tx                  *types.Transaction
+	txSize              int // size in bytes of the marshalled transaction
+	options             *arbitrum_types.ConditionalOptions
+	resultChan          chan<- error
+	returnedResult      *atomic.Bool
+	ctx                 context.Context
+	firstAppearance     time.Time
+	isTimeboosted       bool
+	isAuctionResolution bool
+	blockStamp          uint64 // block number at which timeboosted tx was added to the txQueue
+}
+
+func newTxQueueItem(
+	ctx context.Context,
+	tx *types.Transaction,
+	options *arbitrum_types.ConditionalOptions,
+	resultChan chan<- error,
+) txQueueItem {
+	return txQueueItem{
+		tx:              tx,
+		txSize:          int(tx.Size()), // #nosec G115
+		options:         options,
+		resultChan:      resultChan,
+		returnedResult:  &atomic.Bool{},
+		ctx:             ctx,
+		firstAppearance: time.Now(),
+	}
+}
+
+// newRegularTxQueueItem returns a queue item for a regular (possibly timeboosted) transaction.
+func newRegularTxQueueItem(
+	ctx context.Context,
+	tx *types.Transaction,
+	options *arbitrum_types.ConditionalOptions,
+	resultChan chan<- error,
+	isTimeboosted bool,
+	blockStamp uint64,
+) txQueueItem {
+	item := newTxQueueItem(ctx, tx, options, resultChan)
+	item.isTimeboosted = isTimeboosted
+	item.blockStamp = blockStamp
+	return item
+}
+
+// newAuctionResolutionTxQueueItem returns a queue item for an auction resolution transaction.
+// Nothing reads its result, so it gets a throwaway buffered channel, and no submitter can
+// abandon it, so its ctx is context.Background.
+func newAuctionResolutionTxQueueItem(tx *types.Transaction) txQueueItem {
+	item := newTxQueueItem(context.Background(), tx, nil, make(chan error, 1))
+	item.isAuctionResolution = true
+	return item
 }
 
 func (i *txQueueItem) returnResultMaybeLog(err error, outputLog bool) {
@@ -372,47 +413,6 @@ func (c *nonceCache) Resize(newSize int) {
 	c.cache.Resize(newSize)
 }
 
-type addressAndNonce struct {
-	address common.Address
-	nonce   uint64
-}
-
-type nonceFailure struct {
-	queueItem txQueueItem
-	nonceErr  error
-	expiry    time.Time
-	revived   bool
-}
-
-type nonceFailureCache struct {
-	*containers.LruCache[addressAndNonce, *nonceFailure]
-	getExpiry func() time.Duration
-}
-
-func (c nonceFailureCache) Contains(err NonceError) bool {
-	key := addressAndNonce{err.sender, err.txNonce}
-	return c.LruCache.Contains(key)
-}
-
-func (c nonceFailureCache) Add(err NonceError, queueItem txQueueItem) {
-	expiry := queueItem.firstAppearance.Add(c.getExpiry())
-	if c.Contains(err) || time.Now().After(expiry) {
-		queueItem.returnResult(err)
-		return
-	}
-	key := addressAndNonce{err.sender, err.txNonce}
-	val := &nonceFailure{
-		queueItem: queueItem,
-		nonceErr:  err,
-		expiry:    expiry,
-		revived:   false,
-	}
-	evicted := c.LruCache.Add(key, val)
-	if evicted {
-		nonceFailureCacheOverflowCounter.Inc(1)
-	}
-}
-
 type synchronizedTxQueue struct {
 	queue containers.Queue[txQueueItem]
 	mutex sync.RWMutex
@@ -437,6 +437,13 @@ func (q *synchronizedTxQueue) Len() int {
 	return q.queue.Len()
 }
 
+type pendingQueueItemsResults struct {
+	block *types.Block
+	hooks *FullSequencingHooks
+}
+
+var _ txOrdererSequencer = (*Sequencer)(nil)
+
 type Sequencer struct {
 	stopwaiter.StopWaiter
 
@@ -449,19 +456,20 @@ type Sequencer struct {
 	nonceCache         *nonceCache
 	nonceFailures      *nonceFailureCache
 	expressLaneService *timeboost.ExpressLaneService
-	onForwarderSet     chan struct{}
 	parentChain        *parent.ParentChain
 
 	L1BlockAndTimeMutex sync.Mutex
 	l1BlockNumber       atomic.Uint64
 	l1Timestamp         uint64
 
-	// activeMutex manages pauseChan (pauses execution) and forwarder
-	// at most one of these is non-nil at any given time
-	// both are nil for the active sequencer
-	activeMutex sync.Mutex
-	pauseChan   chan struct{}
-	forwarder   *TxForwarder
+	forwarderMutex sync.Mutex
+	isActive       bool
+	forwarder      *TxForwarder
+
+	// activeUntil is the consensus chosen-sequencer deadline pushed via
+	// SetActiveUntil. Nil means no coordinator signal was ever received
+	// (coordinator-less setups), which CheckHealth treats as healthy.
+	activeUntil atomic.Pointer[time.Time]
 
 	expectedSurplusMutex              sync.RWMutex
 	expectedSurplus                   int64
@@ -470,10 +478,18 @@ type Sequencer struct {
 	auctioneerAddr                    common.Address
 	timeboostAuctionResolutionTxQueue chan txQueueItem
 
-	eventFilter          *eventfilter.EventFilter
-	addressFilterService *addressfilter.FilterService
+	pendingQueueItemsResults *pendingQueueItemsResults
+	createBlockMutex         sync.Mutex
 
+	pendingDelayedMsgCommit bool
+
+	eventFilter              *eventfilter.EventFilter
+	addressFilterService     *addressfilter.FilterService
 	pendingFilteredTxReports []addressfilter.FilteredTxReport
+
+	// sequencingState tracks turn alternation between regular tx and delayed
+	// message sequencing.
+	sequencingState sequencingState
 }
 
 func NewSequencer(
@@ -504,19 +520,17 @@ func NewSequencer(
 		senderWhitelist:                   senderWhitelist,
 		nonceCache:                        newNonceCache(config.NonceCacheSize),
 		l1Timestamp:                       0,
-		pauseChan:                         nil,
-		onForwarderSet:                    make(chan struct{}, 1),
+		isActive:                          false,
 		parentChain:                       parentChain,
 		timeboostAuctionResolutionTxQueue: make(chan txQueueItem, 10), // There should never be more than 1 outstanding auction resolutions
 		eventFilter:                       eventFilter,
 		addressFilterService:              addressFilterService,
 	}
-	s.nonceFailures = &nonceFailureCache{
-		containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict),
+	s.nonceFailures = newNonceFailureCache(
+		config.NonceCacheSize,
 		func() time.Duration { return configFetcher().NonceFailureCacheExpiry },
-	}
+	)
 	s.Pause()
-	execEngine.EnableReorgSequencing()
 	execEngine.SetEventFilter(eventFilter)
 	return s, nil
 }
@@ -536,7 +550,7 @@ func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.H
 	if err != nil {
 		// MarshalBinary should essentially never fail for a well-formed transaction already
 		// in memory. We log instead of returning an error so that the caller can return a
-		// plain ErrArbTxFilter, avoiding exposure of internal operation errors (e.g.
+		// plain ErrSeqFilter, avoiding exposure of internal operation errors (e.g.
 		// marshalling failures) to end users.
 		log.Error("failed to marshal transaction for filtered tx report", "err", err, "txHash", tx.Hash())
 		return
@@ -557,36 +571,8 @@ func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.H
 	s.pendingFilteredTxReports = append(s.pendingFilteredTxReports, report)
 }
 
-func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
-	if failure.revived {
-		return
-	}
-	queueItem := failure.queueItem
-	err := queueItem.ctx.Err()
-	if err != nil {
-		queueItem.returnResult(err)
-		return
-	}
-	_, forwarder := s.GetPauseAndForwarder()
-	if forwarder != nil {
-		// We might not have gotten the predecessor tx because our forwarder did. Let's try there instead.
-		// We run this in a background goroutine because LRU eviction needs to be quick.
-		// We use an untracked thread for a few reasons:
-		//   - It's guaranteed to run even when stopped (we need to return *some* result).
-		//   - It acquires mutexes and this might need to happen a lot.
-		//   - We don't need the context because queueItem has its own.
-		//   - The RPC handler is on a separate StopWaiter anyways -- we should respect its context.
-		s.LaunchUntrackedThread(func() {
-			err = forwarder.PublishTransaction(queueItem.ctx, queueItem.tx, queueItem.options)
-			queueItem.returnResult(err)
-		})
-	} else {
-		queueItem.returnResult(failure.nonceErr)
-	}
-}
-
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
-	_, forwarder := s.GetPauseAndForwarder()
+	forwarder := s.getForwarder()
 	if forwarder != nil {
 		err := forwarder.PublishTransaction(parentCtx, tx, options)
 		if !errors.Is(err, ErrNoSequencer) {
@@ -630,10 +616,7 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 		return errors.New("timeboost not enabled")
 	}
 
-	forwarder, err := s.getForwarder(ctx)
-	if err != nil {
-		return err
-	}
+	forwarder := s.getForwarder()
 	if forwarder != nil {
 		err := forwarder.PublishAuctionResolutionTransaction(ctx, tx)
 		if !errors.Is(err, ErrNoSequencer) {
@@ -664,17 +647,13 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	if !roundTimingInfo.IsWithinAuctionCloseWindow(arrivalTime) {
 		return fmt.Errorf("transaction arrival time not within auction closure window: %v", arrivalTime)
 	}
-	log.Info("Prioritizing auction resolution transaction from auctioneer", "txHash", tx.Hash().Hex())
-	s.timeboostAuctionResolutionTxQueue <- txQueueItem{
-		tx:              tx,
-		txSize:          int(tx.Size()), // #nosec G115
-		options:         nil,
-		resultChan:      make(chan error, 1),
-		returnedResult:  &atomic.Bool{},
-		ctx:             s.GetContext(),
-		firstAppearance: time.Now(),
-		isTimeboosted:   false,
+	// The queues are no longer drained after the sequencer is stopped; reject
+	// the tx instead of parking it.
+	if s.Stopped() {
+		return ErrNoSequencer
 	}
+	log.Info("Prioritizing auction resolution transaction from auctioneer", "txHash", tx.Hash().Hex())
+	s.timeboostAuctionResolutionTxQueue <- newAuctionResolutionTxQueueItem(tx)
 	return nil
 }
 
@@ -683,10 +662,8 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 		return errors.New("timeboost not enabled")
 	}
 
-	forwarder, err := s.getForwarder(ctx)
-	if err != nil {
-		return err
-	}
+	preSequenceWaitStart := time.Now()
+	forwarder := s.getForwarder()
 	if forwarder != nil {
 		return forwarder.PublishExpressLaneTransaction(ctx, msg)
 	}
@@ -698,13 +675,11 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 		return err
 	}
 
-	forwarder, err = s.getForwarder(ctx)
-	if err != nil {
-		return err
-	}
+	forwarder = s.getForwarder()
 	if forwarder != nil {
 		return forwarder.PublishExpressLaneTransaction(ctx, msg)
 	}
+	expressLanePreSequenceWaitHistogram.Update(time.Since(preSequenceWaitStart).Microseconds())
 
 	return s.expressLaneService.SequenceExpressLaneSubmission(msg)
 }
@@ -757,17 +732,12 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 		blockStamp = s.execEngine.bc.CurrentBlock().Number.Uint64()
 	}
 
-	queueItem := txQueueItem{
-		tx:              tx,
-		txSize:          int(tx.Size()), // #nosec G115
-		options:         options,
-		resultChan:      resultChan,
-		returnedResult:  &atomic.Bool{},
-		ctx:             queueCtx,
-		firstAppearance: time.Now(),
-		isTimeboosted:   isExpressLaneController,
-		blockStamp:      blockStamp,
+	// The queues are no longer drained after the sequencer is stopped; reject
+	// the tx instead of parking it.
+	if s.Stopped() {
+		return ErrNoSequencer
 	}
+	queueItem := newRegularTxQueueItem(queueCtx, tx, options, resultChan, isExpressLaneController, blockStamp)
 	select {
 	case s.txQueue <- queueItem:
 	case <-queueCtx.Done():
@@ -776,7 +746,7 @@ func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *type
 	return nil
 }
 
-func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address, l1Info *arbos.L1Info, positionInBlock int) error {
+func (s *Sequencer) PreTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address, l1Info *arbos.L1Info, positionInBlock int) error {
 	if s.nonceCache.Caching() {
 		stateNonce := s.nonceCache.Get(header, statedb, sender)
 		err := MakeNonceError(sender, tx.Nonce(), stateNonce)
@@ -796,18 +766,18 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 
 	touchAddresses(statedb, tx, sender)
 	if statedb.IsTxFiltered() {
-		return state.ErrArbTxFilter
+		return state.ErrSeqFilter
 	}
 
 	addressFiltered, filteredAddresses := statedb.IsAddressFiltered()
 	if addressFiltered {
 		s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock)
-		return state.ErrArbTxFilter
+		return state.ErrSeqFilter
 	}
 	return nil
 }
 
-func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult, positionInBlock int) error {
+func (s *Sequencer) PostTxFilter(header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult, positionInBlock int) error {
 	if s.eventFilter != nil {
 		logs := statedb.GetCurrentTxLogs()
 		for _, l := range logs {
@@ -817,11 +787,11 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 		}
 	}
 	if statedb.IsTxFiltered() {
-		return state.ErrArbTxFilter
+		return state.ErrSeqFilter
 	}
 	if addressFiltered, filteredAddresses := statedb.IsAddressFiltered(); addressFiltered {
 		s.buildFilteredTxReport(tx, header, filteredAddresses, positionInBlock)
-		return state.ErrArbTxFilter
+		return state.ErrSeqFilter
 	}
 
 	// For redeems, skip nonce/revert-gas checks since those
@@ -836,10 +806,8 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 	newNonce := tx.Nonce() + 1
 	s.nonceCache.Update(header, sender, newNonce)
 	newAddrAndNonce := addressAndNonce{sender, newNonce}
-	nonceFailure, haveNonceFailure := s.nonceFailures.Get(newAddrAndNonce)
+	nonceFailure, haveNonceFailure := s.nonceFailures.Take(newAddrAndNonce)
 	if haveNonceFailure {
-		nonceFailure.revived = true // prevent the expiry hook from taking effect
-		s.nonceFailures.Remove(newAddrAndNonce)
 		// Immediately check if the transaction submission has been canceled
 		err := nonceFailure.queueItem.ctx.Err()
 		if err != nil {
@@ -853,20 +821,26 @@ func (s *Sequencer) postTxFilter(header *types.Header, statedb *state.StateDB, _
 }
 
 func (s *Sequencer) CheckHealth(ctx context.Context) error {
-	pauseChan, forwarder := s.GetPauseAndForwarder()
+	forwarder := s.getForwarder()
 	if forwarder != nil {
 		return forwarder.CheckHealth(ctx)
 	}
-	if pauseChan != nil {
+	if !s.IsActive() {
 		return nil
 	}
-	_, err := s.execEngine.consensus.ExpectChosenSequencer().Await(ctx)
-	return err
+	if activeUntil := s.activeUntil.Load(); activeUntil != nil && time.Now().After(*activeUntil) {
+		return ErrNotChosenSequencer
+	}
+	return nil
+}
+
+func (s *Sequencer) SetActiveUntil(deadline time.Time) {
+	s.activeUntil.Store(&deadline)
 }
 
 func (s *Sequencer) ForwardTarget() string {
-	s.activeMutex.Lock()
-	defer s.activeMutex.Unlock()
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
 	if s.forwarder == nil {
 		return ""
 	}
@@ -874,8 +848,8 @@ func (s *Sequencer) ForwardTarget() string {
 }
 
 func (s *Sequencer) ForwardTo(url string) error {
-	s.activeMutex.Lock()
-	defer s.activeMutex.Unlock()
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
 	if s.forwarder != nil {
 		if s.forwarder.PrimaryTarget() == url {
 			log.Warn("attempted to update sequencer forward target with existing target", "url", url)
@@ -889,30 +863,16 @@ func (s *Sequencer) ForwardTo(url string) error {
 		log.Error("failed to set forward agent", "err", err)
 		s.forwarder = nil
 	}
-	if s.pauseChan != nil {
-		close(s.pauseChan)
-		s.pauseChan = nil
-	}
-	if err == nil {
-		// If createBlocks is waiting for a new queue item, notify it that it needs to clear the nonceFailures.
-		select {
-		case s.onForwarderSet <- struct{}{}:
-		default:
-		}
-	}
+	s.isActive = false
 	return err
 }
 
 func (s *Sequencer) Activate() {
-	s.activeMutex.Lock()
-	defer s.activeMutex.Unlock()
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
 	if s.forwarder != nil {
 		s.forwarder.Disable()
 		s.forwarder = nil
-	}
-	if s.pauseChan != nil {
-		close(s.pauseChan)
-		s.pauseChan = nil
 	}
 	if s.expressLaneService != nil {
 		s.LaunchThread(func(context.Context) {
@@ -922,64 +882,59 @@ func (s *Sequencer) Activate() {
 			s.expressLaneService.SyncFromRedis()
 		})
 	}
+	s.isActive = true
 }
 
 func (s *Sequencer) Pause() {
-	s.activeMutex.Lock()
-	defer s.activeMutex.Unlock()
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
 	if s.forwarder != nil {
 		s.forwarder.Disable()
 		s.forwarder = nil
 	}
-	if s.pauseChan == nil {
-		s.pauseChan = make(chan struct{})
-	}
+	s.isActive = false
 }
 
 var ErrNoSequencer = errors.New("sequencer temporarily not available")
 
-func (s *Sequencer) GetPauseAndForwarder() (chan struct{}, *TxForwarder) {
-	s.activeMutex.Lock()
-	defer s.activeMutex.Unlock()
-	return s.pauseChan, s.forwarder
+// ErrNotChosenSequencer reports an active sequencer whose consensus lockout
+// deadline has passed: it is no longer the chosen sequencer and commits would
+// be rejected until the coordinator pauses it or it reacquires the lockout.
+var ErrNotChosenSequencer = errors.New("sequencer is not the chosen sequencer")
+
+func (s *Sequencer) getForwarder() *TxForwarder {
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
+	return s.forwarder
 }
 
-// getForwarder returns accurate forwarder and pauses if needed.
-// Required for processing timeboost txs, as just checking forwarder==nil doesn't imply the sequencer to be chosen
-func (s *Sequencer) getForwarder(ctx context.Context) (*TxForwarder, error) {
-	for {
-		pause, forwarder := s.GetPauseAndForwarder()
-		if pause == nil {
-			return forwarder, nil
-		}
-		// if paused: wait till unpaused
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-pause:
-		}
-	}
+func (s *Sequencer) IsActive() bool {
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
+	return s.isActive
 }
 
-// only called from createBlock, may be paused
-func (s *Sequencer) handleInactive(ctx context.Context, queueItems []txQueueItem) bool {
-	forwarder, err := s.getForwarder(ctx)
-	if err != nil {
-		return true
-	}
+func (s *Sequencer) handleInactive(forwarder *TxForwarder, queueItems []txQueueItem) {
 	if forwarder == nil {
-		return false
+		return
 	}
+
+	// Drain the parked nonce failures and forward them along with the queue items.
+	for {
+		failure, ok := s.nonceFailures.TakeOldest()
+		if !ok {
+			break
+		}
+		queueItems = append(queueItems, failure.queueItem)
+	}
+
 	publishResults := make(chan *txQueueItem, len(queueItems))
 	for _, item := range queueItems {
-		item := item
 		go func() {
-			res := forwarder.PublishTransaction(item.ctx, item.tx, item.options)
-			if errors.Is(res, ErrNoSequencer) {
+			if s.forwardQueueItem(forwarder, item) {
 				publishResults <- &item
 			} else {
 				publishResults <- nil
-				item.returnResult(res)
 			}
 		}()
 	}
@@ -989,200 +944,42 @@ func (s *Sequencer) handleInactive(ctx context.Context, queueItems []txQueueItem
 			s.txRetryQueue.Push(*remainingItem)
 		}
 	}
-	// Evict any leftover nonce failures, forwarding them
-	s.nonceFailures.Clear()
-	return true
+}
+
+// forwardQueueItem forwards a drained item, returning true if it should be re-queued for retry
+// (the forwarder is temporarily disabled). Invalid items are dropped with their error.
+func (s *Sequencer) forwardQueueItem(forwarder *TxForwarder, item txQueueItem) bool {
+	// Skip abandoned submissions: the forwarder ignores the item ctx, so a
+	// drained item whose submitter timed out would still be forwarded.
+	if err := item.ctx.Err(); err != nil {
+		item.returnResult(err)
+		return false
+	}
+	var err error
+	if item.isAuctionResolution {
+		err = forwarder.PublishAuctionResolutionTransaction(item.ctx, item.tx)
+	} else {
+		err = forwarder.PublishTransaction(item.ctx, item.tx, item.options)
+	}
+	if errors.Is(err, ErrNoSequencer) {
+		return true
+	}
+	if err != nil {
+		log.Warn("failed to forward transaction", "txHash", item.tx.Hash(), "err", err)
+	}
+	item.returnResult(err)
+	return false
 }
 
 var sequencerInternalError = errors.New("sequencer internal error")
 
-type FullSequencingHooks struct {
-	queueItems               []txQueueItem
-	sequencedQueueItemsCount int
-	sequencedTxsSizeSoFar    int
-	maxSequencedTxsSize      int
-	txErrors                 []error
-	preTxFilter              func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info, int) error
-	postTxFilter             func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error
-	blockFilter              func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
-	txSizeLimitReached       bool
-}
-
-func (s *FullSequencingHooks) MessageFromTxes(header *arbostypes.L1IncomingMessageHeader) (*arbostypes.L1IncomingMessage, error) {
-	var l2Message []byte
-	if len(s.txErrors) == 1 && s.txErrors[0] == nil {
-		tx, err := s.SequencedTx(0)
-		if err != nil {
-			return nil, err
-		}
-		txBytes, err := tx.MarshalBinary()
-		if err != nil {
-			return nil, err
-		}
-		l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
-		l2Message = append(l2Message, txBytes...)
-	} else {
-		l2Message = append(l2Message, arbos.L2MessageKind_Batch)
-		sizeBuf := make([]byte, 8)
-		for i := 0; i < len(s.txErrors); i++ {
-			if s.txErrors[i] != nil {
-				continue
-			}
-			tx, err := s.SequencedTx(i)
-			if err != nil {
-				return nil, err
-			}
-			txBytes, err := tx.MarshalBinary()
-			if err != nil {
-				return nil, err
-			}
-			// #nosec G115
-			binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes)+1))
-			l2Message = append(l2Message, sizeBuf...)
-			l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
-			l2Message = append(l2Message, txBytes...)
-		}
-	}
-	if len(l2Message) > arbostypes.MaxL2MessageSize {
-		return nil, errors.New("l2message too long")
-	}
-	return &arbostypes.L1IncomingMessage{
-		Header: header,
-		L2msg:  l2Message,
-	}, nil
-}
-
-func (s *FullSequencingHooks) GetTxErrors() []error {
-	return s.txErrors
-}
-
-func (s *FullSequencingHooks) TxSucceeded() {
-	s.txErrors = append(s.txErrors, nil)
-}
-
-func (s *FullSequencingHooks) TxFailed(err error) {
-	if len(s.txErrors) >= s.sequencedQueueItemsCount {
-		log.Error("TxFailed called but entry already exists", "existingErr", s.txErrors[len(s.txErrors)-1], "newErr", err)
-	}
-	s.txErrors = append(s.txErrors, err)
-}
-
-// NextTxToSequence returns the next transaction to be included in the block, or nil if there are no more transactions to include.
-// It will skip transactions that would cause the total size of included transactions to exceed maxSequencedTxsSize.
-func (s *FullSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error) {
-	for {
-		// This is not supposed to happen, if so we have a bug
-		if len(s.txErrors) != s.sequencedQueueItemsCount {
-			return nil, nil, fmt.Errorf("FullSequencingHooks: GetNextTx detected out of order request to sequence tx. hookTxErrors: %d, nextTxIdToBeSequenced: %d", len(s.txErrors), s.sequencedQueueItemsCount)
-		}
-		if s.sequencedQueueItemsCount > 0 && s.txErrors[s.sequencedQueueItemsCount-1] == nil {
-			s.sequencedTxsSizeSoFar += s.queueItems[s.sequencedQueueItemsCount-1].txSize
-		}
-		if s.sequencedQueueItemsCount >= len(s.queueItems) {
-			return nil, nil, nil
-		}
-		if s.sequencedTxsSizeSoFar+s.queueItems[s.sequencedQueueItemsCount].txSize > s.maxSequencedTxsSize {
-			s.sequencedQueueItemsCount += 1
-			s.TxFailed(core.ErrGasLimitReached)
-			s.txSizeLimitReached = true
-		} else {
-			s.sequencedQueueItemsCount += 1
-			break
-		}
-	}
-	return s.queueItems[s.sequencedQueueItemsCount-1].tx, s.queueItems[s.sequencedQueueItemsCount-1].options, nil
-}
-
-func (s *FullSequencingHooks) CanDiscardTx() bool { return true }
-
-func (s *FullSequencingHooks) SupportsGroupRollback() bool { return true }
-
-func (s *FullSequencingHooks) SequencedTx(txId int) (*types.Transaction, error) {
-	// This is not supposed to happen, if so we have a bug
-	if txId > s.sequencedQueueItemsCount {
-		return nil, fmt.Errorf("transaction queried for was not scheduled by the FullSequencingHooks. txId: %d, sequencedCount: %d", txId, s.sequencedQueueItemsCount)
-	}
-	return s.queueItems[txId].tx, nil
-}
-
-func (s *FullSequencingHooks) PreTxFilter(config *params.ChainConfig, header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, options *arbitrum_types.ConditionalOptions, address common.Address, info *arbos.L1Info, positionInBlock int) error {
-	if s.preTxFilter != nil {
-		return s.preTxFilter(config, header, db, a, transaction, options, address, info, positionInBlock)
-	}
-	return nil
-}
-
-func (s *FullSequencingHooks) PostTxFilter(header *types.Header, db *state.StateDB, a *arbosState.ArbosState, transaction *types.Transaction, address common.Address, u uint64, result *core.ExecutionResult, positionInBlock int) error {
-	if transaction.Type() == types.ArbitrumInternalTxType {
-		return nil
-	}
-	if s.postTxFilter != nil {
-		return s.postTxFilter(header, db, a, transaction, address, u, result, positionInBlock)
-	}
-	return nil
-}
-
-func (s *FullSequencingHooks) BlockFilter(header *types.Header, db *state.StateDB, transactions types.Transactions, receipts types.Receipts) error {
-	if s.blockFilter != nil {
-		return s.blockFilter(header, db, transactions, receipts)
-	}
-	return nil
-}
-
-func MakeSequencingHooks(
-	items []txQueueItem,
-	maxSequencedTxsSize int,
-	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info, int) error,
-	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error,
-	blockFilter func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error,
-) *FullSequencingHooks {
-	res := &FullSequencingHooks{
-		queueItems:               items,
-		sequencedQueueItemsCount: 0,
-		sequencedTxsSizeSoFar:    0,
-		maxSequencedTxsSize:      maxSequencedTxsSize,
-		preTxFilter:              preTxFilter,
-		postTxFilter:             postTxFilter,
-		blockFilter:              blockFilter,
-	}
-	return res
-}
-
-// MakeZeroTxSizeSequencingHooksForTesting creates sequencing hooks for testing with tx size always zero.
-// This allows all transactions to be included in a block regardless of size.
-func MakeZeroTxSizeSequencingHooksForTesting(
-	txes types.Transactions,
-	preTxFilter func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *arbos.L1Info, int) error,
-	postTxFilter func(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error,
-	blockFilter func(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error,
-) *FullSequencingHooks {
-	var items []txQueueItem
-	for _, tx := range txes {
-		items = append(items, txQueueItem{
-			tx: tx,
-		})
-	}
-	return MakeSequencingHooks(
-		items,
-		0,
-		preTxFilter,
-		postTxFilter,
-		blockFilter,
-	)
-}
-
-func (s *Sequencer) expireNonceFailures() *time.Timer {
+func (s *Sequencer) expireNonceFailures() {
 	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
 	for {
-		_, failure, ok := s.nonceFailures.GetOldest()
+		failure, ok := s.nonceFailures.TakeExpired()
 		if !ok {
-			return nil
+			return
 		}
-		untilExpiry := time.Until(failure.expiry)
-		if untilExpiry > 0 {
-			return time.NewTimer(untilExpiry)
-		}
-
 		// Check queueCtx status before notifying client
 		queueItem := failure.queueItem
 		err := queueItem.ctx.Err()
@@ -1193,8 +990,6 @@ func (s *Sequencer) expireNonceFailures() *time.Timer {
 			// nonce-failure-cache-expiry timeout, return the original nonce error
 			queueItem.returnResultMaybeLog(failure.nonceErr, true)
 		}
-
-		s.nonceFailures.RemoveOldest()
 	}
 }
 
@@ -1240,12 +1035,10 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 		if txNonce == pendingNonce {
 			pendingNonces[sender] = txNonce + 1
 			nextKey := addressAndNonce{sender, txNonce + 1}
-			revivingFailure, exists := s.nonceFailures.Get(nextKey)
+			revivingFailure, exists := s.nonceFailures.Take(nextKey)
 			if exists {
 				// This tx was the predecessor to one that had failed its nonce check
 				// Re-enqueue the tx whose nonce should now be correct, unless it expired
-				revivingFailure.revived = true
-				s.nonceFailures.Remove(nextKey)
 				err := revivingFailure.queueItem.ctx.Err()
 				if err != nil {
 					revivingFailure.queueItem.returnResult(err)
@@ -1284,171 +1077,174 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 	return outputQueueItems
 }
 
-func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
-	var queueItems []txQueueItem
+// drainQueueItems snapshots each queue's length and drains up to that many items in priority
+// order (auction resolution, then retry, then submitted). Safe for concurrent consumers: items
+// taken by another consumer between the snapshot and the read are skipped, and concurrent pushes
+// are left for the next drain.
+func (s *Sequencer) drainQueueItems() []txQueueItem {
+	capacity := len(s.timeboostAuctionResolutionTxQueue) + s.txRetryQueue.Len() + len(s.txQueue)
+	queueItems := make([]txQueueItem, 0, capacity)
+	for range len(s.timeboostAuctionResolutionTxQueue) {
+		select {
+		case queueItem := <-s.timeboostAuctionResolutionTxQueue:
+			log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
+			queueItems = append(queueItems, queueItem)
+		default:
+		}
+	}
+	for range s.txRetryQueue.Len() {
+		queueItem := s.txRetryQueue.Pop()
+		if queueItem.tx == nil {
+			// Pop returned the zero value: another consumer emptied the queue.
+			break
+		}
+		queueItems = append(queueItems, queueItem)
+	}
+	for range len(s.txQueue) {
+		select {
+		case queueItem := <-s.txQueue:
+			queueItems = append(queueItems, queueItem)
+		default:
+		}
+	}
+	return queueItems
+}
 
+// validateTimeboostExpiry returns the block-age expiry error for a timeboosted item, or nil.
+func validateTimeboostExpiry(config *SequencerConfig, currentHeader *types.Header, queueItem txQueueItem) error {
+	if !queueItem.isTimeboosted || queueItem.blockStamp == 0 ||
+		currentHeader.Number.Uint64() < queueItem.blockStamp+config.Timeboost.QueueTimeoutInBlocks {
+		return nil
+	}
+	err := fmt.Errorf("timeboosted tx: %s has hit block based timeout. currentBlockNum: %d, blockStamp: %d, blockExpiry: %d",
+		queueItem.tx.Hash(),
+		currentHeader.Number.Uint64()+1,
+		queueItem.blockStamp,
+		queueItem.blockStamp+config.Timeboost.QueueTimeoutInBlocks,
+	)
+	// The timeboost result isn't read by anyone, so we log the error
+	log.Info("Error sequencing timeboost tx", "err", err)
+	return err
+}
+
+// validateQueueItem returns the reason a drained item must be dropped (canceled item ctx,
+// oversized tx, timeboost block-age expiry, fee cap below basefee), or nil to sequence it.
+func validateQueueItem(config *SequencerConfig, currentHeader *types.Header, queueItem txQueueItem) error {
+	if err := queueItem.ctx.Err(); err != nil {
+		return err
+	}
+	if queueItem.txSize > config.MaxTxDataSize {
+		return txpool.ErrOversizedData
+	}
+	if err := validateTimeboostExpiry(config, currentHeader, queueItem); err != nil {
+		return err
+	}
+	if arbmath.BigLessThan(queueItem.tx.GasFeeCap(), currentHeader.BaseFee) {
+		return fmt.Errorf("%w: maxFeePerGas: %s baseFee: %s", core.ErrFeeCapTooLow, queueItem.tx.GasFeeCap(), currentHeader.BaseFee)
+	}
+	return nil
+}
+
+// drainAndValidateQueueItems drains the queues and filters out the invalid items, returning the
+// validation failure to each dropped item's submitter.
+func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentHeader *types.Header) []txQueueItem {
+	unvalidatedItems := s.drainQueueItems()
+	// Filter in place: unvalidatedItems is freshly allocated with no other reference.
+	queueItems := unvalidatedItems[:0]
+	for _, queueItem := range unvalidatedItems {
+		if err := validateQueueItem(config, currentHeader, queueItem); err != nil {
+			queueItem.returnResult(err)
+		} else {
+			queueItems = append(queueItems, queueItem)
+		}
+	}
+	return queueItems
+}
+
+func (s *Sequencer) drainValidatedTxs() []txQueueItem {
+	// This config snapshot can lag the block creator's if a hot reload lands in between, so the
+	// drain may validate with different limits than the rest of the block; that's acceptable.
+	queueItems := s.drainAndValidateQueueItems(s.config(), s.execEngine.bc.CurrentBlock())
+	if len(queueItems) == 0 {
+		return nil
+	}
+	return s.precheckNonces(queueItems)
+}
+
+func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
+	return s.createBlockWithTxOrderer(ctx, newFIFOTxOrderer(s))
+}
+
+// createBlockWithTxOrderer creates one block from the txs yielded by the orderer; split from
+// createBlockWithRegularTxs so tests can inject the orderer.
+func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrderer) (sequencedMsg *execution.SequencedMsg, throttleRegularSequencingFor time.Duration) {
+	s.createBlockMutex.Lock()
+	defer s.createBlockMutex.Unlock()
+
+	s.pendingQueueItemsResults = nil
+
+	forwarder := s.getForwarder()
+
+	var hooks *FullSequencingHooks
+	config := s.config()
+
+	// On exit, requeue whatever the orderer still holds; on a panic, fail the txs instead:
+	// a requeue could resurrect a tx that panics the sequencer in a loop.
 	defer func() {
-		panicErr := recover()
-		if panicErr != nil {
+		if panicErr := recover(); panicErr != nil {
 			log.Error("sequencer block creation panicked", "panic", panicErr, "backtrace", string(debug.Stack()))
 			// Return an internal error to any queue items we were trying to process
-			for _, item := range queueItems {
+			items := orderer.TakeRemaining()
+			if hooks != nil {
+				for _, st := range hooks.sequencedTxs {
+					items = append(items, st.queueItem)
+				}
+			}
+			for _, item := range items {
 				// This can race, but that's alright, worst case is a log line in returnResult
 				if !item.returnedResult.Load() {
 					item.returnResult(sequencerInternalError)
 				}
 			}
+			s.pendingQueueItemsResults = nil
 			// Wait for the MaxBlockSpeed until attempting to create a block again
-			returnValue = true
+			throttleRegularSequencingFor = config.MaxBlockSpeed
+			return
+		}
+		for _, item := range orderer.TakeRemaining() {
+			s.txRetryQueue.Push(item)
 		}
 	}()
 	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
 
-	config := s.config()
-	lastBlock := s.execEngine.bc.CurrentBlock()
-
-	// Clear out old nonceFailures
-	s.nonceFailures.Resize(config.NonceFailureCacheSize)
-	nextNonceExpiryTimer := s.expireNonceFailures()
-	defer func() {
-		// We wrap this in a closure as to not cache the current value of nextNonceExpiryTimer
-		if nextNonceExpiryTimer != nil {
-			nextNonceExpiryTimer.Stop()
-		}
-	}()
-
-	txQueueLen := int64(len(s.txQueue))
-	sequencerQueueGauge.Update(txQueueLen)
-	sequencerQueueHistogram.Update(txQueueLen)
-
-	var startOfReadingFromTxQueue time.Time
-	startOfBlockCreation := time.Now()
-	for {
-		if len(queueItems) == 1 {
-			startOfReadingFromTxQueue = time.Now()
-			waitForFirstTx := time.Since(startOfBlockCreation)
-			if waitForFirstTx < time.Millisecond {
-				// we don't care about the first iteration duration
-				// so to keep history clean we sanitize waits shorter then ms to 0
-				waitForTxHistogram.Update(0)
-			} else {
-				waitForTxHistogram.Update(waitForFirstTx.Nanoseconds())
-			}
-		} else if len(queueItems) > 1 && time.Since(startOfReadingFromTxQueue) > config.ReadFromTxQueueTimeout {
-			break
-		}
-
-		var queueItem txQueueItem
-
-		if s.txRetryQueue.Len() > 0 {
-			select {
-			case queueItem = <-s.timeboostAuctionResolutionTxQueue:
-				log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
-			default:
-				// The txRetryQueue is not modeled as a channel because it is only added to from
-				// this function (Sequencer.createBlock). So it is sufficient to check its
-				// len at the start of this loop, since items can't be added to it asynchronously,
-				// which is not true for the main txQueue or timeboostAuctionResolutionQueue.
-				queueItem = s.txRetryQueue.Pop()
-			}
-		} else if len(queueItems) == 0 {
-			var nextNonceExpiryChan <-chan time.Time
-			if nextNonceExpiryTimer != nil {
-				nextNonceExpiryChan = nextNonceExpiryTimer.C
-			}
-			select {
-			case queueItem = <-s.timeboostAuctionResolutionTxQueue:
-				log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
-			default:
-				select {
-				case queueItem = <-s.txQueue:
-				case queueItem = <-s.timeboostAuctionResolutionTxQueue:
-					log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
-				case <-nextNonceExpiryChan:
-					// No need to stop the previous timer since it already elapsed
-					nextNonceExpiryTimer = s.expireNonceFailures()
-					continue
-				case <-s.onForwarderSet:
-					// Make sure this notification isn't outdated
-					_, forwarder := s.GetPauseAndForwarder()
-					if forwarder != nil {
-						s.nonceFailures.Clear()
-					}
-					continue
-				case <-ctx.Done():
-					return false
-				}
-			}
-		} else {
-			done := false
-			select {
-			case queueItem = <-s.timeboostAuctionResolutionTxQueue:
-				log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
-			default:
-				select {
-				case queueItem = <-s.txQueue:
-				case queueItem = <-s.timeboostAuctionResolutionTxQueue:
-					log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
-				default:
-					done = true
-				}
-			}
-			if done {
-				break
-			}
-		}
-		err := queueItem.ctx.Err()
-		if err != nil {
-			queueItem.returnResult(err)
-			continue
-		}
-		if queueItem.txSize > config.MaxTxDataSize {
-			// This tx is too large
-			queueItem.returnResult(txpool.ErrOversizedData)
-			continue
-		}
-		if queueItem.isTimeboosted &&
-			queueItem.blockStamp != 0 &&
-			lastBlock.Number.Uint64() >= queueItem.blockStamp+config.Timeboost.QueueTimeoutInBlocks {
-			err := fmt.Errorf("timeboosted tx: %s has hit block based timeout. currentBlockNum: %d, blockStamp: %d, blockExpiry: %d",
-				queueItem.tx.Hash(),
-				lastBlock.Number.Uint64()+1,
-				queueItem.blockStamp,
-				queueItem.blockStamp+config.Timeboost.QueueTimeoutInBlocks,
-			)
-			queueItem.returnResult(err) // this isn't read by anyone, so we log
-			log.Info("Error sequencing timeboost tx", "err", err)
-			continue
-		}
-		if arbmath.BigLessThan(queueItem.tx.GasFeeCap(), lastBlock.BaseFee) {
-			queueItem.returnResult(fmt.Errorf("%w: maxFeePerGas: %s baseFee: %s", core.ErrFeeCapTooLow, queueItem.tx.GasFeeCap(), lastBlock.BaseFee))
-			continue
-		}
-		queueItems = append(queueItems, queueItem)
+	if ctx.Err() != nil {
+		// Context canceled; retry promptly.
+		return nil, 0
 	}
 
+	if forwarder != nil {
+		// We are forwarding (no longer the active sequencer); do not sequence locally.
+		// backgroundForwarder drains and forwards the pending txs on its own thread.
+		return nil, config.MaxBlockSpeed
+	}
+
+	// Reset the nonce cache before the nonce precheck inside the orderer's StartBlock drain.
 	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
 	s.nonceCache.BeginNewBlock()
-	queueItems = s.precheckNonces(queueItems)
-	timeboostedTxs := make(map[common.Hash]struct{})
-	maxTxDataSize := s.config().MaxTxDataSize
-	hooks := MakeSequencingHooks(
-		queueItems,
-		maxTxDataSize,
-		s.preTxFilter,
-		s.postTxFilter,
-		nil,
+
+	if !orderer.StartBlock() {
+		// No regular txs to sequence right now; re-check on the idle poll
+		// cadence rather than waiting a full block interval. This matches the
+		// wait decideSequencingTurn uses when there is no pending work.
+		return nil, min(config.PollInterval, config.MaxBlockSpeed)
+	}
+
+	hooks = MakeSequencingHooks(
+		orderer,
+		config.MaxTxDataSize,
+		s,
+		s.execEngine.transactionBroadcaster,
 	)
-
-	for _, queueItem := range queueItems {
-		if queueItem.isTimeboosted {
-			timeboostedTxs[queueItem.tx.Hash()] = struct{}{}
-		}
-	}
-
-	if s.handleInactive(ctx, queueItems) {
-		return false
-	}
 
 	timestamp := time.Now().Unix()
 	s.L1BlockAndTimeMutex.Lock()
@@ -1457,9 +1253,6 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	s.L1BlockAndTimeMutex.Unlock()
 
 	if s.l1Reader != nil && (l1Block == 0 || math.Abs(float64(l1Timestamp)-float64(timestamp)) > config.MaxAcceptableTimestampDelta.Seconds()) {
-		for _, queueItem := range queueItems {
-			s.txRetryQueue.Push(queueItem)
-		}
 		// #nosec G115
 		log.Error(
 			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
@@ -1467,7 +1260,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			"l1Timestamp", time.Unix(int64(l1Timestamp), 0),
 			"localTimestamp", time.Unix(timestamp, 0),
 		)
-		return true
+		return nil, config.MaxBlockSpeed
 	}
 
 	header := &arbostypes.L1IncomingMessageHeader{
@@ -1487,15 +1280,15 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		err   error
 	)
 	if config.EnableProfiling {
-		block, err = s.execEngine.SequenceTransactionsWithProfiling(header, hooks, timeboostedTxs)
+		sequencedMsg, block, err = s.execEngine.SequenceTransactionsWithProfiling(header, hooks)
 	} else {
-		block, err = s.execEngine.SequenceTransactions(header, hooks, timeboostedTxs)
+		sequencedMsg, block, err = s.execEngine.SequenceTransactions(header, hooks)
 	}
 
 	if len(s.pendingFilteredTxReports) > 0 && s.execEngine.filteringReportRPCClient != nil {
 		reports := s.pendingFilteredTxReports
 		s.LaunchThread(func(ctx context.Context) {
-			if _, err := s.execEngine.filteringReportRPCClient.ReportFilteredTransactions(reports).Await(ctx); err != nil {
+			if _, err := s.execEngine.filteringReportRPCClient.ReportFilteredTransactions(ReportProducerSequencer, reports).Await(ctx); err != nil {
 				log.Error("failed to report filtered transactions", "count", len(reports), "err", err)
 			}
 		})
@@ -1508,92 +1301,135 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		if block != nil {
 			blockNum = block.Number()
 		}
-		log.Warn("took over 5 seconds to sequence a block", "elapsed", elapsed, "numTxes", hooks.sequencedQueueItemsCount, "success", block != nil, "l2Block", blockNum)
-	}
-	if err == nil {
-		if len(hooks.txErrors) != hooks.sequencedQueueItemsCount { // This is not supposed to happen, if so we have a bug
-			err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.txErrors), hooks.sequencedQueueItemsCount)
-		} else {
-			for i := hooks.sequencedQueueItemsCount; i < len(hooks.queueItems); i++ {
-				s.txRetryQueue.Push(hooks.queueItems[i])
-			}
-		}
-	}
-	if errors.Is(err, execution.ErrRetrySequencer) {
-		log.Warn("error sequencing transactions", "err", err)
-		// we changed roles
-		// forward if we have where to
-		if s.handleInactive(ctx, queueItems) {
-			return false
-		}
-		// try to add back to queue otherwise
-		for _, item := range queueItems {
-			s.txRetryQueue.Push(item)
-		}
-		return false
+		log.Warn("took over 5 seconds to sequence a block", "elapsed", elapsed, "numTxes", len(hooks.sequencedTxs), "success", block != nil, "l2Block", blockNum)
 	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			// thread closed. We'll later try to forward these messages.
-			for _, item := range queueItems {
-				s.txRetryQueue.Push(item)
+			for _, st := range hooks.sequencedTxs {
+				s.txRetryQueue.Push(st.queueItem)
 			}
-			return true // don't return failure to avoid retrying immediately
+			return nil, config.MaxBlockSpeed // don't return failure to avoid retrying immediately
 		}
 		log.Error("error sequencing transactions", "err", err)
-		for _, queueItem := range queueItems {
+		for _, st := range hooks.sequencedTxs {
+			st.queueItem.returnResult(err)
+		}
+		for _, queueItem := range orderer.TakeRemaining() {
 			queueItem.returnResult(err)
 		}
-		return false
-	}
-
-	if block != nil {
-		successfulBlocksCounter.Inc(1)
-		s.nonceCache.Finalize(block)
+		return nil, 0
 	}
 
 	madeBlock := false
-	var blockTxSize int64
-	blockGasLimitReached := false
-	for i, err := range hooks.txErrors {
-		queueItem := queueItems[i]
-		if err == nil {
+	for _, st := range hooks.sequencedTxs {
+		if st.err == nil {
 			madeBlock = true
-			blockTxSize += int64(queueItem.txSize)
-			txSizeHistogram.Update(int64(queueItem.txSize))
 		}
-		if errors.Is(err, core.ErrGasLimitReached) {
-			// There's not enough gas left in the block for this tx.
-			if madeBlock {
-				blockGasLimitReached = true
-				// There was already an earlier tx in the block; retry in a fresh block.
-				s.txRetryQueue.Push(queueItem)
+	}
+
+	s.pendingQueueItemsResults = &pendingQueueItemsResults{
+		block: block,
+		hooks: hooks,
+	}
+
+	if madeBlock {
+		// Rate-limit block production to at most one block per MaxBlockSpeed.
+		return sequencedMsg, config.MaxBlockSpeed
+	}
+	// Items were present but no block was produced (e.g. all txs failed this
+	// round); retry promptly.
+	return sequencedMsg, 0
+}
+
+func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error) {
+	s.createBlockMutex.Lock()
+	defer s.createBlockMutex.Unlock()
+
+	// The staged results are consumed on every path below; clearing them in one
+	// place keeps a no-op turn's EndSequencing from re-processing stale results.
+	defer func() { s.pendingQueueItemsResults = nil }()
+
+	if s.pendingDelayedMsgCommit {
+		s.pendingDelayedMsgCommit = false
+		if errWhileSequencing == nil {
+			// The block was durably written; remove the delayed message now.
+			s.execEngine.popSequencedDelayedMessage()
+		}
+		// On error (e.g. ErrRetrySequencer) leave the message queued for retry.
+		return
+	}
+
+	if s.pendingQueueItemsResults == nil {
+		return
+	}
+
+	// The block is done, so retries below go straight to the retry queue.
+	hooks := s.pendingQueueItemsResults.hooks
+
+	if errors.Is(errWhileSequencing, execution.ErrRetrySequencer) {
+		// Requeue for the next attempt; if we are no longer the active sequencer, the next
+		// backgroundForwarder tick forwards the retry queue, outside the createBlockMutex.
+		for _, st := range hooks.sequencedTxs {
+			s.txRetryQueue.Push(st.queueItem)
+		}
+		return
+	}
+
+	if errWhileSequencing != nil {
+		for _, st := range hooks.sequencedTxs {
+			st.queueItem.returnResult(errWhileSequencing)
+		}
+	} else {
+		if s.pendingQueueItemsResults.block != nil {
+			successfulBlocksCounter.Inc(1)
+			s.nonceCache.Finalize(s.pendingQueueItemsResults.block)
+		}
+
+		madeBlock := false
+		var blockTxSize int64
+		blockGasLimitReached := false
+		for _, st := range hooks.sequencedTxs {
+			queueItem := st.queueItem
+			err := st.err
+			if err == nil {
+				madeBlock = true
+				blockTxSize += int64(queueItem.txSize)
+				txSizeHistogram.Update(int64(queueItem.txSize))
+			}
+			if errors.Is(err, core.ErrGasLimitReached) {
+				// There's not enough gas left in the block for this tx.
+				if madeBlock {
+					blockGasLimitReached = true
+					// There was already an earlier tx in the block; retry in a fresh block.
+					s.txRetryQueue.Push(queueItem)
+					continue
+				}
+			}
+			if errors.Is(err, core.ErrIntrinsicGas) {
+				// Strip additional information, as it's incorrect due to L1 data gas.
+				err = core.ErrIntrinsicGas
+			}
+			var nonceError NonceError
+			if errors.As(err, &nonceError) && nonceError.txNonce > nonceError.stateNonce {
+				s.nonceFailures.Add(nonceError, queueItem)
 				continue
 			}
+			queueItem.returnResult(err)
 		}
-		if errors.Is(err, core.ErrIntrinsicGas) {
-			// Strip additional information, as it's incorrect due to L1 data gas.
-			err = core.ErrIntrinsicGas
-		}
-		var nonceError NonceError
-		if errors.As(err, &nonceError) && nonceError.txNonce > nonceError.stateNonce {
-			s.nonceFailures.Add(nonceError, queueItem)
-			continue
-		}
-		queueItem.returnResult(err)
-	}
-	if madeBlock {
-		blockTxSizeHistogram.Update(blockTxSize)
-		if hooks.txSizeLimitReached {
-			dataLimitedBlocksCounter.Inc(1)
-		} else if blockGasLimitReached {
-			gasLimitedBlocksCounter.Inc(1)
-		} else {
-			// no transactions were skipped due to block size or gas limit
-			txExhaustedBlocksCounter.Inc(1)
+
+		if madeBlock {
+			blockTxSizeHistogram.Update(blockTxSize)
+			if hooks.txSizeLimitReached {
+				dataLimitedBlocksCounter.Inc(1)
+			} else if blockGasLimitReached {
+				gasLimitedBlocksCounter.Inc(1)
+			} else {
+				// no transactions were skipped due to block size or gas limit
+				txExhaustedBlocksCounter.Inc(1)
+			}
 		}
 	}
-	return madeBlock
 }
 
 func (s *Sequencer) updateLatestParentChainBlock(header *types.Header) {
@@ -1754,6 +1590,27 @@ func (s *Sequencer) StartExpressLaneService(ctx context.Context) {
 	}
 }
 
+func (s *Sequencer) backgroundForwarder(_ context.Context) time.Duration {
+	config := s.config()
+	txQueueLen := int64(len(s.txQueue))
+	sequencerQueueGauge.Update(txQueueLen)
+	sequencerQueueHistogram.Update(txQueueLen)
+
+	forwarder := s.getForwarder()
+	if forwarder != nil {
+		queueItems := s.drainQueueItems()
+		s.handleInactive(forwarder, queueItems)
+	} else {
+		// StartSequencing turns are not guaranteed (paused without a forwarder,
+		// or sequencing yielding while exec catches up); expire here so parked
+		// nonce-gap txs get their prompt nonce error instead of waiting out the
+		// queue-timeout abort.
+		s.nonceFailures.Resize(config.NonceFailureCacheSize)
+		s.expireNonceFailures()
+	}
+	return config.PollInterval
+}
+
 func (s *Sequencer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
 
@@ -1810,35 +1667,54 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 		})
 	}
 
-	s.CallIteratively(func(ctx context.Context) time.Duration {
-		nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
-		if s.createBlock(ctx) {
-			// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
-			return time.Until(nextBlock)
-		}
-		// If we didn't make a block, try again immediately.
-		return 0
-	})
+	s.CallIteratively(s.backgroundForwarder)
 
 	return nil
 }
 
-type TxSource int
+func (s *Sequencer) hasPendingRegularTxs() bool {
+	return s.txRetryQueue.Len() > 0 ||
+		len(s.txQueue) > 0 ||
+		len(s.timeboostAuctionResolutionTxQueue) > 0
+}
 
-const (
-	RetryQueue TxSource = iota + 1
-	NonceFailures
-	TxQueue
-	TimeboostAuctionResolutionTxQueue
-)
+func (s *Sequencer) StartSequencing(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
+	s.pendingDelayedMsgCommit = false
+	config := s.config()
 
-var txSources = []string{"unknown", "retryQueue", "nonceFailures", "txQueue", "timeboostAuctionResolutionTxQueue"}
+	// Service the nonceFailures cache every turn, regardless of which turn is
+	// taken (or none), so stuck entries are expired even when there are no other
+	// pending regular txs.
+	s.createBlockMutex.Lock()
+	s.nonceFailures.Resize(config.NonceFailureCacheSize)
+	s.expireNonceFailures()
+	s.createBlockMutex.Unlock()
 
-func (s TxSource) String() string {
-	if int(s) > len(txSources) || s < 0 {
-		return txSources[0]
+	now := time.Now()
+	turn, wait := decideSequencingTurn(
+		s.sequencingState,
+		s.hasPendingRegularTxs(),
+		s.execEngine.hasPendingDelayedMsgs(),
+		now,
+		min(config.PollInterval, config.MaxBlockSpeed),
+	)
+	switch turn {
+	case regularSequencingTurn:
+		sequencedMsg, throttleRegularSequencingFor := s.createBlockWithRegularTxs(ctx)
+		s.sequencingState = sequencingStateAfterRegularSequencing(s.sequencingState, throttleRegularSequencingFor, now)
+		return sequencedMsg, 0
+	case delayedSequencingTurn:
+		sequencedMsg, err := s.execEngine.SequenceDelayedMessage()
+		producedMsg := err == nil && sequencedMsg != nil
+		s.pendingDelayedMsgCommit = producedMsg
+		s.sequencingState = sequencingStateAfterDelayedSequencing(s.sequencingState, producedMsg, now, config.MaxBlockSpeed)
+		if err != nil {
+			return nil, 0
+		}
+		return sequencedMsg, 0
+	default:
+		return nil, wait
 	}
-	return txSources[s]
 }
 
 func (s *Sequencer) StopAndWait() {
@@ -1860,56 +1736,56 @@ func (s *Sequencer) StopAndWait() {
 		"retryQueue", s.txRetryQueue.Len(),
 		"nonceFailures", s.nonceFailures.Len(),
 		"timeboostAuctionResolutionTxQueue", len(s.timeboostAuctionResolutionTxQueue))
-	_, forwarder := s.GetPauseAndForwarder()
-	if forwarder != nil {
-		var wg sync.WaitGroup
-	emptyqueues:
-		for {
-			var item txQueueItem
-			var source TxSource
-			if s.txRetryQueue.Len() > 0 {
-				item = s.txRetryQueue.Pop()
-				source = RetryQueue
-			} else if s.nonceFailures.Len() > 0 {
-				_, failure, _ := s.nonceFailures.GetOldest()
-				failure.revived = true
-				item = failure.queueItem
-				source = NonceFailures
-				s.nonceFailures.RemoveOldest()
-			} else {
-				select {
-				case item = <-s.txQueue:
-					source = TxQueue
-				case item = <-s.timeboostAuctionResolutionTxQueue:
-					source = TimeboostAuctionResolutionTxQueue
-				default:
-					break emptyqueues
-				}
-			}
-			wg.Add(1)
-			go func(it txQueueItem, src TxSource) {
-				defer wg.Done()
-				var err error
-				if src == TimeboostAuctionResolutionTxQueue {
-					err = forwarder.PublishAuctionResolutionTransaction(it.ctx, it.tx)
-				} else {
-					err = forwarder.PublishTransaction(it.ctx, it.tx, it.options)
-				}
-				if err != nil {
-					log.Warn("failed to forward transaction while shutting down", "source", src.String(), "err", err)
-				}
-			}(item, source)
+	forwarder := s.getForwarder()
+	if forwarder == nil {
+		return
+	}
+	// Bound the whole drain: a hung forwarding target must not hang shutdown.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// The existing forwarder runs on the sequencer's StopWaiter context, which
+	// was canceled above, so its publishes would fail immediately. Create a
+	// fresh forwarder on the shutdown context for the final drain.
+	forwarder = NewForwarder(forwarder.targets, &s.config().Forwarder)
+	if err := forwarder.Initialize(shutdownCtx); err != nil {
+		log.Error("failed to initialize the shutdown forwarder; failing the queued transactions", "err", err)
+		s.failQueuedItems()
+		return
+	}
+	defer forwarder.StopAndWait()
+	// Drain in a loop: txs may be enqueued while a batch is being forwarded.
+	for shutdownCtx.Err() == nil {
+		queueItems := s.drainQueueItems()
+		if len(queueItems) == 0 && s.nonceFailures.Len() == 0 {
+			return
 		}
-		wg.Wait()
+		s.handleInactive(forwarder, queueItems)
+	}
+	log.Error("gave up draining the queues while shutting down; some transactions were not forwarded",
+		"txQueue", len(s.txQueue),
+		"retryQueue", s.txRetryQueue.Len(),
+		"nonceFailures", s.nonceFailures.Len(),
+		"timeboostAuctionResolutionTxQueue", len(s.timeboostAuctionResolutionTxQueue))
+}
+
+// failQueuedItems resolves every queued tx and parked nonce failure with ErrNoSequencer so
+// submitters fail fast instead of waiting out their abort deadlines.
+func (s *Sequencer) failQueuedItems() {
+	for _, item := range s.drainQueueItems() {
+		item.returnResult(ErrNoSequencer)
+	}
+	for {
+		failure, ok := s.nonceFailures.TakeOldest()
+		if !ok {
+			return
+		}
+		failure.queueItem.returnResult(ErrNoSequencer)
 	}
 }
 
-// SequenceTransactionsForTest sequences the given transactions in a single block,
-// using the sequencer's real preTxFilter and postTxFilter. This bypasses the
-// txQueue, guaranteeing all transactions land in the same block.
-func (s *Sequencer) SequenceTransactionsForTest(t *testing.T, txes types.Transactions) (*types.Block, []error) {
+func (s *Sequencer) MakeSameBlockSequencingHooksAndHeaderForTest(t *testing.T, txes types.Transactions) (*arbostypes.L1IncomingMessageHeader, *FullSequencingHooks) {
 	t.Helper()
-	hooks := MakeZeroTxSizeSequencingHooksForTesting(txes, s.preTxFilter, s.postTxFilter, nil)
+	hooks := MakeZeroTxSizeSequencingHooksForTesting(txes, s, nil)
 
 	s.L1BlockAndTimeMutex.Lock()
 	l1Block := s.l1BlockNumber.Load()
@@ -1923,24 +1799,21 @@ func (s *Sequencer) SequenceTransactionsForTest(t *testing.T, txes types.Transac
 	}
 
 	s.pendingFilteredTxReports = nil
-	block, err := s.execEngine.SequenceTransactions(header, hooks, nil)
-	if err != nil {
-		t.Fatalf("SequenceTransactionsForTest: %v", err)
-	}
 
-	// Mirror createBlock: dispatch any reports accumulated by preTxFilter so
-	// tests inspecting the filtering-report endpoint observe them.
+	return header, hooks
+}
+
+func (s *Sequencer) DispatchPendingFilteredTxReportsForTest(t *testing.T) {
+	t.Helper()
 	if len(s.pendingFilteredTxReports) > 0 && s.execEngine.filteringReportRPCClient != nil {
 		reports := s.pendingFilteredTxReports
 		s.LaunchThread(func(ctx context.Context) {
-			if _, err := s.execEngine.filteringReportRPCClient.ReportFilteredTransactions(reports).Await(ctx); err != nil {
+			if _, err := s.execEngine.filteringReportRPCClient.ReportFilteredTransactions(ReportProducerSequencer, reports).Await(ctx); err != nil {
 				log.Error("failed to report filtered transactions", "count", len(reports), "err", err)
 			}
 		})
 	}
 	s.pendingFilteredTxReports = nil
-
-	return block, hooks.GetTxErrors()
 }
 
 func (s *Sequencer) SetAddressFilterServiceForTest(t *testing.T, service *addressfilter.FilterService) {

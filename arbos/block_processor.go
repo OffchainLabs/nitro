@@ -92,10 +92,25 @@ type blockBuildState struct {
 	activeGroupCP        *groupCheckpoint
 }
 
+// txCheckpoint is the rollback state captured before a tx runs: the state snapshot
+// plus a copy of the Stylus warm-start cache
+type txCheckpoint struct {
+	snap        int
+	recentWasms *state.RecentWasms
+}
+
+// restore rolls statedb back to this checkpoint: the state snapshot, and the
+// warm-start cache only if it was captured
+func (c txCheckpoint) restore(statedb *state.StateDB) {
+	statedb.RevertToSnapshot(c.snap)
+	if c.recentWasms != nil {
+		statedb.RestoreRecentWasms(*c.recentWasms)
+	}
+}
+
 // lint:require-exhaustive-initialization
 type groupCheckpoint struct {
 	backup               *state.StateDB
-	snap                 int
 	headerGasUsed        uint64
 	blockGasLeft         uint64
 	expectedBalanceDelta *big.Int
@@ -103,19 +118,19 @@ type groupCheckpoint struct {
 	completeLen          int
 	receiptsLen          int
 	userTx               *types.Transaction
+	txCheckpoint         txCheckpoint
 }
 
 // saveGroupCheckpoint snapshots the loop state so the entire tx group can be
 // rolled back if a descendant redeem is filtered. header is passed separately
 // because only GasUsed is checkpointed; the rest of the header is immutable
 // during the loop.
-func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, userTx *types.Transaction) error {
+func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, checkpoint txCheckpoint, userTx *types.Transaction) error {
 	if len(s.redeems) != 0 {
 		return errors.New("saveGroupCheckpoint called with pending redeems")
 	}
 	s.activeGroupCP = &groupCheckpoint{
 		backup:               s.statedb.Copy(),
-		snap:                 snap,
 		headerGasUsed:        header.GasUsed,
 		blockGasLeft:         s.blockGasLeft,
 		expectedBalanceDelta: new(big.Int).Set(s.expectedBalanceDelta),
@@ -123,6 +138,7 @@ func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, us
 		completeLen:          len(s.complete),
 		receiptsLen:          len(s.receipts),
 		userTx:               userTx,
+		txCheckpoint:         checkpoint,
 	}
 	return nil
 }
@@ -132,7 +148,9 @@ func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, snap int, us
 // GasUsed, which lives outside blockBuildState.
 func (s *blockBuildState) rollbackToGroupCheckpoint(header *types.Header) error {
 	cp := s.activeGroupCP
-	cp.backup.RevertToSnapshot(cp.snap)
+	// Roll the backup back to before the user tx ran (state + warm-start cache),
+	// then make it live; its redeems warmed only the now-discarded live statedb.
+	cp.txCheckpoint.restore(cp.backup)
 	s.statedb = cp.backup
 	header.GasUsed = cp.headerGasUsed
 	s.blockGasLeft = cp.blockGasLeft
@@ -211,7 +229,22 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, baseFee *big.Int,
 
 type ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
 
+// TxFilter rejects individual txs before and after execution.
+type TxFilter interface {
+	// PreTxFilter rejects a tx before execution. Only called for user txs.
+	PreTxFilter(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info, int) error
+	// PostTxFilter rejects a tx after execution. Not called for internal txs.
+	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error
+}
+
+// BlockFilter rejects an entire block after all txs have been applied.
+type BlockFilter interface {
+	BlockFilter(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
+}
+
 type SequencingHooks interface {
+	TxFilter
+	BlockFilter
 	// NextTxToSequence returns the next tx to include, or nil when done.
 	NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error)
 	// CanDiscardTx returns whether failed txs can be excluded from the block.
@@ -220,16 +253,13 @@ type SequencingHooks interface {
 	// SupportsGroupRollback returns whether the hooks support checkpointing and
 	// rolling back a group of transactions (user tx + its scheduled redeems).
 	SupportsGroupRollback() bool
-	// PreTxFilter rejects a tx before execution.
-	PreTxFilter(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info, int) error
-	// PostTxFilter rejects a tx after execution.
-	PostTxFilter(*types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult, int) error
-	// BlockFilter rejects an entire block after all txs have been applied.
-	BlockFilter(*types.Header, *state.StateDB, types.Transactions, types.Receipts) error
 	// TxSucceeded records that the last user tx from NextTxToSequence executed successfully.
 	TxSucceeded()
 	// TxFailed records an error for the last user tx from NextTxToSequence.
 	TxFailed(error)
+	// TxAccepted is called for each transaction appended to the block under construction
+	// (grouped txs are reported once their group completes; the block may still fail afterwards).
+	TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt)
 }
 
 type NoopSequencingHooks struct {
@@ -266,6 +296,9 @@ func (n *NoopSequencingHooks) BlockFilter(header *types.Header, db *state.StateD
 func (n *NoopSequencingHooks) TxSucceeded() {}
 
 func (n *NoopSequencingHooks) TxFailed(error) {}
+
+func (n *NoopSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt) {
+}
 
 func (n *NoopSequencingHooks) SupportsGroupRollback() bool { return false }
 
@@ -369,6 +402,18 @@ func ProduceBlockAdvanced(
 		activeGroupCP:        nil,
 	}
 
+	emitGroupAccepted := func() {
+		if buildState.activeGroupCP == nil {
+			log.Warn("emitGroupAccepted was called with no active group checkpoint")
+			return
+		}
+		// activeGroupCP.completeLen is the index in complete of the group's
+		// first tx
+		for i := buildState.activeGroupCP.completeLen; i < len(buildState.complete); i++ {
+			sequencingHooks.TxAccepted(header, buildState.complete[i], buildState.receipts[i])
+		}
+	}
+
 	for {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
@@ -395,6 +440,7 @@ func ProduceBlockAdvanced(
 			// Previous group (if any) completed successfully
 			if buildState.activeGroupCP != nil {
 				sequencingHooks.TxSucceeded()
+				emitGroupAccepted()
 			}
 			buildState.clearGroupCheckpoint()
 			var conditionalOptions *arbitrum_types.ConditionalOptions
@@ -490,6 +536,14 @@ func ProduceBlockAdvanced(
 			snap := buildState.statedb.Snapshot()
 			buildState.statedb.SetTxContext(tx.Hash(), len(buildState.receipts)) // the number of successful state transitions
 
+			// Also snapshot the warm-start cache so a dropped or rolled-back tx that warmed a
+			// program leaves nothing behind for later included txs
+			checkpoint := txCheckpoint{snap: snap}
+			if sequencingHooks.CanDiscardTx() || sequencingHooks.SupportsGroupRollback() {
+				rw := buildState.statedb.GetRecentWasms().Copy()
+				checkpoint.recentWasms = &rw
+			}
+
 			gasPool := gethGas
 			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
 			evm := vm.NewEVM(blockContext, buildState.statedb, chainConfig, vm.Config{ExposeMultiGas: exposeMultiGas})
@@ -502,15 +556,17 @@ func ProduceBlockAdvanced(
 				&header.GasUsed,
 				runCtx,
 				func(result *core.ExecutionResult) error {
-					if err := sequencingHooks.PostTxFilter(header, buildState.statedb, buildState.arbState, tx, sender, dataGas, result, len(buildState.receipts)); err != nil {
-						return err
+					if tx.Type() != types.ArbitrumInternalTxType {
+						if err := sequencingHooks.PostTxFilter(header, buildState.statedb, buildState.arbState, tx, sender, dataGas, result, len(buildState.receipts)); err != nil {
+							return err
+						}
 					}
 					// Additional post-transaction validity check
 					if err = extraPostTxFilter(chainConfig, header, buildState.statedb, buildState.arbState, tx, options, sender, l1Info, result); err != nil {
 						return err
 					}
 					if isUserTx && len(result.ScheduledTxes) > 0 && sequencingHooks.SupportsGroupRollback() {
-						if err := buildState.saveGroupCheckpoint(header, snap, tx); err != nil {
+						if err := buildState.saveGroupCheckpoint(header, checkpoint, tx); err != nil {
 							return err
 						}
 					}
@@ -518,8 +574,9 @@ func ProduceBlockAdvanced(
 				},
 			)
 			if err != nil {
-				// Ignore this transaction if it's invalid under the state transition function
-				buildState.statedb.RevertToSnapshot(snap)
+				// Ignore this transaction if it's invalid under the state transition
+				// function; restore also undoes any warm-start it left behind.
+				checkpoint.restore(buildState.statedb)
 				buildState.statedb.ClearTxFilter()
 				return nil, nil, err
 			}
@@ -531,7 +588,7 @@ func ProduceBlockAdvanced(
 			// If a redeem was rejected by the address filter and we have an
 			// active group checkpoint, roll back the entire group (user tx + all
 			// redeems) to the pre-group state.
-			if !isUserTx && buildState.activeGroupCP != nil && errors.Is(err, state.ErrArbTxFilter) {
+			if !isUserTx && buildState.activeGroupCP != nil && errors.Is(err, state.ErrSeqFilter) {
 				// Capture everything before rollback — addressCheckerStateß
 				cp := buildState.activeGroupCP
 				_, filteredAddresses := buildState.statedb.IsAddressFiltered()
@@ -665,16 +722,21 @@ func ProduceBlockAdvanced(
 		if isUserTx {
 			if buildState.activeGroupCP == nil {
 				sequencingHooks.TxSucceeded()
+				sequencingHooks.TxAccepted(header, tx, receipt)
 			}
+
 			buildState.userTxsProcessed++
+		} else if tx.Type() == types.ArbitrumInternalTxType {
+			sequencingHooks.TxAccepted(header, tx, receipt)
 		} else if buildState.activeGroupCP != nil && len(buildState.redeems) == 0 {
-			buildState.activeGroupCP = nil
 			sequencingHooks.TxSucceeded()
+			emitGroupAccepted()
+			buildState.clearGroupCheckpoint()
 		}
 	}
 
 	if buildState.statedb.IsTxFiltered() {
-		return nil, nil, nil, state.ErrArbTxFilter
+		return nil, nil, nil, state.ErrSeqFilter
 	}
 
 	if err = sequencingHooks.BlockFilter(header, buildState.statedb, buildState.complete, buildState.receipts); err != nil {

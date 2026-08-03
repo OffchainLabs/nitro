@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	dataposterconfig "github.com/offchainlabs/nitro/arbnode/dataposter/config"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/db/read"
 	"github.com/offchainlabs/nitro/arbnode/db/schema"
@@ -33,7 +34,6 @@ import (
 	nitroversionalerter "github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
@@ -70,18 +70,19 @@ import (
 var FailedToUseArbGetL1ConfirmationsRPCFromParentChainLogMsg = "Failed to get L1 confirmations from parent chain via arb_getL1Confirmations"
 
 type Config struct {
-	Sequencer         bool                              `koanf:"sequencer"`
-	ParentChainReader headerreader.Config               `koanf:"parent-chain-reader" reload:"hot"`
-	InboxReader       InboxReaderConfig                 `koanf:"inbox-reader" reload:"hot"`
-	DelayedSequencer  DelayedSequencerConfig            `koanf:"delayed-sequencer" reload:"hot"`
-	BatchPoster       BatchPosterConfig                 `koanf:"batch-poster" reload:"hot"`
-	MessagePruner     MessagePrunerConfig               `koanf:"message-pruner" reload:"hot"`
-	MessageExtraction melrunner.MessageExtractionConfig `koanf:"message-extraction" reload:"hot"`
-	BlockValidator    staker.BlockValidatorConfig       `koanf:"block-validator" reload:"hot"`
-	Feed              broadcastclient.FeedConfig        `koanf:"feed" reload:"hot"`
-	Staker            legacystaker.L1ValidatorConfig    `koanf:"staker" reload:"hot"`
-	Bold              bold.BoldConfig                   `koanf:"bold"`
-	SeqCoordinator    SeqCoordinatorConfig              `koanf:"seq-coordinator"`
+	Sequencer             bool                              `koanf:"sequencer"`
+	ParentChainReader     headerreader.Config               `koanf:"parent-chain-reader" reload:"hot"`
+	InboxReader           InboxReaderConfig                 `koanf:"inbox-reader" reload:"hot"`
+	DelayedSequencer      DelayedSequencerConfig            `koanf:"delayed-sequencer" reload:"hot"`
+	BatchPoster           BatchPosterConfig                 `koanf:"batch-poster" reload:"hot"`
+	MessagePruner         MessagePrunerConfig               `koanf:"message-pruner" reload:"hot"`
+	BlockRecordingsPruner BlockRecordingsPrunerConfig       `koanf:"block-recordings-pruner" reload:"hot"`
+	MessageExtraction     melrunner.MessageExtractionConfig `koanf:"message-extraction" reload:"hot"`
+	BlockValidator        staker.BlockValidatorConfig       `koanf:"block-validator" reload:"hot"`
+	Feed                  broadcastclient.FeedConfig        `koanf:"feed" reload:"hot"`
+	Staker                legacystaker.L1ValidatorConfig    `koanf:"staker" reload:"hot"`
+	Bold                  bold.BoldConfig                   `koanf:"bold"`
+	SeqCoordinator        SeqCoordinatorConfig              `koanf:"seq-coordinator"`
 	// Deprecated: Use DA.AnyTrust instead. Will be removed in a future release.
 	DataAvailability         anytrust.Config                  `koanf:"data-availability"`
 	DA                       daconfig.DAConfig                `koanf:"da" reload:"hot"`
@@ -135,6 +136,15 @@ func (c *Config) Validate() error {
 	if err := c.DA.Validate(); err != nil {
 		return err
 	}
+	if c.Dangerous.AlwaysFallbackToParentChainDA && c.MessageExtraction.Enable {
+		return errors.New("dangerous always-fallback-to-parent-chain-da is not supported with message-extraction.enable=true")
+	}
+	if c.Dangerous.AlwaysFallbackToParentChainDA && !c.DA.AnyTrust.Enable {
+		return errors.New("dangerous always-fallback-to-parent-chain-da requires da.anytrust.enable=true (the flag skips factory wiring but the chain config still requires AnyTrust)")
+	}
+	if c.Dangerous.AlwaysFallbackToParentChainDA && !c.DA.AnyTrust.RestAggregator.Enable && c.BlockValidator.Enable {
+		return errors.New("dangerous always-fallback-to-parent-chain-da with da.anytrust.rest-aggregator.enable=false is incompatible with block-validator.enable=true: the validator cannot fetch preimages for historical AnyTrust batches and will stall silently")
+	}
 	if c.TransactionStreamer.TrackBlockMetadataFrom != 0 && !c.BlockMetadataFetcher.Enable {
 		log.Warn("track-block-metadata-from is set but blockMetadata fetcher is not enabled")
 	}
@@ -178,6 +188,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet, feedInputEnable bool, fee
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
 	MessagePrunerConfigAddOptions(prefix+".message-pruner", f)
+	BlockRecordingsPrunerConfigAddOptions(prefix+".block-recordings-pruner", f)
 	melrunner.MessageExtractionConfigAddOptions(prefix+".message-extraction", f)
 	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
@@ -205,6 +216,7 @@ var ConfigDefault = Config{
 	DelayedSequencer:         DefaultDelayedSequencerConfig,
 	BatchPoster:              DefaultBatchPosterConfig,
 	MessagePruner:            DefaultMessagePrunerConfig,
+	BlockRecordingsPruner:    DefaultBlockRecordingsPrunerConfig,
 	BlockValidator:           staker.DefaultBlockValidatorConfig,
 	Feed:                     broadcastclient.FeedConfigDefault,
 	Staker:                   legacystaker.DefaultL1ValidatorConfig,
@@ -260,6 +272,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
 	config.Bold.MinimumGapToParentAssertion = 0
+	config.BlockRecordingsPruner = TestBlockRecordingsPrunerConfig
 
 	return &config
 }
@@ -281,32 +294,37 @@ func ConfigDefaultL2Test() *Config {
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
 	config.Bold.MinimumGapToParentAssertion = 0
+	config.BlockRecordingsPruner = TestBlockRecordingsPrunerConfig
 
 	return &config
 }
 
 type DangerousConfig struct {
-	NoL1Listener           bool `koanf:"no-l1-listener"`
-	NoSequencerCoordinator bool `koanf:"no-sequencer-coordinator"`
-	DisableBlobReader      bool `koanf:"disable-blob-reader"`
+	NoL1Listener                  bool `koanf:"no-l1-listener"`
+	NoSequencerCoordinator        bool `koanf:"no-sequencer-coordinator"`
+	DisableBlobReader             bool `koanf:"disable-blob-reader"`
+	AlwaysFallbackToParentChainDA bool `koanf:"always-fallback-to-parent-chain-da"`
 }
 
 var DefaultDangerousConfig = DangerousConfig{
-	NoL1Listener:           false,
-	NoSequencerCoordinator: false,
-	DisableBlobReader:      false,
+	NoL1Listener:                  false,
+	NoSequencerCoordinator:        false,
+	DisableBlobReader:             false,
+	AlwaysFallbackToParentChainDA: false,
 }
 
 var TestDangerousConfig = DangerousConfig{
-	NoL1Listener:           false,
-	NoSequencerCoordinator: false,
-	DisableBlobReader:      true,
+	NoL1Listener:                  false,
+	NoSequencerCoordinator:        false,
+	DisableBlobReader:             true,
+	AlwaysFallbackToParentChainDA: false,
 }
 
 func DangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".no-l1-listener", DefaultDangerousConfig.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
 	f.Bool(prefix+".no-sequencer-coordinator", DefaultDangerousConfig.NoSequencerCoordinator, "DANGEROUS! allows sequencing without sequencer-coordinator")
 	f.Bool(prefix+".disable-blob-reader", DefaultDangerousConfig.DisableBlobReader, "DANGEROUS! disables the EIP-4844 blob reader, which is necessary to read batches")
+	f.Bool(prefix+".always-fallback-to-parent-chain-da", DefaultDangerousConfig.AlwaysFallbackToParentChainDA, "DANGEROUS! for chains being retired off AnyTrust: suppresses the AnyTrust writer and halts on any AnyTrust batch when rest-aggregator is disabled")
 }
 
 type Node struct {
@@ -326,6 +344,7 @@ type Node struct {
 	DelayedSequencer         *DelayedSequencer
 	BatchPoster              *BatchPoster
 	MessagePruner            *MessagePruner
+	BlockRecordingsPruner    *BlockRecordingsPruner
 	BlockValidator           *staker.BlockValidator
 	StatelessBlockValidator  *staker.StatelessBlockValidator
 	Staker                   *multiprotocolstaker.MultiProtocolStaker
@@ -398,7 +417,7 @@ func DataposterOnlyUsedToCreateValidatorWalletContract(
 	ctx context.Context,
 	l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts,
-	cfg *dataposter.DataPosterConfig,
+	cfg *dataposterconfig.DataPosterConfig,
 	parentChainID *big.Int,
 ) (*dataposter.DataPoster, error) {
 	cfg.UseNoOpStorage = true
@@ -406,7 +425,7 @@ func DataposterOnlyUsedToCreateValidatorWalletContract(
 		&dataposter.DataPosterOpts{
 			HeaderReader: l1Reader,
 			Auth:         transactOpts,
-			Config: func() *dataposter.DataPosterConfig {
+			Config: func() *dataposterconfig.DataPosterConfig {
 				return cfg
 			},
 			MetadataRetriever: func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
@@ -433,7 +452,7 @@ func StakerDataposter(
 	if err != nil {
 		return nil, fmt.Errorf("creating redis client from url: %w", err)
 	}
-	dpCfg := func() *dataposter.DataPosterConfig {
+	dpCfg := func() *dataposterconfig.DataPosterConfig {
 		return &cfg.Staker.DataPoster
 	}
 	var sender string
@@ -643,7 +662,6 @@ func getDAProviders(
 		}
 	}
 
-	// Create AnyTrust DA provider if enabled (can coexist with external DA)
 	if config.DA.AnyTrust.Enable {
 		// Map deprecated BatchPoster.MaxSize to DA.AnyTrust.MaxBatchSize for backward compatibility
 		if config.BatchPoster.MaxSize != 0 && config.DA.AnyTrust.MaxBatchSize == anytrust.DefaultConfig.MaxBatchSize {
@@ -651,22 +669,40 @@ func getDAProviders(
 			config.DA.AnyTrust.MaxBatchSize = config.BatchPoster.MaxSize
 		}
 
-		log.Info("Creating AnyTrust DA provider", "batchPosterEnabled", config.BatchPoster.Enable)
+		alwaysFallback := config.Dangerous.AlwaysFallbackToParentChainDA
 
-		// Create AnyTrust factory
-		daFactory := anytrust.NewFactory(
+		var mode anytrust.FactoryMode
+		switch {
+		case alwaysFallback:
+			mode = anytrust.ModeRetiring
+		case config.BatchPoster.Enable:
+			mode = anytrust.ModeWriter
+		default:
+			mode = anytrust.ModeReader
+		}
+
+		if alwaysFallback {
+			if config.DA.AnyTrust.RestAggregator.Enable {
+				log.Info("DANGEROUS: always-fallback-to-parent-chain-da is set; AnyTrust writer suppressed; reader continues serving batches via rest-aggregator")
+			} else {
+				log.Error("DANGEROUS: always-fallback-to-parent-chain-da is set and rest-aggregator is disabled; node will halt on any AnyTrust batch encountered")
+			}
+		}
+
+		log.Info("Creating AnyTrust DA provider", "mode", mode)
+
+		daFactory, err := anytrust.NewFactory(
 			&config.DA.AnyTrust,
 			dataSigner,
 			l1client,
 			l1Reader,
 			deployInfo.SequencerInbox,
-			config.BatchPoster.Enable,
+			mode,
 		)
-		log.Info("Created AnyTrust DA factory")
-
-		if err := daFactory.ValidateConfig(); err != nil {
+		if err != nil {
 			return nil, nil, nil, err
 		}
+		log.Info("Created AnyTrust DA factory")
 
 		var localCleanupFuncs []func()
 		reader, readerCleanup, err := daFactory.CreateReader(ctx)
@@ -678,7 +714,7 @@ func getDAProviders(
 		}
 
 		var writer daprovider.Writer
-		if config.BatchPoster.Enable {
+		if mode == anytrust.ModeWriter {
 			var writerCleanup func()
 			writer, writerCleanup, err = daFactory.CreateWriter(ctx)
 			if err != nil {
@@ -694,14 +730,12 @@ func getDAProviders(
 		}
 
 		headerBytes := daFactory.GetSupportedHeaderBytes()
-		// Register AnyTrust reader directly (no validator for AnyTrust)
 		for _, hb := range headerBytes {
 			if err := dapRegistry.Register(hb, reader, nil); err != nil {
 				return nil, nil, nil, fmt.Errorf("failed to register anytrust reader: %w", err)
 			}
 		}
 
-		// Create cleanup function for AnyTrust
 		anytrustCleanup := func() {
 			for _, cleanup := range localCleanupFuncs {
 				cleanup()
@@ -710,8 +744,7 @@ func getDAProviders(
 		cleanupFuncs = append(cleanupFuncs, anytrustCleanup)
 	}
 
-	// Check if chain requires AnyTrust but none is configured
-	// We support a nil txStreamer for the pruning code
+	// We support a nil txStreamer for the pruning code.
 	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee {
 		if !config.DA.AnyTrust.Enable {
 			return nil, nil, nil, errors.New("AnyTrust DA service required but unconfigured")
@@ -754,6 +787,7 @@ func getInboxTrackerAndReader(
 	deployInfo *chaininfo.RollupAddresses,
 	delayedBridge *DelayedBridge,
 	sequencerInbox *SequencerInbox,
+	fatalErrChan chan<- error,
 ) (*InboxTracker, *InboxReader, error) {
 	if config.MessageExtraction.Enable {
 		log.Info("Inbox reader and tracker disabled")
@@ -764,7 +798,7 @@ func getInboxTrackerAndReader(
 		return nil, nil, err
 	}
 	firstMessageBlock := new(big.Int).SetUint64(deployInfo.DeployedAt)
-	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, firstMessageBlock, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, firstMessageBlock, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader }, fatalErrChan)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1024,9 +1058,11 @@ func getStaker(
 	blockValidator *staker.BlockValidator,
 	dapRegistry *daprovider.DAProviderRegistry,
 	messageExtractor *melrunner.MessageExtractor,
-) (*multiprotocolstaker.MultiProtocolStaker, *MessagePruner, common.Address, error) {
+	executionRecorder execution.ExecutionRecorder,
+) (*multiprotocolstaker.MultiProtocolStaker, *MessagePruner, *BlockRecordingsPruner, common.Address, error) {
 	var stakerObj *multiprotocolstaker.MultiProtocolStaker
 	var messagePruner *MessagePruner
+	var blockRecordingsPruner *BlockRecordingsPruner
 	var stakerAddr common.Address
 
 	if config.Staker.Enable {
@@ -1040,7 +1076,7 @@ func getStaker(
 			parentChain,
 		)
 		if err != nil {
-			return nil, nil, common.Address{}, err
+			return nil, nil, nil, common.Address{}, err
 		}
 		getExtraGas := func() uint64 { return configFetcher.Get().Staker.ExtraGas }
 		// TODO: factor this out into separate helper, and split rest of node
@@ -1052,7 +1088,7 @@ func getStaker(
 				if len(config.Staker.ContractWalletAddress) > 0 {
 					if !common.IsHexAddress(config.Staker.ContractWalletAddress) {
 						log.Error("invalid validator smart contract wallet", "addr", config.Staker.ContractWalletAddress)
-						return nil, nil, common.Address{}, errors.New("invalid validator smart contract wallet address")
+						return nil, nil, nil, common.Address{}, errors.New("invalid validator smart contract wallet address")
 					}
 					tmpAddress := common.HexToAddress(config.Staker.ContractWalletAddress)
 					existingWalletAddress = &tmpAddress
@@ -1060,15 +1096,15 @@ func getStaker(
 				// #nosec G115
 				wallet, err = validatorwallet.NewContract(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, getExtraGas)
 				if err != nil {
-					return nil, nil, common.Address{}, err
+					return nil, nil, nil, common.Address{}, err
 				}
 			} else {
 				if len(config.Staker.ContractWalletAddress) > 0 {
-					return nil, nil, common.Address{}, errors.New("validator contract wallet specified but flag to use a smart contract wallet was not specified")
+					return nil, nil, nil, common.Address{}, errors.New("validator contract wallet specified but flag to use a smart contract wallet was not specified")
 				}
 				wallet, err = validatorwallet.NewEOA(dp, l1client, getExtraGas)
 				if err != nil {
-					return nil, nil, common.Address{}, err
+					return nil, nil, nil, common.Address{}, err
 				}
 			}
 		}
@@ -1076,10 +1112,18 @@ func getStaker(
 		var confirmedNotifiers []legacystaker.LatestConfirmedNotifier
 		if config.MessagePruner.Enable {
 			if batchMetaFetcher == nil {
-				return nil, nil, common.Address{}, errors.New("MessagePruner requires either inbox tracker or message extractor")
+				return nil, nil, nil, common.Address{}, errors.New("MessagePruner requires either inbox tracker or message extractor")
 			}
 			messagePruner = NewMessagePruner(consensusDB, txStreamer, batchMetaFetcher, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
+		}
+		if config.BlockRecordingsPruner.Enable && executionRecorder != nil {
+			var validated func() arbutil.MessageIndex
+			if blockValidator != nil {
+				validated = blockValidator.GetValidated
+			}
+			blockRecordingsPruner = NewBlockRecordingsPruner(executionRecorder, validated, func() *BlockRecordingsPrunerConfig { return &configFetcher.Get().BlockRecordingsPruner })
+			confirmedNotifiers = append(confirmedNotifiers, blockRecordingsPruner)
 		}
 
 		var tracker staker.InboxTrackerInterface
@@ -1092,11 +1136,11 @@ func getStaker(
 			reader = inboxReader
 		}
 		if tracker == nil || reader == nil {
-			return nil, nil, common.Address{}, errors.New("staker requires either message extractor or inbox tracker/reader")
+			return nil, nil, nil, common.Address{}, errors.New("staker requires either message extractor or inbox tracker/reader")
 		}
 		stakerObj, err = multiprotocolstaker.NewMultiProtocolStaker(stack, l1Reader, wallet, bind.CallOpts{}, func() *legacystaker.L1ValidatorConfig { return &configFetcher.Get().Staker }, &configFetcher.Get().Bold, blockValidator, statelessBlockValidator, nil, deployInfo.StakeToken, deployInfo.Rollup, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, txStreamer, tracker, reader, dapRegistry, fatalErrChan)
 		if err != nil {
-			return nil, nil, common.Address{}, err
+			return nil, nil, nil, common.Address{}, err
 		}
 		if config.Staker.UseSmartContractWallet {
 			if !l1Reader.Started() {
@@ -1107,27 +1151,28 @@ func getStaker(
 			err = wallet.Initialize(ctx)
 		}
 		if err != nil {
-			return nil, nil, common.Address{}, err
+			return nil, nil, nil, common.Address{}, err
 		}
 		if dp != nil {
 			stakerAddr = dp.Sender()
 		}
 	}
 
-	return stakerObj, messagePruner, stakerAddr, nil
+	return stakerObj, messagePruner, blockRecordingsPruner, stakerAddr, nil
 }
 
 func getTransactionStreamer(
 	ctx context.Context,
 	consensusDB ethdb.Database,
 	l2Config *params.ChainConfig,
-	exec execution.ExecutionClient,
+	execClient execution.ExecutionClient,
+	execSequencer containers.Option[execution.ExecutionSequencer],
 	broadcastServer *broadcaster.Broadcaster,
 	configFetcher ConfigFetcher,
 	fatalErrChan chan error,
 ) (*TransactionStreamer, error) {
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
-	txStreamer, err := NewTransactionStreamer(ctx, consensusDB, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
+	txStreamer, err := NewTransactionStreamer(ctx, consensusDB, l2Config, execClient, execSequencer, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
 	if err != nil {
 		return nil, err
 	}
@@ -1329,6 +1374,7 @@ func getNodeParentChainReaderDisabled(
 		DelayedSequencer:         nil,
 		BatchPoster:              nil,
 		MessagePruner:            nil,
+		BlockRecordingsPruner:    nil,
 		BlockValidator:           nil,
 		StatelessBlockValidator:  nil,
 		Staker:                   nil,
@@ -1383,7 +1429,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	txStreamer, err := getTransactionStreamer(ctx, consensusDB, l2Config, executionClient, broadcastServer, configFetcher, fatalErrChan)
+	txStreamer, err := getTransactionStreamer(ctx, consensusDB, l2Config, executionClient, executionSequencer, broadcastServer, configFetcher, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1427,7 +1473,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	inboxTracker, inboxReader, err := getInboxTrackerAndReader(config, consensusDB, txStreamer, dapRegistry, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox)
+	inboxTracker, inboxReader, err := getInboxTrackerAndReader(config, consensusDB, txStreamer, dapRegistry, configFetcher, l1client, l1Reader, deployInfo, delayedBridge, sequencerInbox, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1482,7 +1528,7 @@ func createNodeImpl(
 		batchMetaFetcher = messageExtractor
 	}
 
-	stakerObj, messagePruner, stakerAddr, err := getStaker(ctx, config, configFetcher, consensusDB, l1Reader, txOptsValidator, syncMonitor, parentChain, l1client, deployInfo, txStreamer, validatorInboxReader, validatorInboxTracker, batchMetaFetcher, stack, fatalErrChan, statelessBlockValidator, blockValidator, dapRegistry, messageExtractor)
+	stakerObj, messagePruner, blockRecordingsPruner, stakerAddr, err := getStaker(ctx, config, configFetcher, consensusDB, l1Reader, txOptsValidator, syncMonitor, parentChain, l1client, deployInfo, txStreamer, validatorInboxReader, validatorInboxTracker, batchMetaFetcher, stack, fatalErrChan, statelessBlockValidator, blockValidator, dapRegistry, messageExtractor, executionRecorder)
 	if err != nil {
 		return nil, err
 	}
@@ -1533,6 +1579,7 @@ func createNodeImpl(
 		DelayedSequencer:         delayedSequencer,
 		BatchPoster:              batchPoster,
 		MessagePruner:            messagePruner,
+		BlockRecordingsPruner:    blockRecordingsPruner,
 		BlockValidator:           blockValidator,
 		StatelessBlockValidator:  statelessBlockValidator,
 		Staker:                   stakerObj,
@@ -1757,6 +1804,9 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.MessagePruner != nil {
 		n.MessagePruner.Start(ctx)
 	}
+	if n.BlockRecordingsPruner != nil {
+		n.BlockRecordingsPruner.Start(ctx)
+	}
 	if n.Staker != nil {
 		err = n.Staker.Initialize(ctx)
 		if err != nil {
@@ -1861,6 +1911,9 @@ func (n *Node) StopAndWait() {
 	if n.MessagePruner != nil && n.MessagePruner.Started() {
 		n.MessagePruner.StopAndWait()
 	}
+	if n.BlockRecordingsPruner != nil && n.BlockRecordingsPruner.Started() {
+		n.BlockRecordingsPruner.StopAndWait()
+	}
 	if n.BroadcastClients != nil {
 		n.BroadcastClients.StopAndWait()
 	}
@@ -1906,16 +1959,6 @@ func (n *Node) StopAndWait() {
 			n.ExecutionClient.StopAndWait()
 		}
 	}
-}
-
-func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}] {
-	err := n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult, blockMetadata)
-	return containers.NewReadyPromise(struct{}{}, err)
-}
-
-func (n *Node) ExpectChosenSequencer() containers.PromiseInterface[struct{}] {
-	err := n.TxStreamer.ExpectChosenSequencer()
-	return containers.NewReadyPromise(struct{}{}, err)
 }
 
 func (n *Node) BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata] {

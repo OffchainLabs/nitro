@@ -30,7 +30,7 @@ func deployStylusStorageContract(
 // TestRetryableFilteringStylusSandwichRollback verifies that a group rollback
 // of a Stylus redeem chain does not affect neighboring transactions in the same
 // block. Three L2 transactions are forced into one block via
-// SequenceTransactionsForTest (bypasses the sequencer queue):
+// sequenceTransactionsInTheSameBlock (bypasses the sequencer queue):
 //   - TX1: writes keyBefore to multicall's storage
 //   - TX2: manual redeem that triggers a Stylus chain (multicall writes
 //     keyRedeem + CALLs filtered Stylus contract) → group rollback
@@ -75,10 +75,7 @@ func TestRetryableFilteringStylusSandwichRollback(t *testing.T) {
 	processRetryableSubmission(t, p, ticketId, types.ReceiptStatusSuccessful)
 
 	// --- Step 2: Set filter and prepare sandwich txns ---
-	filter := newHashedChecker([]common.Address{filteredStylusAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
-
-	sequencer := builder.L2.ExecNode.Sequencer
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredStylusAddr})
 
 	// Prepare TX1: write keyBefore=valueBefore to multicall M
 	tx1Args := multicallEmptyArgs()
@@ -105,21 +102,18 @@ func TestRetryableFilteringStylusSandwichRollback(t *testing.T) {
 	tx3 := builder.L2Info.PrepareTxTo("Sender2", &multicallAddr, 1e9, nil, tx3Args)
 
 	// --- Sequence all 3 txs in a single block (bypasses queue for determinism) ---
-	sequencer.Pause()
-	defer sequencer.Activate()
-
-	block, txErrors := sequencer.SequenceTransactionsForTest(
-		t, types.Transactions{tx1, tx2, tx3},
+	block, txResults := sequenceTransactionsInTheSameBlock(
+		t, builder, types.Transactions{tx1, tx2, tx3},
 	)
 	require.NotNil(t, block, "block should have been created")
-	require.Len(t, txErrors, 3, "should have 3 tx results")
+	require.Len(t, txResults, 3, "should have 3 tx results")
 
-	require.NoError(t, txErrors[0], "TX1 should have succeeded")
-	require.NoError(t, txErrors[2], "TX3 should have succeeded")
+	require.NoError(t, txResults[0].Err, "TX1 should have succeeded")
+	require.NoError(t, txResults[2].Err, "TX3 should have succeeded")
 
 	// TX2 should have failed (cascading redeem filtered)
-	require.Error(t, txErrors[1], "redeem should have been rejected by filter")
-	require.ErrorContains(t, txErrors[1], "cascading redeem filtered")
+	require.Error(t, txResults[1].Err, "redeem should have been rejected by filter")
+	require.ErrorContains(t, txResults[1].Err, "cascading redeem filtered")
 
 	// TX1 and TX3 are in the same block by construction (single SequenceTransactions call)
 	tx1Receipt, err := builder.L2.EnsureTxSucceeded(tx1)
@@ -138,6 +132,81 @@ func TestRetryableFilteringStylusSandwichRollback(t *testing.T) {
 
 	// TX3's write preserved
 	assertStorageAt(t, ctx, builder.L2.Client, multicallAddr, keyAfter, valueAfter)
+}
+
+// TestRetryableFilteringStylusGroupRollbackNoCacheLeak proves a filtered redeem
+// group rolls back the warm-start cache. The user tx is a multicall that warms the
+// multicall program and schedules a redeem whose retry calls a filtered contract,
+// so the whole group is rolled back; the rollback must reset the cache to before
+// the user tx, or the program it warmed stays warm and later txs are mischarged
+func TestRetryableFilteringStylusGroupRollbackNoCacheLeak(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p, cleanup := setupRetryableFilterTest(t, ctx, true, nil)
+	defer cleanup()
+	builder := p.builder
+
+	builder.L2Info.GenerateAccount("CleanBeneficiary")
+	cleanBeneficiary := builder.L2Info.GetAddress("CleanBeneficiary")
+
+	multicallAddr := deployWasm(t, ctx, builder.L2Info.GetDefaultTransactOpts("Owner", ctx), builder.L2.Client, rustFile("multicall"))
+	filteredStylusAddr := deployStylusStorageContract(t, ctx, builder)
+
+	// Retryable whose redeem-time call (multicall -> CALL filtered) trips the filter.
+	retryInner := multicallAppend(multicallEmptyArgs(), vm.CALL, filteredStylusAddr, multicallEmptyArgs())
+	_, ticketId := submitRetryableNoAutoRedeem(
+		t, p, "Faucet", multicallAddr, common.Big0, cleanBeneficiary, cleanBeneficiary, retryInner,
+	)
+	processRetryableSubmission(t, p, ticketId, types.ReceiptStatusSuccessful)
+
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredStylusAddr})
+
+	// txRedeem: a multicall that warms the program, then CALLs ArbRetryableTx.redeem,
+	// so the user tx warms the program before scheduling the (filtered) retry.
+	arbRetryableABI, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
+	require.NoError(t, err)
+	redeemCalldata, err := arbRetryableABI.Pack("redeem", ticketId)
+	require.NoError(t, err)
+	arbRetryableTxAddr := common.HexToAddress("6e")
+	redeemViaMulticall := multicallAppend(multicallEmptyArgs(), vm.CALL, arbRetryableTxAddr, redeemCalldata)
+	builder.L2Info.GenerateAccount("Redeemer")
+	builder.L2.TransferBalance(t, "Owner", "Redeemer", big.NewInt(1e18), builder.L2Info)
+	txRedeem := builder.L2Info.PrepareTxTo("Redeemer", &multicallAddr, 1e7, nil, redeemViaMulticall)
+
+	// txB/txC: byte-identical no-op multicall calls, distinct senders.
+	for _, name := range []string{"SenderB", "SenderC"} {
+		builder.L2Info.GenerateAccount(name)
+		builder.L2.TransferBalance(t, "Owner", name, big.NewInt(1e18), builder.L2Info)
+	}
+	txB := builder.L2Info.PrepareTxTo("SenderB", &multicallAddr, 1e7, nil, multicallEmptyArgs())
+	txC := builder.L2Info.PrepareTxTo("SenderC", &multicallAddr, 1e7, nil, multicallEmptyArgs())
+
+	block, txResults := sequenceTransactionsInTheSameBlock(t, builder, types.Transactions{txRedeem, txB, txC})
+	require.NotNil(t, block)
+	require.Len(t, txResults, 3)
+	require.Error(t, txResults[0].Err, "redeem group should be rolled back by the filter")
+	require.ErrorContains(t, txResults[0].Err, "cascading redeem filtered")
+	require.NoError(t, txResults[1].Err, "txB should commit")
+	require.NoError(t, txResults[2].Err, "txC should commit")
+
+	rcptB, err := builder.L2.EnsureTxSucceeded(txB)
+	require.NoError(t, err)
+	rcptC, err := builder.L2.EnsureTxSucceeded(txC)
+	require.NoError(t, err)
+	require.Equal(t, rcptB.BlockNumber.Uint64(), rcptC.BlockNumber.Uint64(), "txB and txC must share a block")
+
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, builder.L2.Client)
+	require.NoError(t, err)
+	initGas, err := arbWasm.ProgramInitGas(nil, multicallAddr)
+	require.NoError(t, err)
+	discount := initGas.Gas - initGas.GasWhenCached
+	require.Greater(t, discount, uint64(0), "sanity: cached init must be cheaper than cold")
+
+	// txB pays cold init and txC cached; the difference is charged to the
+	// WasmComputation dimension. If the rolled-back group leaked its warm-start,
+	// txB would be cached too and the dimensions would match.
+	assertStylusInitGasDelta(t, rcptB, rcptC, discount)
 }
 
 // TestRetryableFilteringStylusDelayedSandwichRollback is the L1 version of the
@@ -178,8 +247,7 @@ func TestRetryableFilteringStylusDelayedSandwichRollback(t *testing.T) {
 	valueAfter := common.HexToHash("0xcccc")
 
 	// Set filter on B's address BEFORE submitting any retryables
-	filter := newHashedChecker([]common.Address{filteredStylusAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredStylusAddr})
 
 	// --- Submit 3 retryables via L1 (all with auto-redeem) ---
 

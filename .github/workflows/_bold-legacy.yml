@@ -10,19 +10,17 @@ jobs:
   bold-legacy:
     name: Run Bold Legacy challenge tests
     runs-on: arbitrator-ci
+    timeout-minutes: 30
     env:
       COVER: ${{ github.event_name != 'merge_group' && '--cover' || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
 
       - uses: ./.github/actions/init-submodules
         with:
           client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
-          pat: ${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Setup CI
         uses: ./.github/actions/ci-setup
@@ -42,8 +40,8 @@ jobs:
           path: full.log
 
       - name: Upload coverage to Codecov
-        if: github.event_name != 'merge_group'
-        uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe  # v5
+        if: github.event_name != 'merge_group' && github.repository == 'OffchainLabs/nitro-private'
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
         with:
           fail_ci_if_error: false
           files: ./coverage.txt,./coverage-redis.txt
