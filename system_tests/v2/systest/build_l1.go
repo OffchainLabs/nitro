@@ -49,6 +49,9 @@ var defaultL1Accounts = []string{"RollupOwner", "Sequencer", "Validator", "User"
 // maxL1DataSize bounds sequencer-inbox batch data on the parent chain.
 const maxL1DataSize = 117964
 
+// simulatedParentChainID matches geth's DeveloperGenesisBlock chain id (1337).
+var simulatedParentChainID = big.NewInt(1337)
+
 // buildL1L2Node brings up an L1 parent chain, deploys the rollup, and starts a
 // sequencer L2 wired to it. Returns Env (with L1 populated) and cleanup.
 func buildL1L2Node(t *testing.T, ctx context.Context, spec Spec, overrides overrides) (*Env, func()) {

@@ -33,20 +33,8 @@ const DefaultTxWaitTimeout = 30 * time.Second
 // DefaultSetupTxTimeout is the wait-for-receipt timeout used during node setup.
 const DefaultSetupTxTimeout = 10 * time.Second
 
-// simulatedParentChainID matches geth's DeveloperGenesisBlock chain id (1337).
-var simulatedParentChainID = big.NewInt(1337)
-
-// EnsureTxSucceededWithin polls until tx is mined, then runs v1's
-// EnsureTxSucceeded success checks. Fails the test on timeout or revert.
-func EnsureTxSucceededWithin(t testing.TB, ctx context.Context, client *ethclient.Client, tx *types.Transaction, timeout time.Duration) *types.Receipt {
-	t.Helper()
-	receipt, err := ensureTxSucceededWithin(ctx, client, tx, timeout)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return receipt
-}
-
+// ensureTxSucceededWithin polls until tx is mined, then runs v1's
+// EnsureTxSucceeded success checks.
 func ensureTxSucceededWithin(ctx context.Context, client *ethclient.Client, tx *types.Transaction, timeout time.Duration) (*types.Receipt, error) {
 	receipt, err := waitForTxWithTimeout(ctx, client, tx.Hash(), timeout)
 	if err != nil {
@@ -92,7 +80,9 @@ func AdvanceBlocks(t testing.TB, ctx context.Context, client *ethclient.Client, 
 		if err := client.SendTransaction(ctx, tx); err != nil {
 			t.Fatalf("AdvanceBlocks send: %v", err)
 		}
-		EnsureTxSucceededWithin(t, ctx, client, tx, DefaultTxWaitTimeout)
+		if _, err := ensureTxSucceededWithin(ctx, client, tx, DefaultTxWaitTimeout); err != nil {
+			t.Fatalf("AdvanceBlocks: %v", err)
+		}
 	}
 }
 
