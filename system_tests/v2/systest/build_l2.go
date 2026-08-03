@@ -185,7 +185,9 @@ func becomeChainOwner(t *testing.T, ctx context.Context, client *ethclient.Clien
 	if err != nil {
 		t.Fatalf("BecomeChainOwner: %v", err)
 	}
-	EnsureTxSucceededWithin(t, ctx, client, tx, DefaultSetupTxTimeout)
+	if _, err := ensureTxSucceededWithin(ctx, client, tx, DefaultSetupTxTimeout); err != nil {
+		t.Fatal(err)
+	}
 }
 
 type rollbackGuard struct {

@@ -85,6 +85,93 @@ func WithDBEngine(e DBEngine) TestOption {
 	}
 }
 
+// MatrixArbOS declares a matrix axis over ArbOS versions. The runner expands
+// one scheduled test per supplied value. Panics if no values are given, if
+// combined with WithArbOS pin, or if applied twice.
+func MatrixArbOS(vs ...uint64) TestOption {
+	if len(vs) == 0 {
+		panic("systest: MatrixArbOS requires at least one value")
+	}
+	seen := map[uint64]bool{}
+	for _, v := range vs {
+		if v == 0 {
+			panic("systest: MatrixArbOS versions must be positive")
+		}
+		if seen[v] {
+			panic(fmt.Sprintf("systest: MatrixArbOS has duplicate value %d", v))
+		}
+		seen[v] = true
+	}
+	variants := mkArbOSAxis(vs)
+	return func(b *builder) {
+		if b.arbOS.IsSome() {
+			panic(fmt.Sprintf("systest: MatrixArbOS(...) conflicts with WithArbOS(%d) pin on same axis", b.arbOS.Unwrap()))
+		}
+		if _, ok := b.dims[axisArbOS]; ok {
+			panic("systest: MatrixArbOS(...) applied twice")
+		}
+		b.dims[axisArbOS] = variants
+	}
+}
+
+// MatrixStateScheme declares a matrix axis over state schemes.
+// Panics if no values are given, if combined with WithStateScheme pin, or if
+// applied twice.
+func MatrixStateScheme(ss ...StateScheme) TestOption {
+	if len(ss) == 0 {
+		panic("systest: MatrixStateScheme requires at least one value")
+	}
+	seen := map[StateScheme]bool{}
+	for _, s := range ss {
+		if !s.Valid() {
+			panic(fmt.Sprintf("systest: MatrixStateScheme invalid scheme %q", s))
+		}
+		if seen[s] {
+			panic(fmt.Sprintf("systest: MatrixStateScheme has duplicate value %q", s))
+		}
+		seen[s] = true
+	}
+	variants := mkStateSchemeAxis(ss)
+	return func(b *builder) {
+		if b.stateScheme.IsSome() {
+			panic(fmt.Sprintf("systest: MatrixStateScheme(...) conflicts with WithStateScheme(%q) pin on same axis", b.stateScheme.Unwrap()))
+		}
+		if _, ok := b.dims[axisStateScheme]; ok {
+			panic("systest: MatrixStateScheme(...) applied twice")
+		}
+		b.dims[axisStateScheme] = variants
+	}
+}
+
+// MatrixDBEngine declares a matrix axis over db engines.
+// Panics if no values are given, if combined with WithDBEngine pin, or if
+// applied twice.
+func MatrixDBEngine(es ...DBEngine) TestOption {
+	if len(es) == 0 {
+		panic("systest: MatrixDBEngine requires at least one value")
+	}
+	seen := map[DBEngine]bool{}
+	for _, e := range es {
+		if !e.Valid() {
+			panic(fmt.Sprintf("systest: MatrixDBEngine invalid engine %q", e))
+		}
+		if seen[e] {
+			panic(fmt.Sprintf("systest: MatrixDBEngine has duplicate value %q", e))
+		}
+		seen[e] = true
+	}
+	variants := mkDBEngineAxis(es)
+	return func(b *builder) {
+		if b.dbEngine.IsSome() {
+			panic(fmt.Sprintf("systest: MatrixDBEngine(...) conflicts with WithDBEngine(%q) pin on same axis", b.dbEngine.Unwrap()))
+		}
+		if _, ok := b.dims[axisDBEngine]; ok {
+			panic("systest: MatrixDBEngine(...) applied twice")
+		}
+		b.dims[axisDBEngine] = variants
+	}
+}
+
 // WithCategory tags this test with a named category; untagged tests are in the
 // default one. Tests run only when their category is enabled.
 // Panics if applied twice.
