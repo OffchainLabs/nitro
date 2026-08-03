@@ -30,6 +30,7 @@ jobs:
   changes:
     name: Detect file changes
     runs-on: ubuntu-4
+    timeout-minutes: 10
     outputs:
       rust_changed: ${{ steps.changed.outputs.rust_any_changed == 'true' || steps.gitlinks.outputs.rust_changed == 'true' }}
       bold_legacy_changed: ${{ steps.changed.outputs.bold_legacy_any_changed }}
@@ -87,16 +88,22 @@ jobs:
         # can only expand a submodule's inner files when the submodule is
         # checked out (it isn't here), so a PR whose only code change is a
         # submodule bump would otherwise report no changes and skip CI.
-        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        # Runs on every event with a PR diff base; only workflow_dispatch
+        # lacks one.
+        if: github.event_name != 'workflow_dispatch'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
         run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA" "$HEAD_SHA"
           changed=$(git config --file .gitmodules --get-regexp path | awk '{print $2}' \
-            | xargs -r git diff --name-only HEAD^1 HEAD --)
+            | xargs -r git diff --name-only "$BASE_SHA" "$HEAD_SHA" --)
           any=false
           rust=false
           while read -r path; do
             [ -n "$path" ] || continue
             any=true
-            case "$path" in crates/*|contracts) rust=true ;; esac
+            case "$path" in crates/*|contracts|brotli) rust=true ;; esac
           done <<< "$changed"
           echo "any_changed=$any" >> "$GITHUB_OUTPUT"
           echo "rust_changed=$rust" >> "$GITHUB_OUTPUT"

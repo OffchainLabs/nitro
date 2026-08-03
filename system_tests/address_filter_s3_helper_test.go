@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/johannesboyne/gofakes3"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common"
 
@@ -108,4 +109,5 @@ func (f *fakeS3AddressFilter) setFilteredAddresses(t *testing.T, ctx context.Con
 	_, err := f.backend.PutObject(f.bucket, f.objectKey, map[string]string{}, bytes.NewReader(body), int64(len(body)), &gofakes3.PutConditions{})
 	Require(t, err)
 	Require(t, execNode.AddressFilterService.TriggerSyncForTest(t, ctx))
+	require.Equal(t, len(addrs), execNode.AddressFilterService.GetHashCount(), "filter list did not reach the node")
 }

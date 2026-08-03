@@ -12,6 +12,8 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 )
 
+const MemoryDB = "in-memory"
+
 var pebbleNotExistErrorRegex = regexp.MustCompile("pebble: database .* does not exist")
 
 func isPebbleNotExistError(err error) bool {
