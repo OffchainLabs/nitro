@@ -20,7 +20,7 @@ mod types;
 
 // Parent-chain event types, re-exported so downstream crates (the runner's log
 // prefetcher) build filters from the same `SIGNATURE_HASH` the extractor matches.
-pub use arb_mel_types::{BatchMetadata, DelayedInboxMessage, MelState};
+pub use arb_mel_types::{BatchMetadata, DelayedInboxMessage, MelState, MessageSyncProgress};
 pub use batch_lookup::SequencerBatchDelivered;
 pub use delayed_message_lookup::{
     InboxMessageDelivered, InboxMessageDeliveredFromOrigin, MessageDelivered,

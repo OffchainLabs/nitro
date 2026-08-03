@@ -10,7 +10,7 @@ use jsonrpsee::types::{
     error::{INTERNAL_ERROR_CODE, INTERNAL_ERROR_MSG, INVALID_PARAMS_CODE},
 };
 
-use crate::BlockProducerError;
+use crate::{BlockProducerError, mel::MelProviderError};
 
 /// Result alias for [`RpcError`].
 pub type RpcResult<T> = Result<T, RpcError>;
@@ -71,6 +71,29 @@ impl RpcError {
     /// Construct an [`RpcError::Internal`] from a displayable value.
     pub fn internal(msg: impl core::fmt::Display) -> Self {
         Self::Internal(msg.to_string())
+    }
+}
+
+impl From<MelProviderError> for RpcError {
+    fn from(err: MelProviderError) -> Self {
+        match err {
+            // Nitro sentinels: the message MUST reach the wire verbatim so the
+            // client's `strings.Contains(err.Error(), sentinel)` can re-inflate the
+            // typed error. Route through an on-wire (non-redacted) variant.
+            MelProviderError::AccumulatorMismatch | MelProviderError::FindDelayedNotImplemented => {
+                RpcError::InvalidParams(err.to_string())
+            }
+            MelProviderError::NotFound(msg) => RpcError::NotFound(msg),
+            MelProviderError::OutOfBounds { .. } => RpcError::InvalidParams(err.to_string()),
+            // Internal backing failures (DB read, L1 fetch, extraction): redacted.
+            MelProviderError::Backing(msg) => RpcError::Internal(msg),
+        }
+    }
+}
+
+impl From<MelProviderError> for ErrorObjectOwned {
+    fn from(err: MelProviderError) -> Self {
+        RpcError::from(err).into()
     }
 }
 
@@ -141,5 +164,27 @@ mod tests {
         let obj = into_obj(RpcError::Provider(ProviderError::BestBlockNotFound));
         assert_eq!(obj.code(), INTERNAL_ERROR_CODE);
         assert!(!obj.message().contains("Best block"));
+    }
+
+    #[test]
+    fn accumulator_mismatch_reaches_wire_verbatim() {
+        let obj = into_obj(MelProviderError::AccumulatorMismatch.into());
+        assert!(obj.message().contains("delayed message accumulator mismatch"));
+    }
+
+    #[test]
+    fn find_delayed_not_implemented_reaches_wire_verbatim() {
+        let obj = into_obj(MelProviderError::FindDelayedNotImplemented.into());
+        assert!(
+            obj.message()
+                .contains("FindParentChainBlockContainingDelayed is not implemented by MEL")
+        );
+    }
+
+    #[test]
+    fn mel_backing_is_redacted() {
+        let obj = into_obj(MelProviderError::Backing("db connection lost".into()).into());
+        assert_eq!(obj.code(), INTERNAL_ERROR_CODE);
+        assert!(!obj.message().contains("db connection lost"));
     }
 }

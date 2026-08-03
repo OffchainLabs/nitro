@@ -21,7 +21,7 @@ pub fn accumulate_delayed_message(
     message: &DelayedInboxMessage,
 ) -> MelResult<()> {
     state.delayed_message_inbox_acc =
-        chain_accumulator(state.delayed_message_inbox_acc, message.abi_hash());
+        chain_accumulator(state.delayed_message_inbox_acc, message.rlp_hash());
     Ok(())
 }
 
@@ -29,7 +29,7 @@ pub fn accumulate_delayed_message(
 // recording required for MEL validation-mode replay.
 pub fn accumulate_message(state: &mut MelState, message: &MessageWithMetadata) -> MelResult<()> {
     state.local_msg_accumulator =
-        chain_accumulator(state.local_msg_accumulator, message.abi_hash());
+        chain_accumulator(state.local_msg_accumulator, message.rlp_hash());
     Ok(())
 }
 

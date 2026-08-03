@@ -25,7 +25,8 @@ use arb_evm::ArbEvmConfig;
 use arb_payload::ArbEngineTypes;
 use arb_primitives::{ArbPrimitives, ArbTransactionSigned};
 use arb_rpc::{
-    ArbApiHandler, ArbApiServer, ArbEthApiBuilder, NitroExecutionApiServer, NitroExecutionHandler,
+    ArbApiHandler, ArbApiServer, ArbEthApiBuilder, MelApiHandler, MelApiServer, MelProvider,
+    NitroExecutionApiServer, NitroExecutionHandler,
     stylus_debug::{StylusDebugHandler, StylusDebugServer},
 };
 pub use error::{GenesisError, LauncherError};
@@ -242,6 +243,14 @@ where
     let nitro_rpc = nitro_exec.into_rpc();
     ctx.modules.merge_configured(nitro_rpc.clone())?;
     ctx.auth_module.merge_auth_methods(nitro_rpc)?;
+
+    // MEL data-provider RPC (`meldataprovider_*`), served on the auth module.
+    // TODO: wire the real MelProvider backing; None = no-op.
+    let mel_provider: Option<Arc<dyn MelProvider>> = None;
+    if let Some(provider) = mel_provider {
+        let mel_rpc = MelApiHandler::new(provider).into_rpc();
+        ctx.auth_module.merge_auth_methods(mel_rpc)?;
+    }
 
     Ok(())
 }

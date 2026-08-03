@@ -114,6 +114,29 @@ pub struct RpcL1IncomingMessage {
     pub batch_data_tokens: Option<RpcBatchDataStats>,
 }
 
+impl From<&arbos::types::L1IncomingMessage> for RpcL1IncomingMessage {
+    fn from(msg: &arbos::types::L1IncomingMessage) -> Self {
+        use base64::Engine as _;
+        Self {
+            header: RpcL1IncomingMessageHeader {
+                kind: msg.header.kind,
+                sender: msg.header.poster,
+                block_number: msg.header.block_number,
+                timestamp: msg.header.timestamp,
+                request_id: msg.header.request_id,
+                base_fee_l1: msg.header.l1_base_fee,
+            },
+            l2_msg: (!msg.l2_msg.is_empty())
+                .then(|| base64::engine::general_purpose::STANDARD.encode(msg.l2_msg.as_ref())),
+            batch_gas_cost: msg.legacy_batch_gas_cost,
+            batch_data_tokens: msg.batch_data_stats.as_ref().map(|s| RpcBatchDataStats {
+                length: s.length,
+                nonzeros: s.non_zeros,
+            }),
+        }
+    }
+}
+
 /// Message with metadata, sent by the consensus layer to the execution client.
 /// Fields have explicit JSON tags (camelCase).
 #[derive(Debug, Clone, Serialize, Deserialize)]
