@@ -8,15 +8,25 @@ import (
 	"testing"
 )
 
-// stubOrdererSequencer feeds StartBlock a canned drain result.
+// stubOrdererSequencer feeds drainValidatedTxs canned results: items first, then one batch per
+// later call.
 type stubOrdererSequencer struct {
-	items []txQueueItem
+	items   []txQueueItem
+	batches [][]txQueueItem
 }
 
 func (s *stubOrdererSequencer) drainValidatedTxs() []txQueueItem {
-	items := s.items
-	s.items = nil
-	return items
+	if s.items != nil {
+		items := s.items
+		s.items = nil
+		return items
+	}
+	if len(s.batches) > 0 {
+		batch := s.batches[0]
+		s.batches = s.batches[1:]
+		return batch
+	}
+	return nil
 }
 
 func queueItemNonces(items []txQueueItem) []uint64 {

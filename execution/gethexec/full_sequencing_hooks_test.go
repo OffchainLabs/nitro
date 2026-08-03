@@ -11,6 +11,41 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 )
 
+// spyTxOrderer counts OnTxInclusion calls; the hooks use no other txOrderer method.
+type spyTxOrderer struct {
+	inclusions int
+}
+
+func (s *spyTxOrderer) StartBlock() bool                   { return false }
+func (s *spyTxOrderer) NextQueueItem() (txQueueItem, bool) { return txQueueItem{}, false }
+func (s *spyTxOrderer) TakeRemaining() []txQueueItem       { return nil }
+func (s *spyTxOrderer) OnTxInclusion()                     { s.inclusions++ }
+
+// TestFullSequencingHooksNotifyOrdererOnSuccessOnly covers the boost feedback wiring: only
+// TxSucceeded notifies the orderer of an inclusion; a failed tx must not earn PGA boost credit.
+func TestFullSequencingHooksNotifyOrdererOnSuccessOnly(t *testing.T) {
+	item0, _ := makeTestQueueItem(t, 0, testBaseFee)
+	item1, _ := makeTestQueueItem(t, 1, testBaseFee)
+	orderer := &spyTxOrderer{}
+	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item0, item1}}, math.MaxInt, nil, nil, orderer)
+
+	if tx, _, err := hooks.NextTxToSequence(); err != nil || tx == nil {
+		t.Fatalf("first NextTxToSequence = (%v, %v), want a tx", tx, err)
+	}
+	hooks.TxSucceeded()
+	if orderer.inclusions != 1 {
+		t.Fatalf("inclusions after TxSucceeded = %d, want 1", orderer.inclusions)
+	}
+
+	if tx, _, err := hooks.NextTxToSequence(); err != nil || tx == nil {
+		t.Fatalf("second NextTxToSequence = (%v, %v), want a tx", tx, err)
+	}
+	hooks.TxFailed(errors.New("intrinsic gas too low"))
+	if orderer.inclusions != 1 {
+		t.Fatalf("inclusions after TxFailed = %d, want still 1", orderer.inclusions)
+	}
+}
+
 // TestFullSequencingHooksTxResultLifecycle covers the per-tx result bookkeeping: a pulled tx
 // starts as txNotFinalized, TxSucceeded clears the marker, TxFailed sets the real error, and a
 // tx the block processor never reports keeps the marker in SequencedTxes.

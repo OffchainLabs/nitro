@@ -37,31 +37,33 @@ func NewPGATxOrderer(ctx context.Context, seq txOrdererSequencer, configFetcher 
 }
 
 func (p *PGATxOrderer) NextQueueItem() (txQueueItem, bool) {
-	if p.mempool.PriorityQueueLen() == 0 || p.schedule.RoundIsOver() {
-		p.mempool.ApplyRoundBoost()
-		if p.schedule.IsLastRound() {
-			return txQueueItem{}, false
+	for {
+		if p.mempool.PriorityQueueLen() == 0 || p.schedule.RoundIsOver() {
+			p.mempool.ApplyRoundBoost()
+			if p.schedule.IsLastRound() {
+				return txQueueItem{}, false
+			}
+			err := p.schedule.WaitAndAdvanceRound(p.ctx)
+			if err != nil {
+				log.Warn("PGA round wait interrupted; ending the block early", "err", err)
+				return txQueueItem{}, false
+			}
+			for _, item := range p.seq.drainValidatedTxs() {
+				p.mempool.PushPrioritized(item, item.pgaBoost)
+			}
 		}
-		err := p.schedule.WaitAndAdvanceRound(p.ctx)
-		if err != nil {
-			log.Warn("PGA round wait interrupted; returning no txs for this block", "err", err)
-			return txQueueItem{}, false
+
+		item, ok := p.mempool.Pop()
+		if !ok {
+			continue
 		}
-		for _, item := range p.seq.drainValidatedTxs() {
-			p.mempool.PushPrioritized(item, item.pgaBoost)
-		}
+
+		tx := item.Tx()
+		tx.pgaBoost = item.Boost()
+		p.lastYieldedPriority = item.Priority()
+
+		return tx, true
 	}
-
-	item, ok := p.mempool.Pop()
-	if !ok {
-		return txQueueItem{}, false
-	}
-
-	tx := item.Tx()
-	tx.pgaBoost = item.Boost()
-	p.lastYieldedPriority = item.Priority()
-
-	return tx, true
 }
 
 func (p *PGATxOrderer) StartBlock() (hasWork bool) {
