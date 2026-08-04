@@ -21,9 +21,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Init nitro-reth submodules
-        # Override the job's nitro-reth working-directory: the pathspec is
-        # relative to the cwd, and a recursive checkout at the checkout step
-        # would pull nitro's whole submodule tree instead of just these.
         working-directory: .
         run: git submodule update --init --depth 1 --recursive -- nitro-reth
       - name: Install build deps
