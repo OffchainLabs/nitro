@@ -20,9 +20,9 @@ jobs:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
-      - name: Init nitro-reth submodules
+      - name: Init reth-referenced submodules
         working-directory: .
-        run: git submodule update --init --depth 1 --recursive -- nitro-reth
+        run: git submodule update --init --depth 1 --recursive -- brotli contracts contracts-local/src/precompiles
       - name: Install build deps
         run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
       - uses: dtolnay/rust-toolchain@1.93
