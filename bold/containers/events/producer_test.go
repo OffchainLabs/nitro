@@ -6,6 +6,7 @@ package events
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -107,4 +108,25 @@ func TestRemovalUsesStableId(t *testing.T) {
 	require.Equal(t, 1, len(producer.subs))
 	require.Same(t, s2, producer.subs[0])
 	producer.RUnlock()
+}
+
+// TestBroadcastAfterSubscriberDone verifies the "send on closed channel" panic
+// is gone. Once a subscription is finished (Next returned done), delivering a
+// broadcast to it must not panic and the delivery goroutine must exit via the
+// subscription's canceled context instead of parking on the send.
+func TestBroadcastAfterSubscriberDone(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		producer := NewProducer[int]()
+		sub := producer.Subscribe()
+
+		// Finish the subscription: with an already-canceled context, Next returns
+		// done and cancels the subscription's own context.
+		subCtx, cancelSub := context.WithCancel(context.Background())
+		cancelSub()
+		_, done := sub.Next(subCtx)
+		require.True(t, done)
+
+		producer.Broadcast(context.Background(), 41)
+		synctest.Wait()
+	})
 }
