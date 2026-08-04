@@ -34,8 +34,15 @@ func newFileSizeGauge(idx int) *metrics.Gauge {
 	return metrics.GetOrRegisterGauge(fmt.Sprintf("arb/addressfilter/file/%d/size", idx), nil)
 }
 
-// jsonHash decodes a single hex hash string in place, with no Go-string allocation, supporting an optional "0x"/"0X".
-type jsonHash common.Hash
+// jsonHash is one decoded hash-list entry. It accepts two forms, each with an
+// optional "0x"/"0X" prefix: a 64-hex-char 32-byte hash, or a 40-hex-char
+// plain address (plaintext scheme). An address is placed in the low-order 20
+// bytes of hash with the upper bytes zeroed — the same layout
+// common.BytesToHash produces on the lookup side in hashAddress.
+type jsonHash struct {
+	hash      common.Hash
+	isAddress bool
+}
 
 // UnmarshalJSON requires the element to be a JSON string and hands its contents to UnmarshalText. It implements
 // json.Unmarshaler so non-string elements (null, numbers) are rejected; a bare TextUnmarshaler would instead leave
@@ -50,11 +57,18 @@ func (h *jsonHash) UnmarshalJSON(b []byte) error {
 func (h *jsonHash) UnmarshalText(text []byte) error {
 	text = bytes.TrimPrefix(text, []byte("0x"))
 	text = bytes.TrimPrefix(text, []byte("0X"))
-	if len(text) != 2*common.HashLength {
-		return fmt.Errorf("invalid hash length: got %d hex chars, want %d", len(text), 2*common.HashLength)
+	switch len(text) {
+	case 2 * common.HashLength:
+		_, err := hex.Decode(h.hash[:], text)
+		return err
+	case 2 * common.AddressLength:
+		h.isAddress = true
+		_, err := hex.Decode(h.hash[common.HashLength-common.AddressLength:], text)
+		return err
+	default:
+		return fmt.Errorf("invalid entry length: got %d hex chars, want %d (hash) or %d (address)",
+			len(text), 2*common.HashLength, 2*common.AddressLength)
 	}
-	_, err := hex.Decode(h[:], text)
-	return err
 }
 
 type S3SyncManager struct {
@@ -116,9 +130,17 @@ func decodeStringToken(dec *json.Decoder, key string) (string, error) {
 	return s, nil
 }
 
+// entryKinds records which entry lengths appeared in the hashes array, so the
+// scheme/entry-length consistency can be validated once the scheme is known
+// (fields may appear in any order, so the scheme may arrive after the array).
+type entryKinds struct {
+	sawHash    bool
+	sawAddress bool
+}
+
 // decodeHashesArray streams the elements of the "hashes" array (or a JSON null)
 // into addHash, one at a time, never holding more than one element in memory.
-func decodeHashesArray(dec *json.Decoder, addHash func(common.Hash)) error {
+func decodeHashesArray(dec *json.Decoder, addHash func(common.Hash), kinds *entryKinds) error {
 	tok, err := dec.Token()
 	if err != nil {
 		return fmt.Errorf("hashes: %w", err)
@@ -134,7 +156,12 @@ func decodeHashesArray(dec *json.Decoder, addHash func(common.Hash)) error {
 		if err := dec.Decode(&h); err != nil {
 			return fmt.Errorf("hashes[%d]: %w", i, err)
 		}
-		addHash(common.Hash(h))
+		if h.isAddress {
+			kinds.sawAddress = true
+		} else {
+			kinds.sawHash = true
+		}
+		addHash(h.hash)
 	}
 	if _, err := dec.Token(); err != nil { // consume the closing ']'
 		return fmt.Errorf("hashes: %w", err)
@@ -170,7 +197,10 @@ func skipJSONValue(dec *json.Decoder) error {
 // decoded hash to addHash, so the document is never buffered in memory. Fields may
 // appear in any order; the metadata is validated and returned once the whole
 // document has been consumed. Unknown fields are ignored.
-// Expected format: {"id":"uuid-string-representation", "salt": "uuid-string-representation", "hashing_scheme": "<sha256-stringinput|sha256-rawbytesinput>", "hashes": ["0xhex1", "0xhex2", ...]}
+// Expected format: {"id":"uuid-string-representation", "salt": "uuid-string-representation", "hashing_scheme": "<sha256-stringinput|sha256-rawbytesinput|plaintext>", "hashes": ["0xhex1", "0xhex2", ...]}
+// For the sha256 schemes each entry is a 64-hex hash and "salt" is required.
+// For "plaintext" each entry is a plain 40-hex address (stored left-padded to
+// 32 bytes) and "salt" is ignored.
 func parseHashListStream(r io.Reader, addHash func(common.Hash)) (*ListMeta, error) {
 	dec := json.NewDecoder(r)
 	tok, err := dec.Token()
@@ -182,6 +212,7 @@ func parseHashListStream(r io.Reader, addHash func(common.Hash)) (*ListMeta, err
 	}
 
 	var idStr, saltStr, schemeStr string
+	var kinds entryKinds
 	seenHashes := false
 	for dec.More() {
 		keyTok, err := dec.Token()
@@ -206,7 +237,7 @@ func parseHashListStream(r io.Reader, addHash func(common.Hash)) (*ListMeta, err
 				return nil, errors.New("duplicate hashes field")
 			}
 			seenHashes = true
-			err = decodeHashesArray(dec, addHash)
+			err = decodeHashesArray(dec, addHash, &kinds)
 		default:
 			err = skipJSONValue(dec)
 		}
@@ -229,14 +260,28 @@ func parseHashListStream(r io.Reader, addHash func(common.Hash)) (*ListMeta, err
 	switch scheme {
 	case "":
 		scheme = HashingSchemeStringInput
-	case HashingSchemeStringInput, HashingSchemeRawBytesInput:
+	case HashingSchemeStringInput, HashingSchemeRawBytesInput, HashingSchemePlaintext:
 	default:
 		return nil, fmt.Errorf("unknown hashing_scheme %q", schemeStr)
 	}
 
-	salt, err := uuid.Parse(saltStr)
-	if err != nil {
-		return nil, err
+	if scheme == HashingSchemePlaintext {
+		if kinds.sawHash {
+			return nil, fmt.Errorf("hashing_scheme %q requires %d-hex address entries, found %d-hex hash entries",
+				scheme, 2*common.AddressLength, 2*common.HashLength)
+		}
+	} else if kinds.sawAddress {
+		return nil, fmt.Errorf("hashing_scheme %q requires %d-hex hash entries, found %d-hex address entries",
+			scheme, 2*common.HashLength, 2*common.AddressLength)
+	}
+
+	salt := uuid.Nil
+	if scheme != HashingSchemePlaintext {
+		var err error
+		salt, err = uuid.Parse(saltStr)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	id, err := uuid.Parse(idStr)

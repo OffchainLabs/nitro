@@ -23,6 +23,10 @@ type HashingScheme string
 const (
 	HashingSchemeStringInput   HashingScheme = "sha256-stringinput"
 	HashingSchemeRawBytesInput HashingScheme = "sha256-rawbytesinput"
+	// HashingSchemePlaintext means list entries are not hashed: each entry is a
+	// plain address, stored left-padded to 32 bytes, and lookups use the
+	// address itself. The salt is ignored.
+	HashingSchemePlaintext HashingScheme = "plaintext"
 )
 
 // hashData holds a hash list snapshot. In preallocated mode Store recycles a
@@ -33,10 +37,11 @@ type hashData struct {
 	mu                    sync.RWMutex
 	id                    uuid.UUID
 	salt                  uuid.UUID
-	useRawBytesInput      bool
+	scheme                HashingScheme
 	hashStringInputPrefix string
 	hashes                map[common.Hash]struct{}
 	digest                string
+	loaded                bool
 	loadedAt              time.Time
 	cache                 *lru.Cache[common.Address, bool] // LRU cache for address lookup results
 }
@@ -79,10 +84,14 @@ func GetHashStringInputPrefix(salt uuid.UUID) string {
 }
 
 func (d *hashData) hashAddress(addr common.Address) common.Hash {
-	if d.useRawBytesInput {
+	switch d.scheme {
+	case HashingSchemeRawBytesInput:
 		return HashRawBytesInput(d.salt, addr)
+	case HashingSchemePlaintext:
+		return common.BytesToHash(addr.Bytes())
+	default:
+		return HashStringInputWithPrefix(d.hashStringInputPrefix, addr)
 	}
-	return HashStringInputWithPrefix(d.hashStringInputPrefix, addr)
 }
 
 // NewHashStore creates a hash store without preallocation.
@@ -117,7 +126,7 @@ func newHashStore(cacheSize int, maxHashes int) *HashStore {
 			}
 			h.buffers[i] = d
 		}
-		h.data.Store(h.buffers[0]) // empty, salt Nil: reports uninitialized
+		h.data.Store(h.buffers[0]) // empty, loaded=false: reports uninitialized
 		return h
 	}
 	h.data.Store(&hashData{
@@ -137,9 +146,10 @@ type ListMeta struct {
 func (d *hashData) setMeta(meta *ListMeta, digest string) {
 	d.id = meta.Id
 	d.salt = meta.Salt
-	d.useRawBytesInput = meta.Scheme == HashingSchemeRawBytesInput
+	d.scheme = meta.Scheme
 	d.hashStringInputPrefix = GetHashStringInputPrefix(meta.Salt)
 	d.digest = digest
+	d.loaded = true
 	d.loadedAt = time.Now()
 }
 
@@ -220,7 +230,7 @@ func (h *HashStore) IsRestricted(addr common.Address) (bool, uuid.UUID) {
 	data := h.data.Load() // lock-free snapshot load
 	data.mu.RLock()
 	defer data.mu.RUnlock()
-	if data.salt == uuid.Nil {
+	if !data.loaded {
 		return false, uuid.Nil // Not initialized
 	}
 

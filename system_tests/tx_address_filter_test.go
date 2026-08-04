@@ -1353,10 +1353,7 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	}
 }
 
-// Exercises an end-to-end filtering tx flow under the string-input hashing scheme:
-// the S3 address-filter pipeline serves a list of sha256-stringinput hashes and
-// the sequencer must still reject txs to/from a listed address.
-func TestAddressFilterDirectTransferStringInputScheme(t *testing.T) {
+func testAddressFilterDirectTransferWithScheme(t *testing.T, scheme addressfilter.HashingScheme) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1364,7 +1361,7 @@ func TestAddressFilterDirectTransferStringInputScheme(t *testing.T) {
 	builder.isSequencer = true
 	filteringReportStack, endpoint := SetupFilteringReport(t)
 	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
-	s3Filter := setupFakeS3AddressFilterWithScheme(t, builder, addressfilter.HashingSchemeStringInput)
+	s3Filter := setupFakeS3AddressFilterWithScheme(t, builder, scheme)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -1379,7 +1376,7 @@ func TestAddressFilterDirectTransferStringInputScheme(t *testing.T) {
 	tx := builder.L2Info.PrepareTx("NormalUser", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	err := builder.L2.Client.SendTransaction(ctx, tx)
 	if err == nil {
-		t.Fatal("expected transaction to filtered address to be rejected under string-input scheme")
+		t.Fatalf("expected transaction to filtered address to be rejected under scheme %q", scheme)
 	}
 	if !isFilteredError(err) {
 		t.Fatalf("expected filtered error, got: %v", err)
@@ -1398,6 +1395,14 @@ func TestAddressFilterDirectTransferStringInputScheme(t *testing.T) {
 	Require(t, err)
 
 	endpoint.AssertNoReport(t, 500*time.Millisecond)
+}
+
+func TestAddressFilterDirectTransferStringInputScheme(t *testing.T) {
+	testAddressFilterDirectTransferWithScheme(t, addressfilter.HashingSchemeStringInput)
+}
+
+func TestAddressFilterDirectTransferPlaintextScheme(t *testing.T) {
+	testAddressFilterDirectTransferWithScheme(t, addressfilter.HashingSchemePlaintext)
 }
 
 func TestAddressFilterMultiFile(t *testing.T) {
@@ -1462,6 +1467,7 @@ func TestGenerateAddressHashesFixtureScript(t *testing.T) {
 	for _, scheme := range []addressfilter.HashingScheme{
 		addressfilter.HashingSchemeStringInput,
 		addressfilter.HashingSchemeRawBytesInput,
+		addressfilter.HashingSchemePlaintext,
 	} {
 		t.Run(string(scheme), func(t *testing.T) {
 			out := filepath.Join(t.TempDir(), "list.json")
@@ -1497,9 +1503,12 @@ func TestGenerateAddressHashesFixtureScript(t *testing.T) {
 			prefix := addressfilter.GetHashStringInputPrefix(salt)
 			for _, a := range addrs {
 				var want common.Hash
-				if scheme == addressfilter.HashingSchemeRawBytesInput {
+				switch scheme {
+				case addressfilter.HashingSchemeRawBytesInput:
 					want = addressfilter.HashRawBytesInput(salt, a)
-				} else {
+				case addressfilter.HashingSchemePlaintext:
+					want = common.BytesToHash(a.Bytes())
+				default:
 					want = addressfilter.HashStringInputWithPrefix(prefix, a)
 				}
 				if _, ok := set[want]; !ok {

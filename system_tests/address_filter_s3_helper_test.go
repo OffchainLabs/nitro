@@ -104,11 +104,16 @@ func (f *fakeS3AddressFilter) setFilteredAddressesForFile(t *testing.T, ctx cont
 func hashListJSON(t *testing.T, scheme addressfilter.HashingScheme, addrs []common.Address) []byte {
 	t.Helper()
 	hashes := make([]string, len(addrs))
-	if scheme == addressfilter.HashingSchemeRawBytesInput {
+	switch scheme {
+	case addressfilter.HashingSchemePlaintext:
+		for i, addr := range addrs {
+			hashes[i] = addr.Hex()
+		}
+	case addressfilter.HashingSchemeRawBytesInput:
 		for i, addr := range addrs {
 			hashes[i] = addressfilter.HashRawBytesInput(testFilterSalt, addr).Hex()
 		}
-	} else {
+	default:
 		hashPrefix := addressfilter.GetHashStringInputPrefix(testFilterSalt)
 		for i, addr := range addrs {
 			hashes[i] = addressfilter.HashStringInputWithPrefix(hashPrefix, addr).Hex()
@@ -116,14 +121,17 @@ func hashListJSON(t *testing.T, scheme addressfilter.HashingScheme, addrs []comm
 	}
 	payload := struct {
 		Id            string   `json:"id"`
-		Salt          string   `json:"salt"`
+		Salt          string   `json:"salt,omitempty"`
 		HashingScheme string   `json:"hashing_scheme"`
 		Hashes        []string `json:"hashes"`
 	}{
 		Id:            uuid.New().String(),
-		Salt:          testFilterSalt.String(),
 		HashingScheme: string(scheme),
 		Hashes:        hashes,
+	}
+	// Omit the salt for plaintext so the tests exercise the salt-less payload path.
+	if scheme != addressfilter.HashingSchemePlaintext {
+		payload.Salt = testFilterSalt.String()
 	}
 	data, err := json.Marshal(payload)
 	Require(t, err)

@@ -51,9 +51,11 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 const bytesInMB = 1024 * 1024
 
-// minBytesPerHashEntry is a hard lower bound on the JSON size of one 32-byte hash entry: 64 hex chars plus the two
-// surrounding quotes. Dividing the max file size by it yields a safe upper bound on the number of hashes.
-const minBytesPerHashEntry = 66
+// minBytesPerHashEntry is a hard lower bound on the JSON size of one entry across all schemes: a plaintext address
+// without "0x" is 40 hex chars plus the two surrounding quotes. Dividing the max file size by it yields a safe upper
+// bound on the number of hashes; for sha256 lists (66+ bytes per entry) it overestimates, which only costs extra
+// preallocated bucket memory, never correctness.
+const minBytesPerHashEntry = 42
 
 // estimateHashCount returns a safe upper bound on the number of hashes in a
 // hash-list JSON document of the given byte size.

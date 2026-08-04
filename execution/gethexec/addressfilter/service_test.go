@@ -593,7 +593,7 @@ func (h *HashStore) isAllRestricted(addrs []common.Address) bool {
 	data := h.data.Load() // lock-free snapshot load
 	data.mu.RLock()
 	defer data.mu.RUnlock()
-	if data.salt == uuid.Nil {
+	if !data.loaded {
 		return false // Not initialized
 	}
 	for _, addr := range addrs {
@@ -620,7 +620,7 @@ func (h *HashStore) isAnyRestricted(addrs []common.Address) bool {
 	data := h.data.Load() // lock-free snapshot load
 	data.mu.RLock()
 	defer data.mu.RUnlock()
-	if data.salt == uuid.Nil {
+	if !data.loaded {
 		return false // Not initialized
 	}
 	for _, addr := range addrs {
