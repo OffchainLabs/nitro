@@ -41,12 +41,3 @@
 [submodule "contracts-local/src/precompiles"]
 	path = contracts-local/src/precompiles
 	url = https://github.com/OffchainLabs/nitro-precompile-interfaces.git
-[submodule "nitro-reth/brotli"]
-	path = nitro-reth/brotli
-	url = https://github.com/google/brotli.git
-[submodule "nitro-reth/crates/arb-precompiles/nitro-precompile-interfaces"]
-	path = nitro-reth/crates/arb-precompiles/nitro-precompile-interfaces
-	url = https://github.com/OffchainLabs/nitro-precompile-interfaces.git
-[submodule "nitro-reth/crates/arb-precompiles/nitro-contracts"]
-	path = nitro-reth/crates/arb-precompiles/nitro-contracts
-	url = https://github.com/OffchainLabs/nitro-contracts.git
