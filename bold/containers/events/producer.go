@@ -73,8 +73,14 @@ func (ep *Producer[T]) Start(ctx context.Context) {
 			}
 			ep.Unlock()
 		case <-ctx.Done():
-			close(ep.doneListener)
+			// doneListener is intentionally NOT closed here. Subscriptions send
+			// their id to it while tearing down (see Subscription.Next), so
+			// closing it would race with those sends and panic ("send on closed
+			// channel"). It is buffered and unreferenced once we return, so it is
+			// simply garbage collected.
+			ep.Lock()
 			ep.subs = nil
+			ep.Unlock()
 			return
 		}
 	}
@@ -85,10 +91,13 @@ func (ep *Producer[T]) Start(ctx context.Context) {
 func (ep *Producer[T]) Subscribe() *Subscription[T] {
 	ep.Lock()
 	defer ep.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
 	sub := &Subscription[T]{
 		id:     ep.nextId, // Assign a stable, monotonically increasing ID
 		events: make(chan T),
 		done:   ep.doneListener,
+		ctx:    ctx,
+		cancel: cancel,
 	}
 	ep.nextId++
 	ep.subs = append(ep.subs, sub)
@@ -108,6 +117,7 @@ func (ep *Producer[T]) Broadcast(ctx context.Context, event T) {
 			case listener.events <- event:
 			case <-time.After(ep.broadcastTimeout):
 			case <-ctx.Done():
+			case <-listener.ctx.Done():
 			}
 		}(sub)
 	}
@@ -121,6 +131,8 @@ type Subscription[T any] struct {
 	id     subId
 	events chan T
 	done   chan subId
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // Next waits for the next event or context cancelation, returning the event or an error.
@@ -131,8 +143,11 @@ func (es *Subscription[T]) Next(ctx context.Context) (T, bool) {
 		case ev := <-es.events:
 			return ev, false
 		case <-ctx.Done():
-			es.done <- es.id
-			close(es.events)
+			es.cancel()
+			select {
+			case es.done <- es.id:
+			default:
+			}
 			return zeroVal, true
 		}
 	}
