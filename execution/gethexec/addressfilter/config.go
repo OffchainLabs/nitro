@@ -27,6 +27,7 @@ var DefaultFileConfig = FileConfig{
 type Config struct {
 	Files                     []FileConfig `koanf:"files"`
 	FilesList                 string       `koanf:"files-list"`
+	StaticList                string       `koanf:"static-list"`
 	CacheSize                 int          `koanf:"cache-size"`
 	AddressCheckerWorkerCount int          `koanf:"address-checker-worker-count"`
 	AddressCheckerQueueSize   int          `koanf:"address-checker-queue-size"`
@@ -44,6 +45,11 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 		"array of S3 hash-list file configs given as a json string, "+
 			`e.g. [{"bucket":"b","object-key":"k","region":"us-east-1","download-dir":"/data/tmp","poll-interval":300000000000}]; `+
 			"json keys match the "+prefix+".files config-file field names and time durations must be supplied as an integer number of nanoseconds")
+	f.String(prefix+".static-list", DefaultConfig.StaticList,
+		"hash-list JSON document given inline as a json string, with the same schema as the S3 hash-list files, "+
+			`e.g. {"id":"<uuid>","salt":"<uuid>","hashing_scheme":"sha256-stringinput|sha256-rawbytesinput|plaintext","hashes":["0x...."]}; `+
+			"applied in addition to any S3 files (an address is filtered if it appears in any list) and fixed for the lifetime of the node; "+
+			"when set, configuring S3 files becomes optional")
 	f.Int(prefix+".cache-size", DefaultConfig.CacheSize, "LRU cache size for address lookup results")
 	f.Int(prefix+".address-checker-worker-count", DefaultConfig.AddressCheckerWorkerCount, "number of workers for address checker")
 	f.Int(prefix+".address-checker-queue-size", DefaultConfig.AddressCheckerQueueSize, "work queue size for address checker")
@@ -123,8 +129,8 @@ func (c *Config) Validate() error {
 		c.Files = files
 	}
 
-	if len(c.Files) == 0 {
-		return errors.New("address-filter: at least one file must be configured via files or files-list")
+	if len(c.Files) == 0 && c.StaticList == "" {
+		return errors.New("address-filter: at least one file must be configured via files or files-list, or a static list via static-list")
 	}
 
 	seen := make(map[string]struct{}, len(c.Files))

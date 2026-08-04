@@ -70,6 +70,20 @@ func TestConfigValidate(t *testing.T) {
 		require.NoError(t, cfg.Validate())
 	})
 
+	t.Run("static list alone satisfies file requirement", func(t *testing.T) {
+		cfg := DefaultConfig
+		cfg.StaticList = "{}"
+		require.NoError(t, cfg.Validate())
+		require.Empty(t, cfg.Files)
+	})
+
+	t.Run("static list plus files", func(t *testing.T) {
+		cfg := validTestConfig(t)
+		cfg.StaticList = "{}"
+		require.NoError(t, cfg.Validate())
+		require.Len(t, cfg.Files, 1)
+	})
+
 	t.Run("valid multiple files", func(t *testing.T) {
 		cfg := validTestConfig(t)
 		cfg.Files = append(cfg.Files, validTestFileConfig(t, "hashlists/other.json"))

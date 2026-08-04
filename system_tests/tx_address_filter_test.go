@@ -29,6 +29,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
@@ -1441,6 +1442,44 @@ func TestAddressFilterMultiFile(t *testing.T) {
 
 	// Tx between unlisted addresses succeeds.
 	builder.L2Info.GetInfoWithPrivKey("NormalUser").Nonce.Store(0)
+	tx = builder.L2Info.PrepareTx("NormalUser", "AnotherUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	Require(t, builder.L2.Client.SendTransaction(ctx, tx))
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+}
+
+func TestAddressFilterStaticList(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+
+	// The static list is fixed at startup, so the filtered address must be
+	// known before the node is built.
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("NormalUser")
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+
+	filteringConfig := &builder.execConfig.TransactionFiltering
+	filteringConfig.Enable = true
+	filteringConfig.TransactionFiltererRPCClient.URL = gethexec.TransactionFiltererURLNone
+	filteringConfig.AddressFilter.StaticList = string(hashListJSON(t, addressfilter.HashingSchemeRawBytesInput, []common.Address{filteredAddr}))
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2.TransferBalance(t, "Owner", "NormalUser", big.NewInt(1e18), builder.L2Info)
+
+	tx := builder.L2Info.PrepareTx("NormalUser", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err := builder.L2.Client.SendTransaction(ctx, tx)
+	if err == nil || !isFilteredError(err) {
+		t.Fatalf("expected filtered error for address in the static list, got: %v", err)
+	}
+
+	// Tx between unlisted addresses succeeds.
+	builder.L2Info.GetInfoWithPrivKey("NormalUser").Nonce.Store(0)
+	builder.L2Info.GenerateAccount("AnotherUser")
 	tx = builder.L2Info.PrepareTx("NormalUser", "AnotherUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	Require(t, builder.L2.Client.SendTransaction(ctx, tx))
 	_, err = builder.L2.EnsureTxSucceeded(tx)

@@ -785,6 +785,97 @@ func TestFilterService_MultiFile(t *testing.T) {
 	require.True(t, restricted, "addr1 from the first file should stay restricted")
 }
 
+func TestFilterService_StaticListOnly(t *testing.T) {
+	salt := uuid.New()
+	listID := uuid.New()
+	addr := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	h := HashStringInputWithPrefix(GetHashStringInputPrefix(salt), addr)
+	body := hashListBodyWithID(t, listID, salt, h)
+
+	cfg := DefaultConfig
+	cfg.StaticList = string(body)
+
+	service, err := NewFilterService(&cfg)
+	require.NoError(t, err)
+	require.Equal(t, 0, service.numFiles())
+	require.True(t, service.AllFilesLoaded(), "static list should be loaded at construction, before Initialize")
+	require.NoError(t, service.Initialize(context.Background()))
+
+	restricted, id := service.storeSet.IsRestricted(addr)
+	require.True(t, restricted)
+	require.Equal(t, listID, id)
+
+	restricted, id = service.storeSet.IsRestricted(common.HexToAddress("0x2222222222222222222222222222222222222222"))
+	require.False(t, restricted)
+	require.Equal(t, uuid.Nil, id)
+}
+
+func TestFilterService_StaticListInvalid(t *testing.T) {
+	t.Run("malformed json", func(t *testing.T) {
+		cfg := DefaultConfig
+		cfg.StaticList = "not json"
+		_, err := NewFilterService(&cfg)
+		require.ErrorContains(t, err, "failed to parse address-filter static-list")
+	})
+
+	t.Run("invalid salt", func(t *testing.T) {
+		cfg := DefaultConfig
+		cfg.StaticList = `{"id":"` + uuid.NewString() + `","salt":"not-a-uuid","hashing_scheme":"sha256-stringinput","hashes":[]}`
+		_, err := NewFilterService(&cfg)
+		require.ErrorContains(t, err, "failed to parse address-filter static-list")
+	})
+}
+
+func TestFilterService_StaticListPlusS3File(t *testing.T) {
+	saltFile := uuid.New()
+	saltStatic := uuid.New()
+	addrFile := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	addrStatic := common.HexToAddress("0x2222222222222222222222222222222222222222")
+	listIDFile := uuid.New()
+	listIDStatic := uuid.New()
+	hFile := HashStringInputWithPrefix(GetHashStringInputPrefix(saltFile), addrFile)
+	hStatic := HashStringInputWithPrefix(GetHashStringInputPrefix(saltStatic), addrStatic)
+
+	key := "filter.json"
+	endpoint, backend := s3syncertest.NewFakeS3(t, filteringTestBucket, map[string][]byte{
+		key: hashListBodyWithID(t, listIDFile, saltFile, hFile),
+	})
+
+	cfg := newFilteringTestConfig(t, endpoint, 1, key)
+	cfg.StaticList = string(hashListBodyWithID(t, listIDStatic, saltStatic, hStatic))
+
+	service, err := NewFilterService(cfg)
+	require.NoError(t, err)
+	require.Equal(t, 1, service.numFiles())
+
+	require.False(t, service.AllFilesLoaded(), "the S3 file is not loaded before Initialize")
+	require.NoError(t, service.Initialize(context.Background()))
+	require.True(t, service.AllFilesLoaded())
+
+	restricted, id := service.storeSet.IsRestricted(addrFile)
+	require.True(t, restricted)
+	require.Equal(t, listIDFile, id)
+
+	restricted, id = service.storeSet.IsRestricted(addrStatic)
+	require.True(t, restricted)
+	require.Equal(t, listIDStatic, id)
+
+	// Re-syncing the S3 file leaves the static list untouched.
+	addrFile2 := common.HexToAddress("0x3333333333333333333333333333333333333333")
+	hFile2 := HashStringInputWithPrefix(GetHashStringInputPrefix(saltFile), addrFile2)
+	body := hashListBodyWithID(t, listIDFile, saltFile, hFile2)
+	_, err = backend.PutObject(filteringTestBucket, key, map[string]string{}, bytes.NewReader(body), int64(len(body)), &gofakes3.PutConditions{})
+	require.NoError(t, err)
+	require.NoError(t, service.TriggerSyncForTest(t, context.Background()))
+
+	restricted, _ = service.storeSet.IsRestricted(addrFile2)
+	require.True(t, restricted, "addrFile2 should be restricted after the file re-syncs")
+	restricted, _ = service.storeSet.IsRestricted(addrFile)
+	require.False(t, restricted, "addrFile should no longer be restricted after the file re-syncs")
+	restricted, _ = service.storeSet.IsRestricted(addrStatic)
+	require.True(t, restricted, "the static list address should stay restricted")
+}
+
 func TestFilterService_Initialize_FailsWhenOneFileMissing(t *testing.T) {
 	salt := uuid.New()
 	key1 := "filter1.json"

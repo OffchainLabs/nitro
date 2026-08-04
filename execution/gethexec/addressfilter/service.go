@@ -7,9 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/util/s3syncer"
@@ -62,6 +64,21 @@ func NewFilterService(config *Config) (*FilterService, error) {
 		fs.syncMgr = NewS3SyncManager(&fs.config, hashStore, newFileSizeGauge(i))
 		files = append(files, fs)
 		stores = append(stores, hashStore)
+	}
+	if config.StaticList != "" {
+		staticStore := newHashStore(config.CacheSize, 0)
+		var listMeta *ListMeta
+		fill := func(addHash func(common.Hash)) (*ListMeta, error) {
+			var err error
+			listMeta, err = parseHashListStream(strings.NewReader(config.StaticList), addHash)
+			return listMeta, err
+		}
+		if err := staticStore.Store("static-list", estimateHashCount(int64(len(config.StaticList))), fill); err != nil {
+			return nil, fmt.Errorf("failed to parse address-filter static-list: %w", err)
+		}
+		log.Info("address-filter static list loaded",
+			"filterSetID", listMeta.Id, "hash_count", staticStore.Size(), "scheme", listMeta.Scheme)
+		stores = append(stores, staticStore)
 	}
 	storeSet := NewHashStoreSet(stores)
 
