@@ -130,3 +130,25 @@ func TestBroadcastAfterSubscriberDone(t *testing.T) {
 		synctest.Wait()
 	})
 }
+
+// TestNextIsIdempotentOnceDone verifies a finished subscription stays finished:
+// later calls to Next report done immediately instead of blocking on a channel
+// nobody will send to, and an in-flight broadcast cannot hand an event to a
+// subscriber that has already torn down.
+func TestNextIsIdempotentOnceDone(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		producer := NewProducer[int]()
+		sub := producer.Subscribe()
+
+		subCtx, cancelSub := context.WithCancel(context.Background())
+		cancelSub()
+		_, done := sub.Next(subCtx)
+		require.True(t, done)
+
+		producer.Broadcast(context.Background(), 41)
+
+		ev, done := sub.Next(context.Background())
+		require.True(t, done)
+		require.Zero(t, ev)
+	})
+}

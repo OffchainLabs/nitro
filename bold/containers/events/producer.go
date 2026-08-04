@@ -137,13 +137,20 @@ type Subscription[T any] struct {
 	cancel context.CancelFunc
 }
 
-// Next waits for the next event or context cancelation, returning the event or an error.
+// Next waits for the next event or for ctx to be canceled. It returns
+// (event, false) when an event is delivered, and (zeroVal, true) once the
+// subscription is finished. Cancelling ctx tears the subscription down; callers
+// must keep calling Next until it reports true, or the subscription is never
+// cleaned up. Next is idempotent: after it has reported true once, every later
+// call reports true immediately.
 func (es *Subscription[T]) Next(ctx context.Context) (T, bool) {
 	var zeroVal T
 	for {
 		select {
 		case ev := <-es.events:
 			return ev, false
+		case <-es.ctx.Done():
+			return zeroVal, true
 		case <-ctx.Done():
 			es.cancel()
 			select {
