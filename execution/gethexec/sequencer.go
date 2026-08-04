@@ -1430,6 +1430,13 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		return true
 	}
 
+	selectedL1Block := nextSequencerParentChainBlockNumber(l1Block, lastBlock)
+	if selectedL1Block != l1Block {
+		log.Debug("limiting parent chain block advancement to preserve blockhash history",
+			"observed", l1Block, "selected", selectedL1Block)
+		l1Block = selectedL1Block
+	}
+
 	header := &arbostypes.L1IncomingMessageHeader{
 		Kind:        arbostypes.L1MessageType_L2Message,
 		Poster:      l1pricing.BatchPosterAddress,
