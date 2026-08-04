@@ -17,7 +17,7 @@
 use std::io::Read;
 
 use alloy_primitives::B256;
-use arb_da_provider_client::DaReaderSource;
+use arb_da_provider::DaReaderSource;
 
 use crate::{MelError, MelResult};
 
@@ -207,7 +207,7 @@ fn parse_segments(decompressed: &[u8]) -> Vec<Vec<u8>> {
 mod tests {
     use std::sync::Arc;
 
-    use arb_da_provider_client::{DaReaderRegistry, MockDaReader, Preimages};
+    use arb_da_provider::{DaReaderRegistry, MockDaReader, Preimages};
 
     use super::*;
     use crate::test_utils::brotli_compress;

@@ -24,8 +24,8 @@ mod fsm;
 mod logs_and_headers_fetcher;
 mod types;
 
-// The DA provider is the real `arb-da-provider-client`; re-export for convenience.
-pub use arb_da_provider_client::{DaReaderRegistry, DaReaderSource};
+// The DA provider is the real `arb-da-provider`; re-export for convenience.
+pub use arb_da_provider::{DaReaderRegistry, DaReaderSource};
 // Canonical MEL types are owned by `arb-mel`; re-export for convenience.
 pub use arb_mel::{
     BatchMetadata, DelayedInboxMessage, ExtractionOutput, MelState, MessageSyncProgress,

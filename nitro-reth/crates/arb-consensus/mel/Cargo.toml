@@ -7,10 +7,10 @@ license.workspace = true
 
 [dependencies]
 # Internal crates
-arbos = { workspace = true }
+arbos-types = { workspace = true }
 arb-mel-types = { workspace = true }
 arb-storage-errors = { workspace = true }
-arb-da-provider-client = { workspace = true }
+arb-da-provider = { workspace = true }
 
 # Alloy
 alloy-primitives = { workspace = true, features = ["std", "rlp"] }
