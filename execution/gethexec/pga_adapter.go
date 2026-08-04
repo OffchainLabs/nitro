@@ -39,3 +39,5 @@ func (i txQueueItem) ReportError(err error) { i.returnResult(err) }
 func (i txQueueItem) GetContext() context.Context { return i.ctx }
 
 func (i txQueueItem) GetFirstAppearance() time.Time { return i.firstAppearance }
+
+func (i txQueueItem) GetBoost() uint64 { return i.pgaBoost }

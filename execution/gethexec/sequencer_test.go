@@ -55,11 +55,11 @@ func TestSequencerConfigValidatePGA(t *testing.T) {
 			c.MaxBlockSpeed = 10 * time.Millisecond
 			c.ExperimentalPGA.RoundsPerBlock = 1
 		}, false},
-		{"timeboost skips the round length check", func(c *SequencerConfig) {
+		{"timeboost does not skip the round length check", func(c *SequencerConfig) {
 			c.Timeboost.Enable = true
 			c.MaxBlockSpeed = 10 * time.Millisecond
 			c.ExperimentalPGA.RoundsPerBlock = 1
-		}, false},
+		}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

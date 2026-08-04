@@ -30,16 +30,19 @@ func failFee(err error) priorityFeeFunc {
 type mockTx struct {
 	id              int
 	fee             priorityFeeFunc
+	boost           uint64
 	ctx             context.Context
 	firstAppearance time.Time
 	resultChan      chan error
 	returnedResult  *atomic.Bool
 }
 
-// ComputePgaPriority returns the base priority from the test fee func; the boost lives on PrioritizedTx now.
+// ComputePgaPriority returns the base priority from the test fee func, independent of any boost.
 func (m mockTx) ComputePgaPriority(baseFee *big.Int) (uint64, error) {
 	return m.fee(baseFee)
 }
+
+func (m mockTx) GetBoost() uint64 { return m.boost }
 
 func (m mockTx) ReportError(err error) {
 	if m.returnedResult.Swap(true) {

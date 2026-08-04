@@ -193,14 +193,19 @@ func CollectTips(stateDB vm.StateDB) (bool, error) {
 	return val != 0, err
 }
 
-// L2PricingState opens the L2 pricing state backed by stateDB.
-func L2PricingState(stateDB vm.StateDB) (*l2pricing.L2PricingState, error) {
+// BaseFee returns the current base fee for L2 transactions.
+func BaseFee(stateDB vm.StateDB) (*big.Int, error) {
 	backingStorage := storage.NewGeth(stateDB, burn.NewSystemBurner(nil, false))
 	arbosVersion, err := backingStorage.GetUint64ByUint64(uint64(versionOffset))
 	if err != nil {
 		return nil, err
 	}
-	return l2pricing.OpenL2PricingState(backingStorage.OpenCachedSubStorage(l2PricingSubspace), arbosVersion), nil
+	l2pricingState := l2pricing.OpenL2PricingState(backingStorage.OpenCachedSubStorage(l2PricingSubspace), arbosVersion)
+	baseFee, err := l2pricingState.BaseFeeWei()
+	if err != nil {
+		return nil, err
+	}
+	return baseFee, nil
 }
 
 type Offset uint64

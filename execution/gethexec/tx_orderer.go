@@ -7,6 +7,9 @@ package gethexec
 type nextTxFetcher interface {
 	// NextQueueItem yields the next block candidate, reporting false on exhaustion.
 	NextQueueItem() (txQueueItem, bool)
+
+	// OnTxInclusion notifies the orderer that the last yielded tx made it into the block.
+	OnTxInclusion(queueItem txQueueItem)
 }
 
 // fixedTxFetcher yields a pre-set candidate list.
@@ -24,6 +27,9 @@ func (f *fixedTxFetcher) NextQueueItem() (txQueueItem, bool) {
 	f.items = f.items[1:]
 	return item, true
 }
+
+// OnTxInclusion is a no-op: the fixed fetcher doesn't react to inclusions.
+func (f *fixedTxFetcher) OnTxInclusion(queueItem txQueueItem) {}
 
 // TakeRemaining removes and returns the not-yet-yielded candidates.
 func (f *fixedTxFetcher) TakeRemaining() []txQueueItem {
@@ -47,8 +53,9 @@ type txOrderer interface {
 	// dispose of.
 	TakeRemaining() []txQueueItem
 
-	// OnTxInclusion notifies the orderer that the last yielded tx made it into the block.
-	OnTxInclusion()
+	// OnNonceGapResolved hands the orderer a parked tx whose nonce gap the last
+	// inclusion just closed, so it can re-enter the block's candidates.
+	OnNonceGapResolved(queueItem txQueueItem)
 }
 
 // txOrdererSequencer is the sequencer functionality the tx orderers depend on.
@@ -81,4 +88,10 @@ func (o *fifoTxOrderer) StartBlock() bool {
 }
 
 // OnTxInclusion is a no-op: FIFO ordering doesn't react to inclusions.
-func (o *fifoTxOrderer) OnTxInclusion() {}
+func (o *fifoTxOrderer) OnTxInclusion(queueItem txQueueItem) {}
+
+// OnNonceGapResolved appends the revived tx to the block's candidates: its nonce is valid
+// against the in-progress state, so it can follow its predecessor into the same block.
+func (o *fifoTxOrderer) OnNonceGapResolved(queueItem txQueueItem) {
+	o.items = append(o.items, queueItem)
+}

@@ -177,7 +177,7 @@ func (c *SequencerConfig) Validate() error {
 		return errors.New("experimental-pga.rounds-per-block must be at least 1")
 	}
 	// Timeboost and forced FIFO both preclude PGA, so the round length only matters without them.
-	if !c.ExperimentalPGA.DangerousForceFIFO && !c.Timeboost.Enable {
+	if !c.ExperimentalPGA.DangerousForceFIFO {
 		if roundLength := c.PGARoundLength(); roundLength < minPGARoundLength {
 			return fmt.Errorf("PGA round length %v (max-block-speed / experimental-pga.rounds-per-block) is below the minimum supported %v", roundLength, minPGARoundLength)
 		}
@@ -275,6 +275,7 @@ type txQueueItem struct {
 	isAuctionResolution bool
 	blockStamp          uint64 // block number at which timeboosted tx was added to the txQueue
 	pgaBoost            uint64 // accumulated PGA anti-starvation boost; survives requeue across blocks
+	pgaPriority         uint64 // PGA priority of the tx
 }
 
 func newTxQueueItem(
@@ -490,8 +491,11 @@ type Sequencer struct {
 	// message sequencing.
 	sequencingState sequencingState
 
-	baseFee     containers.Option[*big.Int]
-	collectTips containers.Option[bool]
+	baseFee containers.Option[*big.Int] // Current block base fee, present during createBlockWithRegularTxs
+
+	// blockTxOrderer is the orderer of the block under construction, set for the duration of
+	// createBlockWithTxOrderer; guarded by createBlockMutex.
+	blockTxOrderer txOrderer
 }
 
 func NewSequencer(
@@ -814,8 +818,10 @@ func (s *Sequencer) PostTxFilter(header *types.Header, statedb *state.StateDB, _
 		err := nonceFailure.queueItem.ctx.Err()
 		if err != nil {
 			nonceFailure.queueItem.returnResult(err)
+		} else if s.blockTxOrderer != nil {
+			// Hand this transaction (whose nonce is now correct) back to the orderer
+			s.blockTxOrderer.OnNonceGapResolved(nonceFailure.queueItem)
 		} else {
-			// Add this transaction (whose nonce is now correct) back into the queue
 			s.txRetryQueue.Push(nonceFailure.queueItem)
 		}
 	}
@@ -1174,39 +1180,19 @@ func (s *Sequencer) drainValidatedTxs() []txQueueItem {
 	return s.precheckNonces(queueItems)
 }
 
-func (s *Sequencer) setSequencingFields() error {
-	statedb, err := s.execEngine.bc.State()
-	if err != nil {
-		return err
-	}
-	l2Pricing, err := arbosState.L2PricingState(statedb)
-	if err != nil {
-		return err
-	}
-	// Replay the commit ProduceBlockAdvanced will make so BaseFeeWei matches the block's basefee.
-	// It only mutates this throwaway statedb, never the canonical state.
-	err = l2Pricing.CommitMultiGasFees()
-	if err != nil {
-		return err
-	}
-	baseFee, err := l2Pricing.BaseFeeWei()
-	if err != nil {
-		return err
-	}
-	collectTips, err := arbosState.CollectTips(statedb)
+func (s *Sequencer) setCurrentBaseFee(statedb *state.StateDB) error {
+	baseFee, err := arbosState.BaseFee(statedb)
 	if err != nil {
 		return err
 	}
 
 	s.baseFee = containers.Some(baseFee)
-	s.collectTips = containers.Some(collectTips)
 
 	return nil
 }
 
 func (s *Sequencer) clearSequencingFields() {
 	s.baseFee = containers.None[*big.Int]()
-	s.collectTips = containers.None[bool]()
 }
 
 func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
@@ -1215,16 +1201,25 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 
 	config := s.config()
 
-	err := s.setSequencingFields()
+	statedb, err := s.execEngine.bc.State()
+	if err != nil {
+		return nil, config.MaxBlockSpeed
+	}
+	err = s.setCurrentBaseFee(statedb)
 	if err != nil {
 		log.Error("failed to read sequencing fields from latest state", "err", err)
 		return nil, config.MaxBlockSpeed
 	}
 	defer s.clearSequencingFields()
 
+	collectTips, err := arbosState.CollectTips(statedb)
+	if err != nil {
+		return nil, config.MaxBlockSpeed
+	}
+
 	var orderer txOrderer = newFIFOTxOrderer(s)
 	// Timeboost and forced FIFO both take precedence over PGA.
-	if s.collectTips.Unwrap() && !config.ExperimentalPGA.DangerousForceFIFO && !config.Timeboost.Enable {
+	if collectTips && !config.ExperimentalPGA.DangerousForceFIFO {
 		orderer = NewPGATxOrderer(ctx, s, s.config, s.baseFee.Unwrap())
 	}
 
@@ -1236,6 +1231,8 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrderer) (sequencedMsg *execution.SequencedMsg, throttleRegularSequencingFor time.Duration) {
 
 	s.pendingQueueItemsResults = nil
+	s.blockTxOrderer = orderer
+	defer func() { s.blockTxOrderer = nil }()
 
 	forwarder := s.getForwarder()
 
@@ -1298,7 +1295,6 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrde
 		config.MaxTxDataSize,
 		s,
 		s.execEngine.transactionBroadcaster,
-		orderer,
 	)
 
 	timestamp := time.Now().Unix()

@@ -58,17 +58,25 @@ func (m *Mempool[T]) Pop() (PrioritizedTx[T], bool) {
 	return PrioritizedTx[T]{}, false
 }
 
-// Push adds a transaction with no accumulated boost, keying it against the mempool's basefee.
+// Push adds a transaction, keying it against the mempool's basefee with its carried boost folded in.
 func (m *Mempool[T]) Push(item T) {
-	m.PushPrioritized(item, 0)
-}
-
-// PushPrioritized adds a transaction, folding its previously accumulated anti-starvation boost into the priority.
-// Use it for a transaction re-entering the queue, such as a leftover requeued from the previous block.
-func (m *Mempool[T]) PushPrioritized(item T, boost uint64) {
-	entry := PrioritizedTx[T]{tx: item, boost: boost}
+	entry := PrioritizedTx[T]{tx: item, boost: item.GetBoost()}
 	if !entry.setPriority(m.baseFee) {
 		return
 	}
 	m.heap.pushConcrete(entry)
+}
+
+// PushBatch adds a batch of transactions, keying them against the mempool's basefee with their carried boosts folded
+// in. More efficient than pushing one at a time, it re-heapifies the entire queue in a single O(n) pass.
+func (m *Mempool[T]) PushBatch(items []T) {
+	entries := make([]PrioritizedTx[T], 0, len(items))
+	for _, item := range items {
+		entry := PrioritizedTx[T]{tx: item, boost: item.GetBoost()}
+		if !entry.setPriority(m.baseFee) {
+			continue
+		}
+		entries = append(entries, entry)
+	}
+	m.heap.pushBatch(entries)
 }

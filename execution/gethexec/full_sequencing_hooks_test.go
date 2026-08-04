@@ -11,38 +11,38 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 )
 
-// spyTxOrderer counts OnTxInclusion calls; the hooks use no other txOrderer method.
-type spyTxOrderer struct {
-	inclusions int
+// spyTxFetcher wraps fixedTxFetcher and records the queue items reported through OnTxInclusion.
+type spyTxFetcher struct {
+	fixedTxFetcher
+	inclusions []txQueueItem
 }
 
-func (s *spyTxOrderer) StartBlock() bool                   { return false }
-func (s *spyTxOrderer) NextQueueItem() (txQueueItem, bool) { return txQueueItem{}, false }
-func (s *spyTxOrderer) TakeRemaining() []txQueueItem       { return nil }
-func (s *spyTxOrderer) OnTxInclusion()                     { s.inclusions++ }
+func (s *spyTxFetcher) OnTxInclusion(queueItem txQueueItem) {
+	s.inclusions = append(s.inclusions, queueItem)
+}
 
-// TestFullSequencingHooksNotifyOrdererOnSuccessOnly covers the boost feedback wiring: only
-// TxSucceeded notifies the orderer of an inclusion; a failed tx must not earn PGA boost credit.
-func TestFullSequencingHooksNotifyOrdererOnSuccessOnly(t *testing.T) {
+// TestFullSequencingHooksNotifyFetcherOnSuccessOnly covers the boost feedback wiring: only
+// TxSucceeded notifies the fetcher of an inclusion; a failed tx must not earn PGA boost credit.
+func TestFullSequencingHooksNotifyFetcherOnSuccessOnly(t *testing.T) {
 	item0, _ := makeTestQueueItem(t, 0, testBaseFee)
 	item1, _ := makeTestQueueItem(t, 1, testBaseFee)
-	orderer := &spyTxOrderer{}
-	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item0, item1}}, math.MaxInt, nil, nil, orderer)
+	fetcher := &spyTxFetcher{fixedTxFetcher: fixedTxFetcher{items: []txQueueItem{item0, item1}}}
+	hooks := MakeSequencingHooks(fetcher, math.MaxInt, nil, nil)
 
 	if tx, _, err := hooks.NextTxToSequence(); err != nil || tx == nil {
 		t.Fatalf("first NextTxToSequence = (%v, %v), want a tx", tx, err)
 	}
 	hooks.TxSucceeded()
-	if orderer.inclusions != 1 {
-		t.Fatalf("inclusions after TxSucceeded = %d, want 1", orderer.inclusions)
+	if len(fetcher.inclusions) != 1 || fetcher.inclusions[0].tx.Nonce() != 0 {
+		t.Fatalf("inclusions after TxSucceeded = %v, want just the nonce-0 tx", queueItemNonces(fetcher.inclusions))
 	}
 
 	if tx, _, err := hooks.NextTxToSequence(); err != nil || tx == nil {
 		t.Fatalf("second NextTxToSequence = (%v, %v), want a tx", tx, err)
 	}
 	hooks.TxFailed(errors.New("intrinsic gas too low"))
-	if orderer.inclusions != 1 {
-		t.Fatalf("inclusions after TxFailed = %d, want still 1", orderer.inclusions)
+	if len(fetcher.inclusions) != 1 {
+		t.Fatalf("inclusions after TxFailed = %d, want still 1", len(fetcher.inclusions))
 	}
 }
 
@@ -53,7 +53,7 @@ func TestFullSequencingHooksTxResultLifecycle(t *testing.T) {
 	item0, _ := makeTestQueueItem(t, 0, testBaseFee)
 	item1, _ := makeTestQueueItem(t, 1, testBaseFee)
 	item2, _ := makeTestQueueItem(t, 2, testBaseFee)
-	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item0, item1, item2}}, math.MaxInt, nil, nil, nil)
+	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item0, item1, item2}}, math.MaxInt, nil, nil)
 
 	pull := func() {
 		t.Helper()
@@ -91,7 +91,7 @@ func TestFullSequencingHooksTxResultLifecycle(t *testing.T) {
 func TestFullSequencingHooksLateFailureOverridesSuccess(t *testing.T) {
 	item0, _ := makeTestQueueItem(t, 0, testBaseFee)
 	item1, _ := makeTestQueueItem(t, 1, testBaseFee)
-	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item0, item1}}, math.MaxInt, nil, nil, nil)
+	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item0, item1}}, math.MaxInt, nil, nil)
 
 	rollback := errors.New("group rolled back")
 	if tx, _, err := hooks.NextTxToSequence(); err != nil || tx == nil {
@@ -126,7 +126,7 @@ func TestFullSequencingHooksFailedTxDoesNotConsumeBudget(t *testing.T) {
 	failed.txSize = 20
 	fits, _ := makeTestQueueItem(t, 1, testBaseFee)
 	fits.txSize = 20
-	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{failed, fits}}, 25, nil, nil, nil)
+	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{failed, fits}}, 25, nil, nil)
 
 	tx, _, err := hooks.NextTxToSequence()
 	if err != nil || tx.Nonce() != 0 {
@@ -146,7 +146,7 @@ func TestFullSequencingHooksFailedTxDoesNotConsumeBudget(t *testing.T) {
 func TestFullSequencingHooksFailsOnUnreportedResult(t *testing.T) {
 	item0, _ := makeTestQueueItem(t, 0, testBaseFee)
 	item1, _ := makeTestQueueItem(t, 1, testBaseFee)
-	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item0, item1}}, math.MaxInt, nil, nil, nil)
+	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item0, item1}}, math.MaxInt, nil, nil)
 
 	tx, _, err := hooks.NextTxToSequence()
 	if err != nil || tx == nil {
@@ -168,7 +168,7 @@ func TestFullSequencingHooksSkipsOversizedTx(t *testing.T) {
 	big.txSize = 100
 	fits, _ := makeTestQueueItem(t, 2, testBaseFee)
 	fits.txSize = 10
-	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{small, big, fits}}, 25, nil, nil, nil)
+	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{small, big, fits}}, 25, nil, nil)
 
 	tx, _, err := hooks.NextTxToSequence()
 	if err != nil || tx.Nonce() != 0 {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"math/big"
+	"slices"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -54,7 +55,7 @@ func makeExpiredPGAQueueItem(t *testing.T, nonce uint64, gasTipCap int64) (txQue
 	return newRegularTxQueueItem(ctx, tx, nil, resultChan, false, 0), resultChan
 }
 
-func newTestPGATxOrderer(seq txOrdererSequencer) *PGATxOrderer {
+func newTestPGATxOrderer(seq txOrdererSequencer) *pgaTxOrderer {
 	return NewPGATxOrderer(context.Background(), seq, pgaTestConfigFetcher, big.NewInt(testBaseFee))
 }
 
@@ -139,7 +140,7 @@ func TestPGATxOrdererRoundExpiryAdvancesAndBoosts(t *testing.T) {
 		if !ok || item.tx.Nonce() != 0 {
 			t.Fatalf("first yield = (nonce %d, %v), want the high-tip tx", item.tx.Nonce(), ok)
 		}
-		o.OnTxInclusion()
+		o.OnTxInclusion(item)
 
 		// Round 1 expires with the leftover still queued: NextQueueItem advances to round 2 and
 		// yields it, boosted by includedPriority / (2 * roundsPerBlock) = 100 / 4.
@@ -166,10 +167,11 @@ func TestPGATxOrdererLastRoundExpiryEndsBlock(t *testing.T) {
 		if !o.StartBlock() {
 			t.Fatal("StartBlock = false, want true")
 		}
-		if item, ok := o.NextQueueItem(); !ok || item.tx.Nonce() != 0 {
+		item, ok := o.NextQueueItem()
+		if !ok || item.tx.Nonce() != 0 {
 			t.Fatalf("first yield = (nonce %d, %v), want the high-tip tx", item.tx.Nonce(), ok)
 		}
-		o.OnTxInclusion()
+		o.OnTxInclusion(item)
 
 		// Round 1 expires: advance to round 2, boosting both leftovers by 100 / 4 = 25.
 		time.Sleep(testPGARoundLength + time.Millisecond)
@@ -374,18 +376,20 @@ func TestPGATxOrdererLastRoundInclusionBoostsLeftovers(t *testing.T) {
 		if !o.StartBlock() {
 			t.Fatal("StartBlock = false, want true")
 		}
-		if item, ok := o.NextQueueItem(); !ok || item.tx.Nonce() != 0 {
+		item, ok := o.NextQueueItem()
+		if !ok || item.tx.Nonce() != 0 {
 			t.Fatalf("first yield = (nonce %d, %v), want the high-tip tx", item.tx.Nonce(), ok)
 		}
-		o.OnTxInclusion()
+		o.OnTxInclusion(item)
 
 		// Round 1 expires: both leftovers gain 100 / 4 = 25; the mid tip is yielded and included
 		// at priority 5 + 25 = 30.
 		time.Sleep(testPGARoundLength + time.Millisecond)
-		if item, ok := o.NextQueueItem(); !ok || item.tx.Nonce() != 2 {
+		item, ok = o.NextQueueItem()
+		if !ok || item.tx.Nonce() != 2 {
 			t.Fatalf("round-2 yield = (nonce %d, %v), want the mid-tip tx", item.tx.Nonce(), ok)
 		}
-		o.OnTxInclusion()
+		o.OnTxInclusion(item)
 
 		// The last round expires: the block ends, but not before the round-2 inclusion boosts the
 		// leftover by 30 / 4 = 7 on top of its earlier 25.
@@ -418,10 +422,11 @@ func TestPGATxOrdererSingleRoundPerBlock(t *testing.T) {
 		if !o.StartBlock() {
 			t.Fatal("StartBlock = false, want true")
 		}
-		if item, ok := o.NextQueueItem(); !ok || item.tx.Nonce() != 0 {
+		item, ok := o.NextQueueItem()
+		if !ok || item.tx.Nonce() != 0 {
 			t.Fatalf("first yield = (nonce %d, %v), want the high-tip tx", item.tx.Nonce(), ok)
 		}
-		o.OnTxInclusion()
+		o.OnTxInclusion(item)
 
 		// The only round is the last: expiry ends the block immediately, with the leftover
 		// boosted by 100 / 2.
@@ -477,6 +482,95 @@ func TestPGATxOrdererExpiredEntriesDontEndBlock(t *testing.T) {
 			t.Fatal("expired tx got no result, want context.Canceled")
 		}
 	})
+}
+
+// A tx revived from the nonce-failure cache joins the auction mid-round: it is yielded without
+// waiting for a round boundary, entering fresh with no boost.
+func TestPGATxOrdererNonceGapResolvedJoinsCurrentRound(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		o := newTestPGATxOrderer(&stubOrdererSequencer{items: []txQueueItem{makePGAQueueItem(t, 0, 100)}})
+
+		if !o.StartBlock() {
+			t.Fatal("StartBlock = false, want true")
+		}
+		item, ok := o.NextQueueItem()
+		if !ok || item.tx.Nonce() != 0 {
+			t.Fatalf("first yield = (nonce %d, %v), want nonce 0", item.tx.Nonce(), ok)
+		}
+		o.OnTxInclusion(item)
+
+		o.OnNonceGapResolved(makePGAQueueItem(t, 1, 10))
+
+		start := time.Now()
+		item, ok = o.NextQueueItem()
+		if !ok || item.tx.Nonce() != 1 {
+			t.Fatalf("yield = (nonce %d, %v), want the revived tx", item.tx.Nonce(), ok)
+		}
+		if waited := time.Since(start); waited != 0 {
+			t.Fatalf("NextQueueItem waited %v for the revived tx, want a mid-round yield", waited)
+		}
+		if item.pgaBoost != 0 {
+			t.Fatalf("revived boost = %d, want 0 (re-enters fresh)", item.pgaBoost)
+		}
+	})
+}
+
+// A revived tx competes in the current round by fee, slotting between the queued leftovers.
+func TestPGATxOrdererNonceGapResolvedCompetesByFee(t *testing.T) {
+	items := []txQueueItem{
+		makePGAQueueItem(t, 0, 20),
+		makePGAQueueItem(t, 1, 5),
+	}
+	o := newTestPGATxOrderer(&stubOrdererSequencer{items: items})
+
+	if !o.StartBlock() {
+		t.Fatal("StartBlock = false, want true")
+	}
+	o.OnNonceGapResolved(makePGAQueueItem(t, 2, 10))
+
+	for _, wantNonce := range []uint64{0, 2, 1} { // by tip: 20, 10, 5
+		item, ok := o.NextQueueItem()
+		if !ok || item.tx.Nonce() != wantNonce {
+			t.Fatalf("yield = (nonce %d, %v), want nonce %d", item.tx.Nonce(), ok, wantNonce)
+		}
+	}
+}
+
+// A revived tx that is never yielded ends the block in TakeRemaining, re-queued like any other
+// leftover.
+func TestPGATxOrdererNonceGapResolvedLeftoverInTakeRemaining(t *testing.T) {
+	o := newTestPGATxOrderer(&stubOrdererSequencer{items: []txQueueItem{makePGAQueueItem(t, 0, 10)}})
+
+	if !o.StartBlock() {
+		t.Fatal("StartBlock = false, want true")
+	}
+	o.OnNonceGapResolved(makePGAQueueItem(t, 1, 5))
+
+	remaining := o.TakeRemaining()
+	if got := queueItemNonces(remaining); !slices.Equal(got, []uint64{0, 1}) {
+		t.Fatalf("TakeRemaining nonces = %v, want [0 1]", got)
+	}
+}
+
+// A revived tx whose fee cap sits below the block basefee is rejected at push, reporting the
+// fee-cap error to its submitter.
+func TestPGATxOrdererNonceGapResolvedFeeCapRejected(t *testing.T) {
+	o := newTestPGATxOrderer(&stubOrdererSequencer{items: []txQueueItem{makePGAQueueItem(t, 0, 10)}})
+
+	if !o.StartBlock() {
+		t.Fatal("StartBlock = false, want true")
+	}
+	revived, revivedResult := makeTestQueueItem(t, 1, testBaseFee-1)
+	o.OnNonceGapResolved(revived)
+
+	select {
+	case err := <-revivedResult:
+		if !errors.Is(err, core.ErrFeeCapTooLow) {
+			t.Fatalf("revived tx result = %v, want fee-cap-too-low", err)
+		}
+	default:
+		t.Fatal("revived tx got no result, want fee-cap-too-low")
+	}
 }
 
 // A later-round drain whose txs are all rejected reports each error and keeps the block open for

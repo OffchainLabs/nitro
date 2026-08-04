@@ -43,7 +43,6 @@ type FullSequencingHooks struct {
 	blockFilter           arbos.BlockFilter // only used in testing
 	txSizeLimitReached    bool
 	transactionFeedServer transactionBroadcaster
-	txOrderer             txOrderer
 }
 
 var _ BlockSequencingHooks = (*FullSequencingHooks)(nil)
@@ -53,14 +52,12 @@ func MakeSequencingHooks(
 	maxSequencedTxsSize int,
 	txFilter arbos.TxFilter,
 	transactionFeedServer transactionBroadcaster,
-	txOrderer txOrderer,
 ) *FullSequencingHooks {
 	return &FullSequencingHooks{
 		fetcher:               fetcher,
 		maxSequencedTxsSize:   maxSequencedTxsSize,
 		txFilter:              txFilter,
 		transactionFeedServer: transactionFeedServer,
-		txOrderer:             txOrderer,
 	}
 }
 
@@ -80,7 +77,7 @@ func makeZeroTxSizeSequencingHooks(
 			tx: tx,
 		})
 	}
-	hooks := MakeSequencingHooks(&fixedTxFetcher{items: items}, math.MaxInt, txFilter, transactionFeedServer, nil)
+	hooks := MakeSequencingHooks(&fixedTxFetcher{items: items}, math.MaxInt, txFilter, transactionFeedServer)
 	hooks.blockFilter = blockFilter
 	return hooks
 }
@@ -113,13 +110,11 @@ func (s *FullSequencingHooks) SequencedTxes() []TxResult {
 }
 
 func (s *FullSequencingHooks) TxSucceeded() {
-	// The orderer is nil on the resequencing path, which has no orderer to notify.
-	if s.txOrderer != nil {
-		s.txOrderer.OnTxInclusion()
-	}
 	if s.setLastTxResult(nil) {
+		queueItem := s.sequencedTxs[len(s.sequencedTxs)-1].queueItem
+		s.fetcher.OnTxInclusion(queueItem)
 		// Only successful txs consume the block's size budget.
-		s.sequencedTxsSizeSoFar += s.sequencedTxs[len(s.sequencedTxs)-1].queueItem.txSize
+		s.sequencedTxsSizeSoFar += queueItem.txSize
 	}
 }
 

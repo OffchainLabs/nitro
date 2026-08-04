@@ -12,8 +12,8 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec/pga"
 )
 
-// PGATxOrderer is the priority-gas-auction TxOrderer. See the PGA design doc.
-type PGATxOrderer struct {
+// pgaTxOrderer is the priority-gas-auction TxOrderer.
+type pgaTxOrderer struct {
 	seq           txOrdererSequencer
 	configFetcher SequencerConfigFetcher
 	ctx           context.Context // bounds the round-boundary waits
@@ -22,16 +22,12 @@ type PGATxOrderer struct {
 	schedule *pga.Schedule
 
 	baseFee *big.Int
-
-	// lastYieldedPriority is the priority of the tx most recently yielded by NextQueueItem;
-	// OnTxInclusion reports it back to the mempool.
-	lastYieldedPriority uint64
 }
 
-var _ txOrderer = (*PGATxOrderer)(nil)
+var _ txOrderer = (*pgaTxOrderer)(nil)
 
-func NewPGATxOrderer(ctx context.Context, seq txOrdererSequencer, configFetcher SequencerConfigFetcher, baseFee *big.Int) *PGATxOrderer {
-	return &PGATxOrderer{
+func NewPGATxOrderer(ctx context.Context, seq txOrdererSequencer, configFetcher SequencerConfigFetcher, baseFee *big.Int) *pgaTxOrderer {
+	return &pgaTxOrderer{
 		seq:           seq,
 		configFetcher: configFetcher,
 		ctx:           ctx,
@@ -39,7 +35,7 @@ func NewPGATxOrderer(ctx context.Context, seq txOrdererSequencer, configFetcher 
 	}
 }
 
-func (p *PGATxOrderer) NextQueueItem() (txQueueItem, bool) {
+func (p *pgaTxOrderer) NextQueueItem() (txQueueItem, bool) {
 	for {
 		if p.mempool.PriorityQueueLen() == 0 || p.schedule.RoundIsOver() {
 			p.mempool.ApplyRoundBoost()
@@ -51,54 +47,54 @@ func (p *PGATxOrderer) NextQueueItem() (txQueueItem, bool) {
 				log.Warn("PGA round wait interrupted; ending the block early", "err", err)
 				return txQueueItem{}, false
 			}
-			for _, item := range p.seq.drainValidatedTxs() {
-				p.mempool.PushPrioritized(item, item.pgaBoost)
-			}
+			p.mempool.PushBatch(p.seq.drainValidatedTxs())
 		}
 
-		item, ok := p.mempool.Pop()
+		entry, ok := p.mempool.Pop()
 		if !ok {
 			continue
 		}
-
-		tx := item.Tx()
-		tx.pgaBoost = item.Boost()
-		p.lastYieldedPriority = item.Priority()
-
-		return tx, true
+		item := entry.Tx()
+		item.pgaPriority = entry.Priority()
+		item.pgaBoost = entry.Boost()
+		return item, true
 	}
 }
 
-func (p *PGATxOrderer) StartBlock() (hasWork bool) {
+func (p *pgaTxOrderer) StartBlock() (hasWork bool) {
 	config := p.configFetcher()
 	p.schedule = pga.NewSchedule(config.ExperimentalPGA.RoundsPerBlock, config.PGARoundLength())
 	p.mempool = pga.NewMempool[txQueueItem](config.ExperimentalPGA.RoundsPerBlock, p.baseFee)
 
-	for _, item := range p.seq.drainValidatedTxs() {
-		p.mempool.PushPrioritized(item, item.pgaBoost)
-	}
+	p.mempool.PushBatch(p.seq.drainValidatedTxs())
 
 	return p.mempool.PriorityQueueLen() > 0
 }
 
-func (p *PGATxOrderer) TakeRemaining() []txQueueItem {
+func (p *pgaTxOrderer) TakeRemaining() []txQueueItem {
+	// The deferred block cleanup can run before StartBlock arms the mempool.
 	if p.mempool == nil {
 		return nil
 	}
-
-	list := make([]txQueueItem, 0, p.mempool.PriorityQueueLen())
+	items := make([]txQueueItem, 0, p.mempool.PriorityQueueLen())
 	for {
-		item, ok := p.mempool.Pop()
+		entry, ok := p.mempool.Pop()
 		if !ok {
-			break
+			return items
 		}
-		queueItem := item.Tx()
-		queueItem.pgaBoost = item.Boost()
-		list = append(list, queueItem)
+		item := entry.Tx()
+		item.pgaBoost = entry.Boost()
+		items = append(items, item)
 	}
-	return list
 }
 
-func (p *PGATxOrderer) OnTxInclusion() {
-	p.mempool.RecordIncludedTx(p.lastYieldedPriority)
+func (p *pgaTxOrderer) OnTxInclusion(queueItem txQueueItem) {
+	p.mempool.RecordIncludedTx(queueItem.pgaPriority)
+}
+
+// OnNonceGapResolved pushes the revived tx into the current block's auction: its nonce is
+// valid against the in-progress state, and the round-boundary drain would wrongly re-park it
+// by prechecking against the last committed state.
+func (p *pgaTxOrderer) OnNonceGapResolved(queueItem txQueueItem) {
+	p.mempool.Push(queueItem)
 }

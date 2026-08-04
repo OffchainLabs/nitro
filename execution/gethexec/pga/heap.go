@@ -64,6 +64,13 @@ func (h *txHeap[T]) popConcrete() PrioritizedTx[T] {
 	return entry
 }
 
+// pushBatch appends entries and re-establishes the heap invariant in a single O(n) pass, cheaper than pushing one at a
+// time when promoting a whole round. It always re-heapifies, so an empty batch still leaves a valid heap.
+func (h *txHeap[T]) pushBatch(entries []PrioritizedTx[T]) {
+	*h = append(*h, entries...)
+	heap.Init(h)
+}
+
 // addBoost adds delta to every entry's accumulated boost and priority key, applying the anti-starvation boost to the
 // whole queue. Adding the same delta to every key preserves the relative order, so the heap invariant holds without a
 // re-heapify.

@@ -23,6 +23,8 @@ type Tx interface {
 	// GetFirstAppearance returns when the transaction first reached the sequencer; it breaks ties between
 	// equal-priority entries.
 	GetFirstAppearance() time.Time
+	// GetBoost returns the anti-starvation boost the transaction carries in, accumulated in a previous block.
+	GetBoost() uint64
 }
 
 // PrioritizedTx pairs a queued transaction with its priority key.
