@@ -76,8 +76,10 @@ func (ep *Producer[T]) Start(ctx context.Context) {
 			// doneListener is intentionally NOT closed here. Subscriptions send
 			// their id to it while tearing down (see Subscription.Next), so
 			// closing it would race with those sends and panic ("send on closed
-			// channel"). It is buffered and unreferenced once we return, so it is
-			// simply garbage collected.
+			// channel"). Nothing receives from it after we return; that is safe
+			// because Next's send is non-blocking, so late teardowns drop their
+			// id rather than blocking on a full buffer. The channel is freed
+			// once the Producer and all of its Subscriptions become unreachable.
 			ep.Lock()
 			ep.subs = nil
 			ep.Unlock()
