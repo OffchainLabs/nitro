@@ -7,6 +7,7 @@ use arb_context::ArbPrecompileCtx;
 use arb_storage::{
     ARBOS_STATE_ADDRESS, STORAGE_READ_GAS, STORAGE_WRITE_GAS, STORAGE_WRITE_ZERO_GAS, write_cost,
 };
+use arbos::types::BATCH_POSTER_ADDRESS;
 use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
 
 use crate::{ArbPrecompileError, interfaces::IArbAggregator};
@@ -15,12 +16,6 @@ use crate::{ArbPrecompileError, interfaces::IArbAggregator};
 pub const ARBAGGREGATOR_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x6d,
-]);
-
-/// Default batch poster address (the sequencer).
-const BATCH_POSTER_ADDRESS: Address = Address::new([
-    0xa4, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x65, 0x71, 0x75, 0x65,
-    0x6e, 0x63, 0x65, 0x72,
 ]);
 
 const SLOAD_GAS: u64 = STORAGE_READ_GAS;

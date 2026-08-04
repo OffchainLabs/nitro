@@ -1606,6 +1606,7 @@ dependencies = [
  "arb-node",
  "arb-primitives",
  "arbos",
+ "arbos-types",
  "axum",
  "base64 0.22.1",
  "hex",
