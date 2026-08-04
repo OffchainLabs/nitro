@@ -217,7 +217,7 @@ func TestDrainAndValidateQueueItemsReturnsResultOnRejection(t *testing.T) {
 	s.txQueue <- rejectedItem
 	s.txQueue <- validItem
 	header := &types.Header{Number: big.NewInt(testBlockNumber)}
-	s.baseFee = containers.Some(big.NewInt(testBaseFee)) // normally set by setSequencingFields
+	s.baseFee = containers.Some(big.NewInt(testBaseFee)) // normally set by createBlockWithTxOrderer
 
 	items := s.drainAndValidateQueueItems(&config, header)
 

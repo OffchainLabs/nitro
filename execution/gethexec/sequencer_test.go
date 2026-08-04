@@ -6,10 +6,12 @@ package gethexec
 import (
 	"context"
 	"errors"
+	"math/big"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/execution"
@@ -273,7 +275,7 @@ func TestCheckHealthChosenSequencerDeadline(t *testing.T) {
 // A block-creation turn that exits after the orderer is armed must leave the never-attempted
 // txs in txRetryQueue via the deferred sweep, not fail them back to their submitters.
 func TestCreateBlockRequeuesNeverAttemptedTxs(t *testing.T) {
-	engine := &ExecutionEngine{}
+	engine := newTestRecorderEngine(t, 0) // genesis-only chain backing the head state the test passes in
 	configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
 	// A non-nil l1Reader with no known L1 block forces the early exit after StartBlock.
 	seq, err := NewSequencer(engine, &headerreader.HeaderReader{}, configFetcher, nil, nil, nil)
@@ -283,8 +285,12 @@ func TestCreateBlockRequeuesNeverAttemptedTxs(t *testing.T) {
 
 	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
 	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}})
+	statedb, err := engine.bc.State()
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	sequencedMsg, _ := seq.createBlockWithTxOrderer(context.Background(), orderer)
+	sequencedMsg, _ := seq.createBlockWithTxOrderer(context.Background(), statedb, big.NewInt(testBaseFee), orderer)
 
 	if sequencedMsg != nil {
 		t.Fatal("expected no block to be sequenced")
@@ -299,10 +305,19 @@ func TestCreateBlockRequeuesNeverAttemptedTxs(t *testing.T) {
 	}
 }
 
+// panicAfterArmOrderer arms the block's candidates normally, then panics: it stands in for a
+// panic anywhere in block creation while the orderer still holds txs.
+type panicAfterArmOrderer struct{ *fifoTxOrderer }
+
+func (p panicAfterArmOrderer) StartBlock(statedb *state.StateDB) bool {
+	p.fifoTxOrderer.StartBlock(statedb)
+	panic("test-injected block creation panic")
+}
+
 // A panic during block creation must fail the orderer's remaining txs with an internal error
 // rather than requeue them: a requeue could resurrect a tx that panics the sequencer in a loop.
 func TestCreateBlockPanicFailsTxsInsteadOfRequeueing(t *testing.T) {
-	engine := &ExecutionEngine{} // nil blockchain: SequenceTransactions panics
+	engine := newTestRecorderEngine(t, 0)
 	configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
 	seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
 	if err != nil {
@@ -311,8 +326,12 @@ func TestCreateBlockPanicFailsTxsInsteadOfRequeueing(t *testing.T) {
 
 	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
 	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}})
+	statedb, err := engine.bc.State()
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	sequencedMsg, throttle := seq.createBlockWithTxOrderer(context.Background(), orderer)
+	sequencedMsg, throttle := seq.createBlockWithTxOrderer(context.Background(), statedb, big.NewInt(testBaseFee), panicAfterArmOrderer{orderer})
 
 	if sequencedMsg != nil {
 		t.Fatal("expected no block to be sequenced")

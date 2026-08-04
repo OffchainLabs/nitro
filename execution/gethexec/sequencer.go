@@ -176,7 +176,7 @@ func (c *SequencerConfig) Validate() error {
 	if c.ExperimentalPGA.RoundsPerBlock == 0 {
 		return errors.New("experimental-pga.rounds-per-block must be at least 1")
 	}
-	// Timeboost and forced FIFO both preclude PGA, so the round length only matters without them.
+	// Forced FIFO precludes PGA, so the round length only matters without it.
 	if !c.ExperimentalPGA.DangerousForceFIFO {
 		if roundLength := c.PGARoundLength(); roundLength < minPGARoundLength {
 			return fmt.Errorf("PGA round length %v (max-block-speed / experimental-pga.rounds-per-block) is below the minimum supported %v", roundLength, minPGARoundLength)
@@ -491,11 +491,10 @@ type Sequencer struct {
 	// message sequencing.
 	sequencingState sequencingState
 
-	baseFee containers.Option[*big.Int] // Current block base fee, present during createBlockWithRegularTxs
-
-	// blockTxOrderer is the orderer of the block under construction, set for the duration of
-	// createBlockWithTxOrderer; guarded by createBlockMutex.
-	blockTxOrderer txOrderer
+	// baseFee and blockTxOrderer are the base fee and tx orderer of the block under construction,
+	// set for the duration of createBlockWithTxOrderer; guarded by createBlockMutex.
+	baseFee        containers.Option[*big.Int]
+	blockTxOrderer containers.Option[txOrderer]
 }
 
 func NewSequencer(
@@ -818,9 +817,9 @@ func (s *Sequencer) PostTxFilter(header *types.Header, statedb *state.StateDB, _
 		err := nonceFailure.queueItem.ctx.Err()
 		if err != nil {
 			nonceFailure.queueItem.returnResult(err)
-		} else if s.blockTxOrderer != nil {
+		} else if s.blockTxOrderer.IsSome() {
 			// Hand this transaction (whose nonce is now correct) back to the orderer
-			s.blockTxOrderer.OnNonceGapResolved(nonceFailure.queueItem)
+			s.blockTxOrderer.Unwrap().OnNonceGapResolved(nonceFailure.queueItem)
 		} else {
 			s.txRetryQueue.Push(nonceFailure.queueItem)
 		}
@@ -1002,14 +1001,9 @@ func (s *Sequencer) expireNonceFailures() {
 }
 
 // There's no guarantee that returned tx nonces will be correct
-func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
+func (s *Sequencer) precheckNonces(queueItems []txQueueItem, latestState *state.StateDB) []txQueueItem {
 	bc := s.execEngine.bc
 	latestHeader := bc.CurrentBlock()
-	latestState, err := bc.StateAt(latestHeader.Root)
-	if err != nil {
-		log.Error("failed to get current state to pre-check nonces", "err", err)
-		return queueItems
-	}
 	nextHeaderNumber := arbmath.BigAdd(latestHeader.Number, common.Big1)
 	arbosVersion := types.DeserializeHeaderExtraInformation(latestHeader).ArbOSFormatVersion
 	signer := types.MakeSigner(bc.Config(), nextHeaderNumber, latestHeader.Time, arbosVersion)
@@ -1170,29 +1164,19 @@ func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentH
 	return queueItems
 }
 
-func (s *Sequencer) drainValidatedTxs() []txQueueItem {
+func (s *Sequencer) drainValidatedTxs(statedb *state.StateDB) []txQueueItem {
 	// This config snapshot can lag the block creator's if a hot reload lands in between, so the
 	// drain may validate with different limits than the rest of the block; that's acceptable.
 	queueItems := s.drainAndValidateQueueItems(s.config(), s.execEngine.bc.CurrentBlock())
 	if len(queueItems) == 0 {
 		return nil
 	}
-	return s.precheckNonces(queueItems)
-}
-
-func (s *Sequencer) setCurrentBaseFee(statedb *state.StateDB) error {
-	baseFee, err := arbosState.BaseFee(statedb)
-	if err != nil {
-		return err
-	}
-
-	s.baseFee = containers.Some(baseFee)
-
-	return nil
+	return s.precheckNonces(queueItems, statedb)
 }
 
 func (s *Sequencer) clearSequencingFields() {
 	s.baseFee = containers.None[*big.Int]()
+	s.blockTxOrderer = containers.None[txOrderer]()
 }
 
 func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
@@ -1203,37 +1187,36 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 
 	statedb, err := s.execEngine.bc.State()
 	if err != nil {
+		log.Error("failed to get the latest state to sequence a block", "err", err)
 		return nil, config.MaxBlockSpeed
 	}
-	err = s.setCurrentBaseFee(statedb)
+	baseFee, err := arbosState.BaseFee(statedb)
 	if err != nil {
-		log.Error("failed to read sequencing fields from latest state", "err", err)
+		log.Error("failed to read the base fee from the latest state", "err", err)
 		return nil, config.MaxBlockSpeed
 	}
-	defer s.clearSequencingFields()
-
 	collectTips, err := arbosState.CollectTips(statedb)
 	if err != nil {
+		log.Error("failed to read the collect-tips flag from the latest state", "err", err)
 		return nil, config.MaxBlockSpeed
 	}
 
 	var orderer txOrderer = newFIFOTxOrderer(s)
-	// Timeboost and forced FIFO both take precedence over PGA.
 	if collectTips && !config.ExperimentalPGA.DangerousForceFIFO {
-		orderer = NewPGATxOrderer(ctx, s, s.config, s.baseFee.Unwrap())
+		orderer = NewPGATxOrderer(ctx, s, s.config, baseFee)
 	}
 
-	return s.createBlockWithTxOrderer(ctx, orderer)
+	return s.createBlockWithTxOrderer(ctx, statedb, baseFee, orderer)
 }
 
 // createBlockWithTxOrderer creates one block from the txs yielded by the orderer; split from
 // createBlockWithRegularTxs so tests can inject the orderer.
-func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrderer) (sequencedMsg *execution.SequencedMsg, throttleRegularSequencingFor time.Duration) {
+func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, statedb *state.StateDB, baseFee *big.Int, orderer txOrderer) (sequencedMsg *execution.SequencedMsg, throttleRegularSequencingFor time.Duration) {
+	s.baseFee = containers.Some(baseFee)
+	s.blockTxOrderer = containers.Some(orderer)
+	defer s.clearSequencingFields()
 
 	s.pendingQueueItemsResults = nil
-	s.blockTxOrderer = orderer
-	defer func() { s.blockTxOrderer = nil }()
-
 	forwarder := s.getForwarder()
 
 	var hooks *FullSequencingHooks
@@ -1283,7 +1266,7 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrde
 	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
 	s.nonceCache.BeginNewBlock()
 
-	if !orderer.StartBlock() {
+	if !orderer.StartBlock(statedb) {
 		// No regular txs to sequence right now; re-check on the idle poll
 		// cadence rather than waiting a full block interval. This matches the
 		// wait decideSequencingTurn uses when there is no pending work.

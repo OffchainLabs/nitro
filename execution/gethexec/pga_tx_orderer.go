@@ -7,6 +7,7 @@ import (
 	"context"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/execution/gethexec/pga"
@@ -35,7 +36,7 @@ func NewPGATxOrderer(ctx context.Context, seq txOrdererSequencer, configFetcher 
 	}
 }
 
-func (p *pgaTxOrderer) NextQueueItem() (txQueueItem, bool) {
+func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB) (txQueueItem, bool) {
 	for {
 		if p.mempool.PriorityQueueLen() == 0 || p.schedule.RoundIsOver() {
 			p.mempool.ApplyRoundBoost()
@@ -47,7 +48,7 @@ func (p *pgaTxOrderer) NextQueueItem() (txQueueItem, bool) {
 				log.Warn("PGA round wait interrupted; ending the block early", "err", err)
 				return txQueueItem{}, false
 			}
-			p.mempool.PushBatch(p.seq.drainValidatedTxs())
+			p.mempool.PushBatch(p.seq.drainValidatedTxs(statedb))
 		}
 
 		entry, ok := p.mempool.Pop()
@@ -61,12 +62,12 @@ func (p *pgaTxOrderer) NextQueueItem() (txQueueItem, bool) {
 	}
 }
 
-func (p *pgaTxOrderer) StartBlock() (hasWork bool) {
+func (p *pgaTxOrderer) StartBlock(statedb *state.StateDB) (hasWork bool) {
 	config := p.configFetcher()
 	p.schedule = pga.NewSchedule(config.ExperimentalPGA.RoundsPerBlock, config.PGARoundLength())
 	p.mempool = pga.NewMempool[txQueueItem](config.ExperimentalPGA.RoundsPerBlock, p.baseFee)
 
-	p.mempool.PushBatch(p.seq.drainValidatedTxs())
+	p.mempool.PushBatch(p.seq.drainValidatedTxs(statedb))
 
 	return p.mempool.PriorityQueueLen() > 0
 }
@@ -92,9 +93,8 @@ func (p *pgaTxOrderer) OnTxInclusion(queueItem txQueueItem) {
 	p.mempool.RecordIncludedTx(queueItem.pgaPriority)
 }
 
-// OnNonceGapResolved pushes the revived tx into the current block's auction: its nonce is
-// valid against the in-progress state, and the round-boundary drain would wrongly re-park it
-// by prechecking against the last committed state.
+// OnNonceGapResolved pushes the revived tx straight into the current round's auction: waiting
+// for the next round-boundary drain would delay it, and in the last round no drain is coming.
 func (p *pgaTxOrderer) OnNonceGapResolved(queueItem txQueueItem) {
 	p.mempool.Push(queueItem)
 }

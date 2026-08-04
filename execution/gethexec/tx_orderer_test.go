@@ -6,6 +6,8 @@ package gethexec
 import (
 	"slices"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/core/state"
 )
 
 // stubOrdererSequencer feeds drainValidatedTxs canned results: items first, then one batch per
@@ -15,7 +17,7 @@ type stubOrdererSequencer struct {
 	batches [][]txQueueItem
 }
 
-func (s *stubOrdererSequencer) drainValidatedTxs() []txQueueItem {
+func (s *stubOrdererSequencer) drainValidatedTxs(statedb *state.StateDB) []txQueueItem {
 	if s.items != nil {
 		items := s.items
 		s.items = nil
@@ -39,10 +41,10 @@ func queueItemNonces(items []txQueueItem) []uint64 {
 
 func TestFIFOTxOrdererStartBlockEmpty(t *testing.T) {
 	o := newFIFOTxOrderer(&stubOrdererSequencer{})
-	if o.StartBlock() {
+	if o.StartBlock(nil) {
 		t.Fatal("StartBlock on empty = true, want false")
 	}
-	if _, yielded := o.NextQueueItem(); yielded {
+	if _, yielded := o.NextQueueItem(nil); yielded {
 		t.Fatal("NextQueueItem yielded from an empty block")
 	}
 	if remaining := o.TakeRemaining(); len(remaining) != 0 {
@@ -61,14 +63,14 @@ func TestFIFOTxOrdererBlockLifecycle(t *testing.T) {
 	}
 	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items})
 
-	if !o.StartBlock() {
+	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")
 	}
-	first, ok := o.NextQueueItem()
+	first, ok := o.NextQueueItem(nil)
 	if !ok || first.tx.Nonce() != 0 {
 		t.Fatalf("first yield = (nonce %d, %v), want nonce 0", first.tx.Nonce(), ok)
 	}
-	second, ok := o.NextQueueItem()
+	second, ok := o.NextQueueItem(nil)
 	if !ok || second.tx.Nonce() != 1 {
 		t.Fatalf("second yield = (nonce %d, %v), want nonce 1", second.tx.Nonce(), ok)
 	}
@@ -77,7 +79,7 @@ func TestFIFOTxOrdererBlockLifecycle(t *testing.T) {
 	if got := queueItemNonces(remaining); !slices.Equal(got, []uint64{2, 3}) {
 		t.Fatalf("TakeRemaining nonces = %v, want [2 3] (the never-yielded tail)", got)
 	}
-	if _, yielded := o.NextQueueItem(); yielded {
+	if _, yielded := o.NextQueueItem(nil); yielded {
 		t.Fatal("NextQueueItem yielded after TakeRemaining")
 	}
 	if leftover := o.TakeRemaining(); len(leftover) != 0 {
@@ -91,7 +93,7 @@ func TestFIFOTxOrdererNonceGapResolvedJoinsCandidates(t *testing.T) {
 	drained, _ := makeTestQueueItem(t, 0, testBaseFee)
 	o := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{drained}})
 
-	if !o.StartBlock() {
+	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")
 	}
 	revived, _ := makeTestQueueItem(t, 1, testBaseFee)
@@ -100,7 +102,7 @@ func TestFIFOTxOrdererNonceGapResolvedJoinsCandidates(t *testing.T) {
 	o.OnNonceGapResolved(trailing)
 
 	for _, wantNonce := range []uint64{0, 1} {
-		if item, ok := o.NextQueueItem(); !ok || item.tx.Nonce() != wantNonce {
+		if item, ok := o.NextQueueItem(nil); !ok || item.tx.Nonce() != wantNonce {
 			t.Fatalf("yield = (nonce %d, %v), want nonce %d", item.tx.Nonce(), ok, wantNonce)
 		}
 	}
@@ -108,7 +110,7 @@ func TestFIFOTxOrdererNonceGapResolvedJoinsCandidates(t *testing.T) {
 	if got := queueItemNonces(o.TakeRemaining()); !slices.Equal(got, []uint64{2}) {
 		t.Fatalf("TakeRemaining nonces = %v, want [2]", got)
 	}
-	if _, yielded := o.NextQueueItem(); yielded {
+	if _, yielded := o.NextQueueItem(nil); yielded {
 		t.Fatal("NextQueueItem yielded after TakeRemaining")
 	}
 }

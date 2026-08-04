@@ -78,13 +78,11 @@ func TestCollectTipsFreeFunction(t *testing.T) {
 	}
 }
 
-// TestL2PricingStateFreeFunction checks that the stateDB-level L2PricingState opens the same
-// pricing state as the ArbosState accessor.
-func TestL2PricingStateFreeFunction(t *testing.T) {
+// TestBaseFeeFreeFunction checks that the stateDB-level BaseFee reads the same base fee as
+// the ArbosState pricing accessor.
+func TestBaseFeeFreeFunction(t *testing.T) {
 	state, statedb := NewArbosMemoryBackedArbOSState()
-	pricing, err := L2PricingState(statedb)
-	Require(t, err)
-	got, err := pricing.BaseFeeWei()
+	got, err := BaseFee(statedb)
 	Require(t, err)
 	want, err := state.L2PricingState().BaseFeeWei()
 	Require(t, err)
