@@ -7,8 +7,6 @@ import (
 	"errors"
 	"math"
 	"testing"
-
-	"github.com/ethereum/go-ethereum/core"
 )
 
 // spyTxFetcher wraps fixedTxFetcher and records the queue items reported through OnTxInclusion.
@@ -156,41 +154,5 @@ func TestFullSequencingHooksFailsOnUnreportedResult(t *testing.T) {
 	tx, _, err = hooks.NextTxToSequence(nil)
 	if err == nil {
 		t.Fatalf("second NextTxToSequence = (%v, nil), want an error", tx)
-	}
-}
-
-// TestFullSequencingHooksSkipsOversizedTx covers the size budget: a tx that would exceed
-// maxSequencedTxsSize is failed with ErrGasLimitReached and the next candidate is yielded.
-func TestFullSequencingHooksSkipsOversizedTx(t *testing.T) {
-	small, _ := makeTestQueueItem(t, 0, testBaseFee)
-	small.txSize = 10
-	big, _ := makeTestQueueItem(t, 1, testBaseFee)
-	big.txSize = 100
-	fits, _ := makeTestQueueItem(t, 2, testBaseFee)
-	fits.txSize = 10
-	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{small, big, fits}}, 25, nil, nil)
-
-	tx, _, err := hooks.NextTxToSequence(nil)
-	if err != nil || tx.Nonce() != 0 {
-		t.Fatalf("first NextTxToSequence = (%v, %v), want nonce 0", tx, err)
-	}
-	hooks.TxSucceeded()
-
-	// The oversized tx is skipped; the one that fits is yielded next.
-	tx, _, err = hooks.NextTxToSequence(nil)
-	if err != nil || tx.Nonce() != 2 {
-		t.Fatalf("second NextTxToSequence = (%v, %v), want nonce 2", tx, err)
-	}
-	hooks.TxSucceeded()
-
-	if !hooks.txSizeLimitReached {
-		t.Error("txSizeLimitReached = false, want true")
-	}
-	results := hooks.SequencedTxes()
-	if len(results) != 3 {
-		t.Fatalf("got %d results, want 3", len(results))
-	}
-	if !errors.Is(results[1].Err, core.ErrGasLimitReached) {
-		t.Errorf("oversized tx has err %v, want ErrGasLimitReached", results[1].Err)
 	}
 }

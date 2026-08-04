@@ -6,6 +6,7 @@ package gethexec
 import (
 	"context"
 	"errors"
+	"math"
 	"math/big"
 	"slices"
 	"testing"
@@ -97,7 +98,7 @@ func TestPGATxOrdererYieldsByPriority(t *testing.T) {
 		t.Fatal("StartBlock = false, want true")
 	}
 	for _, wantNonce := range []uint64{1, 2, 0} { // by tip: 20, 10, 5
-		item, ok := o.NextQueueItem(nil)
+		item, ok := o.NextQueueItem(nil, math.MaxInt)
 		if !ok || item.tx.Nonce() != wantNonce {
 			t.Fatalf("yield = (nonce %d, %v), want nonce %d", item.tx.Nonce(), ok, wantNonce)
 		}
@@ -116,12 +117,70 @@ func TestPGATxOrdererStartBlockRestoresBoost(t *testing.T) {
 		t.Fatal("StartBlock = false, want true")
 	}
 	// boosted outranks plain: tip 10 + boost 25 > tip 20.
-	first, ok := o.NextQueueItem(nil)
+	first, ok := o.NextQueueItem(nil, math.MaxInt)
 	if !ok || first.tx.Nonce() != 0 {
 		t.Fatalf("first yield = (nonce %d, %v), want the boosted tx", first.tx.Nonce(), ok)
 	}
 	if first.pgaBoost != 25 {
 		t.Fatalf("yielded boost = %d, want 25 preserved", first.pgaBoost)
+	}
+}
+
+// A popped tx too big for the remaining block space ends the block, even when a smaller tx
+// that would fit is still queued: both leave through TakeRemaining in priority order.
+func TestPGATxOrdererOversizedTxEndsBlock(t *testing.T) {
+	oversized := makePGAQueueItem(t, 0, 20)
+	oversized.txSize = 11
+	fits := makePGAQueueItem(t, 1, 5)
+	fits.txSize = 10
+	o := newTestPGATxOrderer(&stubOrdererSequencer{items: []txQueueItem{oversized, fits}})
+
+	if !o.StartBlock(nil) {
+		t.Fatal("StartBlock = false, want true")
+	}
+	if item, ok := o.NextQueueItem(nil, 10); ok {
+		t.Fatalf("NextQueueItem yielded nonce %d, want end of block on the oversized tx", item.tx.Nonce())
+	}
+	if got := queueItemNonces(o.TakeRemaining()); !slices.Equal(got, []uint64{0, 1}) {
+		t.Fatalf("TakeRemaining nonces = %v, want [0 1] (oversized tx re-queued at its priority)", got)
+	}
+}
+
+// The oversized push-back keeps the tx's accumulated boost, so it re-enters the next block's
+// auction where it left off.
+func TestPGATxOrdererOversizedTxKeepsBoost(t *testing.T) {
+	oversized := makePGAQueueItem(t, 0, 10)
+	oversized.pgaBoost = 25 // as left by TakeRemaining in a previous block
+	oversized.txSize = 11
+	o := newTestPGATxOrderer(&stubOrdererSequencer{items: []txQueueItem{oversized}})
+
+	if !o.StartBlock(nil) {
+		t.Fatal("StartBlock = false, want true")
+	}
+	if _, ok := o.NextQueueItem(nil, 10); ok {
+		t.Fatal("NextQueueItem yielded, want end of block on the oversized tx")
+	}
+	remaining := o.TakeRemaining()
+	if len(remaining) != 1 || remaining[0].tx.Nonce() != 0 {
+		t.Fatalf("TakeRemaining returned %d items, want just the oversized tx", len(remaining))
+	}
+	if remaining[0].pgaBoost != 25 {
+		t.Fatalf("re-queued boost = %d, want 25 preserved", remaining[0].pgaBoost)
+	}
+}
+
+// A tx that exactly fills the remaining block space is yielded: only a strictly bigger tx ends
+// the block.
+func TestPGATxOrdererExactFitTxYielded(t *testing.T) {
+	item := makePGAQueueItem(t, 0, 10)
+	item.txSize = 10
+	o := newTestPGATxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}})
+
+	if !o.StartBlock(nil) {
+		t.Fatal("StartBlock = false, want true")
+	}
+	if got, ok := o.NextQueueItem(nil, 10); !ok || got.tx.Nonce() != 0 {
+		t.Fatalf("yield = (nonce %d, %v), want the exact-fit tx", got.tx.Nonce(), ok)
 	}
 }
 
@@ -136,7 +195,7 @@ func TestPGATxOrdererRoundExpiryAdvancesAndBoosts(t *testing.T) {
 		if !o.StartBlock(nil) {
 			t.Fatal("StartBlock = false, want true")
 		}
-		item, ok := o.NextQueueItem(nil)
+		item, ok := o.NextQueueItem(nil, math.MaxInt)
 		if !ok || item.tx.Nonce() != 0 {
 			t.Fatalf("first yield = (nonce %d, %v), want the high-tip tx", item.tx.Nonce(), ok)
 		}
@@ -145,7 +204,7 @@ func TestPGATxOrdererRoundExpiryAdvancesAndBoosts(t *testing.T) {
 		// Round 1 expires with the leftover still queued: NextQueueItem advances to round 2 and
 		// yields it, boosted by includedPriority / (2 * roundsPerBlock) = 100 / 4.
 		time.Sleep(testPGARoundLength + time.Millisecond)
-		item, ok = o.NextQueueItem(nil)
+		item, ok = o.NextQueueItem(nil, math.MaxInt)
 		if !ok || item.tx.Nonce() != 1 {
 			t.Fatalf("round-2 yield = (nonce %d, %v), want the boosted leftover", item.tx.Nonce(), ok)
 		}
@@ -167,7 +226,7 @@ func TestPGATxOrdererLastRoundExpiryEndsBlock(t *testing.T) {
 		if !o.StartBlock(nil) {
 			t.Fatal("StartBlock = false, want true")
 		}
-		item, ok := o.NextQueueItem(nil)
+		item, ok := o.NextQueueItem(nil, math.MaxInt)
 		if !ok || item.tx.Nonce() != 0 {
 			t.Fatalf("first yield = (nonce %d, %v), want the high-tip tx", item.tx.Nonce(), ok)
 		}
@@ -175,13 +234,13 @@ func TestPGATxOrdererLastRoundExpiryEndsBlock(t *testing.T) {
 
 		// Round 1 expires: advance to round 2, boosting both leftovers by 100 / 4 = 25.
 		time.Sleep(testPGARoundLength + time.Millisecond)
-		if item, ok := o.NextQueueItem(nil); !ok || item.tx.Nonce() != 2 {
+		if item, ok := o.NextQueueItem(nil, math.MaxInt); !ok || item.tx.Nonce() != 2 {
 			t.Fatalf("round-2 yield = (nonce %d, %v), want the mid-tip tx", item.tx.Nonce(), ok)
 		}
 
 		// Round 2 is the last: when it expires the block is over, even with a tx still queued.
 		time.Sleep(testPGARoundLength + time.Millisecond)
-		if _, ok := o.NextQueueItem(nil); ok {
+		if _, ok := o.NextQueueItem(nil, math.MaxInt); ok {
 			t.Fatal("NextQueueItem yielded after the last round expired, want end of block")
 		}
 		remaining := o.TakeRemaining()
@@ -204,7 +263,7 @@ func TestPGATxOrdererAdvancesRoundWhenQueueEmpties(t *testing.T) {
 		if !o.StartBlock(nil) {
 			t.Fatal("StartBlock = false, want true")
 		}
-		if item, ok := o.NextQueueItem(nil); !ok || item.tx.Nonce() != 0 {
+		if item, ok := o.NextQueueItem(nil, math.MaxInt); !ok || item.tx.Nonce() != 0 {
 			t.Fatalf("first yield = (nonce %d, %v), want nonce 0", item.tx.Nonce(), ok)
 		}
 
@@ -212,7 +271,7 @@ func TestPGATxOrdererAdvancesRoundWhenQueueEmpties(t *testing.T) {
 		// boundary and drain it.
 		seq.items = []txQueueItem{makePGAQueueItem(t, 1, 10)}
 		start := time.Now()
-		item, ok := o.NextQueueItem(nil)
+		item, ok := o.NextQueueItem(nil, math.MaxInt)
 		if !ok || item.tx.Nonce() != 1 {
 			t.Fatalf("second yield = (nonce %d, %v), want the round-2 tx", item.tx.Nonce(), ok)
 		}
@@ -222,7 +281,7 @@ func TestPGATxOrdererAdvancesRoundWhenQueueEmpties(t *testing.T) {
 
 		// Round 2 is the last: once the queue empties again the block is over, immediately.
 		start = time.Now()
-		if _, ok := o.NextQueueItem(nil); ok {
+		if _, ok := o.NextQueueItem(nil, math.MaxInt); ok {
 			t.Fatal("NextQueueItem yielded past the last round, want end of block")
 		}
 		if waited := time.Since(start); waited != 0 {
@@ -241,14 +300,14 @@ func TestPGATxOrdererCtxCancelEndsBlock(t *testing.T) {
 		if !o.StartBlock(nil) {
 			t.Fatal("StartBlock = false, want true")
 		}
-		if item, ok := o.NextQueueItem(nil); !ok || item.tx.Nonce() != 0 {
+		if item, ok := o.NextQueueItem(nil, math.MaxInt); !ok || item.tx.Nonce() != 0 {
 			t.Fatalf("first yield = (nonce %d, %v), want nonce 0", item.tx.Nonce(), ok)
 		}
 
 		// The empty queue would normally wait out round 1; cancellation aborts the wait instead.
 		cancel()
 		start := time.Now()
-		if _, ok := o.NextQueueItem(nil); ok {
+		if _, ok := o.NextQueueItem(nil, math.MaxInt); ok {
 			t.Fatal("NextQueueItem yielded after context cancellation, want end of block")
 		}
 		if waited := time.Since(start); waited != 0 {
@@ -271,13 +330,13 @@ func TestPGATxOrdererWaitsThroughIdleRounds(t *testing.T) {
 		if !o.StartBlock(nil) {
 			t.Fatal("StartBlock = false, want true")
 		}
-		if item, ok := o.NextQueueItem(nil); !ok || item.tx.Nonce() != 0 {
+		if item, ok := o.NextQueueItem(nil, math.MaxInt); !ok || item.tx.Nonce() != 0 {
 			t.Fatalf("first yield = (nonce %d, %v), want nonce 0", item.tx.Nonce(), ok)
 		}
 
 		// Round 2's drain is empty; the orderer waits through it and yields round 3's arrival.
 		start := time.Now()
-		item, ok := o.NextQueueItem(nil)
+		item, ok := o.NextQueueItem(nil, math.MaxInt)
 		if !ok || item.tx.Nonce() != 1 {
 			t.Fatalf("yield = (nonce %d, %v), want the round-3 tx", item.tx.Nonce(), ok)
 		}
@@ -298,12 +357,12 @@ func TestPGATxOrdererEndsBlockAfterIdleRounds(t *testing.T) {
 		if !o.StartBlock(nil) {
 			t.Fatal("StartBlock = false, want true")
 		}
-		if item, ok := o.NextQueueItem(nil); !ok || item.tx.Nonce() != 0 {
+		if item, ok := o.NextQueueItem(nil, math.MaxInt); !ok || item.tx.Nonce() != 0 {
 			t.Fatalf("first yield = (nonce %d, %v), want nonce 0", item.tx.Nonce(), ok)
 		}
 
 		start := time.Now()
-		if _, ok := o.NextQueueItem(nil); ok {
+		if _, ok := o.NextQueueItem(nil, math.MaxInt); ok {
 			t.Fatal("NextQueueItem yielded with nothing queued, want end of block")
 		}
 		if waited := time.Since(start); waited != 2*roundLength {
@@ -325,12 +384,12 @@ func TestPGATxOrdererNoBoostWithoutInclusion(t *testing.T) {
 			t.Fatal("StartBlock = false, want true")
 		}
 		// The high-tip tx is yielded but OnTxInclusion is never called (as if the hooks failed it).
-		if item, ok := o.NextQueueItem(nil); !ok || item.tx.Nonce() != 0 {
+		if item, ok := o.NextQueueItem(nil, math.MaxInt); !ok || item.tx.Nonce() != 0 {
 			t.Fatalf("first yield = (nonce %d, %v), want the high-tip tx", item.tx.Nonce(), ok)
 		}
 
 		time.Sleep(testPGARoundLength + time.Millisecond)
-		item, ok := o.NextQueueItem(nil)
+		item, ok := o.NextQueueItem(nil, math.MaxInt)
 		if !ok || item.tx.Nonce() != 1 {
 			t.Fatalf("round-2 yield = (nonce %d, %v), want the leftover", item.tx.Nonce(), ok)
 		}
@@ -376,7 +435,7 @@ func TestPGATxOrdererLastRoundInclusionBoostsLeftovers(t *testing.T) {
 		if !o.StartBlock(nil) {
 			t.Fatal("StartBlock = false, want true")
 		}
-		item, ok := o.NextQueueItem(nil)
+		item, ok := o.NextQueueItem(nil, math.MaxInt)
 		if !ok || item.tx.Nonce() != 0 {
 			t.Fatalf("first yield = (nonce %d, %v), want the high-tip tx", item.tx.Nonce(), ok)
 		}
@@ -385,7 +444,7 @@ func TestPGATxOrdererLastRoundInclusionBoostsLeftovers(t *testing.T) {
 		// Round 1 expires: both leftovers gain 100 / 4 = 25; the mid tip is yielded and included
 		// at priority 5 + 25 = 30.
 		time.Sleep(testPGARoundLength + time.Millisecond)
-		item, ok = o.NextQueueItem(nil)
+		item, ok = o.NextQueueItem(nil, math.MaxInt)
 		if !ok || item.tx.Nonce() != 2 {
 			t.Fatalf("round-2 yield = (nonce %d, %v), want the mid-tip tx", item.tx.Nonce(), ok)
 		}
@@ -394,7 +453,7 @@ func TestPGATxOrdererLastRoundInclusionBoostsLeftovers(t *testing.T) {
 		// The last round expires: the block ends, but not before the round-2 inclusion boosts the
 		// leftover by 30 / 4 = 7 on top of its earlier 25.
 		time.Sleep(testPGARoundLength + time.Millisecond)
-		if _, ok := o.NextQueueItem(nil); ok {
+		if _, ok := o.NextQueueItem(nil, math.MaxInt); ok {
 			t.Fatal("NextQueueItem yielded after the last round expired, want end of block")
 		}
 		remaining := o.TakeRemaining()
@@ -422,7 +481,7 @@ func TestPGATxOrdererSingleRoundPerBlock(t *testing.T) {
 		if !o.StartBlock(nil) {
 			t.Fatal("StartBlock = false, want true")
 		}
-		item, ok := o.NextQueueItem(nil)
+		item, ok := o.NextQueueItem(nil, math.MaxInt)
 		if !ok || item.tx.Nonce() != 0 {
 			t.Fatalf("first yield = (nonce %d, %v), want the high-tip tx", item.tx.Nonce(), ok)
 		}
@@ -432,7 +491,7 @@ func TestPGATxOrdererSingleRoundPerBlock(t *testing.T) {
 		// boosted by 100 / 2.
 		time.Sleep(roundLength + time.Millisecond)
 		start := time.Now()
-		if _, ok := o.NextQueueItem(nil); ok {
+		if _, ok := o.NextQueueItem(nil, math.MaxInt); ok {
 			t.Fatal("NextQueueItem yielded after the only round expired, want end of block")
 		}
 		if waited := time.Since(start); waited != 0 {
@@ -466,7 +525,7 @@ func TestPGATxOrdererExpiredEntriesDontEndBlock(t *testing.T) {
 
 		// Pop drops the expired entry; the orderer waits out round 1 and yields round 2's arrival.
 		start := time.Now()
-		item, ok := o.NextQueueItem(nil)
+		item, ok := o.NextQueueItem(nil, math.MaxInt)
 		if !ok || item.tx.Nonce() != 1 {
 			t.Fatalf("yield = (nonce %d, %v), want the round-2 tx", item.tx.Nonce(), ok)
 		}
@@ -493,7 +552,7 @@ func TestPGATxOrdererNonceGapResolvedJoinsCurrentRound(t *testing.T) {
 		if !o.StartBlock(nil) {
 			t.Fatal("StartBlock = false, want true")
 		}
-		item, ok := o.NextQueueItem(nil)
+		item, ok := o.NextQueueItem(nil, math.MaxInt)
 		if !ok || item.tx.Nonce() != 0 {
 			t.Fatalf("first yield = (nonce %d, %v), want nonce 0", item.tx.Nonce(), ok)
 		}
@@ -502,7 +561,7 @@ func TestPGATxOrdererNonceGapResolvedJoinsCurrentRound(t *testing.T) {
 		o.OnNonceGapResolved(makePGAQueueItem(t, 1, 10))
 
 		start := time.Now()
-		item, ok = o.NextQueueItem(nil)
+		item, ok = o.NextQueueItem(nil, math.MaxInt)
 		if !ok || item.tx.Nonce() != 1 {
 			t.Fatalf("yield = (nonce %d, %v), want the revived tx", item.tx.Nonce(), ok)
 		}
@@ -529,7 +588,7 @@ func TestPGATxOrdererNonceGapResolvedCompetesByFee(t *testing.T) {
 	o.OnNonceGapResolved(makePGAQueueItem(t, 2, 10))
 
 	for _, wantNonce := range []uint64{0, 2, 1} { // by tip: 20, 10, 5
-		item, ok := o.NextQueueItem(nil)
+		item, ok := o.NextQueueItem(nil, math.MaxInt)
 		if !ok || item.tx.Nonce() != wantNonce {
 			t.Fatalf("yield = (nonce %d, %v), want nonce %d", item.tx.Nonce(), ok, wantNonce)
 		}
@@ -588,13 +647,13 @@ func TestPGATxOrdererMidBlockRejectedDrainKeepsWaiting(t *testing.T) {
 		if !o.StartBlock(nil) {
 			t.Fatal("StartBlock = false, want true")
 		}
-		if item, ok := o.NextQueueItem(nil); !ok || item.tx.Nonce() != 0 {
+		if item, ok := o.NextQueueItem(nil, math.MaxInt); !ok || item.tx.Nonce() != 0 {
 			t.Fatalf("first yield = (nonce %d, %v), want nonce 0", item.tx.Nonce(), ok)
 		}
 
 		// Round 2's only arrival is rejected at push; the orderer reports it and waits for round 3.
 		start := time.Now()
-		item, ok := o.NextQueueItem(nil)
+		item, ok := o.NextQueueItem(nil, math.MaxInt)
 		if !ok || item.tx.Nonce() != 2 {
 			t.Fatalf("yield = (nonce %d, %v), want the round-3 tx", item.tx.Nonce(), ok)
 		}

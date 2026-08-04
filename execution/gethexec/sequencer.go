@@ -1465,9 +1465,7 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 
 		if madeBlock {
 			blockTxSizeHistogram.Update(blockTxSize)
-			if hooks.txSizeLimitReached {
-				dataLimitedBlocksCounter.Inc(1)
-			} else if blockGasLimitReached {
+			if blockGasLimitReached {
 				gasLimitedBlocksCounter.Inc(1)
 			} else {
 				// no transactions were skipped due to block size or gas limit

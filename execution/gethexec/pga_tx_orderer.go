@@ -36,7 +36,7 @@ func NewPGATxOrderer(ctx context.Context, seq txOrdererSequencer, configFetcher 
 	}
 }
 
-func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB) (txQueueItem, bool) {
+func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize int) (txQueueItem, bool) {
 	for {
 		if p.mempool.PriorityQueueLen() == 0 || p.schedule.RoundIsOver() {
 			p.mempool.ApplyRoundBoost()
@@ -50,7 +50,6 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB) (txQueueItem, bool)
 			}
 			p.mempool.PushBatch(p.seq.drainValidatedTxs(statedb))
 		}
-
 		entry, ok := p.mempool.Pop()
 		if !ok {
 			continue
@@ -58,6 +57,15 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB) (txQueueItem, bool)
 		item := entry.Tx()
 		item.pgaPriority = entry.Priority()
 		item.pgaBoost = entry.Boost()
+
+		// If the next tx is too big to fit in the remaining block space, we add it back to the mempool and stop sequencing.
+		// The sequencer will finalize the block and start a new one, which will have a fresh mempool and schedule.
+		if item.txSize > remainingBlockSize {
+			dataLimitedBlocksCounter.Inc(1)
+			p.mempool.Push(item)
+			return txQueueItem{}, false
+		}
+
 		return item, true
 	}
 }

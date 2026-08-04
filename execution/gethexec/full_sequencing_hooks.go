@@ -41,7 +41,6 @@ type FullSequencingHooks struct {
 	maxSequencedTxsSize   int
 	txFilter              arbos.TxFilter
 	blockFilter           arbos.BlockFilter // only used in testing
-	txSizeLimitReached    bool
 	transactionFeedServer transactionBroadcaster
 }
 
@@ -158,24 +157,16 @@ func (s *FullSequencingHooks) TxAccepted(header *types.Header, tx *types.Transac
 // NextTxToSequence returns the next transaction to be included in the block, or nil if there are no more transactions to include.
 // It will skip transactions that would cause the total size of included transactions to exceed maxSequencedTxsSize.
 func (s *FullSequencingHooks) NextTxToSequence(statedb *state.StateDB) (*types.Transaction, *arbitrum_types.ConditionalOptions, error) {
-	for {
-		// This is not supposed to happen, if so we have a bug
-		if n := len(s.sequencedTxs); n > 0 && errors.Is(s.sequencedTxs[n-1].err, txNotFinalized) {
-			return nil, nil, fmt.Errorf("NextTxToSequence called before the block processor reported tx %s's result", s.sequencedTxs[n-1].queueItem.tx.Hash())
-		}
-		item, ok := s.fetcher.NextQueueItem(statedb)
-		if !ok {
-			return nil, nil, nil
-		}
-		s.sequencedTxs = append(s.sequencedTxs, sequencedTx{queueItem: item, err: txNotFinalized})
-		if s.sequencedTxsSizeSoFar+item.txSize > s.maxSequencedTxsSize {
-			s.setLastTxResult(core.ErrGasLimitReached)
-			s.txSizeLimitReached = true
-			// TODO(NIT-5041): in PGA, we should stop at this point and start a new block
-			continue
-		}
-		return item.tx, item.options, nil
+	// This is not supposed to happen, if so we have a bug
+	if n := len(s.sequencedTxs); n > 0 && errors.Is(s.sequencedTxs[n-1].err, txNotFinalized) {
+		return nil, nil, fmt.Errorf("NextTxToSequence called before the block processor reported tx %s's result", s.sequencedTxs[n-1].queueItem.tx.Hash())
 	}
+	item, ok := s.fetcher.NextQueueItem(statedb, s.maxSequencedTxsSize-s.sequencedTxsSizeSoFar)
+	if !ok {
+		return nil, nil, nil
+	}
+	s.sequencedTxs = append(s.sequencedTxs, sequencedTx{queueItem: item, err: txNotFinalized})
+	return item.tx, item.options, nil
 }
 
 func (s *FullSequencingHooks) CanDiscardTx() bool {
