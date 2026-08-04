@@ -613,6 +613,10 @@ func (m *mockBlockRecorder) PrepareForRecord(start, end arbutil.MessageIndex) co
 	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
 }
 
+func (m *mockBlockRecorder) PruneBlockRecordings(before arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
+}
+
 func newMockRecorder(validator *staker.StatelessBlockValidator, streamer *arbnode.TransactionStreamer) *mockBlockRecorder {
 	return &mockBlockRecorder{validator, streamer}
 }

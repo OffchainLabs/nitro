@@ -81,9 +81,11 @@ jobs:
   go-tests:
     name: Go tests
     runs-on: arbitrator-ci
-    # Per-job hard cap so a hung test terminates with a Go stack trace rather
-    # than GitHub killing the runner (which yields no useful diagnostics).
-    timeout-minutes: 150
+    # Hard cap so a hung job is killed at 1.5h instead of GitHub's 6h default.
+    # Kept above every per-step Go `--timeout` (<=70m) plus the ~15m build, so on
+    # a hung test the Go timeout fires first and prints a goroutine stack trace
+    # before the job cap terminates the runner.
+    timeout-minutes: 90
     env:
       COVER: ${{ github.event_name != 'merge_group' && '--cover' || '' }}
     services:
@@ -128,14 +130,14 @@ jobs:
         if: inputs.run-pathdb-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 90m $COVER --test_state_scheme path
+          --tags cionly --timeout 70m $COVER --test_state_scheme path
           --junitfile test-results/junit-pathdb-a.xml --run '^Test[A-L]' --reduce-parallelism
 
       - name: run tests without race detection and path state scheme (B-batch)
         if: inputs.run-pathdb-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 90m $COVER --test_state_scheme path
+          --tags cionly --timeout 70m $COVER --test_state_scheme path
           --junitfile test-results/junit-pathdb-b.xml --skip '^Test[A-L]' --reduce-parallelism
 
       # --------------------- DEFAULTS MODE ---------------------
@@ -175,14 +177,14 @@ jobs:
         if: inputs.run-pathdb-a-mel
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 90m $COVER --test_state_scheme path
+          --tags cionly --timeout 70m $COVER --test_state_scheme path
           --junitfile test-results/junit-pathdb-a-mel.xml --run '^Test[A-L]' --reduce-parallelism --test_mel
 
       - name: run tests without race detection and path state scheme (B-batch, MEL)
         if: inputs.run-pathdb-b-mel
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 90m $COVER --test_state_scheme path
+          --tags cionly --timeout 70m $COVER --test_state_scheme path
           --junitfile test-results/junit-pathdb-b-mel.xml --skip '^Test[A-L]' --reduce-parallelism --test_mel
 
       # --------------------- DEFAULTS MEL MODE ---------------------
@@ -247,21 +249,21 @@ jobs:
         if: inputs.run-challenge-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest
-          --run TestChallengeProtocolBOLDCustomDA --timeout 120m $COVER
+          --run TestChallengeProtocolBOLDCustomDA --timeout 70m $COVER
           --junitfile test-results/junit-challenge-a.xml
 
       - name: run challenge tests (B-batch)
         if: inputs.run-challenge-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh --tags challengetest
-          --run TestChallenge --skip TestChallengeProtocolBOLDCustomDA --timeout 120m $COVER
+          --run TestChallenge --skip TestChallengeProtocolBOLDCustomDA --timeout 70m $COVER
           --junitfile test-results/junit-challenge-b.xml
 
       - name: run L3 challenge tests
         if: inputs.run-l3challenge
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags challengetest --run TestL3Challenge --timeout 120m $COVER
+          --tags challengetest --run TestL3Challenge --timeout 70m $COVER
           --junitfile test-results/junit-l3challenge.xml
 
       - name: run legacy challenge tests
@@ -286,7 +288,7 @@ jobs:
         if: inputs.run-race
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --race --timeout 90m --test_state_scheme hash
+          --race --timeout 70m --test_state_scheme hash
           --junitfile test-results/junit-race.xml
 
       # --------------------- LONG MODE ---------------------
@@ -311,12 +313,12 @@ jobs:
       - name: run pebble tests (A-batch)
         if: inputs.run-pebble-a
         run: >-
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 120m --test_database_engine pebble
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 70m --test_database_engine pebble
           --junitfile test-results/junit-pebble-a.xml --run '^Test[A-N]' --reduce-parallelism
       - name: run pebble tests (B-batch)
         if: inputs.run-pebble-b
         run: >-
-          ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 120m --test_database_engine pebble
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh --timeout 70m --test_database_engine pebble
           --junitfile test-results/junit-pebble-b.xml --skip '^Test[A-N]' --reduce-parallelism
 
       # --------------------- PROCESS JUNIT LOGS ---------------------

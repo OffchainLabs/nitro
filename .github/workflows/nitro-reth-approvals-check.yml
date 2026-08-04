@@ -28,6 +28,7 @@ jobs:
   check-nitro-reth-approvals:
     name: Check Nitro Reth approvals
     runs-on: ubuntu-4
+    timeout-minutes: 10
     needs: changes
     if: always()
     permissions:

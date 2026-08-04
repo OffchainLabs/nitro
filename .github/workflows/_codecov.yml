@@ -25,6 +25,7 @@ jobs:
   report_summary:
     name: Aggregate test results
     runs-on: ubuntu-4
+    timeout-minutes: 15
     if: ${{ github.repository == 'OffchainLabs/nitro-private' }}
     permissions:
       contents: read
