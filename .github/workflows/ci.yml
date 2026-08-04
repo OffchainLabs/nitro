@@ -54,6 +54,7 @@ jobs:
   # --- Record the tested tree so the merge queue can skip an identical re-run ---
   record-tested-tree:
     runs-on: ubuntu-4
+    timeout-minutes: 10
     needs: go-tests
     steps:
       - name: Checkout
@@ -110,6 +111,7 @@ jobs:
   can_proceed:
     name: can_proceed
     runs-on: ubuntu-4
+    timeout-minutes: 5
     if: always()
     needs: [fast, changelog]
     steps:
@@ -122,5 +124,6 @@ jobs:
     # Depends on nothing, so it always runs and always reports a status on the
     # pull request page regardless of which other jobs were skipped.
     runs-on: ubuntu-4
+    timeout-minutes: 5
     steps:
       - run: true

@@ -10,6 +10,7 @@ jobs:
   validation-tests:
     name: Block validation tests
     runs-on: ocl-16cpu-64ram-dind
+    timeout-minutes: 25
     env:
       # The block input JSON can be generated using following command:
       # `gotestsum --format short-verbose -- -run "TestProgramStorage\$" ./system_tests/... --count 1 -- --recordBlockInputs.enable=true --recordBlockInputs.WithBaseDir=target/ --recordBlockInputs.WithTimestampDirEnabled=false --recordBlockInputs.WithBlockIdInFileNameEnabled=false`

@@ -10,6 +10,7 @@ jobs:
   lint-and-build:
     name: Lint and Build
     runs-on: ocl-16cpu-64ram-dind
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v6

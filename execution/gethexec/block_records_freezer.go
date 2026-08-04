@@ -218,6 +218,23 @@ func (s *blockRecordsFreezer) readRecording(pos arbutil.MessageIndex) (*chainTip
 	return chainTipRecordingFromPersisted(&persisted), nil
 }
 
+// pruneRecordingsBefore deletes the recordings for all message indices below
+// pos by advancing the freezer tail. The tail cannot move past the head, so
+// pruning targets beyond the last recording empty the freezer instead.
+func (s *blockRecordsFreezer) pruneRecordingsBefore(pos arbutil.MessageIndex) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	_, head, err := s.freezerBounds()
+	if err != nil {
+		return err
+	}
+	if _, err := s.freezer.TruncateTail(min(uint64(pos), head)); err != nil {
+		return fmt.Errorf("failed to prune chain-tip block records freezer: %w", err)
+	}
+	return nil
+}
+
 func (s *blockRecordsFreezer) Close() error {
 	s.lock.Lock()
 	defer s.lock.Unlock()

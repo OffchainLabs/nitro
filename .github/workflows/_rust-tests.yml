@@ -10,6 +10,7 @@ jobs:
   rust:
     name: Run Rust tests
     runs-on: ocl-16cpu-64ram-dind
+    timeout-minutes: 35
     env:
       RUST_BACKTRACE: 1
       RUSTFLAGS: -Dwarnings

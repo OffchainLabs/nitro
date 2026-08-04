@@ -21,6 +21,7 @@ jobs:
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.code_changed == 'true'
     runs-on: ocl-16cpu-64ram-dind
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash

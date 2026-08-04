@@ -11,6 +11,7 @@ permissions:
 jobs:
   build_and_run:
     runs-on: ocl-16cpu-64ram-dind-500gi
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
