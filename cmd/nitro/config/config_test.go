@@ -155,10 +155,17 @@ func TestConfigVersionRange(t *testing.T) {
 		// wantErr empty means the configuration is expected to parse.
 		wantErr string
 	}{
-
+		/////////////////////////////////////////////////////////////////////////////////////////////////////
+		// excluded from version checks - these versions are local builds or CI that don't get distributed //
+		/////////////////////////////////////////////////////////////////////////////////////////////////////
 		{
 			name:       "excluded from version checks - local build i.e. no version",
 			jsonConfig: `{"conf":{"min-version":"v3.9.9", "max-version":"v3.9.9"}}`,
+		},
+		{
+			name:        "excluded from version checks - local build i.e. sha",
+			nodeVersion: "26b4b9b",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.9", "max-version":"v3.9.9"}}`,
 		},
 		{
 			name:        "excluded from version checks - untagged ci build is not checked",
@@ -167,9 +174,12 @@ func TestConfigVersionRange(t *testing.T) {
 		},
 		{
 			name:        "excluded from version checks - untagged branch build is not checked",
-			nodeVersion: "branch-26b4b9b",
+			nodeVersion: "branch.name-26b4b9b",
 			jsonConfig:  `{"conf":{"min-version":"v3.9.9", "max-version":"v3.9.9"}}`,
 		},
+		//////////////////////////
+		// version check passes //
+		//////////////////////////
 		{
 			name:        "version check passes - no version fields present",
 			nodeVersion: "v3.9.9",
@@ -184,12 +194,37 @@ func TestConfigVersionRange(t *testing.T) {
 		{
 			name:        "version check passes - build metadata ignored",
 			nodeVersion: "v3.9.9-26b4b9b",
-			jsonConfig:  `{"conf":{"min-version":"v3.9.0","max-version":"v3.10.0"}}`,
+			jsonConfig:  `{"conf":{"min-version":"v3.9.9","max-version":"v3.9.9"}}`,
+		},
+		{
+			name:        "version check passes - build metadata ignored with modified",
+			nodeVersion: "v3.9.9-26b4b9b-modified",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.9","max-version":"v3.9.9"}}`,
 		},
 		{
 			name:        "version check passes - build metadata ignored with prerelease",
 			nodeVersion: "v3.9.9-rc.2-26b4b9b",
-			jsonConfig:  `{"conf":{"min-version":"v3.9.0","max-version":"v3.10.0"}}`,
+			jsonConfig:  `{"conf":{"min-version":"v3.9.9-rc.2","max-version":"v3.9.9-rc.2"}}`,
+		},
+		{
+			name:        "version check passes - build metadata ignored with prerelease and modified",
+			nodeVersion: "v3.9.9-rc.2-26b4b9b-modified",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.9-rc.2","max-version":"v3.9.9-rc.2"}}`,
+		},
+		{
+			name:        "version check passes - numeric sha is build metadata",
+			nodeVersion: "v3.9.9-0123456",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.9","max-version":"v3.9.9"}}`,
+		},
+		{
+			name:        "version check passes - existing build metadata is preserved",
+			nodeVersion: "v3.9.9+26b4b9b",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.9","max-version":"v3.9.9"}}`,
+		},
+		{
+			name:        "version check passes - standalone modified suffix is build metadata",
+			nodeVersion: "v3.9.9-modified",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.9","max-version":"v3.9.9"}}`,
 		},
 		{
 			name:        "version check passes - simple",
@@ -222,14 +257,79 @@ func TestConfigVersionRange(t *testing.T) {
 			jsonConfig:  `{"conf":{"min-version":"v3.9.3"}}`,
 		},
 		{
-			name:        "version check passes - short syntax",
-			nodeVersion: "v3.9",
+			name:        "version check passes - with prerelease",
+			nodeVersion: "v3.8.1-rc.1",
 			jsonConfig:  `{"conf":{"min-version":"v3.8.0","max-version":"v3.10.0"}}`,
 		},
 		{
-			name:        "version check passes - short syntax in config",
-			nodeVersion: "v3.9.5",
-			jsonConfig:  `{"conf":{"min-version":"v3.9","max-version":"v3.10"}}`,
+			name:        "version check passes - prerelease equals min-version",
+			nodeVersion: "v3.8.1-rc.2",
+			jsonConfig:  `{"conf":{"min-version":"v3.8.1-rc.2"}}`,
+		},
+		{
+			name:        "version check passes - prerelease later than min-version",
+			nodeVersion: "v3.8.1-rc.3",
+			jsonConfig:  `{"conf":{"min-version":"v3.8.1-rc.2"}}`,
+		},
+		{
+			name:        "version check passes - final release later than prerelease min-version",
+			nodeVersion: "v3.8.1",
+			jsonConfig:  `{"conf":{"min-version":"v3.8.1-rc.2"}}`,
+		},
+		{
+			name:        "version check passes - prerelease equals max-version",
+			nodeVersion: "v3.8.1-rc.2",
+			jsonConfig:  `{"conf":{"max-version":"v3.8.1-rc.2"}}`,
+		},
+		{
+			name:        "version check passes - prerelease earlier than max-version",
+			nodeVersion: "v3.8.1-rc.1",
+			jsonConfig:  `{"conf":{"max-version":"v3.8.1-rc.2"}}`,
+		},
+		/////////////////////////
+		// version check fails //
+		/////////////////////////
+		{
+			name:        "version check fails - sha metadata remains subject to bounds",
+			nodeVersion: "v3.9.9-26b4b9b",
+			jsonConfig:  `{"conf":{"max-version":"v3.9.8"}}`,
+			wantErr:     "conf.max-version",
+		},
+		{
+			name:        "version check fails - modified sha metadata remains subject to bounds",
+			nodeVersion: "v3.9.9-26b4b9b-modified",
+			jsonConfig:  `{"conf":{"max-version":"v3.9.8"}}`,
+			wantErr:     "conf.max-version",
+		},
+		{
+			name:        "version check fails - prerelease sha metadata remains subject to bounds",
+			nodeVersion: "v3.9.9-rc.2-26b4b9b",
+			jsonConfig:  `{"conf":{"max-version":"v3.9.9-rc.1"}}`,
+			wantErr:     "conf.max-version",
+		},
+		{
+			name:        "version check fails - prerelease modified sha metadata remains subject to bounds",
+			nodeVersion: "v3.9.9-rc.2-26b4b9b-modified",
+			jsonConfig:  `{"conf":{"max-version":"v3.9.9-rc.1"}}`,
+			wantErr:     "conf.max-version",
+		},
+		{
+			name:        "version check fails - numeric sha metadata remains subject to bounds",
+			nodeVersion: "v3.9.9-0123456",
+			jsonConfig:  `{"conf":{"max-version":"v3.9.8"}}`,
+			wantErr:     "conf.max-version",
+		},
+		{
+			name:        "version check fails - existing metadata remains subject to bounds",
+			nodeVersion: "v3.9.9+26b4b9b",
+			jsonConfig:  `{"conf":{"max-version":"v3.9.8"}}`,
+			wantErr:     "conf.max-version",
+		},
+		{
+			name:        "version check fails - standalone modified metadata remains subject to bounds",
+			nodeVersion: "v3.9.9-modified",
+			jsonConfig:  `{"conf":{"max-version":"v3.9.8"}}`,
+			wantErr:     "conf.max-version",
 		},
 		{
 			name:        "version check fails - even with unknown key present",
@@ -238,15 +338,33 @@ func TestConfigVersionRange(t *testing.T) {
 			wantErr:     "conf.max-version",
 		},
 		{
-			name:        "version check fails - prerelease is before",
+			name:        "version check fails - prerelease is before final min-version",
 			nodeVersion: "v3.9.0-rc.2",
 			jsonConfig:  `{"conf":{"min-version":"v3.9.0","max-version":"v3.10.0"}}`,
 			wantErr:     "conf.min-version",
 		},
 		{
-			name:        "version check fails - prerelease is before",
+			name:        "version check fails - prerelease is after max-version",
 			nodeVersion: "v3.10.1-rc.2",
 			jsonConfig:  `{"conf":{"min-version":"v3.9.0","max-version":"v3.10.0"}}`,
+			wantErr:     "conf.max-version",
+		},
+		{
+			name:        "version check fails - prerelease earlier than min-version prerelease",
+			nodeVersion: "v3.8.1-rc.1",
+			jsonConfig:  `{"conf":{"min-version":"v3.8.1-rc.2"}}`,
+			wantErr:     "conf.min-version",
+		},
+		{
+			name:        "version check fails - prerelease later than max-version prerelease",
+			nodeVersion: "v3.8.1-rc.3",
+			jsonConfig:  `{"conf":{"max-version":"v3.8.1-rc.2"}}`,
+			wantErr:     "conf.max-version",
+		},
+		{
+			name:        "version check fails - final release later than max-version prerelease",
+			nodeVersion: "v3.8.1",
+			jsonConfig:  `{"conf":{"max-version":"v3.8.1-rc.2"}}`,
 			wantErr:     "conf.max-version",
 		},
 		{
@@ -255,23 +373,49 @@ func TestConfigVersionRange(t *testing.T) {
 			jsonConfig:  `{"conf":{"max-version":"v3.9.0"}}`,
 			wantErr:     "conf.max-version",
 		},
+		/////////////////////////////
+		// config versions invalid //
+		/////////////////////////////
 		{
-			name:        "version check fails - invalid version bounds - min-version",
+			name:        "config versions invalid - invalid version bounds - min-version - short syntax not allowed",
 			nodeVersion: "v3.9.9",
-			jsonConfig:  `{"conf":{"min-version":"3.9"}}`,
+			jsonConfig:  `{"conf":{"min-version":"v3.9"}}`,
 			wantErr:     "invalid conf.min-version",
 		},
 		{
-			name:        "version check fails - invalid version bounds - max-version",
+			name:        "config versions invalid - invalid version bounds - max-version - short syntax not allowed",
 			nodeVersion: "v3.9.9",
-			jsonConfig:  `{"conf":{"max-version":"3.9"}}`,
+			jsonConfig:  `{"conf":{"max-version":"v3.9"}}`,
 			wantErr:     "invalid conf.max-version",
 		},
 		{
-			name:        "version check fails - invalid version bounds - min-version and max-version",
+			name:        "config versions invalid - invalid version bounds - min-version",
 			nodeVersion: "v3.9.9",
-			jsonConfig:  `{"conf":{"min-version":"abc", "max-version":"def"}}`,
+			jsonConfig:  `{"conf":{"min-version":"abc"}}`,
 			wantErr:     "invalid conf.min-version",
+		},
+		{
+			name:        "config versions invalid - invalid version bounds - max-version",
+			nodeVersion: "v3.9.9",
+			jsonConfig:  `{"conf":{"max-version":"def"}}`,
+			wantErr:     "invalid conf.max-version",
+		},
+		{
+			name:        "config versions invalid - build metadata not allowed in min-version",
+			nodeVersion: "v3.9.9",
+			jsonConfig:  `{"conf":{"min-version":"v3.9.0+build"}}`,
+			wantErr:     "invalid conf.min-version",
+		},
+		{
+			name:        "config versions invalid - build metadata not allowed in max-version",
+			nodeVersion: "v3.9.9",
+			jsonConfig:  `{"conf":{"max-version":"v3.10.0+build"}}`,
+			wantErr:     "invalid conf.max-version",
+		},
+		{
+			name:       "config versions invalid - malformed bound is validated for local build",
+			jsonConfig: `{"conf":{"min-version":"not-semver"}}`,
+			wantErr:    "invalid conf.min-version",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -304,8 +304,8 @@ func mainImpl() int {
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
-	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
-	stackConf.Version = strippedRevision
+	versionInfo := confighelpers.GetVersion()
+	stackConf.Version = versionInfo.WithoutV()
 
 	err = genericconf.InitLog(expressLaneProxyConfig.LogType, expressLaneProxyConfig.LogLevel, &expressLaneProxyConfig.FileLogging, genericconf.DefaultPathResolver(expressLaneProxyConfig.Persistent.LogDir))
 	if err != nil {
@@ -334,7 +334,7 @@ func mainImpl() int {
 
 	fatalErrChan := make(chan error, 10)
 
-	log.Info("Running Arbitrum Express Lane Proxy", "revision", vcsRevision, "vcs.time", vcsTime)
+	log.Info("Running Arbitrum Express Lane Proxy", "revision", versionInfo.RawVersion, "vcs.time", versionInfo.Timestamp)
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		pflag.Usage()

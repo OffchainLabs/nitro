@@ -249,10 +249,10 @@ func startup() error {
 		anyTrustLifecycleManager.Register(&L1ReaderCloser{l1Reader})
 	}
 
-	vcsRevision, _, vcsTime := confighelpers.GetVersion()
+	versionInfo := confighelpers.GetVersion()
 	var rpcServer *http.Server
 	if serverConfig.EnableRPC {
-		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort, "revision", vcsRevision, "vcs.time", vcsTime)
+		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort, "revision", versionInfo.RawVersion, "vcs.time", versionInfo.Timestamp)
 
 		rpcServer, err = anytrust.StartRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, serverConfig.RPCServerBodyLimit, daReader, daWriter, daHealthChecker, signatureVerifier)
 		if err != nil {
@@ -262,7 +262,7 @@ func startup() error {
 
 	var restServer *anytrust.RestfulServer
 	if serverConfig.EnableREST {
-		log.Info("Starting REST server", "addr", serverConfig.RESTAddr, "port", serverConfig.RESTPort, "revision", vcsRevision, "vcs.time", vcsTime)
+		log.Info("Starting REST server", "addr", serverConfig.RESTAddr, "port", serverConfig.RESTPort, "revision", versionInfo.RawVersion, "vcs.time", versionInfo.Timestamp)
 
 		restServer, err = anytrust.NewRestfulServer(serverConfig.RESTAddr, serverConfig.RESTPort, serverConfig.RESTServerTimeouts, daReader, daHealthChecker)
 		if err != nil {

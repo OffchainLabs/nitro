@@ -173,13 +173,13 @@ func loadS3Variables(k *koanf.Koanf) error {
 
 var ErrVersion = errors.New("configuration: version requested")
 
-func GetVersion() (string, string, string) {
+func GetVersion() genericconf.VersionInfo {
 	return genericconf.GetVersion(version, datetime, modified)
 }
 
 func PrintErrorAndExit(err error, usage func(string)) {
-	vcsRevision, _, vcsTime := GetVersion()
-	fmt.Printf("Version: %v, time: %v\n", vcsRevision, vcsTime)
+	versionInfo := GetVersion()
+	fmt.Printf("Version: %v, time: %v\n", versionInfo.RawVersion, versionInfo.Timestamp)
 	if err != nil && errors.Is(err, ErrVersion) {
 		// Already printed version, just exit
 		os.Exit(0)

@@ -46,8 +46,8 @@ func mainImpl() int {
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
-	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
-	stackConf.Version = strippedRevision
+	versionInfo := confighelpers.GetVersion()
+	stackConf.Version = versionInfo.WithoutV()
 
 	err = genericconf.InitLog(nodeConfig.LogType, nodeConfig.LogLevel, &nodeConfig.FileLogging, genericconf.DefaultPathResolver(nodeConfig.Persistent.LogDir))
 	if err != nil {
@@ -84,7 +84,7 @@ func mainImpl() int {
 	}
 
 	if nodeConfig.AuctioneerServer.Enable {
-		log.Info("Running Arbitrum express lane auctioneer", "revision", vcsRevision, "vcs.time", vcsTime)
+		log.Info("Running Arbitrum express lane auctioneer", "revision", versionInfo.RawVersion, "vcs.time", versionInfo.Timestamp)
 		auctioneer, err := timeboost.NewAuctioneerServer(
 			ctx,
 			func() *timeboost.AuctioneerServerConfig { return &liveNodeConfig.Get().AuctioneerServer },
@@ -95,7 +95,7 @@ func mainImpl() int {
 		}
 		auctioneer.Start(ctx)
 	} else if nodeConfig.BidValidator.Enable {
-		log.Info("Running Arbitrum express lane bid validator", "revision", vcsRevision, "vcs.time", vcsTime)
+		log.Info("Running Arbitrum express lane bid validator", "revision", versionInfo.RawVersion, "vcs.time", versionInfo.Timestamp)
 		stack, err := node.New(&stackConf)
 		if err != nil {
 			pflag.Usage()

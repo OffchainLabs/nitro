@@ -164,8 +164,8 @@ func mainImpl() int {
 	config.WS.Apply(&stackConf)
 	config.IPC.Apply(&stackConf)
 	config.Auth.Apply(&stackConf)
-	_, strippedRevision, _ := confighelpers.GetVersion()
-	stackConf.Version = strippedRevision
+	versionInfo := confighelpers.GetVersion()
+	stackConf.Version = versionInfo.WithoutV()
 
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
 		filename := genericconf.DefaultPathResolver(config.Persistent.GlobalConfig)("jwtsecret")

@@ -7,7 +7,7 @@ package genericconf
 
 import "runtime/debug"
 
-func GetVersion(definedVersion string, definedTime string, definedModified string) (string, string, string) {
+func GetVersion(definedVersion string, definedTime string, definedModified string) VersionInfo {
 	vcsVersion := "development"
 	vcsTime := "development"
 	vcsModified := "false"
@@ -43,10 +43,9 @@ func GetVersion(definedVersion string, definedTime string, definedModified strin
 		vcsVersion = vcsVersion + "-modified"
 	}
 
-	strippedVersion := vcsVersion
-	if len(strippedVersion) > 0 && strippedVersion[0] == 'v' {
-		strippedVersion = strippedVersion[1:]
+	return VersionInfo{
+		RawVersion: vcsVersion,
+		Timestamp:  vcsTime,
+		Stamped:    definedVersion != "",
 	}
-
-	return vcsVersion, strippedVersion, vcsTime
 }

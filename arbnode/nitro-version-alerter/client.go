@@ -54,14 +54,15 @@ type Client struct {
 }
 
 func NewClient(ctx context.Context, cfg *ClientConfig) (*Client, error) {
-	nodeVersion, _, nodeVersionDate := confighelpers.GetVersion()
-	if !semver.IsValid(nodeVersion) {
-		log.Warn("node version is not valid semver, skipping version alerter", "nodeVersion", nodeVersion, "nodeVersionDate", nodeVersionDate)
+	versionInfo := confighelpers.GetVersion()
+	nodeVersion, err := versionInfo.ComparableVersion()
+	if err != nil {
+		log.Warn("node version is not comparable semver, skipping version alerter", "nodeVersion", versionInfo.RawVersion, "nodeVersionDate", versionInfo.Timestamp, "err", err)
 		return nil, nil
 	}
-	nodeVersionTime, err := time.Parse(time.RFC3339, nodeVersionDate)
+	nodeVersionTime, err := time.Parse(time.RFC3339, versionInfo.Timestamp)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing nodeVersionDate: %s into time: %w", nodeVersionDate, err)
+		return nil, fmt.Errorf("error parsing nodeVersionDate: %s into time: %w", versionInfo.Timestamp, err)
 	}
 	connectionConfigFetcher := func() *rpcclient.ClientConfig { return &cfg.Connection }
 	connection := rpcclient.NewRpcClient(connectionConfigFetcher, nil)

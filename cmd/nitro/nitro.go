@@ -162,8 +162,8 @@ func mainImpl() int {
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
-	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
-	stackConf.Version = strippedRevision
+	versionInfo := confighelpers.GetVersion()
+	stackConf.Version = versionInfo.WithoutV()
 
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
 		filename := genericconf.DefaultPathResolver(nodeConfig.Persistent.GlobalConfig)("jwtsecret")
@@ -179,7 +179,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
+	log.Info("Running Arbitrum nitro node", "revision", versionInfo.RawVersion, "vcs.time", versionInfo.Timestamp)
 	log.Info("Resources detected", "GOMAXPROCS", nitroutil.GoMaxProcs())
 
 	if nodeConfig.Execution.LegacyZeroBaseFeeUntil != 0 {

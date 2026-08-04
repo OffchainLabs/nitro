@@ -55,8 +55,8 @@ func mainImpl() int {
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
-	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
-	stackConf.Version = strippedRevision
+	versionInfo := confighelpers.GetVersion()
+	stackConf.Version = versionInfo.WithoutV()
 
 	pathResolver := func(workdir string) func(string) string {
 		resolvedWorkdir := workdir
@@ -90,7 +90,7 @@ func mainImpl() int {
 		stackConf.JWTSecret = filename
 	}
 
-	log.Info("Running Arbitrum nitro validation node", "revision", vcsRevision, "vcs.time", vcsTime)
+	log.Info("Running Arbitrum nitro validation node", "revision", versionInfo.RawVersion, "vcs.time", versionInfo.Timestamp)
 
 	liveNodeConfig := genericconf.NewLiveConfig[*ValidationNodeConfig](args, nodeConfig, ParseNode)
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *ValidationNodeConfig, newCfg *ValidationNodeConfig) error {
