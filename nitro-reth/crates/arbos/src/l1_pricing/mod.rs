@@ -27,10 +27,8 @@ pub const L1_FEES_AVAILABLE_OFFSET: u64 = 11;
 pub const GAS_FLOOR_PER_TOKEN_OFFSET: u64 = 12;
 
 // Well-known addresses.
-pub const BATCH_POSTER_ADDRESS: Address = Address::new([
-    0xa4, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x65, 0x71, 0x75, 0x65,
-    0x6e, 0x63, 0x65, 0x72,
-]);
+// `BATCH_POSTER_ADDRESS` is defined in `arbos-types` (wasm-friendly) and re-exported here.
+pub use arbos_types::BATCH_POSTER_ADDRESS;
 pub const BATCH_POSTER_PAY_TO_ADDRESS: Address = BATCH_POSTER_ADDRESS;
 
 pub const L1_PRICER_FUNDS_POOL_ADDRESS: Address = Address::new([

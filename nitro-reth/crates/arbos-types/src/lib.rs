@@ -1,3 +1,5 @@
+use alloy_primitives::Address;
+
 pub mod rlp;
 pub mod serialization;
 
@@ -15,3 +17,12 @@ pub use incoming_message::{
     parse_incoming_l1_message, parse_init_message,
 };
 pub use message_with_meta::{MessageWithMetadata, MessageWithMetadataAndBlockInfo};
+
+/// The well-known ArbOS batch-poster address (`0xa4b0…73657175656e636572`).
+///
+/// Defined here rather than in `arbos::l1_pricing` so wasm consumers (`arb-mel`)
+/// can reach it without depending on `arbos`; `arbos::l1_pricing` re-exports it.
+pub const BATCH_POSTER_ADDRESS: Address = Address::new([
+    0xa4, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x65, 0x71, 0x75, 0x65,
+    0x6e, 0x63, 0x65, 0x72,
+]);

@@ -1,11 +1,16 @@
+//! A live JSON-RPC [`DaReader`] for an Arbitrum data availability provider.
+//!
+//! Split out of `arb-da-provider` so the networking stack (alloy RPC client,
+//! reqwest, tokio) stays out of that crate's wasm-compatible core. Speaks the
+//! `daprovider_*` methods and decodes their base64 payloads/preimages.
+
 use std::{collections::HashMap, sync::OnceLock};
 
 use alloy_primitives::{B256, Bytes, U64};
 use alloy_rpc_client::RpcClient;
+use arb_da_provider::{DaError, DaReader, Payload, PreimageType, Preimages, Result};
 use base64::{Engine as _, engine::GeneralPurpose};
 use serde::Deserialize;
-
-use super::{DaReader, Payload, PreimageType, Preimages, Result};
 
 /// A [`DaReader`] that talks to a DA provider over JSON-RPC.
 #[derive(Debug)]
@@ -35,7 +40,8 @@ impl DaReader for RpcDaReader {
         let res: RpcPayloadResult = self
             .client
             .request("daprovider_recoverPayload", params)
-            .await?;
+            .await
+            .map_err(DaError::provider)?;
         decode_payload(res.payload.as_deref())
     }
 
@@ -53,7 +59,8 @@ impl DaReader for RpcDaReader {
         let res: RpcPreimagesResult = self
             .client
             .request("daprovider_collectPreimages", params)
-            .await?;
+            .await
+            .map_err(DaError::provider)?;
         decode_preimages(res.preimages)
     }
 
@@ -71,7 +78,8 @@ impl DaReader for RpcDaReader {
         let res: RpcPayloadAndPreimagesResult = self
             .client
             .request("daprovider_recoverPayloadAndPreimages", params)
-            .await?;
+            .await
+            .map_err(DaError::provider)?;
         Ok((
             decode_payload(res.payload.as_deref())?,
             decode_preimages(res.preimages)?,
@@ -150,9 +158,9 @@ fn base64_engine() -> &'static GeneralPurpose {
 #[cfg(test)]
 mod tests {
     use alloy_provider::mock::Asserter;
+    use arb_da_provider::{DaError, DaReader};
 
     use super::*;
-    use crate::{DaError, DaReader};
 
     /// The 4 raw bytes used across the fixtures below.
     const BYTES: [u8; 4] = [0xde, 0xad, 0xbe, 0xef];
@@ -339,6 +347,6 @@ mod tests {
             .recover_payload(1, B256::repeat_byte(1), &[])
             .await
             .unwrap_err();
-        assert!(matches!(err, DaError::Transport(_)));
+        assert!(matches!(err, DaError::Provider(_)));
     }
 }
