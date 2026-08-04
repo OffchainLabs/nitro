@@ -491,7 +491,7 @@ type Sequencer struct {
 	// message sequencing.
 	sequencingState sequencingState
 
-	// baseFee and blockTxOrderer are the base fee and tx orderer of the block under construction,
+	// The base fee and tx orderer of the block under construction,
 	// set for the duration of createBlockWithTxOrderer; guarded by createBlockMutex.
 	baseFee        containers.Option[*big.Int]
 	blockTxOrderer containers.Option[txOrderer]
@@ -1174,9 +1174,24 @@ func (s *Sequencer) drainValidatedTxs(statedb *state.StateDB) []txQueueItem {
 	return s.precheckNonces(queueItems, statedb)
 }
 
-func (s *Sequencer) clearSequencingFields() {
-	s.baseFee = containers.None[*big.Int]()
-	s.blockTxOrderer = containers.None[txOrderer]()
+func (s *Sequencer) readBaseFeeAndCollectTips() (*big.Int, bool, error) {
+	statedb, err := s.execEngine.bc.State()
+	if err != nil {
+		log.Error("failed to get the latest state to sequence a block", "err", err)
+		return nil, false, err
+	}
+	baseFee, err := arbosState.BaseFee(statedb)
+	if err != nil {
+		log.Error("failed to read the base fee from the latest state", "err", err)
+		return nil, false, err
+	}
+	collectTips, err := arbosState.CollectTips(statedb)
+	if err != nil {
+		log.Error("failed to read the collect-tips flag from the latest state", "err", err)
+		return nil, false, err
+	}
+
+	return baseFee, collectTips, nil
 }
 
 func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
@@ -1184,20 +1199,8 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 	defer s.createBlockMutex.Unlock()
 
 	config := s.config()
-
-	statedb, err := s.execEngine.bc.State()
+	baseFee, collectTips, err := s.readBaseFeeAndCollectTips()
 	if err != nil {
-		log.Error("failed to get the latest state to sequence a block", "err", err)
-		return nil, config.MaxBlockSpeed
-	}
-	baseFee, err := arbosState.BaseFee(statedb)
-	if err != nil {
-		log.Error("failed to read the base fee from the latest state", "err", err)
-		return nil, config.MaxBlockSpeed
-	}
-	collectTips, err := arbosState.CollectTips(statedb)
-	if err != nil {
-		log.Error("failed to read the collect-tips flag from the latest state", "err", err)
 		return nil, config.MaxBlockSpeed
 	}
 
@@ -1206,16 +1209,19 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 		orderer = NewPGATxOrderer(ctx, s, s.config, baseFee)
 	}
 
-	return s.createBlockWithTxOrderer(ctx, statedb, baseFee, orderer)
+	s.baseFee = containers.Some(baseFee)
+	s.blockTxOrderer = containers.Some(orderer)
+	defer func() {
+		s.baseFee = containers.None[*big.Int]()
+		s.blockTxOrderer = containers.None[txOrderer]()
+	}()
+
+	return s.createBlockWithTxOrderer(ctx, orderer)
 }
 
 // createBlockWithTxOrderer creates one block from the txs yielded by the orderer; split from
 // createBlockWithRegularTxs so tests can inject the orderer.
-func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, statedb *state.StateDB, baseFee *big.Int, orderer txOrderer) (sequencedMsg *execution.SequencedMsg, throttleRegularSequencingFor time.Duration) {
-	s.baseFee = containers.Some(baseFee)
-	s.blockTxOrderer = containers.Some(orderer)
-	defer s.clearSequencingFields()
-
+func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrderer) (sequencedMsg *execution.SequencedMsg, throttleRegularSequencingFor time.Duration) {
 	s.pendingQueueItemsResults = nil
 	forwarder := s.getForwarder()
 
@@ -1266,6 +1272,11 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, statedb *state
 	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
 	s.nonceCache.BeginNewBlock()
 
+	statedb, stateErr := s.execEngine.bc.State()
+	if stateErr != nil {
+		log.Error("failed to get the latest state to start a block", "err", stateErr)
+		return nil, config.MaxBlockSpeed
+	}
 	if !orderer.StartBlock(statedb) {
 		// No regular txs to sequence right now; re-check on the idle poll
 		// cadence rather than waiting a full block interval. This matches the

@@ -6,7 +6,6 @@ package gethexec
 import (
 	"context"
 	"errors"
-	"math/big"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -275,7 +274,7 @@ func TestCheckHealthChosenSequencerDeadline(t *testing.T) {
 // A block-creation turn that exits after the orderer is armed must leave the never-attempted
 // txs in txRetryQueue via the deferred sweep, not fail them back to their submitters.
 func TestCreateBlockRequeuesNeverAttemptedTxs(t *testing.T) {
-	engine := newTestRecorderEngine(t, 0) // genesis-only chain backing the head state the test passes in
+	engine := newTestRecorderEngine(t, 0) // genesis-only chain so the pre-StartBlock state fetch succeeds
 	configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
 	// A non-nil l1Reader with no known L1 block forces the early exit after StartBlock.
 	seq, err := NewSequencer(engine, &headerreader.HeaderReader{}, configFetcher, nil, nil, nil)
@@ -285,12 +284,8 @@ func TestCreateBlockRequeuesNeverAttemptedTxs(t *testing.T) {
 
 	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
 	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}})
-	statedb, err := engine.bc.State()
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	sequencedMsg, _ := seq.createBlockWithTxOrderer(context.Background(), statedb, big.NewInt(testBaseFee), orderer)
+	sequencedMsg, _ := seq.createBlockWithTxOrderer(context.Background(), orderer)
 
 	if sequencedMsg != nil {
 		t.Fatal("expected no block to be sequenced")
@@ -326,12 +321,8 @@ func TestCreateBlockPanicFailsTxsInsteadOfRequeueing(t *testing.T) {
 
 	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
 	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}})
-	statedb, err := engine.bc.State()
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	sequencedMsg, throttle := seq.createBlockWithTxOrderer(context.Background(), statedb, big.NewInt(testBaseFee), panicAfterArmOrderer{orderer})
+	sequencedMsg, throttle := seq.createBlockWithTxOrderer(context.Background(), panicAfterArmOrderer{orderer})
 
 	if sequencedMsg != nil {
 		t.Fatal("expected no block to be sequenced")
