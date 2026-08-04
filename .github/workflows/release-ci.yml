@@ -11,6 +11,7 @@ permissions:
 jobs:
   build_and_run:
     runs-on: arbitrator-ci
+    timeout-minutes: 60
 
     steps:
       - name: Checkout

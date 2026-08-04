@@ -40,6 +40,7 @@ jobs:
   # --- Skip the Go suite if this exact tree already passed PR CI ---
   tested-tree:
     runs-on: ubuntu-4
+    timeout-minutes: 10
     permissions:
       contents: read
       actions: read
@@ -91,6 +92,7 @@ jobs:
 
   can_proceed:
     runs-on: ubuntu-4
+    timeout-minutes: 5
     needs: [changes, fast, rust-tests, bold-legacy, nitro-reth-tests, go-tests, tested-tree]
     if: always()
     steps:
@@ -139,5 +141,6 @@ jobs:
     # on the pull request page, even if it is skipped due to all its dependencies being
     # skipped. It does not depend on any other jobs, so it always runs.
     runs-on: ubuntu-4
+    timeout-minutes: 5
     steps:
       - run: true
