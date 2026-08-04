@@ -169,7 +169,10 @@ mod tests {
     #[test]
     fn accumulator_mismatch_reaches_wire_verbatim() {
         let obj = into_obj(MelProviderError::AccumulatorMismatch.into());
-        assert!(obj.message().contains("delayed message accumulator mismatch"));
+        assert!(
+            obj.message()
+                .contains("delayed message accumulator mismatch")
+        );
     }
 
     #[test]

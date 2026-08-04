@@ -180,7 +180,10 @@ pub trait MelProvider: Send + Sync + 'static {
         Ok(self.get_batch_metadata(seq).await?.parent_chain_block)
     }
 
-    async fn find_parent_chain_block_containing_delayed(&self, _index: u64) -> MelProviderResult<u64> {
+    async fn find_parent_chain_block_containing_delayed(
+        &self,
+        _index: u64,
+    ) -> MelProviderResult<u64> {
         Err(MelProviderError::FindDelayedNotImplemented)
     }
 
@@ -218,7 +221,10 @@ pub trait MelProvider: Send + Sync + 'static {
     /// for the containing batch, or `None` when `pos` is at or beyond the last
     /// batch's message count (i.e. not yet posted in any batch). Ported from
     /// nitro's `FindInboxBatchContainingMessage`.
-    async fn find_inbox_batch_containing_message(&self, pos: u64) -> MelProviderResult<Option<u64>> {
+    async fn find_inbox_batch_containing_message(
+        &self,
+        pos: u64,
+    ) -> MelProviderResult<Option<u64>> {
         let batch_count = self.get_batch_count().await?;
         if batch_count == 0 {
             return Ok(None);
@@ -406,5 +412,6 @@ pub trait MelApi {
 
     // TODO: needs preimage recording; wire result type TBD
     // #[method(name = "getPreimagesForValidation")]
-    // async fn get_preimages_for_validation(&self, last_validated_parent_chain_block: u64, validate_msg_extraction_till: u64) -> RpcResult<RpcGetPreimagesForValidationResult>;
+    // async fn get_preimages_for_validation(&self, last_validated_parent_chain_block: u64,
+    // validate_msg_extraction_till: u64) -> RpcResult<RpcGetPreimagesForValidationResult>;
 }

@@ -66,7 +66,10 @@ impl MelProvider for MockMelProvider {
             .clone()
             .ok_or_else(|| MelProviderError::Backing("no seq bytes".into()))
     }
-    async fn find_message_origin_mel_state(&self, _pos: u64) -> MelProviderResult<Option<MelState>> {
+    async fn find_message_origin_mel_state(
+        &self,
+        _pos: u64,
+    ) -> MelProviderResult<Option<MelState>> {
         Ok(self.head.clone())
     }
     async fn caught_up(&self) -> MelProviderResult<bool> {
@@ -242,7 +245,10 @@ async fn finalized_delayed_accumulator_mismatch() {
         .finalized_delayed_message_at_position(100, B256::repeat_byte(0xBB), 1)
         .await
         .unwrap_err();
-    assert!(err.message().contains("delayed message accumulator mismatch"));
+    assert!(
+        err.message()
+            .contains("delayed message accumulator mismatch")
+    );
 }
 
 #[tokio::test]
@@ -298,9 +304,10 @@ async fn find_parent_chain_block_containing_delayed_is_unimplemented() {
         .find_parent_chain_block_containing_delayed(0)
         .await
         .unwrap_err();
-    assert!(err
-        .message()
-        .contains("FindParentChainBlockContainingDelayed is not implemented by MEL"));
+    assert!(
+        err.message()
+            .contains("FindParentChainBlockContainingDelayed is not implemented by MEL")
+    );
 }
 
 #[tokio::test]
@@ -479,7 +486,12 @@ fn delayed_inbox_message_json_pascal_with_base64_l2msg() {
     d.message.l2_msg = vec![1, 2, 3].into();
     let v = serde_json::to_value(RpcDelayedInboxMessage::from(&d)).unwrap();
     let o = v.as_object().unwrap();
-    for k in ["BlockHash", "BeforeInboxAcc", "Message", "ParentChainBlockNumber"] {
+    for k in [
+        "BlockHash",
+        "BeforeInboxAcc",
+        "Message",
+        "ParentChainBlockNumber",
+    ] {
         assert!(o.contains_key(k), "missing {k}");
     }
     assert_eq!(
