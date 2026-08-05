@@ -48,35 +48,37 @@ func (m *Mempool[T]) RecordIncludedTx(priority uint64) {
 }
 
 // Pop removes and returns the highest-priority valid entry, dropping candidates whose submission context has expired.
-func (m *Mempool[T]) Pop() (PrioritizedTx[T], bool) {
+func (m *Mempool[T]) Pop() (emptyEntry T, found bool) {
 	for m.heap.Len() > 0 {
 		entry := m.heap.popConcrete()
-		if entry.validate() {
+		if entry.Validate() {
 			return entry, true
 		}
 	}
-	return PrioritizedTx[T]{}, false
+	return emptyEntry, false
 }
 
 // Push adds a transaction, keying it against the mempool's basefee with its carried boost folded in.
 func (m *Mempool[T]) Push(item T) {
-	entry := PrioritizedTx[T]{tx: item, boost: item.GetBoost()}
-	if !entry.setPriority(m.baseFee) {
+	if !item.ComputePgaPriority(m.baseFee) {
 		return
 	}
-	m.heap.pushConcrete(entry)
+	m.heap.pushConcrete(item)
 }
 
 // PushBatch adds a batch of transactions, keying them against the mempool's basefee with their carried boosts folded
 // in. More efficient than pushing one at a time, it re-heapifies the entire queue in a single O(n) pass.
 func (m *Mempool[T]) PushBatch(items []T) {
-	entries := make([]PrioritizedTx[T], 0, len(items))
+	validated := items[:0] // filter in place
 	for _, item := range items {
-		entry := PrioritizedTx[T]{tx: item, boost: item.GetBoost()}
-		if !entry.setPriority(m.baseFee) {
-			continue
+		if item.ComputePgaPriority(m.baseFee) {
+			validated = append(validated, item)
 		}
-		entries = append(entries, entry)
 	}
-	m.heap.pushBatch(entries)
+	m.heap.pushBatch(validated)
+}
+
+// TakeRemaining returns all remaining transactions in the mempool.
+func (m *Mempool[T]) TakeRemaining() []T {
+	return m.heap.takeRemaining()
 }

@@ -50,13 +50,10 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 			}
 			p.mempool.PushBatch(p.seq.drainValidatedTxs(statedb))
 		}
-		entry, ok := p.mempool.Pop()
+		item, ok := p.mempool.Pop()
 		if !ok {
 			continue
 		}
-		item := entry.Tx()
-		item.pgaPriority = entry.Priority()
-		item.pgaBoost = entry.Boost()
 
 		// If the next tx is too big to fit in the remaining block space, we add it back to the mempool and stop sequencing.
 		// The sequencer will finalize the block and start a new one, which will have a fresh mempool and schedule.
@@ -85,20 +82,11 @@ func (p *pgaTxOrderer) TakeRemaining() []txQueueItem {
 	if p.mempool == nil {
 		return nil
 	}
-	items := make([]txQueueItem, 0, p.mempool.PriorityQueueLen())
-	for {
-		entry, ok := p.mempool.Pop()
-		if !ok {
-			return items
-		}
-		item := entry.Tx()
-		item.pgaBoost = entry.Boost()
-		items = append(items, item)
-	}
+	return p.mempool.TakeRemaining()
 }
 
 func (p *pgaTxOrderer) OnTxInclusion(queueItem txQueueItem) {
-	p.mempool.RecordIncludedTx(queueItem.pgaPriority)
+	p.mempool.RecordIncludedTx(queueItem.GetPriority())
 }
 
 // OnNonceGapResolved pushes the revived tx straight into the current round's auction: waiting

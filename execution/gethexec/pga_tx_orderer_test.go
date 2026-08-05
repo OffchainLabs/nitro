@@ -109,7 +109,7 @@ func TestPGATxOrdererYieldsByPriority(t *testing.T) {
 // priority and carried on the yielded item.
 func TestPGATxOrdererStartBlockRestoresBoost(t *testing.T) {
 	boosted := makePGAQueueItem(t, 0, 10)
-	boosted.pgaBoost = 25 // as left by TakeRemaining in a previous block
+	boosted.AddBoost(25) // accumulated in a previous block
 	plain := makePGAQueueItem(t, 1, 20)
 	o := newTestPGATxOrderer(&stubOrdererSequencer{items: []txQueueItem{boosted, plain}})
 
@@ -121,8 +121,8 @@ func TestPGATxOrdererStartBlockRestoresBoost(t *testing.T) {
 	if !ok || first.tx.Nonce() != 0 {
 		t.Fatalf("first yield = (nonce %d, %v), want the boosted tx", first.tx.Nonce(), ok)
 	}
-	if first.pgaBoost != 25 {
-		t.Fatalf("yielded boost = %d, want 25 preserved", first.pgaBoost)
+	if first.GetPriority() != 35 {
+		t.Fatalf("yielded priority = %d, want 35 (tip 10 + boost 25)", first.GetPriority())
 	}
 }
 
@@ -150,7 +150,7 @@ func TestPGATxOrdererOversizedTxEndsBlock(t *testing.T) {
 // auction where it left off.
 func TestPGATxOrdererOversizedTxKeepsBoost(t *testing.T) {
 	oversized := makePGAQueueItem(t, 0, 10)
-	oversized.pgaBoost = 25 // as left by TakeRemaining in a previous block
+	oversized.AddBoost(25) // accumulated in a previous block
 	oversized.txSize = 11
 	o := newTestPGATxOrderer(&stubOrdererSequencer{items: []txQueueItem{oversized}})
 
@@ -164,8 +164,8 @@ func TestPGATxOrdererOversizedTxKeepsBoost(t *testing.T) {
 	if len(remaining) != 1 || remaining[0].tx.Nonce() != 0 {
 		t.Fatalf("TakeRemaining returned %d items, want just the oversized tx", len(remaining))
 	}
-	if remaining[0].pgaBoost != 25 {
-		t.Fatalf("re-queued boost = %d, want 25 preserved", remaining[0].pgaBoost)
+	if remaining[0].GetPriority() != 35 {
+		t.Fatalf("re-queued priority = %d, want 35 (tip 10 + boost 25 preserved)", remaining[0].GetPriority())
 	}
 }
 
@@ -208,8 +208,8 @@ func TestPGATxOrdererRoundExpiryAdvancesAndBoosts(t *testing.T) {
 		if !ok || item.tx.Nonce() != 1 {
 			t.Fatalf("round-2 yield = (nonce %d, %v), want the boosted leftover", item.tx.Nonce(), ok)
 		}
-		if item.pgaBoost != 25 {
-			t.Fatalf("leftover boost = %d, want 25", item.pgaBoost)
+		if item.GetPriority() != 25 {
+			t.Fatalf("leftover priority = %d, want 25 (tip 0 + boost 25)", item.GetPriority())
 		}
 	})
 }
@@ -247,8 +247,8 @@ func TestPGATxOrdererLastRoundExpiryEndsBlock(t *testing.T) {
 		if len(remaining) != 1 || remaining[0].tx.Nonce() != 1 {
 			t.Fatalf("TakeRemaining returned %d items, want just the low-tip tx", len(remaining))
 		}
-		if remaining[0].pgaBoost != 25 {
-			t.Fatalf("leftover boost = %d, want 25", remaining[0].pgaBoost)
+		if remaining[0].GetPriority() != 25 {
+			t.Fatalf("leftover priority = %d, want 25 (tip 0 + boost 25)", remaining[0].GetPriority())
 		}
 	})
 }
@@ -393,8 +393,8 @@ func TestPGATxOrdererNoBoostWithoutInclusion(t *testing.T) {
 		if !ok || item.tx.Nonce() != 1 {
 			t.Fatalf("round-2 yield = (nonce %d, %v), want the leftover", item.tx.Nonce(), ok)
 		}
-		if item.pgaBoost != 0 {
-			t.Fatalf("leftover boost = %d, want 0 without an inclusion", item.pgaBoost)
+		if item.GetPriority() != 0 {
+			t.Fatalf("leftover priority = %d, want 0 (no boost without an inclusion)", item.GetPriority())
 		}
 	})
 }
@@ -460,8 +460,8 @@ func TestPGATxOrdererLastRoundInclusionBoostsLeftovers(t *testing.T) {
 		if len(remaining) != 1 || remaining[0].tx.Nonce() != 1 {
 			t.Fatalf("TakeRemaining returned %v, want just the low-tip tx", queueItemNonces(remaining))
 		}
-		if remaining[0].pgaBoost != 32 {
-			t.Fatalf("leftover boost = %d, want 25 + 7 = 32", remaining[0].pgaBoost)
+		if remaining[0].GetPriority() != 32 {
+			t.Fatalf("leftover priority = %d, want 25 + 7 = 32 (tip 0)", remaining[0].GetPriority())
 		}
 	})
 }
@@ -501,8 +501,8 @@ func TestPGATxOrdererSingleRoundPerBlock(t *testing.T) {
 		if len(remaining) != 1 || remaining[0].tx.Nonce() != 1 {
 			t.Fatalf("TakeRemaining returned %v, want just the low-tip tx", queueItemNonces(remaining))
 		}
-		if remaining[0].pgaBoost != 50 {
-			t.Fatalf("leftover boost = %d, want 100 / 2 = 50", remaining[0].pgaBoost)
+		if remaining[0].GetPriority() != 50 {
+			t.Fatalf("leftover priority = %d, want 100 / 2 = 50 (tip 0)", remaining[0].GetPriority())
 		}
 	})
 }
@@ -568,8 +568,8 @@ func TestPGATxOrdererNonceGapResolvedJoinsCurrentRound(t *testing.T) {
 		if waited := time.Since(start); waited != 0 {
 			t.Fatalf("NextQueueItem waited %v for the revived tx, want a mid-round yield", waited)
 		}
-		if item.pgaBoost != 0 {
-			t.Fatalf("revived boost = %d, want 0 (re-enters fresh)", item.pgaBoost)
+		if item.GetPriority() != 10 {
+			t.Fatalf("revived priority = %d, want the bare tip 10 (re-enters fresh, no boost)", item.GetPriority())
 		}
 	})
 }
