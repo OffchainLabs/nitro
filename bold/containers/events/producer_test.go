@@ -131,6 +131,30 @@ func TestBroadcastAfterSubscriberDone(t *testing.T) {
 	})
 }
 
+// TestTeardownDoesNotBlockWhenDoneListenerFull verifies that tearing a
+// subscription down never parks on the producer's doneListener. Nothing
+// receives from that channel unless Start is running, so once its buffer fills,
+// Next must drop its id rather than block forever on a receiver that will never
+// arrive. Without the non-blocking send, the teardown past the buffer's
+// capacity deadlocks the bubble.
+func TestTeardownDoesNotBlockWhenDoneListenerFull(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		// Start is deliberately not running: nothing drains doneListener.
+		producer := NewProducer[int]()
+
+		for i := 0; i < cap(producer.doneListener)+5; i++ {
+			sub := producer.Subscribe()
+			subCtx, cancelSub := context.WithCancel(context.Background())
+			cancelSub()
+			_, done := sub.Next(subCtx)
+			require.True(t, done)
+		}
+
+		// The teardowns past capacity dropped their ids instead of blocking.
+		require.Equal(t, cap(producer.doneListener), len(producer.doneListener))
+	})
+}
+
 // TestNextIsIdempotentOnceDone verifies a finished subscription stays finished:
 // later calls to Next report done immediately instead of blocking on a channel
 // nobody will send to, and an in-flight broadcast cannot hand an event to a
