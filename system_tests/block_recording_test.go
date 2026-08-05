@@ -152,7 +152,9 @@ func TestRecordBlockMixed(t *testing.T) {
 	Require(t, err)
 	txs = append(txs, txIncrementEmit)
 
-	// PrepareTxTo uses l2info's nonce counter; sync it past the NoSend tx above.
+	// The NoSend tx's signer already advanced l2info's counter; defensively
+	// re-assert the expected value before handing the counter back to
+	// PrepareTxTo.
 	l2info.GetInfoWithPrivKey("Owner").Nonce.Store(ownerNonce + uint64(len(txs)))
 	txStorage := l2info.PrepareTxTo("Owner", &storageAddr, l2info.TransferGas, nil, argsForStorageWrite(recordingKV(0)))
 	txs = append(txs, txStorage)
@@ -297,9 +299,12 @@ func sequenceInBlock(t *testing.T, builder *NodeBuilder, txs types.Transactions)
 	return block.NumberU64()
 }
 
-// syncOwnerNonce syncs l2info's internal nonce counter for "Owner" with the
-// on-chain pending nonce. Needed after txs sent via auth (TransactOpts) that
-// bypass l2info's counter, such as DeploySimple or deployWasm.
+// syncOwnerNonce defensively aligns l2info's internal nonce counter for
+// "Owner" with the on-chain pending nonce. Auth-signed txs (DeploySimple,
+// deployWasm) do advance the counter via the signer callback, so this is a
+// re-assert rather than a correction — kept so the nonce bookkeeping in
+// TestRecordBlockMixed doesn't silently depend on that implementation
+// detail.
 func syncOwnerNonce(t *testing.T, builder *NodeBuilder) {
 	t.Helper()
 	nonce, err := builder.L2.Client.PendingNonceAt(builder.ctx, builder.L2Info.GetAddress("Owner"))
