@@ -15,6 +15,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -77,10 +78,36 @@ func TestRevalidationForSpecifiedRange(t *testing.T) {
 	})
 }
 
+// A revalidation start batch that doesn't exist should not stop the node from starting:
+// it logs an error and keeps validating from wherever it left off.
+func TestRevalidationStartBatchDoesNotExist(t *testing.T) {
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.BlockValidator.Enable = true
+	builder.nodeConfig.BlockValidator.Dangerous.Revalidation.StartBatch = 1_000_000
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("User2")
+	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	Require(t, builder.L2.Client.SendTransaction(ctx, tx))
+	_, err := builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	lastBlock, err := builder.L2.Client.BlockByNumber(ctx, nil)
+	Require(t, err)
+	// message index is the same as the block number here
+	if !builder.L2.ConsensusNode.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlock.NumberU64()), time.Minute*2) {
+		Fatal(t, "validation did not progress past the bad revalidation start batch")
+	}
+}
+
 func createNodeConfigWithRevalidationRange(builder *NodeBuilder) *arbnode.Config {
 	nodeConfig := *builder.nodeConfig
-	nodeConfig.BlockValidator.Dangerous.Revalidation.StartBlock = 5
-	nodeConfig.BlockValidator.Dangerous.Revalidation.EndBlock = 10
+	nodeConfig.BlockValidator.Dangerous.Revalidation.StartBatch = 5
+	nodeConfig.BlockValidator.Dangerous.Revalidation.EndBatch = 10
 	return &nodeConfig
 }
 
