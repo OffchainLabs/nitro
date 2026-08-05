@@ -58,7 +58,9 @@ record-blocks: # Run all block-recording system tests; artifacts go to $(BLOCK_I
 record-blocks: nitro-deps
 	@rm -rf $(BLOCK_INPUTS_DIR)
 	@mkdir -p $(BLOCK_INPUTS_DIR)
-	@if cd $(TOP) && go test \
+	@set -e; \
+	cd $(TOP); \
+	if ! go test \
 		-tags block_recording \
 		-run 'TestRecordBlock' \
 		-timeout 5m \
@@ -68,15 +70,27 @@ record-blocks: nitro-deps
 		-recordBlockInputs.WithBaseDir=$(BLOCK_INPUTS_DIR) \
 		-recordBlockInputs.WithTimestampDirEnabled=false \
 		>$(BLOCK_INPUTS_DIR)/record.log 2>&1; then \
-		for dir in $(BLOCK_INPUTS_DIR)/TestRecordBlock*/; do \
-			name=$$(basename "$$dir" | sed -e 's/^TestRecordBlock//' -e 's/\([a-z0-9]\)\([A-Z]\)/\1_\2/g' | tr '[:upper:]' '[:lower:]'); \
-			mv "$$dir"*.json "$(BLOCK_INPUTS_DIR)/$$name.json"; \
-			rmdir "$$dir"; \
-		done; \
-		echo "Blocks successfully recorded"; \
-	else \
 		echo "FAIL — record.log:" >&2; cat $(BLOCK_INPUTS_DIR)/record.log >&2; exit 1; \
-	fi
+	fi; \
+	found=0; \
+	for dir in $(BLOCK_INPUTS_DIR)/TestRecordBlock*/; do \
+		[ -d "$$dir" ] || continue; \
+		found=$$((found+1)); \
+		set -- "$$dir"*.json; \
+		if [ $$# -ne 1 ] || [ ! -f "$$1" ]; then \
+			echo "expected exactly one recording in $$dir, got: $$*" >&2; exit 1; \
+		fi; \
+		name=$$(basename "$$dir" | sed -e 's/^TestRecordBlock//' -e 's/\([a-z0-9]\)\([A-Z]\)/\1_\2/g' | tr '[:upper:]' '[:lower:]'); \
+		if [ -e "$(BLOCK_INPUTS_DIR)/$$name.json" ]; then \
+			echo "duplicate block name $$name.json (test names collide after snake_casing?)" >&2; exit 1; \
+		fi; \
+		mv "$$1" "$(BLOCK_INPUTS_DIR)/$$name.json"; \
+		rmdir "$$dir"; \
+	done; \
+	if [ "$$found" -eq 0 ]; then \
+		echo "no TestRecordBlock recordings produced — did all tests skip?" >&2; exit 1; \
+	fi; \
+	echo "Recorded $$found blocks"
 
 .PHONY: build
 build: # Mocked system build (temporary solution until we have all the necessary crates available)
