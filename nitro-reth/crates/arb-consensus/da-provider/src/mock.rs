@@ -233,7 +233,7 @@ mod tests {
     #[tokio::test]
     async fn with_error_replays_arbitrary_variant() {
         let mut mock = MockDaReader::new();
-        // A non-transport variant, to show any DaError can be injected.
+        // A non-provider variant, to show any DaError can be injected.
         mock.with_error(BATCH_NUM, block_hash(), SEQ_MSG, || {
             DaError::Base64(base64::DecodeError::InvalidPadding)
         });
