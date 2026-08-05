@@ -155,6 +155,34 @@ func TestTeardownDoesNotBlockWhenDoneListenerFull(t *testing.T) {
 	})
 }
 
+// TestTeardownAfterProducerStopped verifies a subscription can still finish
+// after the producer's Start loop has exited. doneListener is intentionally
+// left open on shutdown: closing it would race with the send in Next and panic
+// with "send on closed channel".
+func TestTeardownAfterProducerStopped(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		producer := NewProducer[int]()
+		go producer.Start(ctx)
+
+		sub := producer.Subscribe()
+
+		// Stop the producer and wait until Start has provably returned, so the
+		// teardown below runs with no receiver on doneListener.
+		cancel()
+		synctest.Wait()
+
+		subCtx, cancelSub := context.WithCancel(context.Background())
+		cancelSub()
+		_, done := sub.Next(subCtx)
+		require.True(t, done)
+
+		// The id was buffered rather than dropped or sent on a closed channel.
+		require.Equal(t, 1, len(producer.doneListener))
+	})
+}
+
 // TestNextIsIdempotentOnceDone verifies a finished subscription stays finished:
 // later calls to Next report done immediately instead of blocking on a channel
 // nobody will send to, and an in-flight broadcast cannot hand an event to a
