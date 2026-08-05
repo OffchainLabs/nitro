@@ -41,6 +41,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
+	"github.com/offchainlabs/nitro/execution/gethexec/pga"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -274,8 +275,15 @@ type txQueueItem struct {
 	isTimeboosted       bool
 	isAuctionResolution bool
 	blockStamp          uint64 // block number at which timeboosted tx was added to the txQueue
-	pgaBoost            uint64 // accumulated PGA anti-starvation boost; survives requeue across blocks
-	pgaPriority         uint64 // PGA priority of the tx
+	*pga.Priority              // embed the PGA priority so it is saved between blocks
+}
+
+func newBaseTxQueueItem(tx *types.Transaction) txQueueItem {
+	return txQueueItem{
+		tx:             tx,
+		Priority:       &pga.Priority{},
+		returnedResult: &atomic.Bool{},
+	}
 }
 
 func newTxQueueItem(
@@ -284,15 +292,13 @@ func newTxQueueItem(
 	options *arbitrum_types.ConditionalOptions,
 	resultChan chan<- error,
 ) txQueueItem {
-	return txQueueItem{
-		tx:              tx,
-		txSize:          int(tx.Size()), // #nosec G115
-		options:         options,
-		resultChan:      resultChan,
-		returnedResult:  &atomic.Bool{},
-		ctx:             ctx,
-		firstAppearance: time.Now(),
-	}
+	item := newBaseTxQueueItem(tx)
+	item.txSize = int(tx.Size()) // #nosec G115
+	item.options = options
+	item.resultChan = resultChan
+	item.ctx = ctx
+	item.firstAppearance = time.Now()
+	return item
 }
 
 // newRegularTxQueueItem returns a queue item for a regular (possibly timeboosted) transaction.

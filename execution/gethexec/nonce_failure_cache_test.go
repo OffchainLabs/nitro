@@ -15,7 +15,7 @@ import (
 func TestNonceFailureCacheDropsPgaBoost(t *testing.T) {
 	cache := newNonceFailureCache(16, func() time.Duration { return time.Hour })
 	item, _ := makeTestQueueItem(t, 1, testBaseFee)
-	item.pgaBoost = 25
+	item.AddBoost(25)
 
 	nonceErr := NonceError{sender: common.Address{1}, txNonce: 1, stateNonce: 0}
 	cache.Add(nonceErr, item)
@@ -24,7 +24,7 @@ func TestNonceFailureCacheDropsPgaBoost(t *testing.T) {
 	if !ok {
 		t.Fatal("Take found no parked failure")
 	}
-	if failure.queueItem.pgaBoost != 0 {
-		t.Fatalf("revived boost = %d, want 0 (parked txs re-enter fresh)", failure.queueItem.pgaBoost)
+	if failure.queueItem.GetPriority() != 0 {
+		t.Fatalf("revived priority = %d, want 0 (parked txs forfeit their boost)", failure.queueItem.GetPriority())
 	}
 }

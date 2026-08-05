@@ -72,9 +72,7 @@ func makeZeroTxSizeSequencingHooks(
 ) *FullSequencingHooks {
 	var items []txQueueItem
 	for _, tx := range txes {
-		items = append(items, txQueueItem{
-			tx: tx,
-		})
+		items = append(items, newBaseTxQueueItem(tx))
 	}
 	hooks := MakeSequencingHooks(&fixedTxFetcher{items: items}, math.MaxInt, txFilter, transactionFeedServer)
 	hooks.blockFilter = blockFilter
