@@ -18,6 +18,8 @@ type nextTxFetcher interface {
 type fixedTxFetcher struct {
 	items     []txQueueItem
 	exhausted []txQueueItem
+
+	sizeLimited bool
 }
 
 var _ nextTxFetcher = (*fixedTxFetcher)(nil)
@@ -31,7 +33,10 @@ func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSiz
 
 	// If the tx is too big for the remaining block size, we exhaust it and continue to the next one.
 	if item.txSize > remainingBlockSize {
-		dataLimitedBlocksCounter.Inc(1)
+		if !f.sizeLimited {
+			dataLimitedBlocksCounter.Inc(1)
+			f.sizeLimited = true
+		}
 		f.exhausted = append(f.exhausted, item)
 		return f.NextQueueItem(statedb, remainingBlockSize)
 	}

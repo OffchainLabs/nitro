@@ -177,7 +177,7 @@ func (c *SequencerConfig) Validate() error {
 		return errors.New("experimental-pga.rounds-per-block must be at least 1")
 	}
 	// Forced FIFO precludes PGA, so the round length only matters without it.
-	if !c.ExperimentalPGA.DangerousForceFIFO {
+	if c.Enable && !c.ExperimentalPGA.DangerousForceFIFO {
 		if roundLength := c.PGARoundLength(); roundLength < minPGARoundLength {
 			return fmt.Errorf("PGA round length %v (max-block-speed / experimental-pga.rounds-per-block) is below the minimum supported %v", roundLength, minPGARoundLength)
 		}
@@ -1028,7 +1028,7 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem, latestState *state.
 			queueItem.returnResult(err)
 			continue
 		}
-		stateNonce := s.nonceCache.Get(latestHeader, latestState, sender)
+		stateNonce := latestState.GetNonce(sender)
 		pendingNonce, pending := pendingNonces[sender]
 		if !pending {
 			pendingNonce = stateNonce
