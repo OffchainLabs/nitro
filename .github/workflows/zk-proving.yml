@@ -20,7 +20,7 @@ jobs:
     name: Run tests for ZK-related components and pipelines
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.code_changed == 'true'
-    runs-on: arbitrator-ci
+    runs-on: ocl-16cpu-64ram-dind
     timeout-minutes: 30
     defaults:
       run:
@@ -36,6 +36,10 @@ jobs:
 
       - name: Setup CI
         uses: ./.github/actions/ci-setup
+
+      - name: Ensure python points to python3
+        run: |
+          command -v python >/dev/null 2>&1 || sudo ln -s "$(command -v python3)" /usr/local/bin/python
 
       - name: Setup LLVM
         uses: ZhongRuoyu/setup-llvm@v0
