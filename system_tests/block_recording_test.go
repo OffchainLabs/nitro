@@ -11,13 +11,14 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 // fixedRecordGasLimit is used instead of eth_estimateGas for txs that are
@@ -30,7 +31,7 @@ const fixedRecordGasLimit = 32_000_000
 // ---------------------------------------------------------------------------
 
 func TestRecordBlockTransfer(t *testing.T) {
-	builder, _, cleanup := setupProgramTest(t, true)
+	builder, _, cleanup := setupRecordingTest(t)
 	l2info := builder.L2Info
 	defer cleanup()
 
@@ -47,7 +48,7 @@ func TestRecordBlockTransfer(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRecordBlockSolidity(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true)
+	builder, auth, cleanup := setupRecordingTest(t)
 	l2client := builder.L2.Client
 	defer cleanup()
 
@@ -73,7 +74,7 @@ func TestRecordBlockSolidity(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRecordBlockStylus(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true)
+	builder, auth, cleanup := setupRecordingTest(t)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -81,8 +82,7 @@ func TestRecordBlockStylus(t *testing.T) {
 
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
 
-	key := testhelpers.RandomHash()
-	value := testhelpers.RandomHash()
+	key, value := recordingKV(0)
 	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, argsForStorageWrite(key, value))
 	Require(t, l2client.SendTransaction(ctx, tx))
 	receipt := requireTxSucceeded(t, builder, tx)
@@ -95,7 +95,7 @@ func TestRecordBlockStylus(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRecordBlockStylusHeavy(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true)
+	builder, auth, cleanup := setupRecordingTest(t)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -106,8 +106,7 @@ func TestRecordBlockStylusHeavy(t *testing.T) {
 
 	args := multicallEmptyArgs()
 	for i := 0; i < 32; i++ {
-		key := testhelpers.RandomHash()
-		value := testhelpers.RandomHash()
+		key, value := recordingKV(i)
 		args = multicallAppend(args, vm.CALL, storageAddr, argsForStorageWrite(key, value))
 		args = multicallAppend(args, vm.CALL, storageAddr, argsForStorageRead(key))
 	}
@@ -124,7 +123,7 @@ func TestRecordBlockStylusHeavy(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRecordBlockMixed(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true)
+	builder, auth, cleanup := setupRecordingTest(t)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -155,7 +154,7 @@ func TestRecordBlockMixed(t *testing.T) {
 
 	// PrepareTxTo uses l2info's nonce counter; sync it past the NoSend tx above.
 	l2info.GetInfoWithPrivKey("Owner").Nonce.Store(ownerNonce + uint64(len(txs)))
-	txStorage := l2info.PrepareTxTo("Owner", &storageAddr, l2info.TransferGas, nil, argsForStorageWrite(testhelpers.RandomHash(), testhelpers.RandomHash()))
+	txStorage := l2info.PrepareTxTo("Owner", &storageAddr, l2info.TransferGas, nil, argsForStorageWrite(recordingKV(0)))
 	txs = append(txs, txStorage)
 
 	// Keccak Stylus program takes 0x01 || preimage directly — no wrapper needed.
@@ -184,7 +183,7 @@ func TestRecordBlockStylusActivationMulticall(t *testing.T) {
 // recordStylusActivation deploys the wasm without activating it (unlike
 // deployWasm), then records the block containing the activation tx itself.
 func recordStylusActivation(t *testing.T, file string) {
-	builder, auth, cleanup := setupProgramTest(t, true)
+	builder, auth, cleanup := setupRecordingTest(t)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -209,7 +208,7 @@ func recordStylusActivation(t *testing.T, file string) {
 // ---------------------------------------------------------------------------
 
 func TestRecordBlockSignatures(t *testing.T) {
-	builder, _, cleanup := setupProgramTest(t, true)
+	builder, _, cleanup := setupRecordingTest(t)
 	l2info := builder.L2Info
 	defer cleanup()
 
@@ -228,6 +227,29 @@ func TestRecordBlockSignatures(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// setupRecordingTest wraps setupProgramTest, pinning the ink price back to
+// the chain default: setupProgramTest randomizes it (1..20000), which makes
+// Stylus gas costs swing 10,000x between runs — enough to run the heavy
+// multicall test out of gas against ArbOS's per-tx gas clamp — and makes
+// recordings non-comparable across runs.
+func setupRecordingTest(t *testing.T) (*NodeBuilder, bind.TransactOpts, func()) {
+	builder, auth, cleanup := setupProgramTest(t, true)
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	tx, err := arbOwner.SetInkPrice(&auth, 10_000)
+	Require(t, err)
+	requireTxSucceeded(t, builder, tx)
+	return builder, auth, cleanup
+}
+
+// recordingKV returns deterministic storage key/value pairs so recorded
+// blocks don't vary across runs.
+func recordingKV(i int) (common.Hash, common.Hash) {
+	key := crypto.Keccak256Hash([]byte(fmt.Sprintf("recording-key-%d", i)))
+	value := crypto.Keccak256Hash([]byte(fmt.Sprintf("recording-value-%d", i)))
+	return key, value
+}
 
 // requireTxSucceeded waits for a transaction to be included and asserts success.
 func requireTxSucceeded(t *testing.T, builder *NodeBuilder, tx *types.Transaction) *types.Receipt {
