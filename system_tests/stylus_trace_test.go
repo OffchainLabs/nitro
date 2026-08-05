@@ -102,7 +102,7 @@ func intToBytes(v int) []byte {
 }
 
 func TestStylusOpcodeTraceStorage(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testStylusOpcodeTraceStorage(t, recorderOpt)
 	})
 }
@@ -144,7 +144,7 @@ func testStylusOpcodeTraceStorage(t *testing.T, builderOpts ...func(*NodeBuilder
 }
 
 func TestStylusOpcodeTraceNativeKeccak(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testStylusOpcodeTraceNativeKeccak(t, recorderOpt)
 	})
 }
@@ -169,7 +169,7 @@ func testStylusOpcodeTraceNativeKeccak(t *testing.T, builderOpts ...func(*NodeBu
 }
 
 func TestStylusOpcodeTraceMath(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testStylusOpcodeTraceMath(t, recorderOpt)
 	})
 }
@@ -217,7 +217,7 @@ func testStylusOpcodeTraceMath(t *testing.T, builderOpts ...func(*NodeBuilder)) 
 }
 
 func TestStylusOpcodeTraceExit(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testStylusOpcodeTraceExit(t, recorderOpt)
 	})
 }
@@ -249,7 +249,7 @@ func testStylusOpcodeTraceExit(t *testing.T, builderOpts ...func(*NodeBuilder)) 
 }
 
 func TestStylusOpcodeTraceEvmData(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testStylusOpcodeTraceEvmData(t, recorderOpt)
 	})
 }
@@ -363,7 +363,7 @@ func testStylusOpcodeTraceEvmData(t *testing.T, builderOpts ...func(*NodeBuilder
 }
 
 func TestStylusOpcodeTraceLog(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testStylusOpcodeTraceLog(t, recorderOpt)
 	})
 }
@@ -395,7 +395,7 @@ func testStylusOpcodeTraceLog(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 }
 
 func TestStylusOpcodeTraceReturnDataSize(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testStylusOpcodeTraceReturnDataSize(t, recorderOpt)
 	})
 }
@@ -417,7 +417,7 @@ func testStylusOpcodeTraceReturnDataSize(t *testing.T, builderOpts ...func(*Node
 }
 
 func TestStylusOpcodeTraceCall(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testStylusOpcodeTraceCall(t, recorderOpt)
 	})
 }
@@ -458,7 +458,7 @@ func testStylusOpcodeTraceCall(t *testing.T, builderOpts ...func(*NodeBuilder)) 
 }
 
 func TestStylusOpcodeTraceCreate(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testStylusOpcodeTraceCreate(t, recorderOpt)
 	})
 }
@@ -501,7 +501,7 @@ func testStylusOpcodeTraceCreate(t *testing.T, builderOpts ...func(*NodeBuilder)
 // the Stylus trace does not contain all opcodes from the Solidity/EVM trace. Instead, this test
 // only checks that both traces contain the same basic opcodes.
 func TestStylusOpcodeTraceEquivalence(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testStylusOpcodeTraceEquivalence(t, recorderOpt)
 	})
 }
@@ -565,7 +565,7 @@ func testStylusOpcodeTraceEquivalence(t *testing.T, builderOpts ...func(*NodeBui
 }
 
 func TestStylusHugeWriteResultTrace(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testStylusHugeWriteResultTrace(t, recorderOpt)
 	})
 }

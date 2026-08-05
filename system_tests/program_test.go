@@ -63,7 +63,7 @@ func testProgramRecorderModes(t *testing.T, run func(t *testing.T, recorderOpt f
 	}
 }
 
-func testProgramWithoutRecorder(t *testing.T, run func(t *testing.T, recorderOpt func(*NodeBuilder))) {
+func testProgramDefaultRecorderOnly(t *testing.T, run func(t *testing.T, recorderOpt func(*NodeBuilder))) {
 	run(t, func(*NodeBuilder) {})
 }
 
@@ -1296,19 +1296,19 @@ func testMemory(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 }
 
 func TestProgramMaxStylusOpenPages(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testMaxStylusOpenPages(t, true, recorderOpt)
 	})
 }
 
 func TestProgramMaxStylusOpenPagesNative(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testMaxStylusOpenPages(t, false, recorderOpt)
 	})
 }
 
 func TestProgramMemoryGrowOverflowCompatibilityNative(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testProgramMemoryGrowOverflowCompatibilityNative(t, recorderOpt)
 	})
 }
@@ -1589,13 +1589,13 @@ func testMaxStylusOpenPages(t *testing.T, jit bool, builderOpts ...func(*NodeBui
 }
 
 func TestProgramDelayedInboxPageLimitBypass(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testDelayedInboxPageLimitBypass(t, true, recorderOpt)
 	})
 }
 
 func TestProgramDelayedInboxPageLimitBypassNative(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testDelayedInboxPageLimitBypass(t, false, recorderOpt)
 	})
 }
@@ -1635,13 +1635,13 @@ func testDelayedInboxPageLimitBypass(t *testing.T, jit bool, builderOpts ...func
 }
 
 func TestProgramMaxStylusOpenPagesInitialFootprint(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testMaxStylusOpenPagesInitialFootprint(t, true, recorderOpt)
 	})
 }
 
 func TestProgramMaxStylusOpenPagesInitialFootprintNative(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testMaxStylusOpenPagesInitialFootprint(t, false, recorderOpt)
 	})
 }
@@ -1685,13 +1685,13 @@ func testMaxStylusOpenPagesInitialFootprint(t *testing.T, jit bool, builderOpts 
 }
 
 func TestProgramMaxStylusOpenPagesInitialFootprintConsensus(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testMaxStylusOpenPagesInitialFootprintConsensus(t, true, recorderOpt)
 	})
 }
 
 func TestProgramMaxStylusOpenPagesInitialFootprintConsensusNative(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testMaxStylusOpenPagesInitialFootprintConsensus(t, false, recorderOpt)
 	})
 }
@@ -1741,13 +1741,13 @@ func testMaxStylusOpenPagesInitialFootprintConsensus(t *testing.T, jit bool, bui
 }
 
 func TestProgramNestedStylusCumulativeFootprint(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testNestedStylusCumulativeFootprint(t, true, recorderOpt)
 	})
 }
 
 func TestProgramNestedStylusCumulativeFootprintNative(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testNestedStylusCumulativeFootprint(t, false, recorderOpt)
 	})
 }
@@ -1804,13 +1804,13 @@ func testNestedStylusCumulativeFootprint(t *testing.T, jit bool, builderOpts ...
 }
 
 func TestProgramNestedStylusCumulativeFootprintNodeLevel(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testNestedStylusCumulativeFootprintNodeLevel(t, true, recorderOpt)
 	})
 }
 
 func TestProgramNestedStylusCumulativeFootprintNodeLevelNative(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testNestedStylusCumulativeFootprintNodeLevel(t, false, recorderOpt)
 	})
 }
@@ -1894,7 +1894,7 @@ func testActivateFails(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 }
 
 func TestProgramSdkStorage(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testSdkStorage(t, true, recorderOpt)
 	})
 }
@@ -2091,7 +2091,7 @@ func TestStylusPrecompileMethodsSimple(t *testing.T) {
 }
 
 func TestProgramActivationLogs(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testProgramActivationLogs(t, recorderOpt)
 	})
 }
@@ -2170,7 +2170,7 @@ func testEarlyExit(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 }
 
 func TestProgramCacheManager(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testProgramCacheManager(t, recorderOpt)
 	})
 }
@@ -2355,13 +2355,13 @@ func testReturnDataCost(t *testing.T, arbosVersion uint64, builderOpts ...func(*
 }
 
 func TestReturnDataCost(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testReturnDataCost(t, params.ArbosVersion_StylusFixes, recorderOpt)
 	})
 }
 
 func TestReturnDataCost_StylusFixes(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testReturnDataCost(t, params.ArbosVersion_StylusFixes, recorderOpt)
 	})
 }
@@ -2774,12 +2774,12 @@ func TestWasmRecreate(t *testing.T) {
 	databaseEngine := rawdb.DBPebble
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+			testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 				testWasmRecreateWithCall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDBBetween, databaseEngine, recorderOpt)
 			})
 		})
 		t.Run(tc.name+" with delegate call", func(t *testing.T) {
-			testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+			testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 				testWasmRecreateWithDelegatecall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDBBetween, databaseEngine, recorderOpt)
 			})
 		})
@@ -2854,7 +2854,7 @@ func createMapFromDb(db ethdb.KeyValueStore) (map[string][]byte, error) {
 }
 
 func TestWasmStoreRebuilding(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testWasmStoreRebuilding(t, recorderOpt)
 	})
 }
@@ -3070,7 +3070,7 @@ func deployWasmAndGetEntrySizeEstimateBytes(
 }
 
 func TestWasmLruCache(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testWasmLruCache(t, recorderOpt)
 	})
 }
@@ -3178,7 +3178,7 @@ func checkLruCacheMetrics(t *testing.T, expected programs.WasmLruCacheMetrics) {
 }
 
 func TestWasmLongTermCache(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testWasmLongTermCache(t, recorderOpt)
 	})
 }
@@ -3325,7 +3325,7 @@ func testWasmLongTermCache(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 }
 
 func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testRepopulateWasmLongTermCacheFromLru(t, recorderOpt)
 	})
 }
@@ -3558,22 +3558,11 @@ func testOutOfGasInStorageCacheFlush(t *testing.T, builderOpts ...func(*NodeBuil
 	}
 	blockNumberFailedTx := receipt.BlockNumber
 
-	wasmModuleRoot := currentRootModule(t)
-	// Retry ValidateResult because the batch may not yet be confirmed on L1
-	// ("batch not found on L1 yet").
-	retryUntilFound(t, ctx, 40, 250*time.Millisecond, "ValidateResult", "batch not found on L1", func() error {
-		_, _, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidateResult(
-			ctx,
-			arbutil.MessageIndex(blockNumberFailedTx.Uint64()),
-			false,
-			wasmModuleRoot,
-		)
-		return err
-	})
+	validateResultAt(t, ctx, builder, arbutil.MessageIndex(blockNumberFailedTx.Uint64()))
 }
 
 func TestProgramMemoryFillOverflow(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testProgramMemoryFillOverflow(t, recorderOpt)
 	})
 }

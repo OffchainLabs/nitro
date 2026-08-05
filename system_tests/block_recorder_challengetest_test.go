@@ -15,7 +15,7 @@ import (
 
 func challengeBlockRecorderTestCases(t testing.TB) []blockRecorderTestCase {
 	cases := blockRecorderTestCases()
-	filtered := cases[:0]
+	filtered := make([]blockRecorderTestCase, 0, len(cases))
 	for _, tc := range cases {
 		if tc.stateScheme == rawdb.HashScheme {
 			filtered = append(filtered, tc)

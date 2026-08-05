@@ -12,13 +12,13 @@ import (
 )
 
 func TestProgramMaxStylusCallDepth(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testMaxStylusCallDepth(t, true, recorderOpt)
 	})
 }
 
 func TestProgramMaxStylusCallDepthNative(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testMaxStylusCallDepth(t, false, recorderOpt)
 	})
 }

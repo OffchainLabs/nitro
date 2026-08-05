@@ -89,7 +89,7 @@ func requireTxReverts(t *testing.T, ctx context.Context, l2client *ethclient.Cli
 //   - setting a blocking activation gas value prevents contract activation while
 //     resetting it to zero restores normal activation.
 func TestWasmActivationGasBlocking(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testWasmActivationGasBlocking(t, recorderOpt)
 	})
 }
@@ -126,7 +126,7 @@ func testWasmActivationGasBlocking(t *testing.T, builderOpts ...func(*NodeBuilde
 // TestWasmActivationGasVersionGating verifies that SetWasmActivationGas and ActivationGas
 // are unavailable on ArbOS versions prior to ArbosVersion_StylusActivationGas.
 func TestWasmActivationGasVersionGating(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testWasmActivationGasVersionGating(t, recorderOpt)
 	})
 }
@@ -163,7 +163,7 @@ func testWasmActivationGasVersionGating(t *testing.T, builderOpts ...func(*NodeB
 // TestWasmActivationGasCharge verifies that a non-zero activation gas is actually
 // deducted on top of the normal activation cost when activating a Stylus contract.
 func TestWasmActivationGasCharge(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testWasmActivationGasCharge(t, recorderOpt)
 	})
 }

@@ -123,7 +123,7 @@ func deployAndActivateFragmentedContract(
 // Validation Tests
 
 func TestFragmentedContractValidation(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testFragmentedContractValidation(t, recorderOpt)
 	})
 }
@@ -221,7 +221,7 @@ func testFragmentedContractValidation(t *testing.T, builderOpts ...func(*NodeBui
 }
 
 func TestFragmentActivationChargesPerFragmentCodeRead(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testFragmentActivationChargesPerFragmentCodeRead(t, recorderOpt)
 	})
 }
@@ -263,7 +263,7 @@ func testFragmentActivationChargesPerFragmentCodeRead(t *testing.T, builderOpts 
 // Specific Edge Case Tests
 
 func TestThatWeCantActivateStylusFragmentContract(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testThatWeCantActivateStylusFragmentContract(t, recorderOpt)
 	})
 }
@@ -292,7 +292,7 @@ func testThatWeCantActivateStylusFragmentContract(t *testing.T, builderOpts ...f
 }
 
 func TestDeployStylusRootContractGreaterThanMaxCodeSize(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testDeployStylusRootContractGreaterThanMaxCodeSize(t, recorderOpt)
 	})
 }
@@ -320,7 +320,7 @@ func testDeployStylusRootContractGreaterThanMaxCodeSize(t *testing.T, builderOpt
 // ArbOwner Limit Modification Tests
 
 func TestCantActivateRootContractBiggerThanMaxWasmSize(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testCantActivateRootContractBiggerThanMaxWasmSize(t, recorderOpt)
 	})
 }
@@ -370,7 +370,7 @@ func testCantActivateRootContractBiggerThanMaxWasmSize(t *testing.T, builderOpts
 }
 
 func TestArbOwnerModifyingMaxFragmentCount(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testArbOwnerModifyingMaxFragmentCount(t, recorderOpt)
 	})
 }
@@ -416,7 +416,7 @@ func testArbOwnerModifyingMaxFragmentCount(t *testing.T, builderOpts ...func(*No
 }
 
 func TestArbOwnerPublicReturnsCorrectMaxFragmentCount(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testArbOwnerPublicReturnsCorrectMaxFragmentCount(t, recorderOpt)
 	})
 }
@@ -649,54 +649,54 @@ func setFragmentLimitTo1(t *testing.T, ctx context.Context, auth *bind.TransactO
 
 // Tests: Decrease Max Wasm Size
 func TestRebuildWasmStoreWithDecreasedMaxWasmSize(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		runRebuildWasmStoreTest(t, setWasmLimitTo10k, recorderOpt)
 	})
 }
 func TestExecuteWasmWithDecreasedMaxWasmSizeWasmPresent(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		runExecuteWasmTest(t, setWasmLimitTo10k, false, recorderOpt)
 	})
 }
 func TestExecuteWasmWithDecreasedMaxWasmSizeRecoverWasm(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		runExecuteWasmTest(t, setWasmLimitTo10k, true, recorderOpt)
 	})
 }
 func TestCacheProgramWithDecreasedMaxWasmSizeRecoverWasm(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		runCacheProgramTest(t, setWasmLimitTo10k, recorderOpt)
 	})
 }
 func TestDeployingContractBeforeAndAfterDecreaseMaxWasmSize(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		runDeployAfterLimitTest(t, setWasmLimitTo7k, recorderOpt)
 	})
 }
 
 // Tests: Decrease Max Fragment Count
 func TestRebuildWasmStoreWithDecreasedMaxFragmentCount(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		runRebuildWasmStoreTest(t, setFragmentLimitTo1, recorderOpt)
 	})
 }
 func TestExecuteWasmWithDecreasedMaxFragmentCountWasmPresent(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		runExecuteWasmTest(t, setFragmentLimitTo1, false, recorderOpt)
 	})
 }
 func TestExecuteWasmWithDecreasedMaxFragmentCountRecoverWasm(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		runExecuteWasmTest(t, setFragmentLimitTo1, true, recorderOpt)
 	})
 }
 func TestCacheProgramWithDecreasedMaxFragmentCountRecoverWasm(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		runCacheProgramTest(t, setFragmentLimitTo1, recorderOpt)
 	})
 }
 func TestDeployingContractBeforeAndAfterDecreaseMaxFragmentCount(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		runDeployAfterLimitTest(t, setFragmentLimitTo1, recorderOpt)
 	})
 }
@@ -704,7 +704,7 @@ func TestDeployingContractBeforeAndAfterDecreaseMaxFragmentCount(t *testing.T) {
 // Test that fragmented contracts fail on ArbOS versions before the feature is active
 
 func TestFragmentedContractFailsOnArbOS50(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testFragmentedContractFailsOnArbOS50(t, recorderOpt)
 	})
 }
@@ -726,7 +726,7 @@ func testFragmentedContractFailsOnArbOS50(t *testing.T, builderOpts ...func(*Nod
 }
 
 func TestArbOwnerPublicGetMaxFragmentCountFailsOnArbOS50(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testArbOwnerPublicGetMaxFragmentCountFailsOnArbOS50(t, recorderOpt)
 	})
 }
@@ -747,7 +747,7 @@ func testArbOwnerPublicGetMaxFragmentCountFailsOnArbOS50(t *testing.T, builderOp
 }
 
 func TestArbOwnerSetMaxFragmentCountFailsOnArbOS50(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testArbOwnerSetMaxFragmentCountFailsOnArbOS50(t, recorderOpt)
 	})
 }

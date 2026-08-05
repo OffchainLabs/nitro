@@ -530,7 +530,7 @@ func blockRecorderTestCases() []blockRecorderTestCase {
 	if testflag.StateSchemeFlag == nil || *testflag.StateSchemeFlag == "" {
 		return cases
 	}
-	filtered := cases[:0]
+	filtered := make([]blockRecorderTestCase, 0, len(cases))
 	for _, tc := range cases {
 		if tc.stateScheme == *testflag.StateSchemeFlag {
 			filtered = append(filtered, tc)

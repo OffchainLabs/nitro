@@ -133,8 +133,6 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	AddValNode(t, ctx, validatorConfig, !opts.arbitrator, redisURL, opts.wasmRootDir)
 
 	validatorExecConfig := *builder.execConfig
-	validatorExecConfig.RecordingDatabase.Mode = opts.recorderMode
-	validatorExecConfig.Caching.StateScheme = opts.stateScheme
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{
 		nodeConfig: validatorConfig,
 		execConfig: &validatorExecConfig,
@@ -312,6 +310,8 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		if tipRecorder.ServedTipRecordings() == 0 {
 			Fatal(t, "expected chain-tip block recorder to serve validation recordings")
 		}
+	default:
+		Fatal(t, "unknown recorder mode:", opts.recorderMode)
 	}
 }
 

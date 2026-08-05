@@ -19,7 +19,7 @@ import (
 )
 
 func TestStylusTracer(t *testing.T) {
-	testProgramWithoutRecorder(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testStylusTracer(t, recorderOpt)
 	})
 }
