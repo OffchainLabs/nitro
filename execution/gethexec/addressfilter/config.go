@@ -36,6 +36,31 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".address-checker-queue-size", DefaultConfig.AddressCheckerQueueSize, "work queue size for address checker")
 }
 
+const bytesInMB = 1024 * 1024
+
+// minBytesPerHashEntry is a hard lower bound on the JSON size of one 32-byte hash entry: 64 hex chars plus the two
+// surrounding quotes. Dividing the max file size by it yields a safe upper bound on the number of hashes.
+const minBytesPerHashEntry = 66
+
+// estimateHashCount returns a safe upper bound on the number of hashes in a
+// hash-list JSON document of the given byte size.
+func estimateHashCount(sizeBytes int64) int {
+	if sizeBytes < 0 {
+		return 0
+	}
+	return int(sizeBytes / minBytesPerHashEntry)
+}
+
+// numPreallocatedHashes returns how many hashes to preallocate structures for, derived from max-file-size-mb, or 0 when
+// preallocation is disabled (the toggle is off or max-file-size-mb is unset).
+func (c *Config) numPreallocatedHashes() int {
+	if !c.S3.PreallocateMemory || c.S3.MaxFileSizeMB <= 0 {
+		return 0
+	}
+	// Compute the byte count in int64; it exceeds 32 bits for multi-GB files.
+	return estimateHashCount(int64(c.S3.MaxFileSizeMB) * bytesInMB)
+}
+
 func (c *Config) Validate() error {
 	if err := c.S3.Validate(); err != nil {
 		return err

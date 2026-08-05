@@ -1,3 +1,5 @@
+// Copyright 2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 //! MOCK (NIT-5205): stand-in for the real `arb-reth` binary until the
 //! arbitrum-reth sources are migrated. Supports just enough CLI surface
 //! (--version) for the spec-test plumbing to validate the built artifact.
