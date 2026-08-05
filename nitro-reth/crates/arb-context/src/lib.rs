@@ -1,3 +1,5 @@
+// Copyright 2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 //! MOCK (NIT-5205): stand-in for the real `arb-context` crate until the
 //! arbitrum-reth sources are migrated. Depends on `arb-storage` to keep a
 //! real workspace dependency edge for CI to exercise.

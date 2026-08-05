@@ -16,6 +16,7 @@ jobs:
   shellcheck:
     name: Run ShellCheck
     runs-on: ubuntu-4
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
