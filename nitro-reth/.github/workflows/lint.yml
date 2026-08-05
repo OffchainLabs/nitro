@@ -44,6 +44,29 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
+  wasm:
+    # Pins wasm32-wasip1 buildability of the MEL message-extraction core, so that
+    # adding a native-only dependency (tokio/reqwest/c-kzg/revm) to arb-mel or
+    # anything beneath it fails here rather than in the replay binary.
+    #
+    # Deliberately narrow: per-package rather than --workspace, since sibling
+    # crates like arb-blob-client pull c-kzg and reqwest; and no --all-targets,
+    # since arb-mel's tokio dev-dependency is not wasm-buildable.
+    name: wasm
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@1.93
+        with:
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+      - run: >
+          cargo check --locked --target wasm32-wasip1
+          -p arb-mel -p arb-mel-types -p arb-da-provider -p arbos-types
+
   docs:
     name: docs
     runs-on: ocl-16cpu-64ram

@@ -6,6 +6,7 @@ use arb_storage::{
     Storage, StorageBackedAddress, StorageBackedBigInt, StorageBackedBigUint, StorageBackedInt64,
     StorageBackedUint64, StorageBackend, SystemStateBackend,
 };
+pub use arbos_types::BATCH_POSTER_ADDRESS;
 pub use batch_poster::*;
 pub use error::L1PricingError;
 
@@ -27,8 +28,6 @@ pub const L1_FEES_AVAILABLE_OFFSET: u64 = 11;
 pub const GAS_FLOOR_PER_TOKEN_OFFSET: u64 = 12;
 
 // Well-known addresses.
-// `BATCH_POSTER_ADDRESS` is defined in `arbos-types` (wasm-friendly) and re-exported here.
-pub use arbos_types::BATCH_POSTER_ADDRESS;
 pub const BATCH_POSTER_PAY_TO_ADDRESS: Address = BATCH_POSTER_ADDRESS;
 
 pub const L1_PRICER_FUNDS_POOL_ADDRESS: Address = Address::new([
