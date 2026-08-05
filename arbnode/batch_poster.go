@@ -1283,14 +1283,35 @@ type OverrideAccount struct {
 
 type StateOverride map[common.Address]OverrideAccount
 
+// errZeroGasEstimate is returned when a parent chain reports an estimate of zero
+// gas. No transaction we send can run on zero gas, so rather than posting one that
+// is guaranteed to fail we treat it as an estimation failure.
+var errZeroGasEstimate = errors.New("parent chain returned a gas estimate of zero")
+
 func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams, blockHex string) (uint64, error) {
 	var gas hexutil.Uint64
 	err := client.CallContext(ctx, &gas, "eth_estimateGas", params, blockHex)
-	// If eth_estimateGas fails due to a revert, we try again with eth_call to get a detailed error.
-	if err != nil && headerreader.IsExecutionReverted(err) {
-		err = client.CallContext(ctx, nil, "eth_call", params, blockHex)
+	if err != nil {
+		return 0, detailedEstimateGasError(ctx, client, err, params, blockHex)
 	}
-	return uint64(gas), err
+	if gas == 0 {
+		return 0, errZeroGasEstimate
+	}
+	return uint64(gas), nil
+}
+
+// detailedEstimateGasError enriches an eth_estimateGas revert with the reason
+// reported by eth_call for the same arguments. The returned error is always
+// non-nil: eth_call is only a source of detail here, so if it unexpectedly
+// succeeds we still report the original estimation failure.
+func detailedEstimateGasError(ctx context.Context, client rpc.ClientInterface, estimateErr error, callArgs ...interface{}) error {
+	if !headerreader.IsExecutionReverted(estimateErr) {
+		return estimateErr
+	}
+	if callErr := client.CallContext(ctx, nil, "eth_call", callArgs...); callErr != nil {
+		return callErr
+	}
+	return estimateErr
 }
 
 func (b *BatchPoster) estimateGasSimple(
@@ -1384,15 +1405,16 @@ func (b *BatchPoster) estimateGasForFutureTx(
 	}
 	var gas hexutil.Uint64
 	err = rawRpcClient.CallContext(ctx, &gas, "eth_estimateGas", gasParams, rpc.PendingBlockNumber, stateOverride)
+	if err == nil && gas == 0 {
+		err = errZeroGasEstimate
+	}
 	if err != nil {
 		sequencerMessageHeader := sequencerMessage
 		if len(sequencerMessageHeader) > 33 {
 			sequencerMessageHeader = sequencerMessageHeader[:33]
 		}
 		// If eth_estimateGas fails due to a revert, we try again with eth_call to get a detailed error.
-		if headerreader.IsExecutionReverted(err) {
-			err = rawRpcClient.CallContext(ctx, nil, "eth_call", gasParams, rpc.PendingBlockNumber, stateOverride)
-		}
+		err = detailedEstimateGasError(ctx, rawRpcClient, err, gasParams, rpc.PendingBlockNumber, stateOverride)
 		log.Warn(
 			"error estimating gas for batch",
 			"err", err,
