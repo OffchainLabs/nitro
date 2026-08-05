@@ -7,6 +7,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/metrics"
@@ -15,37 +19,32 @@ import (
 	"github.com/offchainlabs/nitro/util/s3syncer/s3syncertest"
 )
 
-func TestSyncer_FailedETagTracking(t *testing.T) {
+func TestSyncer_DigestETagTracking(t *testing.T) {
 	handlerErr := errors.New("parse boom")
 	var handlerReturn error
 	s := &Syncer{
-		handleData: func(data []byte, digest string) error { return handlerReturn },
+		handleData: func(r io.Reader, size int64, digest string) error { return handlerReturn },
 	}
 
 	handlerReturn = handlerErr
-	if err := s.applyHandled("etag-bad", []byte("x")); err == nil {
+	if err := s.applyHandled("etag-bad", strings.NewReader("x"), 1); err == nil {
 		t.Fatal("expected handler error to propagate")
-	}
-	if s.failedETag != "etag-bad" {
-		t.Fatalf("failedETag should be set after handler error, got %q", s.failedETag)
 	}
 	if s.digestETag != "" {
 		t.Fatalf("digestETag must not advance on handler error, got %q", s.digestETag)
 	}
 
 	handlerReturn = nil
-	if err := s.applyHandled("etag-good", []byte("y")); err != nil {
+	if err := s.applyHandled("etag-good", strings.NewReader("y"), 1); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if s.digestETag != "etag-good" {
 		t.Fatalf("digestETag should advance on success, got %q", s.digestETag)
 	}
-	if s.failedETag != "" {
-		t.Fatalf("failedETag should clear on success, got %q", s.failedETag)
-	}
 }
 
 func TestConfigValidate(t *testing.T) {
+	downloadDir := t.TempDir()
 	tests := []struct {
 		name    string
 		config  Config
@@ -54,33 +53,46 @@ func TestConfigValidate(t *testing.T) {
 		{
 			name: "valid config",
 			config: Config{
-				Config:    s3client.Config{Region: "us-east-1"},
-				Bucket:    "test-bucket",
-				ObjectKey: "path/to/file.json",
+				Config:      s3client.Config{Region: "us-east-1"},
+				Bucket:      "test-bucket",
+				ObjectKey:   "path/to/file.json",
+				DownloadDir: downloadDir,
 			},
 			wantErr: false,
 		},
 		{
 			name: "missing bucket",
 			config: Config{
-				Config:    s3client.Config{Region: "us-east-1"},
-				ObjectKey: "path/to/file.json",
+				Config:      s3client.Config{Region: "us-east-1"},
+				ObjectKey:   "path/to/file.json",
+				DownloadDir: downloadDir,
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing region",
 			config: Config{
-				Bucket:    "test-bucket",
-				ObjectKey: "path/to/file.json",
+				Bucket:      "test-bucket",
+				ObjectKey:   "path/to/file.json",
+				DownloadDir: downloadDir,
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing object key",
 			config: Config{
-				Config: s3client.Config{Region: "us-east-1"},
-				Bucket: "test-bucket",
+				Config:      s3client.Config{Region: "us-east-1"},
+				Bucket:      "test-bucket",
+				DownloadDir: downloadDir,
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing download dir",
+			config: Config{
+				Config:    s3client.Config{Region: "us-east-1"},
+				Bucket:    "test-bucket",
+				ObjectKey: "path/to/file.json",
 			},
 			wantErr: true,
 		},
@@ -92,8 +104,9 @@ func TestConfigValidate(t *testing.T) {
 					AccessKey: "AKIAIOSFODNN7EXAMPLE",
 					SecretKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
 				},
-				Bucket:    "test-bucket",
-				ObjectKey: "path/to/file.json",
+				Bucket:      "test-bucket",
+				ObjectKey:   "path/to/file.json",
+				DownloadDir: downloadDir,
 			},
 			wantErr: false,
 		},
@@ -103,6 +116,7 @@ func TestConfigValidate(t *testing.T) {
 				Config:        s3client.Config{Region: "us-east-1"},
 				Bucket:        "test-bucket",
 				ObjectKey:     "path/to/file.json",
+				DownloadDir:   downloadDir,
 				MaxFileSizeMB: -1,
 			},
 			wantErr: true,
@@ -114,29 +128,6 @@ func TestConfigValidate(t *testing.T) {
 			err := tt.config.Validate()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Config.Validate() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestConfigNumPreallocatedHashes(t *testing.T) {
-	cases := []struct {
-		name     string
-		prealloc bool
-		maxMB    int
-		want     int
-	}{
-		{"disabled", false, 10, 0},
-		{"no max size", true, 0, 0},
-		{"negative max size", true, -1, 0},
-		{"one mb", true, 1, 1024 * 1024 / minBytesPerHashEntry},
-		{"ten mb", true, 10, 10 * 1024 * 1024 / minBytesPerHashEntry},
-	}
-	for _, tt := range cases {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := Config{PreallocateMemory: tt.prealloc, MaxFileSizeMB: tt.maxMB}
-			if got := cfg.NumPreallocatedHashes(); got != tt.want {
-				t.Errorf("NumPreallocatedHashes() = %d, want %d", got, tt.want)
 			}
 		})
 	}
@@ -164,14 +155,21 @@ func newTestConfig(endpoint, key string, maxFileSizeMB int) *Config {
 type syncerRecorder struct {
 	handlerCalls int
 	lastBody     []byte
+	lastSize     int64
 	lastDigest   string
+	returnErr    error
 }
 
-func (r *syncerRecorder) handleData(body []byte, digest string) error {
+func (r *syncerRecorder) handleData(body io.Reader, size int64, digest string) error {
 	r.handlerCalls++
-	r.lastBody = bytes.Clone(body)
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return err
+	}
+	r.lastBody = data
+	r.lastSize = size
 	r.lastDigest = digest
-	return nil
+	return r.returnErr
 }
 
 var syncerMethodCases = []struct {
@@ -347,59 +345,98 @@ func TestSyncer_CheckAndSync_SkipsUnchangedObject(t *testing.T) {
 	}
 }
 
-func TestSyncer_PreallocatesAndReusesBuffer(t *testing.T) {
-	key := "data.json"
-	body := []byte(`{"hello":"world"}`)
-	endpoint, _ := s3syncertest.NewFakeS3(t, testBucket, map[string][]byte{key: body})
+func TestSyncer_DownloadsToDirAndCleansUp(t *testing.T) {
+	for _, handlerErr := range []error{nil, errors.New("parse boom")} {
+		name := "handler success"
+		if handlerErr != nil {
+			name = "handler failure"
+		}
+		t.Run(name, func(t *testing.T) {
+			key := "data.json"
+			body := []byte(`{"hello":"world"}`)
+			endpoint, _ := s3syncertest.NewFakeS3(t, testBucket, map[string][]byte{key: body})
 
-	rec := &syncerRecorder{}
-	gauge := metrics.NewGauge()
-	cfg := newTestConfig(endpoint, key, 1)
-	cfg.PreallocateMemory = true
-	syncer := NewSyncer(cfg, rec.handleData, gauge)
+			rec := &syncerRecorder{returnErr: handlerErr}
+			gauge := metrics.NewGauge()
+			cfg := newTestConfig(endpoint, key, 1)
+			cfg.DownloadDir = t.TempDir()
+			var duringHandler []string
+			handler := func(body io.Reader, size int64, digest string) error {
+				files, globErr := filepath.Glob(filepath.Join(cfg.DownloadDir, "*"))
+				if globErr != nil {
+					t.Errorf("glob during handler: %v", globErr)
+				}
+				duringHandler = files
+				return rec.handleData(body, size, digest)
+			}
+			syncer := NewSyncer(cfg, handler, gauge)
+			if err := syncer.Initialize(t.Context()); err != nil {
+				t.Fatalf("Initialize: %v", err)
+			}
 
-	if cap(syncer.reuseBuf) != bytesInMB {
-		t.Fatalf("reuseBuf cap = %d, want %d", cap(syncer.reuseBuf), bytesInMB)
-	}
-	if err := syncer.Initialize(t.Context()); err != nil {
-		t.Fatalf("Initialize: %v", err)
-	}
-	if err := syncer.DownloadAndLoad(t.Context()); err != nil {
-		t.Fatalf("DownloadAndLoad: %v", err)
-	}
+			err := syncer.DownloadAndLoad(t.Context())
+			if handlerErr == nil && err != nil {
+				t.Fatalf("DownloadAndLoad: %v", err)
+			}
+			if handlerErr != nil && !errors.Is(err, handlerErr) {
+				t.Fatalf("DownloadAndLoad error = %v, want %v", err, handlerErr)
+			}
 
-	if rec.handlerCalls != 1 {
-		t.Fatalf("handlerCalls = %d, want 1", rec.handlerCalls)
-	}
-	if !bytes.Equal(rec.lastBody, body) {
-		t.Fatalf("handler body = %q, want %q", rec.lastBody, body)
-	}
-	if !bytes.Equal(syncer.reuseBuf[:len(body)], body) {
-		t.Fatalf("download did not reuse the preallocated buffer: %q", syncer.reuseBuf[:len(body)])
+			if rec.handlerCalls != 1 {
+				t.Fatalf("handlerCalls = %d, want 1", rec.handlerCalls)
+			}
+			if !bytes.Equal(rec.lastBody, body) {
+				t.Fatalf("handler body = %q, want %q", rec.lastBody, body)
+			}
+			if rec.lastSize != int64(len(body)) {
+				t.Fatalf("handler size = %d, want %d", rec.lastSize, len(body))
+			}
+			if len(duringHandler) != 0 {
+				t.Fatalf("temporary download file must be unlinked before the handler runs (crash-proof cleanup): %v", duringHandler)
+			}
+			leftovers, globErr := filepath.Glob(filepath.Join(cfg.DownloadDir, "*"))
+			if globErr != nil {
+				t.Fatalf("glob: %v", globErr)
+			}
+			if len(leftovers) != 0 {
+				t.Fatalf("temporary download file not cleaned up: %v", leftovers)
+			}
+		})
 	}
 }
 
-func TestSyncer_NoPreallocWhenDisabled(t *testing.T) {
-	key := "data.json"
-	body := []byte(`{"hello":"world"}`)
-	endpoint, _ := s3syncertest.NewFakeS3(t, testBucket, map[string][]byte{key: body})
+func TestConfigValidate_DownloadDir(t *testing.T) {
+	valid := Config{
+		Config:    s3client.Config{Region: "us-east-1"},
+		Bucket:    "test-bucket",
+		ObjectKey: "path/to/file.json",
+	}
 
-	rec := &syncerRecorder{}
-	gauge := metrics.NewGauge()
-	cfg := newTestConfig(endpoint, key, 1)
-	cfg.PreallocateMemory = false
-	syncer := NewSyncer(cfg, rec.handleData, gauge)
+	cfg := valid
+	cfg.DownloadDir = t.TempDir()
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("existing directory should validate: %v", err)
+	}
 
-	if syncer.reuseBuf != nil {
-		t.Fatal("reuseBuf should be nil when preallocation is disabled")
+	cfg = valid
+	cfg.DownloadDir = ""
+	if err := cfg.Validate(); err == nil {
+		t.Error("empty download-dir should fail validation")
 	}
-	if err := syncer.Initialize(t.Context()); err != nil {
-		t.Fatalf("Initialize: %v", err)
+
+	cfg = valid
+	cfg.DownloadDir = filepath.Join(t.TempDir(), "does-not-exist")
+	if err := cfg.Validate(); err == nil {
+		t.Error("missing download-dir should fail validation")
 	}
-	if err := syncer.DownloadAndLoad(t.Context()); err != nil {
-		t.Fatalf("DownloadAndLoad: %v", err)
+
+	cfg = valid
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if !bytes.Equal(rec.lastBody, body) {
-		t.Fatalf("handler body = %q, want %q", rec.lastBody, body)
+	cfg.DownloadDir = file
+	if err := cfg.Validate(); err == nil {
+		t.Error("download-dir pointing at a file should fail validation")
 	}
 }
