@@ -9,19 +9,14 @@ import (
 	"fmt"
 	"math/big"
 	"testing"
-	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -69,7 +64,7 @@ func TestRecordBlockSolidity(t *testing.T) {
 		Require(t, err)
 	}
 
-	blockNum, _ := sequenceInBlock(t, builder, txs)
+	blockNum := sequenceInBlock(t, builder, txs)
 	recordBlockInputs(t, blockNum, builder)
 }
 
@@ -167,7 +162,7 @@ func TestRecordBlockMixed(t *testing.T) {
 	txKeccak := l2info.PrepareTxTo("Owner", &keccakAddr, l2info.TransferGas, nil, append([]byte{0x01}, []byte("mixed test benchmark data")...))
 	txs = append(txs, txKeccak)
 
-	blockNum, _ := sequenceInBlock(t, builder, txs)
+	blockNum := sequenceInBlock(t, builder, txs)
 	recordBlockInputs(t, blockNum, builder)
 }
 
@@ -226,7 +221,7 @@ func TestRecordBlockSignatures(t *testing.T) {
 		txs[i] = l2info.PrepareTx("Owner", name, l2info.TransferGas, big.NewInt(1e16), nil)
 	}
 
-	blockNum, _ := sequenceInBlock(t, builder, txs)
+	blockNum := sequenceInBlock(t, builder, txs)
 	recordBlockInputs(t, blockNum, builder)
 }
 
@@ -248,36 +243,36 @@ func recordBlockInputs(t *testing.T, blockNum uint64, builder *NodeBuilder) {
 	recordBlock(t, blockNum, builder, rawdb.TargetWavm, rawdb.TargetWasm, rawdb.LocalTarget())
 }
 
-// sequenceInBlock bypasses the sequencer's one-tx-per-block loop and forces all
-// txs into a single block via the execution engine directly.
-func sequenceInBlock(t *testing.T, builder *NodeBuilder, txs types.Transactions) (uint64, []*types.Receipt) {
+// sequenceInBlock bypasses the sequencer's one-tx-per-block loop and forces
+// all txs into a single block, asserting each succeeded. Mirrors
+// sequenceTransactionsInTheSameBlock (common_test.go), expanded here to pin
+// the header timestamp to the parent block's so that recorded blocks don't
+// depend on wall-clock time.
+func sequenceInBlock(t *testing.T, builder *NodeBuilder, txs types.Transactions) uint64 {
 	t.Helper()
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 
+	sequencer := builder.L2.ExecNode.Sequencer
+	sequencer.Pause()
+	defer sequencer.Activate()
+
+	header, hooks := sequencer.MakeSameBlockSequencingHooksAndHeaderForTest(t, txs)
 	lastBlock, err := l2client.BlockByNumber(ctx, nil)
 	Require(t, err)
-	header := &arbostypes.L1IncomingMessageHeader{
-		Kind:        arbostypes.L1MessageType_L2Message,
-		Poster:      l1pricing.BatchPosterAddress,
-		BlockNumber: lastBlock.NumberU64() + 1,
-		Timestamp:   arbmath.SaturatingUCast[uint64](time.Now().Unix()),
-	}
-	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(txs, nil, nil)
-	sequenceTransactions(t, builder, header, hooks)
+	header.Timestamp = lastBlock.Time()
 
-	var blockNum uint64
-	receipts := make([]*types.Receipt, len(txs))
+	block, _ := sequenceTransactions(t, builder, header, hooks)
+	sequencer.DispatchPendingFilteredTxReportsForTest(t)
+
 	for i, tx := range txs {
-		receipts[i], err = EnsureTxSucceeded(ctx, l2client, tx)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
-		if i == 0 {
-			blockNum = receipts[0].BlockNumber.Uint64()
-		} else if receipts[i].BlockNumber.Uint64() != blockNum {
-			t.Fatalf("tx %d in block %d, expected block %d", i, receipts[i].BlockNumber.Uint64(), blockNum)
+		if receipt.BlockNumber.Uint64() != block.NumberU64() {
+			t.Fatalf("tx %d in block %d, expected block %d", i, receipt.BlockNumber.Uint64(), block.NumberU64())
 		}
 	}
-	return blockNum, receipts
+	return block.NumberU64()
 }
 
 // syncOwnerNonce syncs l2info's internal nonce counter for "Owner" with the
