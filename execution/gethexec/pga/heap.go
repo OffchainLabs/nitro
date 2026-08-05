@@ -84,6 +84,6 @@ func (h txHeap[T]) addBoost(delta uint64) {
 // takeRemaining returns all remaining transactions in the heap.
 func (h *txHeap[T]) takeRemaining() []T {
 	remaining := *h
-	h = nil
+	*h = nil
 	return remaining
 }
