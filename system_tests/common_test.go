@@ -91,6 +91,7 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -443,7 +444,7 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 //
 // Useful if the test needs a specific database engine to be used
 func (b *NodeBuilder) WithDatabase(database string) *NodeBuilder {
-	if database != env.MemoryDB && database != rawdb.DBPebble && database != rawdb.DBLeveldb {
+	if database != dbutil.MemoryDB && database != rawdb.DBPebble && database != rawdb.DBLeveldb {
 		panic("unknown database engine: " + database)
 	}
 
@@ -502,6 +503,16 @@ func (b *NodeBuilder) WithWasmRootDir(wasmRootDir string) *NodeBuilder {
 
 func (b *NodeBuilder) WithExtraArchs(targets []string) *NodeBuilder {
 	b.execConfig.StylusTarget.ExtraArchs = targets
+	return b
+}
+
+func (b *NodeBuilder) WithChainTipBlockRecorder() *NodeBuilder {
+	b.execConfig.RecordingDatabase.Mode = gethexec.BlockRecorderModeChainTip
+	return b
+}
+
+func (b *NodeBuilder) WithLegacyBlockRecorder() *NodeBuilder {
+	b.execConfig.RecordingDatabase.Mode = gethexec.BlockRecorderModeLegacy
 	return b
 }
 
@@ -869,11 +880,11 @@ func buildOnParentChain(
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
 	execConfigFetcher := NewCommonConfigFetcher(execConfig)
-	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, executionDB, blockchain, containers.Some(parentChainTestClient.Client), execConfigFetcher, 0, parentChain)
+	fatalErrChan := make(chan error, 10)
+	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, executionDB, blockchain, containers.Some(parentChainTestClient.Client), execConfigFetcher, 0, parentChain, fatalErrChan)
 	Require(t, err)
 	chainTestClient.ExecutionConfigFetcher = execConfigFetcher
 
-	fatalErrChan := make(chan error, 10)
 	locator, err := server_common.NewMachineLocator(valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	consensusConfigFetcher := NewCommonConfigFetcher(nodeConfig)
@@ -1079,11 +1090,11 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 		t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, nil, b.l2StackConfig, b.execConfig, b.TrieNoAsyncFlush)
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, executionDB, blockchain, containers.None[*ethclient.Client](), execConfigFetcher, 0, nil)
+	fatalErrChan := make(chan error, 10)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, executionDB, blockchain, containers.None[*ethclient.Client](), execConfigFetcher, 0, nil, fatalErrChan)
 	Require(t, err)
 	b.L2.ExecutionConfigFetcher = execConfigFetcher
 
-	fatalErrChan := make(chan error, 10)
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	consensusConfigFetcher := NewCommonConfigFetcher(b.nodeConfig)
@@ -1163,10 +1174,10 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	l2info, stack, executionDB, consensusDB, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, b.initMessage, b.l2StackConfig, b.execConfig, b.TrieNoAsyncFlush)
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, executionDB, blockchain, containers.None[*ethclient.Client](), execConfigFetcher, 0, b.L2.ExecNode.ParentChain)
+	feedErrChan := make(chan error, 10)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, executionDB, blockchain, containers.None[*ethclient.Client](), execConfigFetcher, 0, b.L2.ExecNode.ParentChain, feedErrChan)
 	Require(t, err)
 
-	feedErrChan := make(chan error, 10)
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	var sequencerTxOpts *bind.TransactOpts
@@ -2134,19 +2145,19 @@ func createNonL1BlockChainWithStackConfig(
 	Require(t, err)
 
 	chainData := rawdb.NewMemoryDatabase()
-	if stack.Config().DBEngine != env.MemoryDB {
+	if stack.Config().DBEngine != dbutil.MemoryDB {
 		chainData, err = stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
 		Require(t, err)
 	}
 	wasmData := rawdb.NewMemoryDatabase()
-	if stack.Config().DBEngine != env.MemoryDB {
+	if stack.Config().DBEngine != dbutil.MemoryDB {
 		wasmData, err = stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"), NoFreezer: true})
 		Require(t, err)
 	}
 
 	executionDB := rawdb.WrapDatabaseWithWasm(chainData, wasmData)
 	consensusDB := rawdb.NewMemoryDatabase()
-	if stack.Config().DBEngine != env.MemoryDB {
+	if stack.Config().DBEngine != dbutil.MemoryDB {
 		consensusDB, err = stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
 		Require(t, err)
 	}
@@ -2359,8 +2370,9 @@ func waitForFindInboxBatch(t *testing.T, node *arbnode.Node, msgIdx arbutil.Mess
 }
 
 // waitForBatchContainingMessage polls until the latest batch's message count
-// is at least msgPos. Zero batches is treated as not-yet-ready; errors from
-// batch queries are immediately fatal. Calls t.Fatalf on timeout.
+// exceeds msgPos, i.e. the message at index msgPos is included in a batch.
+// Zero batches is treated as not-yet-ready; errors from batch queries are
+// immediately fatal. Calls t.Fatalf on timeout.
 func waitForBatchContainingMessage(t *testing.T, node *arbnode.Node, msgPos arbutil.MessageIndex, timeout, interval time.Duration) {
 	t.Helper()
 	var lastBatchCount uint64
@@ -2378,7 +2390,7 @@ func waitForBatchContainingMessage(t *testing.T, node *arbnode.Node, msgPos arbu
 				t.Fatalf("GetBatchMessageCount(%d): %v", batches-1, err)
 			}
 			lastMsgCount = haveMessages
-			if haveMessages >= msgPos {
+			if haveMessages > msgPos {
 				return
 			}
 		}
@@ -2435,19 +2447,19 @@ func Create2ndNodeWithConfig(
 	Require(t, err)
 
 	chainData := rawdb.NewMemoryDatabase()
-	if chainStack.Config().DBEngine != env.MemoryDB {
+	if chainStack.Config().DBEngine != dbutil.MemoryDB {
 		chainData, err = chainStack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
 		Require(t, err)
 	}
 	wasmData := rawdb.NewMemoryDatabase()
-	if chainStack.Config().DBEngine != env.MemoryDB {
+	if chainStack.Config().DBEngine != dbutil.MemoryDB {
 		wasmData, err = chainStack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"), NoFreezer: true})
 		Require(t, err)
 	}
 	executionDB := rawdb.WrapDatabaseWithWasm(chainData, wasmData)
 
 	consensusDB := rawdb.NewMemoryDatabase()
-	if chainStack.Config().DBEngine != env.MemoryDB {
+	if chainStack.Config().DBEngine != dbutil.MemoryDB {
 		consensusDB, err = chainStack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
 		Require(t, err)
 	}
@@ -2471,7 +2483,7 @@ func Create2ndNodeWithConfig(
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
 	execConfigFetcher := NewCommonConfigFetcher(execConfig)
-	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, executionDB, blockchain, containers.Some(parentChainClient), execConfigFetcher, 0, parentChain)
+	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, executionDB, blockchain, containers.Some(parentChainClient), execConfigFetcher, 0, parentChain, feedErrChan)
 	Require(t, err)
 
 	var currentNode *arbnode.Node
@@ -2996,7 +3008,7 @@ func sequenceTransactions(
 	builder *NodeBuilder,
 	header *arbostypes.L1IncomingMessageHeader,
 	hooks *gethexec.FullSequencingHooks,
-) (*types.Block, []error) {
+) (*types.Block, []gethexec.TxResult) {
 	sequencedMsg, block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks)
 	Require(t, err)
 	if sequencedMsg == nil {
@@ -3006,24 +3018,24 @@ func sequenceTransactions(
 	Require(t, err)
 	err = builder.L2.ExecNode.AppendLastSequencedBlock()
 	Require(t, err)
-	return block, hooks.GetTxErrors()
+	return block, hooks.SequencedTxes()
 }
 
 // sequenceTransactionsInTheSameBlock sequences all the given transactions into a
 // single block, using the sequencer's real pre/post tx filters and bypassing the
-// txQueue. It returns the produced block and the per-transaction errors.
+// txQueue. It returns the produced block and the per-transaction results.
 func sequenceTransactionsInTheSameBlock(
 	t *testing.T,
 	builder *NodeBuilder,
 	txes types.Transactions,
-) (*types.Block, []error) {
+) (*types.Block, []gethexec.TxResult) {
 	sequencer := builder.L2.ExecNode.Sequencer
 	sequencer.Pause()
 	defer sequencer.Activate()
 	header, hooks := sequencer.MakeSameBlockSequencingHooksAndHeaderForTest(t, txes)
-	block, txErrors := sequenceTransactions(t, builder, header, hooks)
+	block, sequencedTxes := sequenceTransactions(t, builder, header, hooks)
 	sequencer.DispatchPendingFilteredTxReportsForTest(t)
-	return block, txErrors
+	return block, sequencedTxes
 }
 
 func waitForTCP(t *testing.T, addr string, timeout time.Duration) {

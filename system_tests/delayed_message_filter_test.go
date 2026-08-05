@@ -339,6 +339,7 @@ func TestDelayedMessageFilterHalting(t *testing.T) {
 	builder := setupFilteredTxTestBuilder(t, ctx)
 	filteringReportStack, reportAPI := SetupFilteringReport(t)
 	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -354,9 +355,7 @@ func TestDelayedMessageFilterHalting(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up address filter to block FilteredUser
-	filter := newHashedChecker([]common.Address{filteredAddr})
-
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	// Prepare and send delayed tx TO filtered address
 	delayedTx := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
@@ -399,6 +398,7 @@ func TestDelayedMessageFilterHaltDoesNotBlockRegularTxs(t *testing.T) {
 	defer cancel()
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -416,8 +416,7 @@ func TestDelayedMessageFilterHaltDoesNotBlockRegularTxs(t *testing.T) {
 	require.NoError(t, err)
 
 	// Block FilteredUser and send a delayed tx to it so delayed sequencing halts.
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	delayedTx := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	delayedTxHash, _ := sendDelayedTx(t, ctx, builder, delayedTx)
@@ -462,6 +461,7 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 
 	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -484,8 +484,7 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up address filter to block FilteredUser
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	// Prepare and send delayed tx TO filtered address
 	delayedTx := builder.L2Info.PrepareTx("Sender", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
@@ -571,6 +570,7 @@ func TestDelayedMessageFilterResumeNotBlockedByLaterUnfinalizedMessage(t *testin
 	builder.L2Info.GenerateAccount("Receiver")
 	builder.L2Info.GenerateAccount("Filterer")
 
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -588,8 +588,7 @@ func TestDelayedMessageFilterResumeNotBlockedByLaterUnfinalizedMessage(t *testin
 
 	// Block transfers to FilteredUser.
 	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	delayedCountBefore := getDelayedCount(t, builder.L2.ConsensusNode)
 
@@ -697,6 +696,7 @@ func TestDisableDelayedSequencingFilterConfig(t *testing.T) {
 	builder.L2Info.GenerateAccount("FilteredUser")
 	builder.L2Info.GenerateAccount("Sender")
 
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -714,8 +714,7 @@ func TestDisableDelayedSequencingFilterConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up address filter to block FilteredUser
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	// Prepare and send delayed tx TO filtered address
 	transferAmount := big.NewInt(1e12)
@@ -765,6 +764,7 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 
 	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -796,8 +796,7 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up address filter to block FilteredUser
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	// Send 3 delayed messages:
 	// 1. TO FilteredUser (will be filtered)
@@ -882,6 +881,7 @@ func TestDelayedMessageFilterBatch(t *testing.T) {
 
 	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -910,8 +910,7 @@ func TestDelayedMessageFilterBatch(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up address filter to block FilteredUser
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	// Create batch of 3 transactions within a single delayed message:
 	// tx1: Sender -> User1 (normal transfer, NOT filtered)
@@ -988,6 +987,7 @@ func TestDelayedMessageFilterNonFilteredPasses(t *testing.T) {
 	defer cancel()
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -1005,8 +1005,7 @@ func TestDelayedMessageFilterNonFilteredPasses(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up address filter to block FilteredUser (NOT NormalUser)
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	// Prepare and send delayed tx TO normal (non-filtered) address
 	delayedTx := builder.L2Info.PrepareTx("Sender", "NormalUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
@@ -1083,6 +1082,7 @@ func TestDelayedMessageFilterCall(t *testing.T) {
 
 	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -1105,8 +1105,7 @@ func TestDelayedMessageFilterCall(t *testing.T) {
 	targetAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
 	// Set up filter to block the target contract
-	filter := newHashedChecker([]common.Address{targetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{targetAddr})
 
 	// Prepare delayed tx that calls caller.callTarget(targetAddr)
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
@@ -1152,6 +1151,7 @@ func TestDelayedMessageFilterStaticCall(t *testing.T) {
 
 	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -1174,8 +1174,7 @@ func TestDelayedMessageFilterStaticCall(t *testing.T) {
 	targetAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
 	// Set up filter to block the target contract
-	filter := newHashedChecker([]common.Address{targetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{targetAddr})
 
 	// Prepare delayed tx that calls caller.staticcallTargetInTx(targetAddr)
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
@@ -1218,6 +1217,7 @@ func TestDelayedMessageFilterCreate(t *testing.T) {
 
 	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -1244,8 +1244,7 @@ func TestDelayedMessageFilterCreate(t *testing.T) {
 	createAddr := crypto.CreateAddress(callerAddr, nonce)
 
 	// Set up filter to block the computed CREATE address
-	filter := newHashedChecker([]common.Address{createAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{createAddr})
 
 	// Prepare delayed tx that calls caller.createContract()
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
@@ -1288,6 +1287,7 @@ func TestDelayedMessageFilterCreate2(t *testing.T) {
 
 	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -1312,8 +1312,7 @@ func TestDelayedMessageFilterCreate2(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up filter to block the computed CREATE2 address
-	filter := newHashedChecker([]common.Address{create2Addr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{create2Addr})
 
 	// Prepare delayed tx that calls caller.create2Contract(salt)
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
@@ -1357,6 +1356,7 @@ func TestDelayedMessageFilterSelfdestruct(t *testing.T) {
 
 	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -1378,8 +1378,7 @@ func TestDelayedMessageFilterSelfdestruct(t *testing.T) {
 	contractAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
 	// Set up filter to block the beneficiary address
-	filter := newHashedChecker([]common.Address{filteredBeneficiary})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredBeneficiary})
 
 	// Prepare delayed tx that calls contract.selfDestructTo(filteredBeneficiary)
 	contractABI, err := localgen.AddressFilterTestMetaData.GetAbi()
@@ -1418,6 +1417,7 @@ func TestDelayedMessageFilterTxHashesUpdateOnchainFilter(t *testing.T) {
 	builder := setupFilteredTxTestBuilder(t, ctx)
 	// Configure short retry interval so we don't have to wait long
 	builder.execConfig.TransactionFiltering.FilteredTxFullRetryInterval = 200 * time.Millisecond
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -1442,8 +1442,7 @@ func TestDelayedMessageFilterTxHashesUpdateOnchainFilter(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up address filter to block both FilteredUser1 and FilteredUser2
-	filter := newHashedChecker([]common.Address{filteredAddr1, filteredAddr2})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr1, filteredAddr2})
 
 	// Create batch of 2 transactions within a single delayed message:
 	// tx1: Sender -> FilteredUser1 (filtered)
@@ -1497,6 +1496,7 @@ func TestDelayedMessageFilterTxHashesUpdateAddressSetChange(t *testing.T) {
 	builder := setupFilteredTxTestBuilder(t, ctx)
 	// Configure short retry interval so we don't have to wait long
 	builder.execConfig.TransactionFiltering.FilteredTxFullRetryInterval = 200 * time.Millisecond
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -1516,8 +1516,7 @@ func TestDelayedMessageFilterTxHashesUpdateAddressSetChange(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up address filter to block both User1 and User2
-	filter := newHashedChecker([]common.Address{user1Addr, user2Addr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{user1Addr, user2Addr})
 
 	// Create batch of 2 transactions within a single delayed message:
 	// tx1: Sender -> User1 (filtered)
@@ -1538,15 +1537,13 @@ func TestDelayedMessageFilterTxHashesUpdateAddressSetChange(t *testing.T) {
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{tx1.Hash(), tx2.Hash()}, 10*time.Second)
 
 	// Change the address filter to only filter User2 (remove User1 from filter)
-	newFilter := newHashedChecker([]common.Address{user2Addr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, newFilter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{user2Addr})
 
 	// Wait for full retry to occur and verify TxHashes updated to only tx2
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{tx2.Hash()}, 5*time.Second)
 
 	// Change the address filter to filter neither (remove User2 from filter)
-	noFilter := newHashedChecker([]common.Address{})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, noFilter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, nil)
 
 	// Wait for delayed sequencer to resume
 	waitForDelayedSequencerResume(t, ctx, builder, 10*time.Second)
@@ -1584,6 +1581,7 @@ type retryableFilterTestParams struct {
 	delayedBridge      *arbnode.DelayedBridge
 	filtererName       string
 	fundsRecipientAddr common.Address
+	s3Filter           *fakeS3AddressFilter
 }
 
 // lookupRetryableSubmissionTx parses the L1 receipt's delayed message and returns
@@ -1619,6 +1617,7 @@ func setupRetryableFilterTest(t *testing.T, ctx context.Context, setFundsRecipie
 	if eventFilterRules != nil {
 		builder.WithEventFilterRules(eventFilterRules)
 	}
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 
 	delayedInbox, err := bridgegen.NewInbox(builder.L1Info.GetAddress("Inbox"), builder.L1.Client)
@@ -1655,6 +1654,7 @@ func setupRetryableFilterTest(t *testing.T, ctx context.Context, setFundsRecipie
 		delayedBridge:      delayedBridge,
 		filtererName:       "Filterer",
 		fundsRecipientAddr: fundsRecipientAddr,
+		s3Filter:           s3Filter,
 	}, cleanup
 }
 
@@ -1773,8 +1773,7 @@ func TestFilteredRetryableRedirectWithExplicitRecipient(t *testing.T) {
 	destAddr := builder.L2Info.GetAddress("Destination")
 
 	// Set up address filter to block FilteredUser
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	// Record initial balance of filtered address
 	filteredInitialBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
@@ -1858,8 +1857,7 @@ func TestFilteredRetryableRedirectFallbackToNetworkFee(t *testing.T) {
 	require.Equal(t, common.Address{}, configuredRecipient, "filteredFundsRecipient should be zero")
 
 	// Set up address filter
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	filteredInitialBalance, err := builder.L2.Client.BalanceAt(ctx, filteredAddr, nil)
 	require.NoError(t, err)
@@ -1927,8 +1925,7 @@ func TestFilteredRetryableNoRedirectWhenNotFiltered(t *testing.T) {
 	destAddr := builder.L2Info.GetAddress("Destination")
 
 	// Set up address filter to block FilteredUser only (NOT NormalBeneficiary)
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	// Submit retryable with non-filtered beneficiary
 	_, ticketId := submitRetryableViaL1(t, p, "Faucet", destAddr, common.Big0, normalBeneficiary, normalBeneficiary, nil)
@@ -1964,8 +1961,7 @@ func TestFilteredRetryableWithCallValue(t *testing.T) {
 	destAddr := builder.L2Info.GetAddress("Destination")
 
 	// Set up address filter
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	callValue := big.NewInt(1e6)
 
@@ -2037,8 +2033,7 @@ func TestFilteredRetryableSequencerDoesNotReHalt(t *testing.T) {
 	normalRecipientAddr := builder.L2Info.GetAddress("NormalRecipient")
 
 	// Set up address filter
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	// Record initial balance of normal recipient
 	normalInitialBalance, err := builder.L2.Client.BalanceAt(ctx, normalRecipientAddr, nil)
@@ -2123,8 +2118,7 @@ func TestRetryableAutoRedeemCallsFilteredAddress(t *testing.T) {
 	callerAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 	targetAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
-	filter := newHashedChecker([]common.Address{targetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{targetAddr})
 
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
 	require.NoError(t, err)
@@ -2161,8 +2155,7 @@ func TestRetryableAutoRedeemCreatesAtFilteredAddress(t *testing.T) {
 	require.NoError(t, err)
 	createAddr := crypto.CreateAddress(callerAddr, nonce)
 
-	filter := newHashedChecker([]common.Address{createAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{createAddr})
 
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
 	require.NoError(t, err)
@@ -2203,8 +2196,7 @@ func TestRetryableAutoRedeemSelfDestructsToFilteredAddress(t *testing.T) {
 
 	contractAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
-	filter := newHashedChecker([]common.Address{filteredBeneficiary})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredBeneficiary})
 
 	filteredInitial, err := builder.L2.Client.BalanceAt(ctx, filteredBeneficiary, nil)
 	require.NoError(t, err)
@@ -2248,8 +2240,7 @@ func TestRetryableAutoRedeemStaticCallsFilteredAddress(t *testing.T) {
 	callerAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 	targetAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
-	filter := newHashedChecker([]common.Address{targetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{targetAddr})
 
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
 	require.NoError(t, err)
@@ -2293,8 +2284,7 @@ func TestRetryableAutoRedeemEmitsTransferToFilteredAddress(t *testing.T) {
 
 	contractAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
-	addrFilter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	contractABI, err := localgen.AddressFilterTestMetaData.GetAbi()
 	require.NoError(t, err)
@@ -2383,8 +2373,7 @@ func TestManualRedeemGroupRevert(t *testing.T) {
 	require.NoError(t, err)
 
 	// NOW set address filter to include the target
-	filter := newHashedChecker([]common.Address{targetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{targetAddr})
 
 	// Send manual redeem via L2 tx (goes through FullSequencingHooks).
 	// The redeem's inner execution calls targetAddr which is now filtered.
@@ -2408,7 +2397,7 @@ func TestManualRedeemGroupRevert(t *testing.T) {
 
 	// Clear filter and do a successful manual redeem to verify numTries was
 	// rolled back. If IncrementNumTries had leaked, SequenceNum would be 1.
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, nil)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, nil)
 	redeemOpts2 := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
 	redeemTx, err := arbRetryable.Redeem(&redeemOpts2, ticketId)
 	require.NoError(t, err)
@@ -2503,8 +2492,7 @@ func TestDelayedManualRedeemGroupRevert(t *testing.T) {
 	require.NoError(t, err)
 
 	// Phase 3: Enable filter and send delayed manual redeem
-	filter := newHashedChecker([]common.Address{filteredTargetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredTargetAddr})
 
 	arbRetryableABI, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
 	require.NoError(t, err)
@@ -2545,7 +2533,7 @@ func TestDelayedManualRedeemGroupRevert(t *testing.T) {
 		"filtered target should be untouched")
 
 	// Phase 6: Verify numTries rollback
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, nil)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, nil)
 
 	builder.L2Info.GenerateAccount("CleanRedeemer")
 	builder.L2.TransferBalance(t, "Owner", "CleanRedeemer", big.NewInt(1e18), builder.L2Info)
@@ -2596,8 +2584,7 @@ func TestRetryableGroupRevertDoesNotAffectCleanRetryable(t *testing.T) {
 	cleanTarget, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 	dirtyTarget, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
-	filter := newHashedChecker([]common.Address{dirtyTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{dirtyTarget})
 
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
 	require.NoError(t, err)
@@ -2658,8 +2645,7 @@ func TestSequentialRetryableGroupReverts(t *testing.T) {
 	filteredTarget1, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 	filteredTarget2, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
-	filter := newHashedChecker([]common.Address{filteredTarget1, filteredTarget2})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredTarget1, filteredTarget2})
 
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
 	require.NoError(t, err)
@@ -2743,8 +2729,7 @@ func TestRetryableGroupRevertSkipFinaliseSafety(t *testing.T) {
 	callerAddr, callerContract := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 	filteredTarget, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
-	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredTarget})
 
 	// Record initial dummy counter value
 	dummyBefore, err := callerContract.Dummy(&bind.CallOpts{})
@@ -2805,8 +2790,7 @@ func TestRetryableGroupRevertWithChainedRedeems(t *testing.T) {
 	innerTarget, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 	filteredTarget, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
-	filter := newHashedChecker([]common.Address{filteredTarget})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredTarget})
 
 	callerABI, err := localgen.AddressFilterTestMetaData.GetAbi()
 	require.NoError(t, err)
@@ -2882,7 +2866,7 @@ func TestRetryableGroupRevertWithChainedRedeems(t *testing.T) {
 	// Verify B's numTries is still 0: the chained redeem called
 	// IncrementNumTries on B, but the group revert rolled it back.
 	// Clear filter and do a successful manual redeem of B to check.
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, nil)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, nil)
 	builder.L2Info.GenerateAccount("Redeemer")
 	builder.L2.TransferBalance(t, "Owner", "Redeemer", big.NewInt(1e18), builder.L2Info)
 	redeemOpts := builder.L2Info.GetDefaultTransactOpts("Redeemer", ctx)
@@ -2939,6 +2923,7 @@ func TestDelayedMessageFilterCatchesEventFilter(t *testing.T) {
 
 	filteringReportStack, reportAPI := SetupFilteringReport(t)
 	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -2962,8 +2947,7 @@ func TestDelayedMessageFilterCatchesEventFilter(t *testing.T) {
 
 	contractAddr, _ := deployAddressFilterTestContractForDelayed(t, ctx, builder)
 
-	addrFilter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	contractABI, err := localgen.AddressFilterTestMetaData.GetAbi()
 	require.NoError(t, err)
@@ -3039,6 +3023,7 @@ func TestFilteredArbitrumDepositTx(t *testing.T) {
 	defer cancel()
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -3065,8 +3050,7 @@ func TestFilteredArbitrumDepositTx(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up address filter to block the Faucet's address on L2
-	addrFilter := newHashedChecker([]common.Address{faucetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{faucetAddr})
 
 	// Record initial balances
 	faucetL2BalanceBefore, err := builder.L2.Client.BalanceAt(ctx, faucetAddr, nil)
@@ -3136,6 +3120,7 @@ func TestDelayedMessageFilterAliasedSender(t *testing.T) {
 	defer cancel()
 
 	builder := setupFilteredTxTestBuilder(t, ctx)
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -3158,8 +3143,7 @@ func TestDelayedMessageFilterAliasedSender(t *testing.T) {
 
 	// Set up address filter to block the ORIGINAL L1 address (NOT the aliased one).
 	// Sanctions lists contain original addresses, not aliased derivatives.
-	filter := newHashedChecker([]common.Address{l1SenderAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{l1SenderAddr})
 
 	// Get nonce for the aliased address on L2
 	nonce, err := builder.L2.Client.NonceAt(ctx, aliasedSenderAddr, nil)
@@ -3227,8 +3211,7 @@ func TestUnderfundedRetryableFilteredBeneficiaryDoesNotHalt(t *testing.T) {
 	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
 	destAddr := builder.L2Info.GetAddress("Destination")
 
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	// Deposit far below maxSubmissionCost, so the submission fails its
 	// max-submission-fee balance check before creating the retryable
@@ -3284,8 +3267,7 @@ func TestOnchainFilteredUnderfundedRetryableResolves(t *testing.T) {
 	// Filter the sender (raw and aliased): the sender is touched
 	// unconditionally, so the underfunded submission still halts the delayed
 	// sequencer even though no retryable-field address is filtered
-	filter := newHashedChecker([]common.Address{senderAddr, arbosutil.RemapL1Address(senderAddr)})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{senderAddr, arbosutil.RemapL1Address(senderAddr)})
 
 	_, l2Tx := submitUnsafeRetryableViaL1(t, p, retryableSenderAccount, destAddr, big.NewInt(1), common.Big0, big.NewInt(1e16), destAddr, destAddr)
 	ticketId := l2Tx.Hash()
@@ -3324,8 +3306,7 @@ func TestEscrowFailureRefundToFilteredFeeRefundAddrHalts(t *testing.T) {
 	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
 	destAddr := builder.L2Info.GetAddress("Destination")
 
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	recipientInitialBalance, err := builder.L2.Client.BalanceAt(ctx, p.fundsRecipientAddr, nil)
 	require.NoError(t, err)
@@ -3392,8 +3373,7 @@ func TestWellFundedRetryableFilteredBeneficiaryOnlyHalts(t *testing.T) {
 	destAddr := builder.L2Info.GetAddress("Destination")
 	cleanRefundAddr := builder.L2Info.GetAddress("CleanRefund")
 
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	// FeeRefundAddr is clean, so the halt can only come from the beneficiary
 	// touch at retryable creation
@@ -3443,8 +3423,7 @@ func setupFilteredL1SenderRetryableTest(t *testing.T, ctx context.Context) (*ret
 	builder.L2Info.GenerateAccount("Destination")
 	destAddr := builder.L2Info.GetAddress("Destination")
 
-	filter := newHashedChecker([]common.Address{senderAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	p.s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{senderAddr})
 
 	return p, destAddr, cleanup
 }

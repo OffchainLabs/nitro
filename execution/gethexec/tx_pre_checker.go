@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"testing"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -25,7 +24,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -91,10 +89,6 @@ func NewTxPreChecker(
 		config:               config,
 		txFilterer:           txFilterer,
 	}
-}
-
-func (c *TxPreChecker) SetTxFiltererForTest(_ *testing.T, execEngine *ExecutionEngine, ef *eventfilter.EventFilter) {
-	c.txFilterer = &txFilterer{execEngine: execEngine, eventFilter: ef, filteringReportRPCClient: execEngine.filteringReportRPCClient}
 }
 
 func (c *TxPreChecker) SetAPIBackend(backend core.NodeInterfaceBackendAPI) {

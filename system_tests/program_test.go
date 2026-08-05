@@ -481,8 +481,10 @@ func storageTest(t *testing.T, jit bool) {
 	validateBlocks(t, 2, jit, builder)
 
 	// Captures a block_inputs json file for the block that included the
-	// storage write transaction. Include wasm targets necessary for arbitrator prover and jit binaries
-	recordBlock(t, receipt.BlockNumber.Uint64(), builder, rawdb.TargetWavm, rawdb.LocalTarget())
+	// storage write transaction. Include wasm targets necessary for arbitrator
+	// prover and jit binaries, plus the original wasm source so runners that
+	// compile stylus programs on the fly (e.g. SP1) can use the recording.
+	recordBlock(t, receipt.BlockNumber.Uint64(), builder, rawdb.TargetWavm, rawdb.TargetWasm, rawdb.LocalTarget())
 }
 
 func TestProgramTransientStorage(t *testing.T) {
@@ -2250,7 +2252,15 @@ func TestReturnDataCost_StylusFixes(t *testing.T) {
 	testReturnDataCost(t, params.ArbosVersion_StylusFixes)
 }
 
+// setupProgramTest is being called by tests that validate blocks.
+// For now validation only works with HashScheme set.
 func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) (
+	*NodeBuilder, bind.TransactOpts, func(),
+) {
+	return setupProgramTestWithScheme(t, jit, rawdb.HashScheme, builderOpts...)
+}
+
+func setupProgramTestWithScheme(t *testing.T, jit bool, stateScheme string, builderOpts ...func(*NodeBuilder)) (
 	*NodeBuilder, bind.TransactOpts, func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -2261,9 +2271,9 @@ func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder))
 		opt(builder)
 	}
 
-	// setupProgramTest is being called by tests that validate blocks.
-	// For now validation only works with HashScheme set.
-	builder.RequireScheme(t, rawdb.HashScheme)
+	if stateScheme != "" {
+		builder.RequireScheme(t, stateScheme)
+	}
 	builder.nodeConfig.BlockValidator.Enable = false
 	builder.nodeConfig.Staker.Enable = true
 	builder.nodeConfig.BatchPoster.Enable = true

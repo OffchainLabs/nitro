@@ -9,6 +9,7 @@ jobs:
     # Only run if the PR is opened by dependabot
     if: github.actor == 'dependabot[bot]'
     runs-on: ubuntu-4
+    timeout-minutes: 10
     permissions:
       contents: write
 

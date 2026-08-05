@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"testing"
 	"time"
 
 	"github.com/google/uuid"
@@ -34,7 +35,7 @@ func NewFilterService(config *Config) (*FilterService, error) {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
-	maxHashes := config.S3.NumPreallocatedHashes()
+	maxHashes := config.numPreallocatedHashes()
 	if maxHashes > 0 {
 		log.Info("address-filter preallocating memory for hash list", "maxHashes", maxHashes)
 	}
@@ -102,6 +103,10 @@ func (s *FilterService) Start(ctx context.Context) {
 	log.Info("address-filter service started",
 		"poll_interval", s.config.PollInterval,
 	)
+}
+
+func (s *FilterService) TriggerSyncForTest(_ *testing.T, ctx context.Context) error {
+	return s.syncMgr.Syncer.CheckAndSync(ctx)
 }
 
 func (s *FilterService) GetHashCount() int {

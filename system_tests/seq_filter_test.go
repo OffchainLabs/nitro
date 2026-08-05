@@ -38,14 +38,15 @@ func TestSequencerTxFilter(t *testing.T) {
 	if block.Transactions()[1].Hash() != txes[1].Hash() {
 		t.Fatal("tx hash mismatch, expecting second tx to be present in the block")
 	}
-	if len(hooks.GetTxErrors()) != 2 {
-		t.Fatalf("expected 2 txErrors in hooks, found: %d", len(hooks.GetTxErrors()))
+	sequencedTxes := hooks.SequencedTxes()
+	if len(sequencedTxes) != 2 {
+		t.Fatalf("expected 2 tx results in hooks, found: %d", len(sequencedTxes))
 	}
-	if hooks.GetTxErrors()[0].Error() != state.ErrSeqFilter.Error() {
-		t.Fatalf("expected ErrSeqFilter, found: %s", hooks.GetTxErrors()[0].Error())
+	if sequencedTxes[0].Err.Error() != state.ErrSeqFilter.Error() {
+		t.Fatalf("expected ErrSeqFilter, found: %s", sequencedTxes[0].Err.Error())
 	}
-	if hooks.GetTxErrors()[1] != nil {
-		t.Fatalf("found a non-nil error for second transaction: %v", hooks.GetTxErrors()[1])
+	if sequencedTxes[1].Err != nil {
+		t.Fatalf("found a non-nil error for second transaction: %v", sequencedTxes[1].Err)
 	}
 }
 
