@@ -71,10 +71,11 @@ jobs:
             echo "::error::Expected $EXPECTED_BLOCKS recorded block inputs, found ${#INPUTS[@]}: ${INPUTS[*]}"
             exit 1
           fi
+          LOG=$(mktemp)
+          trap 'rm -f "$LOG"' EXIT
           for INPUT in "${INPUTS[@]}"; do
             BLOCK=$(basename "$INPUT" .json)
             echo "--- Running JIT validation ($BLOCK) ---"
-            LOG=$(mktemp)
             if ! ./target/bin/jit \
               --debug --cranelift \
               --binary target/machines/latest/replay.wasm \
