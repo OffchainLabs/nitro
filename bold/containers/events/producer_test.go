@@ -183,6 +183,36 @@ func TestTeardownAfterProducerStopped(t *testing.T) {
 	})
 }
 
+// TestStartReapsFinishedSubscriptions verifies that, while Start is running, a
+// subscription that finishes (Next returned done) is removed from the producer's
+// table. The challenge manager relies on this by launching Producer.Start, so
+// finished block subscribers don't accumulate for the life of the process.
+func TestStartReapsFinishedSubscriptions(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		producer := NewProducer[int]()
+		go producer.Start(ctx)
+
+		sub := producer.Subscribe()
+		producer.RLock()
+		require.Equal(t, 1, len(producer.subs))
+		producer.RUnlock()
+
+		// Finish the subscription; its id is sent to doneListener.
+		subCtx, cancelSub := context.WithCancel(context.Background())
+		cancelSub()
+		_, done := sub.Next(subCtx)
+		require.True(t, done)
+
+		// Let Start drain doneListener and remove the finished subscription.
+		synctest.Wait()
+		producer.RLock()
+		require.Empty(t, producer.subs)
+		producer.RUnlock()
+	})
+}
+
 // TestNextIsIdempotentOnceDone verifies a finished subscription stays finished:
 // later calls to Next report done immediately instead of blocking on a channel
 // nobody will send to, and an in-flight broadcast cannot hand an event to a
