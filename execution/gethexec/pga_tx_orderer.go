@@ -6,6 +6,7 @@ package gethexec
 import (
 	"context"
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/log"
@@ -87,6 +88,10 @@ func (p *pgaTxOrderer) TakeRemaining() []txQueueItem {
 
 func (p *pgaTxOrderer) OnTxInclusion(queueItem txQueueItem) {
 	p.mempool.RecordIncludedTx(queueItem.GetPriority())
+}
+
+func (p *pgaTxOrderer) BlockInterval() time.Duration {
+	return p.schedule.ElapsedInterval()
 }
 
 // OnNonceGapResolved pushes the revived tx straight into the current round's auction: waiting

@@ -44,6 +44,10 @@ func (s *Schedule) RoundIsOver() bool {
 	return time.Now().After(s.deadline)
 }
 
+func (s *Schedule) ElapsedInterval() time.Duration {
+	return time.Duration(s.activeRound) * s.roundLength
+}
+
 // ErrNoMoreRounds is returned by WaitAndAdvanceRound when the schedule is already on the last round of the block, so
 // there is no next round to advance to.
 var ErrNoMoreRounds = errors.New("pga: no rounds remaining in the block")

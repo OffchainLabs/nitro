@@ -7,6 +7,7 @@ import (
 	"math"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/core/state"
 )
@@ -41,7 +42,7 @@ func queueItemNonces(items []txQueueItem) []uint64 {
 }
 
 func TestFIFOTxOrdererStartBlockEmpty(t *testing.T) {
-	o := newFIFOTxOrderer(&stubOrdererSequencer{})
+	o := newFIFOTxOrderer(&stubOrdererSequencer{}, nil)
 	if o.StartBlock(nil) {
 		t.Fatal("StartBlock on empty = true, want false")
 	}
@@ -62,7 +63,7 @@ func TestFIFOTxOrdererBlockLifecycle(t *testing.T) {
 		item, _ := makeTestQueueItem(t, nonce, testBaseFee)
 		items = append(items, item)
 	}
-	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items})
+	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items}, nil)
 
 	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")
@@ -99,7 +100,7 @@ func TestFIFOTxOrdererSkipsOversizedTxs(t *testing.T) {
 	}
 	items[1].txSize = 11 // oversized for the block space below
 	items[2].txSize = 11
-	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items})
+	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items}, nil)
 
 	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")
@@ -126,7 +127,7 @@ func TestFIFOTxOrdererAllOversizedExhausts(t *testing.T) {
 		item.txSize = 100
 		items = append(items, item)
 	}
-	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items})
+	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items}, nil)
 
 	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")
@@ -142,11 +143,24 @@ func TestFIFOTxOrdererAllOversizedExhausts(t *testing.T) {
 	}
 }
 
+func TestFIFOTxOrdererBlockInterval(t *testing.T) {
+	maxBlockSpeed := 200 * time.Millisecond
+	fetcher := func() *SequencerConfig {
+		c := DefaultSequencerConfig
+		c.MaxBlockSpeed = maxBlockSpeed
+		return &c
+	}
+	o := newFIFOTxOrderer(&stubOrdererSequencer{}, fetcher)
+	if got := o.BlockInterval(); got != maxBlockSpeed {
+		t.Fatalf("BlockInterval = %v, want MaxBlockSpeed (%v)", got, maxBlockSpeed)
+	}
+}
+
 // A revived nonce-gap tx joins the back of the block's candidates, so it can follow its
 // predecessor into the same block; if never yielded it leaves through TakeRemaining.
 func TestFIFOTxOrdererNonceGapResolvedJoinsCandidates(t *testing.T) {
 	drained, _ := makeTestQueueItem(t, 0, testBaseFee)
-	o := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{drained}})
+	o := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{drained}}, nil)
 
 	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")

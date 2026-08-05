@@ -1210,7 +1210,7 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 		return nil, config.MaxBlockSpeed
 	}
 
-	var orderer txOrderer = newFIFOTxOrderer(s)
+	var orderer txOrderer = newFIFOTxOrderer(s, s.config)
 	if collectTips && !config.ExperimentalPGA.DangerousForceFIFO {
 		orderer = NewPGATxOrderer(ctx, s, s.config, baseFee)
 	}
@@ -1385,8 +1385,7 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrde
 	}
 
 	if madeBlock {
-		// Rate-limit block production to at most one block per MaxBlockSpeed.
-		return sequencedMsg, config.MaxBlockSpeed
+		return sequencedMsg, orderer.BlockInterval()
 	}
 	// Items were present but no block was produced (e.g. all txs failed this
 	// round); retry promptly.
