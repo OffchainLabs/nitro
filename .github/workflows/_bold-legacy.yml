@@ -9,7 +9,8 @@ permissions:
 jobs:
   bold-legacy:
     name: Run Bold Legacy challenge tests
-    runs-on: arbitrator-ci
+    runs-on: ocl-16cpu-64ram-dind
+    timeout-minutes: 30
     env:
       COVER: ${{ github.event_name != 'merge_group' && '--cover' || '' }}
     steps:
