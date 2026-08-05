@@ -62,9 +62,13 @@ jobs:
         run: |
           set -e -o pipefail
           shopt -s nullglob
+          # Keep in sync with the number of TestRecordBlock* tests in
+          # system_tests/block_recording_test.go — catches a skipped or
+          # silently dropped recording, which a zero-check would miss.
+          EXPECTED_BLOCKS=8
           INPUTS=(target/sp1/block-inputs/*.json)
-          if [ ${#INPUTS[@]} -eq 0 ]; then
-            echo "::error::No recorded block inputs found"
+          if [ ${#INPUTS[@]} -ne "$EXPECTED_BLOCKS" ]; then
+            echo "::error::Expected $EXPECTED_BLOCKS recorded block inputs, found ${#INPUTS[@]}: ${INPUTS[*]}"
             exit 1
           fi
           for INPUT in "${INPUTS[@]}"; do
