@@ -403,11 +403,9 @@ func TestParseHashListJSON(t *testing.T) {
 	// Test with malformed id field: must fail loudly so operators catch
 	// provider misconfiguration.
 	badIdPayload := map[string]interface{}{
-		"salt": "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
-		"id":   "not-a-uuid",
-		"address_hashes": []map[string]interface{}{
-			{"hash": hex.EncodeToString(hashed_addr1[:])},
-		},
+		"salt":   "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
+		"id":     "not-a-uuid",
+		"hashes": []string{hex.EncodeToString(hashed_addr1[:])},
 	}
 	badIdJSON, err := json.Marshal(badIdPayload)
 	require.NoError(t, err)
