@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1367,7 +1368,7 @@ func TestPeriodicFilterSetIDReporting(t *testing.T) {
 	signingPair := signertest.NewSigningPair(t)
 
 	// Capture every POST sent to the "external provider".
-	reportCh := make(chan addressfilter.FilterSetIDReport, 16)
+	reportCh := make(chan addressfilter.FilterSetIDsReport, 16)
 	externalEndpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
@@ -1384,11 +1385,11 @@ func TestPeriodicFilterSetIDReporting(t *testing.T) {
 			return
 		}
 		if err := signingPair.Verifier.VerifyHTTPRequest(r, body); err != nil {
-			t.Errorf("verifier rejected filter-set id report: %v", err)
+			t.Errorf("verifier rejected filter-set ids report: %v", err)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		var report addressfilter.FilterSetIDReport
+		var report addressfilter.FilterSetIDsReport
 		if err := json.Unmarshal(body, &report); err != nil {
 			t.Errorf("unmarshal body: %v", err)
 			http.Error(w, "bad json", http.StatusBadRequest)
@@ -1416,20 +1417,25 @@ func TestPeriodicFilterSetIDReporting(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	// Inject an enabled filter service (without S3) so the sequencer has a
-	// filter-set id to report, and wire it into the sequencer via the
-	// test-only setter. Using a direct hash store Store() lets us control the
-	// id deterministically.
-	filterCfg := &addressfilter.Config{
-		Files: []addressfilter.FileConfig{{
+	// Inject an enabled filter service (without S3) with two files and a
+	// static list, so the report must carry every list's id, and wire it into
+	// the sequencer via the test-only setter. Using a direct hash store
+	// Store() lets us control the file ids deterministically.
+	staticID := uuid.New()
+	fileConfig := func(objectKey string) addressfilter.FileConfig {
+		return addressfilter.FileConfig{
 			Config: s3syncer.Config{
 				Config:      s3client.Config{Region: "us-east-1"},
 				Bucket:      "test-bucket",
-				ObjectKey:   "test-key",
+				ObjectKey:   objectKey,
 				DownloadDir: t.TempDir(),
 			},
 			PollInterval: 5 * time.Minute,
-		}},
+		}
+	}
+	filterCfg := &addressfilter.Config{
+		Files:                     []addressfilter.FileConfig{fileConfig("test-key-0"), fileConfig("test-key-1")},
+		StaticList:                `{"id":"` + staticID.String() + `","hashing_scheme":"plaintext","hashes":[]}`,
 		CacheSize:                 100,
 		AddressCheckerWorkerCount: 1,
 		AddressCheckerQueueSize:   10,
@@ -1441,36 +1447,38 @@ func TestPeriodicFilterSetIDReporting(t *testing.T) {
 	salt, err := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
 	require.NoError(t, err)
 
-	// First id: assert we observe it at the external endpoint.
-	id1 := uuid.New()
-	storeFilterHashes(t, filterService.GetHashStore(0), id1, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-1")
+	idFile0 := uuid.New()
+	idFile1 := uuid.New()
+	storeFilterHashes(t, filterService.GetHashStore(0), idFile0, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-0")
+	storeFilterHashes(t, filterService.GetHashStore(1), idFile1, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-1")
 
 	expectedChainID := builder.L2.ExecNode.ExecEngine.ChainID().Uint64()
-	waitForReport := func(wantID uuid.UUID) addressfilter.FilterSetIDReport {
+	waitForReport := func(wantIDs []uuid.UUID) addressfilter.FilterSetIDsReport {
 		t.Helper()
 		deadline := time.After(10 * time.Second)
 		for {
 			select {
 			case got := <-reportCh:
-				if got.FilterSetID == wantID {
+				if slices.Equal(got.FilterSetIDs, wantIDs) {
 					return got
 				}
-				// Drop stale reports (e.g. from the previous id during rotation).
+				// Drop stale reports (e.g. from the previous ids during rotation).
 			case <-deadline:
-				t.Fatalf("timed out waiting for report with filter-set id %s", wantID)
+				t.Fatalf("timed out waiting for report with filter-set ids %s", wantIDs)
 			}
 		}
 	}
 
-	first := waitForReport(id1)
+	first := waitForReport([]uuid.UUID{idFile0, idFile1, staticID})
 	require.Equal(t, expectedChainID, first.ChainID, "chain id mismatch")
 	require.False(t, first.ReportedAt.IsZero(), "reported-at should be set")
 
-	// Rotate the filter set; the next reporting tick must pick up id2.
-	id2 := uuid.New()
-	storeFilterHashes(t, filterService.GetHashStore(0), id2, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-2")
+	// Rotate the first file's filter set; the next reporting tick must pick
+	// up its new id while the other ids are unchanged.
+	idFile0Rotated := uuid.New()
+	storeFilterHashes(t, filterService.GetHashStore(0), idFile0Rotated, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-0-rotated")
 
-	second := waitForReport(id2)
+	second := waitForReport([]uuid.UUID{idFile0Rotated, idFile1, staticID})
 	require.Equal(t, expectedChainID, second.ChainID, "chain id mismatch after rotation")
 	require.True(t, second.ReportedAt.After(first.ReportedAt) || second.ReportedAt.Equal(first.ReportedAt),
 		"second report's reported-at (%s) should be >= first (%s)", second.ReportedAt, first.ReportedAt)

@@ -900,6 +900,32 @@ func TestFilterService_StaticListPlusS3File(t *testing.T) {
 	require.True(t, restricted, "the static list address should stay restricted")
 }
 
+func TestFilterService_CurrentFilterSetIDs(t *testing.T) {
+	salt := uuid.New()
+	listID1 := uuid.New()
+	listID2 := uuid.New()
+	listIDStatic := uuid.New()
+
+	key1, key2 := "filter1.json", "filter2.json"
+	endpoint, _ := s3syncertest.NewFakeS3(t, filteringTestBucket, map[string][]byte{
+		key1: hashListBodyWithID(t, listID1, salt),
+		key2: hashListBodyWithID(t, listID2, salt),
+	})
+
+	cfg := newFilteringTestConfig(t, endpoint, 1, key1, key2)
+	cfg.StaticList = string(hashListBodyWithID(t, listIDStatic, salt))
+
+	service, err := NewFilterService(cfg)
+	require.NoError(t, err)
+
+	require.Equal(t, []uuid.UUID{uuid.Nil, uuid.Nil, listIDStatic}, service.CurrentFilterSetIDs(),
+		"before Initialize the S3 files have no id yet while the static list already has one")
+
+	require.NoError(t, service.Initialize(context.Background()))
+	require.Equal(t, []uuid.UUID{listID1, listID2, listIDStatic}, service.CurrentFilterSetIDs(),
+		"ids follow the config order of the files, with the static list last")
+}
+
 func TestFilterService_Initialize_FailsWhenOneFileMissing(t *testing.T) {
 	salt := uuid.New()
 	key1 := "filter1.json"

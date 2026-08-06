@@ -191,12 +191,12 @@ func (s *FilterService) GetHashStore(i int) *HashStore {
 	return s.files[i].hashStore
 }
 
-// CurrentFilterSetID returns the filter-set id of the first configured list:
-// the first S3 file, or the static list when no S3 files are configured. The
-// filter-set id report carries a single id, so with multiple lists only the
-// first one is reported.
-func (s *FilterService) CurrentFilterSetID() uuid.UUID {
-	return s.storeSet.stores[0].Id()
+func (s *FilterService) CurrentFilterSetIDs() []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(s.storeSet.stores))
+	for _, store := range s.storeSet.stores {
+		ids = append(ids, store.Id())
+	}
+	return ids
 }
 
 func (s *FilterService) GetAddressChecker() *HashedAddressChecker {

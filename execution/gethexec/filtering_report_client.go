@@ -90,9 +90,9 @@ func (c *FilteringReportRPCClient) ReportFilteredTransactions(producer ReportPro
 	})
 }
 
-func (c *FilteringReportRPCClient) ReportCurrentFilterSetID(report *addressfilter.FilterSetIDReport) containers.PromiseInterface[struct{}] {
+func (c *FilteringReportRPCClient) ReportCurrentFilterSetIDs(report *addressfilter.FilterSetIDsReport) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
-		err := c.client.CallContext(ctx, nil, FilteringReportNamespace+"_reportCurrentFilterSetID", report)
+		err := c.client.CallContext(ctx, nil, FilteringReportNamespace+"_reportCurrentFilterSetIDs", report)
 		return struct{}{}, err
 	})
 }

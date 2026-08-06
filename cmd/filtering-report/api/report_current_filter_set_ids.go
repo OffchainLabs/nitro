@@ -13,16 +13,16 @@ import (
 	"github.com/offchainlabs/nitro/util/httpclient"
 )
 
-func (a *FilteringReportAPI) ReportCurrentFilterSetID(ctx context.Context, report *addressfilter.FilterSetIDReport) error {
+func (a *FilteringReportAPI) ReportCurrentFilterSetIDs(ctx context.Context, report *addressfilter.FilterSetIDsReport) error {
 	if a.filterSetReporter == nil {
 		return nil
 	}
 	if report == nil {
-		return errors.New("nil filter-set id report")
+		return errors.New("nil filter-set ids report")
 	}
 	body, err := json.Marshal(report)
 	if err != nil {
-		return fmt.Errorf("marshal filter-set id report: %w", err)
+		return fmt.Errorf("marshal filter-set ids report: %w", err)
 	}
 	reporter := a.filterSetReporter
 	return httpclient.PostJSON(ctx, reporter.httpClient, reporter.url, body, reporter.signer.SignHTTPRequest)
