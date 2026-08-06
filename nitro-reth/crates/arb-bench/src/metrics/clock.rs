@@ -124,6 +124,17 @@ fn process_cpu_ns() -> u64 {
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "linux")]
+    struct KillOnDrop(std::process::Child);
+
+    #[cfg(target_os = "linux")]
+    impl Drop for KillOnDrop {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
     #[test]
     fn stopwatch_increases() {
         let sw = Stopwatch::start();
@@ -160,23 +171,27 @@ mod tests {
             time::Duration,
         };
 
-        let mut busy = Command::new("sh")
-            .arg("-c")
-            .arg("while :; do :; done")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn busy child");
-        let mut idle = Command::new("sleep")
-            .arg("30")
-            .spawn()
-            .expect("spawn idle child");
+        let busy = KillOnDrop(
+            Command::new("sh")
+                .arg("-c")
+                .arg("while :; do :; done")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("spawn busy child"),
+        );
+        let idle = KillOnDrop(
+            Command::new("sleep")
+                .arg("30")
+                .spawn()
+                .expect("spawn idle child"),
+        );
 
         let busy_sw = Stopwatch::start_with(
-            CpuClock::for_pid(busy.id()).expect("cpu clock resolves on linux"),
+            CpuClock::for_pid(busy.0.id()).expect("cpu clock resolves on linux"),
         );
         let idle_sw = Stopwatch::start_with(
-            CpuClock::for_pid(idle.id()).expect("cpu clock resolves on linux"),
+            CpuClock::for_pid(idle.0.id()).expect("cpu clock resolves on linux"),
         );
 
         // Wait for the busy child to accrue an absolute amount of CPU rather
@@ -187,19 +202,18 @@ mod tests {
         let mut busy_cpu = 0;
         while busy_cpu < TARGET_NS && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(10));
-            busy_cpu = busy_sw.elapsed_ns().1;
+            busy_cpu = busy_sw.elapsed().cpu_ns.unwrap_or(0);
         }
-        let idle_cpu = idle_sw.elapsed_ns().1;
+        let idle_cpu = idle_sw.elapsed().cpu_ns;
 
-        let _ = busy.kill();
-        let _ = busy.wait();
-        let _ = idle.kill();
-        let _ = idle.wait();
+        drop(busy);
+        drop(idle);
 
         assert!(
             busy_cpu >= TARGET_NS,
             "busy child accrued only {busy_cpu}ns of cpu within the deadline"
         );
+        let idle_cpu = idle_cpu.expect("idle child's clock stays readable while it is unreaped");
         assert!(
             idle_cpu < TARGET_NS / 10,
             "sleeping child burns nothing: cpu {idle_cpu} vs busy {busy_cpu}"
