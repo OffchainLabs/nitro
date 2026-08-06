@@ -16,11 +16,11 @@ import (
 )
 
 var (
-	filterSetIDPostFailuresCounter = metrics.NewRegisteredCounter(
-		"arb/filter_report/api/filter_set_id_post_failure_total", nil,
+	filterSetIDsPostFailuresCounter = metrics.NewRegisteredCounter(
+		"arb/filter_report/api/filter_set_ids_post_failure_total", nil,
 	)
-	filterSetIDPostSuccessesCounter = metrics.NewRegisteredCounter(
-		"arb/filter_report/api/filter_set_id_post_success_total", nil,
+	filterSetIDsPostSuccessesCounter = metrics.NewRegisteredCounter(
+		"arb/filter_report/api/filter_set_ids_post_success_total", nil,
 	)
 )
 
@@ -37,9 +37,9 @@ func (a *FilteringReportAPI) ReportCurrentFilterSetIDs(ctx context.Context, repo
 	}
 	reporter := a.filterSetReporter
 	if err := httpclient.PostJSON(ctx, reporter.httpClient, reporter.url, body, reporter.signer.SignHTTPRequest); err != nil {
-		filterSetIDPostFailuresCounter.Inc(1)
+		filterSetIDsPostFailuresCounter.Inc(1)
 		return err
 	}
-	filterSetIDPostSuccessesCounter.Inc(1)
+	filterSetIDsPostSuccessesCounter.Inc(1)
 	return nil
 }

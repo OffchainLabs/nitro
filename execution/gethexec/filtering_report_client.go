@@ -36,11 +36,11 @@ var (
 	reportFilteredTransactionsCallSuccessesCounter = metrics.NewRegisteredCounter(
 		"arb/filter_report/client/success_total", nil,
 	)
-	reportCurrentFilterSetIDCallFailuresCounter = metrics.NewRegisteredCounter(
-		"arb/filter_report/client/filter_set_id_failure_total", nil,
+	reportCurrentFilterSetIDsCallFailuresCounter = metrics.NewRegisteredCounter(
+		"arb/filter_report/client/filter_set_ids_failure_total", nil,
 	)
-	reportCurrentFilterSetIDCallSuccessesCounter = metrics.NewRegisteredCounter(
-		"arb/filter_report/client/filter_set_id_success_total", nil,
+	reportCurrentFilterSetIDsCallSuccessesCounter = metrics.NewRegisteredCounter(
+		"arb/filter_report/client/filter_set_ids_success_total", nil,
 	)
 )
 
@@ -100,9 +100,9 @@ func (c *FilteringReportRPCClient) ReportCurrentFilterSetIDs(report *addressfilt
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, FilteringReportNamespace+"_reportCurrentFilterSetIDs", report)
 		if err != nil {
-			reportCurrentFilterSetIDCallFailuresCounter.Inc(1)
+			reportCurrentFilterSetIDsCallFailuresCounter.Inc(1)
 		} else {
-			reportCurrentFilterSetIDCallSuccessesCounter.Inc(1)
+			reportCurrentFilterSetIDsCallSuccessesCounter.Inc(1)
 		}
 		return struct{}{}, err
 	})
