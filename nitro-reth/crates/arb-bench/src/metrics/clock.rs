@@ -107,11 +107,6 @@ fn clock_ns(clock_id: libc::clockid_t) -> u64 {
     (ts.tv_sec as u64) * 1_000_000_000 + (ts.tv_nsec as u64)
 }
 
-#[cfg(not(unix))]
-fn clock_ns(_clock_id: libc::clockid_t) -> u64 {
-    0
-}
-
 #[cfg(target_os = "linux")]
 fn process_cpu_ns() -> u64 {
     clock_ns(libc::CLOCK_PROCESS_CPUTIME_ID)
@@ -123,11 +118,6 @@ fn process_cpu_ns() -> u64 {
         fn clock_gettime_nsec_np(clock_id: u32) -> u64;
     }
     unsafe { clock_gettime_nsec_np(libc::CLOCK_PROCESS_CPUTIME_ID) }
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn process_cpu_ns() -> u64 {
-    Instant::now().elapsed().as_nanos() as u64
 }
 
 #[cfg(test)]

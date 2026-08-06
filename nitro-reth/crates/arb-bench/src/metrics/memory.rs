@@ -24,6 +24,7 @@ impl RssMonitor {
     }
 
     /// Refresh and return current RSS in bytes. Updates the running peak.
+    /// Returns 0 when the process can't be read, e.g. it has exited.
     pub fn current_rss(&mut self) -> u64 {
         self.sys.refresh_processes_specifics(
             sysinfo::ProcessesToUpdate::Some(&[self.pid]),

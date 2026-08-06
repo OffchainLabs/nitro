@@ -94,10 +94,14 @@ impl NodeProbes {
             );
             CpuClock::unavailable()
         });
-        Self {
-            cpu,
-            rss: RssMonitor::for_pid(pid),
+        let mut rss = RssMonitor::for_pid(pid);
+        if rss.current_rss() == 0 {
+            tracing::warn!(
+                node_pid = pid,
+                "node RSS unreadable; rss_bytes will be reported as 0"
+            );
         }
+        Self { cpu, rss }
     }
 }
 
@@ -197,8 +201,7 @@ impl SubprocessRunner {
         *msg_idx += 1;
 
         // Pull the actual gas + tx count from the produced block.
-        let (gas_used, tx_count, success_count) =
-            fetch_block_stats(client, url).unwrap_or((0, block.txs.len(), block.txs.len()));
+        let (gas_used, tx_count, success_count) = fetch_block_stats(client, url)?;
 
         Ok(BlockMetric {
             block_number: block.block_number,
