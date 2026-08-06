@@ -36,6 +36,12 @@ var (
 	reportFilteredTransactionsCallSuccessesCounter = metrics.NewRegisteredCounter(
 		"arb/filter_report/client/success_total", nil,
 	)
+	reportCurrentFilterSetIDCallFailuresCounter = metrics.NewRegisteredCounter(
+		"arb/filter_report/client/filter_set_id_failure_total", nil,
+	)
+	reportCurrentFilterSetIDCallSuccessesCounter = metrics.NewRegisteredCounter(
+		"arb/filter_report/client/filter_set_id_success_total", nil,
+	)
 )
 
 var DefaultFilteringReportRPCClientConfig = rpcclient.ClientConfig{
@@ -93,6 +99,11 @@ func (c *FilteringReportRPCClient) ReportFilteredTransactions(producer ReportPro
 func (c *FilteringReportRPCClient) ReportCurrentFilterSetID(report *addressfilter.FilterSetIDReport) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, FilteringReportNamespace+"_reportCurrentFilterSetID", report)
+		if err != nil {
+			reportCurrentFilterSetIDCallFailuresCounter.Inc(1)
+		} else {
+			reportCurrentFilterSetIDCallSuccessesCounter.Inc(1)
+		}
 		return struct{}{}, err
 	})
 }
