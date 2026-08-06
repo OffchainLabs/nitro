@@ -515,6 +515,30 @@ func (b *NodeBuilder) WithLegacyBlockRecorder() *NodeBuilder {
 	return b
 }
 
+type blockRecorderTestCase struct {
+	name         string
+	recorderMode string
+	stateScheme  string
+}
+
+func blockRecorderTestCases() []blockRecorderTestCase {
+	cases := []blockRecorderTestCase{
+		{name: gethexec.BlockRecorderModeLegacy, recorderMode: gethexec.BlockRecorderModeLegacy, stateScheme: rawdb.HashScheme},
+		{name: gethexec.BlockRecorderModeChainTip + "/" + rawdb.HashScheme, recorderMode: gethexec.BlockRecorderModeChainTip, stateScheme: rawdb.HashScheme},
+		{name: gethexec.BlockRecorderModeChainTip + "/" + rawdb.PathScheme, recorderMode: gethexec.BlockRecorderModeChainTip, stateScheme: rawdb.PathScheme},
+	}
+	if testflag.StateSchemeFlag == nil || *testflag.StateSchemeFlag == "" {
+		return cases
+	}
+	filtered := make([]blockRecorderTestCase, 0, len(cases))
+	for _, tc := range cases {
+		if tc.stateScheme == *testflag.StateSchemeFlag {
+			filtered = append(filtered, tc)
+		}
+	}
+	return filtered
+}
+
 // WithDelayBuffer sets the delay-buffer threshold, which is the number of blocks the batch-poster
 // is allowed to delay a batch with a delayed message.
 // Setting the threshold to zero disabled the delay buffer (default behaviour).
@@ -745,8 +769,8 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 	if b.nodeConfig == nil {
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
 	}
-	if b.nodeConfig.ValidatorRequired() {
-		// validation currently requires hash
+	if b.nodeConfig.ValidatorRequired() && (b.execConfig == nil || b.execConfig.RecordingDatabase.Mode != gethexec.BlockRecorderModeChainTip) {
+		// Legacy validation recording currently requires hashdb.
 		b.RequireScheme(t, rawdb.HashScheme)
 	}
 	if b.defaultStateScheme == "" {
