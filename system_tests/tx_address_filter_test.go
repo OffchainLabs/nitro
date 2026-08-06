@@ -1496,17 +1496,17 @@ func TestPeriodicFilterSetIDReporting(t *testing.T) {
 	}
 
 	id3 := uuid.New()
-	storeFilterHashes(t, filterService.GetHashStore(), id3, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-3")
+	storeFilterHashes(t, filterService.GetHashStore(0), id3, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-3")
 
 	select {
 	case got := <-reportCh:
-		t.Fatalf("paused sequencer sent filter-set id report %s", got.FilterSetID)
+		t.Fatalf("paused sequencer sent filter-set ids report %s", got.FilterSetIDs)
 	case <-time.After(1 * time.Second):
 	}
 
 	// Reporting must resume once the sequencer becomes active again.
 	builder.L2.ExecNode.Sequencer.Activate()
-	third := waitForReport(id3)
+	third := waitForReport([]uuid.UUID{id3, idFile1, staticID})
 	require.Equal(t, expectedChainID, third.ChainID, "chain id mismatch after reactivation")
 }
 
