@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -96,4 +97,66 @@ func TestReorgResequencing(t *testing.T) {
 
 	verifyBalances("after second empty reorg")
 	compareAllMsgResultsFromConsensusAndExecution(t, ctx, builder.L2, "after second empty reorg")
+}
+
+func TestReorgRewritesChainTipRecordings(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.WithChainTipBlockRecorder()
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	startHeadMsgIdx, err := builder.L2.ConsensusNode.TxStreamer.GetHeadMessageIndex()
+	Require(t, err)
+
+	builder.L2Info.GenerateAccount("User1")
+	builder.L2.TransferBalance(t, "Owner", "User1", big.NewInt(params.Ether), builder.L2Info)
+
+	reorgPos := startHeadMsgIdx + 1
+	recorder, ok := builder.L2.ExecNode.Recorder.(*gethexec.ChainTipBlockRecorder)
+	if !ok {
+		Fatal(t, "expected chain-tip block recorder")
+	}
+	preReorg, err := recorder.Recording(reorgPos, nil)
+	Require(t, err)
+
+	prevMessage, err := builder.L2.ConsensusNode.TxStreamer.GetMessage(startHeadMsgIdx)
+	Require(t, err)
+	builder.L2Info.GenerateAccount("User2")
+	// #nosec G115
+	delayedIndexHash := common.BigToHash(big.NewInt(int64(prevMessage.DelayedMessagesRead)))
+	newMessage := &arbostypes.L1IncomingMessage{
+		Header: &arbostypes.L1IncomingMessageHeader{
+			Kind:        arbostypes.L1MessageType_EthDeposit,
+			Poster:      [20]byte{},
+			BlockNumber: 0,
+			Timestamp:   0,
+			RequestId:   &delayedIndexHash,
+			L1BaseFee:   common.Big0,
+		},
+		L2msg: append(builder.L2Info.GetAddress("User2").Bytes(), arbmath.Uint64ToU256Bytes(params.Ether)...),
+	}
+	err = builder.L2.ConsensusNode.TxStreamer.ReorgAt(reorgPos)
+	Require(t, err)
+	err = builder.L2.ConsensusNode.TxStreamer.AddMessages(reorgPos, true, []arbostypes.MessageWithMetadata{{
+		Message:             newMessage,
+		DelayedMessagesRead: prevMessage.DelayedMessagesRead + 1,
+	}}, nil)
+	Require(t, err)
+
+	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageIndexSync(t)
+	Require(t, err)
+
+	postReorg, err := recorder.Recording(reorgPos, nil)
+	Require(t, err)
+	if postReorg.BlockHash == preReorg.BlockHash {
+		Fatal(t, "expected reorged recording to serve the new block, still serving", preReorg.BlockHash)
+	}
+	blockNum := builder.L2.ExecNode.ExecEngine.MessageIndexToBlockNumber(reorgPos)
+	bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
+	if canonical := bc.GetCanonicalHash(blockNum); postReorg.BlockHash != canonical {
+		Fatal(t, "expected recording to match canonical hash", canonical, "got", postReorg.BlockHash)
+	}
 }

@@ -91,6 +91,7 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -267,6 +268,7 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
+	FilterSetReportingInterval:   time.Minute,
 	ExperimentalPGA:              gethexec.DefaultPGAConfig,
 }
 
@@ -442,7 +444,7 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 //
 // Useful if the test needs a specific database engine to be used
 func (b *NodeBuilder) WithDatabase(database string) *NodeBuilder {
-	if database != env.MemoryDB && database != rawdb.DBPebble && database != rawdb.DBLeveldb {
+	if database != dbutil.MemoryDB && database != rawdb.DBPebble && database != rawdb.DBLeveldb {
 		panic("unknown database engine: " + database)
 	}
 
@@ -2143,19 +2145,19 @@ func createNonL1BlockChainWithStackConfig(
 	Require(t, err)
 
 	chainData := rawdb.NewMemoryDatabase()
-	if stack.Config().DBEngine != env.MemoryDB {
+	if stack.Config().DBEngine != dbutil.MemoryDB {
 		chainData, err = stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
 		Require(t, err)
 	}
 	wasmData := rawdb.NewMemoryDatabase()
-	if stack.Config().DBEngine != env.MemoryDB {
+	if stack.Config().DBEngine != dbutil.MemoryDB {
 		wasmData, err = stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"), NoFreezer: true})
 		Require(t, err)
 	}
 
 	executionDB := rawdb.WrapDatabaseWithWasm(chainData, wasmData)
 	consensusDB := rawdb.NewMemoryDatabase()
-	if stack.Config().DBEngine != env.MemoryDB {
+	if stack.Config().DBEngine != dbutil.MemoryDB {
 		consensusDB, err = stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
 		Require(t, err)
 	}
@@ -2445,19 +2447,19 @@ func Create2ndNodeWithConfig(
 	Require(t, err)
 
 	chainData := rawdb.NewMemoryDatabase()
-	if chainStack.Config().DBEngine != env.MemoryDB {
+	if chainStack.Config().DBEngine != dbutil.MemoryDB {
 		chainData, err = chainStack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
 		Require(t, err)
 	}
 	wasmData := rawdb.NewMemoryDatabase()
-	if chainStack.Config().DBEngine != env.MemoryDB {
+	if chainStack.Config().DBEngine != dbutil.MemoryDB {
 		wasmData, err = chainStack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"), NoFreezer: true})
 		Require(t, err)
 	}
 	executionDB := rawdb.WrapDatabaseWithWasm(chainData, wasmData)
 
 	consensusDB := rawdb.NewMemoryDatabase()
-	if chainStack.Config().DBEngine != env.MemoryDB {
+	if chainStack.Config().DBEngine != dbutil.MemoryDB {
 		consensusDB, err = chainStack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
 		Require(t, err)
 	}
@@ -3006,7 +3008,7 @@ func sequenceTransactions(
 	builder *NodeBuilder,
 	header *arbostypes.L1IncomingMessageHeader,
 	hooks *gethexec.FullSequencingHooks,
-) (*types.Block, []error) {
+) (*types.Block, []gethexec.TxResult) {
 	sequencedMsg, block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks)
 	Require(t, err)
 	if sequencedMsg == nil {
@@ -3016,24 +3018,24 @@ func sequenceTransactions(
 	Require(t, err)
 	err = builder.L2.ExecNode.AppendLastSequencedBlock()
 	Require(t, err)
-	return block, hooks.GetTxErrors()
+	return block, hooks.SequencedTxes()
 }
 
 // sequenceTransactionsInTheSameBlock sequences all the given transactions into a
 // single block, using the sequencer's real pre/post tx filters and bypassing the
-// txQueue. It returns the produced block and the per-transaction errors.
+// txQueue. It returns the produced block and the per-transaction results.
 func sequenceTransactionsInTheSameBlock(
 	t *testing.T,
 	builder *NodeBuilder,
 	txes types.Transactions,
-) (*types.Block, []error) {
+) (*types.Block, []gethexec.TxResult) {
 	sequencer := builder.L2.ExecNode.Sequencer
 	sequencer.Pause()
 	defer sequencer.Activate()
 	header, hooks := sequencer.MakeSameBlockSequencingHooksAndHeaderForTest(t, txes)
-	block, txErrors := sequenceTransactions(t, builder, header, hooks)
+	block, sequencedTxes := sequenceTransactions(t, builder, header, hooks)
 	sequencer.DispatchPendingFilteredTxReportsForTest(t)
-	return block, txErrors
+	return block, sequencedTxes
 }
 
 func waitForTCP(t *testing.T, addr string, timeout time.Duration) {

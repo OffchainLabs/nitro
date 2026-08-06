@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -77,7 +79,7 @@ func NewFilterService(config *Config) (*FilterService, error) {
 			return nil, fmt.Errorf("failed to parse address-filter static-list: %w", err)
 		}
 		log.Info("address-filter static list loaded",
-			"filterSetID", listMeta.Id, "hash_count", staticStore.Size(), "scheme", listMeta.Scheme)
+			"filterSetID", listMeta.ID, "hash_count", staticStore.Size(), "scheme", listMeta.Scheme)
 		stores = append(stores, staticStore)
 	}
 	storeSet := NewHashStoreSet(stores)
@@ -187,6 +189,14 @@ func (s *FilterService) AllFilesLoaded() bool {
 
 func (s *FilterService) GetHashStore(i int) *HashStore {
 	return s.files[i].hashStore
+}
+
+// CurrentFilterSetID returns the filter-set id of the first configured list:
+// the first S3 file, or the static list when no S3 files are configured. The
+// filter-set id report carries a single id, so with multiple lists only the
+// first one is reported.
+func (s *FilterService) CurrentFilterSetID() uuid.UUID {
+	return s.storeSet.stores[0].Id()
 }
 
 func (s *FilterService) GetAddressChecker() *HashedAddressChecker {

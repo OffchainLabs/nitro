@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -30,8 +29,6 @@ type wasmKey struct {
 
 type chainTipRecording struct {
 	record            *execution.RecordResult
-	blockNumber       uint64
-	parentHash        common.Hash
 	firstHeaderNumber uint64
 	codeHashes        []common.Hash
 	wasmKeys          []wasmKey
@@ -42,18 +39,17 @@ type chainTipRecording struct {
 type ChainTipBlockRecorder struct {
 	execEngine *ExecutionEngine
 
-	lock sync.Mutex
-	// lastRecording is temporary in-memory storage until we implement a Key-Value backend for chain-tip recordings
-	lastRecording       *chainTipRecording
 	headerPreimageLock  sync.Mutex
 	headerPreimages     *containers.LruCache[common.Hash, arbitrum.RecordedHeaderPreimage]
+	recordsFreezer      *blockRecordsFreezer
 	servedTipRecordings atomic.Uint64
 }
 
-func NewChainTipBlockRecorder(execEngine *ExecutionEngine) *ChainTipBlockRecorder {
+func NewChainTipBlockRecorder(execEngine *ExecutionEngine, recordsFreezer *blockRecordsFreezer) *ChainTipBlockRecorder {
 	recorder := &ChainTipBlockRecorder{
 		execEngine:      execEngine,
 		headerPreimages: containers.NewLruCache[common.Hash, arbitrum.RecordedHeaderPreimage](recentHeaderPreimageCacheSlots),
+		recordsFreezer:  recordsFreezer,
 	}
 	execEngine.SetTipRecorder(recorder)
 	return recorder
@@ -71,6 +67,7 @@ func userWasmKeys(userWasms state.UserWasms) []wasmKey {
 	}
 	return keys
 }
+
 func (r *ChainTipBlockRecorder) RecordTip(block *types.Block, preimages map[common.Hash][]byte, firstHeaderNumber uint64, codeHashes []common.Hash, userWasms state.UserWasms) error {
 	if block == nil {
 		return nil
@@ -85,19 +82,13 @@ func (r *ChainTipBlockRecorder) RecordTip(block *types.Block, preimages map[comm
 			BlockHash: block.Hash(),
 			Preimages: preimages,
 		},
-		blockNumber:       block.NumberU64(),
-		parentHash:        block.ParentHash(),
 		firstHeaderNumber: firstHeaderNumber,
 		codeHashes:        codeHashes,
 		wasmKeys:          userWasmKeys(userWasms),
 	}
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	if r.lastRecording != nil && r.lastRecording.record != nil && pos < r.lastRecording.record.Pos {
-		log.Warn("ignoring older chain-tip recording", "pos", pos, "lastPos", r.lastRecording.record.Pos)
-		return nil
+	if err := r.recordsFreezer.writeRecording(record); err != nil {
+		return fmt.Errorf("failed to persist chain-tip recording for pos %d: %w", pos, err)
 	}
-	r.lastRecording = record
 	return nil
 }
 
@@ -153,40 +144,28 @@ func (r *ChainTipBlockRecorder) loadUserWasms(record *execution.RecordResult, ke
 }
 
 func (r *ChainTipBlockRecorder) Recording(pos arbutil.MessageIndex, wasmTargets []rawdb.WasmTarget) (*execution.RecordResult, error) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	recording := r.lastRecording
-	if recording == nil || recording.record == nil || recording.record.Pos != pos {
+	recording, err := r.recordsFreezer.readRecording(pos)
+	if err != nil {
+		return nil, err
+	}
+	if recording == nil {
 		return nil, fmt.Errorf("chain-tip recording unavailable for pos %d", pos)
 	}
-	if err := r.validateRecording(recording); err != nil {
+	blockNumber, parentHash, err := r.recordingBlockMetadata(recording)
+	if err != nil {
 		return nil, err
 	}
-	// Serve a per call copy so callers cannot mutate or race the retained recording.
-	record := copyRecordResult(recording.record)
-	if err := r.loadCodePreimages(record, recording.codeHashes); err != nil {
+	if err := r.loadCodePreimages(recording.record, recording.codeHashes); err != nil {
 		return nil, err
 	}
-	if err := r.loadRecentHeaderPreimages(record, recording.blockNumber, recording.parentHash, recording.firstHeaderNumber); err != nil {
+	if err := r.loadRecentHeaderPreimages(recording.record, blockNumber, parentHash, recording.firstHeaderNumber); err != nil {
 		return nil, err
 	}
-	if err := r.loadUserWasms(record, recording.wasmKeys, wasmTargets); err != nil {
+	if err := r.loadUserWasms(recording.record, recording.wasmKeys, wasmTargets); err != nil {
 		return nil, err
 	}
 	r.servedTipRecordings.Add(1)
-	return record, nil
-}
-
-func copyRecordResult(record *execution.RecordResult) *execution.RecordResult {
-	preimages := make(map[common.Hash][]byte, len(record.Preimages))
-	for hash, preimage := range record.Preimages {
-		preimages[hash] = preimage
-	}
-	return &execution.RecordResult{
-		Pos:       record.Pos,
-		BlockHash: record.BlockHash,
-		Preimages: preimages,
-	}
+	return recording.record, nil
 }
 
 func (r *ChainTipBlockRecorder) RecordBlockCreation(_ context.Context, pos arbutil.MessageIndex, _ *arbostypes.MessageWithMetadata, wasmTargets []rawdb.WasmTarget) (*execution.RecordResult, error) {
@@ -201,21 +180,29 @@ func (r *ChainTipBlockRecorder) MarkValid(arbutil.MessageIndex, common.Hash) {}
 
 func (r *ChainTipBlockRecorder) OrderlyShutdown() {}
 
-func (r *ChainTipBlockRecorder) validateRecording(recording *chainTipRecording) error {
+func (r *ChainTipBlockRecorder) recordingBlockMetadata(recording *chainTipRecording) (uint64, common.Hash, error) {
 	pos := recording.record.Pos
-	expectedBlockNumber := r.execEngine.MessageIndexToBlockNumber(pos)
-	if recording.blockNumber != expectedBlockNumber {
-		return fmt.Errorf("chain-tip recording block number mismatch for pos %d: got %d expected %d", pos, recording.blockNumber, expectedBlockNumber)
+	blockNumber := r.execEngine.MessageIndexToBlockNumber(pos)
+	header := r.execEngine.bc.GetHeaderByNumber(blockNumber)
+	if header == nil {
+		return 0, common.Hash{}, fmt.Errorf("chain-tip recording block %d unavailable for pos %d", blockNumber, pos)
 	}
-	canonicalHash := r.execEngine.bc.GetCanonicalHash(recording.blockNumber)
-	if canonicalHash != recording.record.BlockHash {
-		return fmt.Errorf("chain-tip recording stale for pos %d block %d: got hash %s canonical %s", pos, recording.blockNumber, recording.record.BlockHash, canonicalHash)
+	if header.Hash() != recording.record.BlockHash {
+		return 0, common.Hash{}, fmt.Errorf("chain-tip recording stale for pos %d block %d: got hash %s canonical %s", pos, blockNumber, recording.record.BlockHash, header.Hash())
 	}
-	return nil
+	return blockNumber, header.ParentHash, nil
 }
 
 func (r *ChainTipBlockRecorder) ServedTipRecordings() uint64 {
 	return r.servedTipRecordings.Load()
+}
+
+func (r *ChainTipBlockRecorder) PruneRecordingsBefore(pos arbutil.MessageIndex) error {
+	return r.recordsFreezer.pruneRecordingsBefore(pos)
+}
+
+func (r *ChainTipBlockRecorder) Close() error {
+	return r.recordsFreezer.Close()
 }
 
 func (r *ChainTipBlockRecorder) loadRecentHeaderPreimages(record *execution.RecordResult, blockNumber uint64, parentHash common.Hash, firstHeaderNumber uint64) error {

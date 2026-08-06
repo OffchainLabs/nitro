@@ -20,6 +20,7 @@ jobs:
   check-design-approved:
     name: Check if Design Approved
     runs-on: ubuntu-4
+    timeout-minutes: 10
     needs: changes
     if: always()
     permissions:

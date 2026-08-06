@@ -90,6 +90,13 @@ func (c *FilteringReportRPCClient) ReportFilteredTransactions(producer ReportPro
 	})
 }
 
+func (c *FilteringReportRPCClient) ReportCurrentFilterSetID(report *addressfilter.FilterSetIDReport) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread(c, func(ctx context.Context) (struct{}, error) {
+		err := c.client.CallContext(ctx, nil, FilteringReportNamespace+"_reportCurrentFilterSetID", report)
+		return struct{}{}, err
+	})
+}
+
 // reportForLog returns a copy of the report with its unbounded byte fields (the
 // raw transaction and event log data) truncated so log entries stay compact.
 func reportForLog(report *addressfilter.FilteredTxReport) addressfilter.FilteredTxReport {

@@ -1,3 +1,5 @@
+// Copyright 2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 //! MOCK (NIT-5205): validates the spec-test binary plumbing (release build →
 //! artifact upload → download → chmod → env wiring) end to end until the
 //! real spec suite is migrated. Compiled only with --features spec-binary,

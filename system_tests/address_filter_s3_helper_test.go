@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/johannesboyne/gofakes3"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/common"
 
@@ -99,6 +100,7 @@ func (f *fakeS3AddressFilter) setFilteredAddressesForFile(t *testing.T, ctx cont
 	_, err := f.backend.PutObject(f.bucket, f.objectKeys[fileIdx], map[string]string{}, bytes.NewReader(body), int64(len(body)), &gofakes3.PutConditions{})
 	Require(t, err)
 	Require(t, execNode.AddressFilterService.TriggerSyncForTest(t, ctx))
+	require.Equal(t, len(addrs), execNode.AddressFilterService.GetHashStore(fileIdx).Size(), "filter list did not reach the node")
 }
 
 func hashListJSON(t *testing.T, scheme addressfilter.HashingScheme, addrs []common.Address) []byte {

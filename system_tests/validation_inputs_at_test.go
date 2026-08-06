@@ -31,41 +31,14 @@ import (
 func TestValidationInputsAtWithWasmTarget(t *testing.T) {
 	builder, auth, cleanup := setupProgramTest(t, false)
 	ctx := builder.ctx
-	l2client := builder.L2.Client
-	l2info := builder.L2Info
 	defer cleanup()
 
 	auth.GasLimit = 32000000
 	auth.Value = oneEth
 
-	// deploys contract
-	wasmToDeploy, wasmExpected := readWasmFile(t, rustFile("storage"))
-	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
-	Require(t, err)
-	programAddress := deployContract(t, ctx, auth, l2client, wasmToDeploy)
-	tx, err := arbWasm.ActivateProgram(&auth, programAddress)
-	Require(t, err)
-	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
-	Require(t, err)
+	programAddress, moduleHash, wasmExpected := deployAndActivateStorageProgram(t, ctx, auth, builder)
 
-	// gets module hash
-	if len(receipt.Logs) != 1 {
-		Fatal(t, "expected 1 log while activating, got ", len(receipt.Logs))
-	}
-	l, err := arbWasm.ParseProgramActivated(*receipt.Logs[0])
-	Require(t, err)
-	moduleHash := l.ModuleHash
-
-	// calls contract
-	key := testhelpers.RandomHash()
-	value := testhelpers.RandomHash()
-	tx = l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, argsForStorageWrite(key, value))
-	err = l2client.SendTransaction(ctx, tx)
-	Require(t, err)
-	receipt, err = EnsureTxSucceeded(ctx, l2client, tx)
-	Require(t, err)
-
-	inboxPos := arbutil.MessageIndex(receipt.BlockNumber.Uint64())
+	_, inboxPos := sendStorageWrite(t, ctx, builder, "Owner", programAddress)
 	waitForBatchContainingMessage(t, builder.L2.ConsensusNode, inboxPos, 10*time.Second, 250*time.Millisecond)
 
 	// Retry ValidationInputsAt because the batch may be tracked locally but
@@ -110,44 +83,55 @@ func TestValidationInputsAtChainTipIncludesReferencedTrieChildPreimages(t *testi
 	assertReferencedTrieChildPreimages(t, preimages)
 }
 
-func testValidationInputsAtExecutesInValidationWorker(t *testing.T) {
+func TestValidationInputsAtServesMultipleChainTipBlocks(t *testing.T) {
 	builder, auth, cleanup := setupProgramTestWithScheme(t, false, "", func(builder *NodeBuilder) {
 		builder.WithChainTipBlockRecorder()
 	})
 	ctx := builder.ctx
-	l2client := builder.L2.Client
-	l2info := builder.L2Info
 	defer cleanup()
 
 	auth.GasLimit = 32000000
 	auth.Value = oneEth
 
-	wasmToDeploy, _ := readWasmFile(t, rustFile("storage"))
-	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
-	Require(t, err)
-	programAddress := deployContract(t, ctx, auth, l2client, wasmToDeploy)
-	tx, err := arbWasm.ActivateProgram(&auth, programAddress)
-	Require(t, err)
-	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
-	Require(t, err)
-	if len(receipt.Logs) != 1 {
-		Fatal(t, "expected 1 log while activating, got ", len(receipt.Logs))
+	programAddress, _, _ := deployAndActivateStorageProgram(t, ctx, auth, builder)
+
+	positions := make([]arbutil.MessageIndex, 0, 3)
+	for i := 0; i < 3; i++ {
+		_, inboxPos := sendStorageWrite(t, ctx, builder, "Owner", programAddress)
+		positions = append(positions, inboxPos)
 	}
-	l, err := arbWasm.ParseProgramActivated(*receipt.Logs[0])
-	Require(t, err)
-	moduleHash := l.ModuleHash
+
+	valClient, moduleRoot := newValidationClientForBuilder(t, ctx, builder)
+	defer valClient.Stop()
+
+	for _, inboxPos := range positions {
+		waitForBatchContainingMessage(t, builder.L2.ConsensusNode, inboxPos, 10*time.Second, 250*time.Millisecond)
+		inputJson, validationInput := validationInputsAtFromTip(t, ctx, builder, inboxPos)
+		if inputJson.ExpectedEndState == nil {
+			t.Fatalf("expected validation input json for pos %d to include expected end state", inboxPos)
+		}
+		if len(validationInput.Preimages[arbutil.Keccak256PreimageType]) == 0 {
+			t.Fatalf("expected validation input for pos %d to contain recorded keccak preimages", inboxPos)
+		}
+		runValidationInput(t, ctx, valClient, validationInput, moduleRoot, inputJson.ExpectedEndState)
+	}
+}
+
+func testValidationInputsAtExecutesInValidationWorker(t *testing.T) {
+	builder, auth, cleanup := setupProgramTestWithScheme(t, false, "", func(builder *NodeBuilder) {
+		builder.WithChainTipBlockRecorder()
+	})
+	ctx := builder.ctx
+	defer cleanup()
+
+	auth.GasLimit = 32000000
+	auth.Value = oneEth
+
+	programAddress, moduleHash, _ := deployAndActivateStorageProgram(t, ctx, auth, builder)
 
 	recorderUsers := seedValidationRecordingTrieShape(t, ctx, builder, programAddress)
 
-	key := testhelpers.RandomHash()
-	value := testhelpers.RandomHash()
-	tx = l2info.PrepareTxTo(recorderUsers[0], &programAddress, l2info.TransferGas, nil, argsForStorageWrite(key, value))
-	err = l2client.SendTransaction(ctx, tx)
-	Require(t, err)
-	receipt, err = EnsureTxSucceeded(ctx, l2client, tx)
-	Require(t, err)
-
-	inboxPos := arbutil.MessageIndex(receipt.BlockNumber.Uint64())
+	receipt, inboxPos := sendStorageWrite(t, ctx, builder, recorderUsers[0], programAddress)
 	waitForBatchContainingMessage(t, builder.L2.ConsensusNode, inboxPos, 10*time.Second, 250*time.Millisecond)
 
 	inputJson, validationInput := validationInputsAtFromTip(t, ctx, builder, inboxPos)
@@ -181,13 +165,13 @@ func testValidationInputsAtExecutesInValidationWorker(t *testing.T) {
 	requestedBlockNumber := receipt.BlockNumber.Uint64() - 1
 	arbBlockHashData, err := arbSysABI.Pack("arbBlockHash", new(big.Int).SetUint64(requestedBlockNumber))
 	Require(t, err)
-	tx = l2info.PrepareTxTo("Owner", &types.ArbSysAddress, l2info.TransferGas, nil, arbBlockHashData)
-	err = l2client.SendTransaction(ctx, tx)
+	tx := builder.L2Info.PrepareTxTo("Owner", &types.ArbSysAddress, builder.L2Info.TransferGas, nil, arbBlockHashData)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
-	blockHashReceipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+	blockHashReceipt, err := EnsureTxSucceeded(ctx, builder.L2.Client, tx)
 	Require(t, err)
 
-	blockHashInboxPos := arbutil.MessageIndex(blockHashReceipt.BlockNumber.Uint64())
+	blockHashInboxPos := blockNumberToMessageIndex(t, ctx, builder, blockHashReceipt.BlockNumber.Uint64())
 	waitForBatchContainingMessage(t, builder.L2.ConsensusNode, blockHashInboxPos, 10*time.Second, 250*time.Millisecond)
 	blockHashInputJson, blockHashValidationInput := validationInputsAtFromTip(t, ctx, builder, blockHashInboxPos)
 	if blockHashInputJson.ExpectedEndState == nil {
@@ -195,25 +179,63 @@ func testValidationInputsAtExecutesInValidationWorker(t *testing.T) {
 	}
 
 	// Delayed L1 messages take a different path into block production.
-	l2info.GenerateAccount("DelayedUser")
-	delayedTx := l2info.PrepareTx("Owner", "DelayedUser", l2info.TransferGas, common.Big1, nil)
-	delayedReceipt := SendSignedTxViaL1(t, ctx, builder.L1Info, builder.L1.Client, l2client, delayedTx)
-	delayedInboxPos := arbutil.MessageIndex(delayedReceipt.BlockNumber.Uint64())
+	builder.L2Info.GenerateAccount("DelayedUser")
+	delayedTx := builder.L2Info.PrepareTx("Owner", "DelayedUser", builder.L2Info.TransferGas, common.Big1, nil)
+	delayedReceipt := SendSignedTxViaL1(t, ctx, builder.L1Info, builder.L1.Client, builder.L2.Client, delayedTx)
+	delayedInboxPos := blockNumberToMessageIndex(t, ctx, builder, delayedReceipt.BlockNumber.Uint64())
 	waitForBatchContainingMessage(t, builder.L2.ConsensusNode, delayedInboxPos, 10*time.Second, 250*time.Millisecond)
 	delayedInputJson, delayedValidationInput := validationInputsAtFromTip(t, ctx, builder, delayedInboxPos)
 	if delayedInputJson.ExpectedEndState == nil {
 		t.Fatal("expected delayed message validation input json to include expected end state")
 	}
 
-	validationConfig := builder.nodeConfig.BlockValidator.ValidationServerConfigs[0]
-	valClient := client.NewValidationClient(StaticFetcherFrom(t, &validationConfig), nil)
-	Require(t, valClient.Start(ctx))
+	valClient, moduleRoot := newValidationClientForBuilder(t, ctx, builder)
 	defer valClient.Stop()
 
-	moduleRoot := builder.L2.ConsensusNode.StatelessBlockValidator.GetLatestWasmModuleRoot()
 	runValidationInput(t, ctx, valClient, storageValidationInput, moduleRoot, storageExpectedEndState)
 	runValidationInput(t, ctx, valClient, blockHashValidationInput, moduleRoot, blockHashInputJson.ExpectedEndState)
 	runValidationInput(t, ctx, valClient, delayedValidationInput, moduleRoot, delayedInputJson.ExpectedEndState)
+}
+
+func deployAndActivateStorageProgram(t *testing.T, ctx context.Context, auth bind.TransactOpts, builder *NodeBuilder) (common.Address, common.Hash, []byte) {
+	t.Helper()
+
+	l2client := builder.L2.Client
+	wasmToDeploy, wasmExpected := readWasmFile(t, rustFile("storage"))
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
+	programAddress := deployContract(t, ctx, auth, l2client, wasmToDeploy)
+	tx, err := arbWasm.ActivateProgram(&auth, programAddress)
+	Require(t, err)
+	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	if len(receipt.Logs) != 1 {
+		Fatal(t, "expected 1 log while activating, got ", len(receipt.Logs))
+	}
+	l, err := arbWasm.ParseProgramActivated(*receipt.Logs[0])
+	Require(t, err)
+	return programAddress, l.ModuleHash, wasmExpected
+}
+
+func sendStorageWrite(t *testing.T, ctx context.Context, builder *NodeBuilder, from string, programAddress common.Address) (*types.Receipt, arbutil.MessageIndex) {
+	t.Helper()
+
+	tx := builder.L2Info.PrepareTxTo(from, &programAddress, builder.L2Info.TransferGas, nil, argsForStorageWrite(testhelpers.RandomHash(), testhelpers.RandomHash()))
+	err := builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	receipt, err := EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	Require(t, err)
+	return receipt, blockNumberToMessageIndex(t, ctx, builder, receipt.BlockNumber.Uint64())
+}
+
+func newValidationClientForBuilder(t *testing.T, ctx context.Context, builder *NodeBuilder) (*client.ValidationClient, common.Hash) {
+	t.Helper()
+
+	validationConfig := builder.nodeConfig.BlockValidator.ValidationServerConfigs[0]
+	valClient := client.NewValidationClient(StaticFetcherFrom(t, &validationConfig), nil)
+	Require(t, valClient.Start(ctx))
+	moduleRoot := builder.L2.ConsensusNode.StatelessBlockValidator.GetLatestWasmModuleRoot()
+	return valClient, moduleRoot
 }
 
 func seedValidationRecordingTrieShape(t *testing.T, ctx context.Context, builder *NodeBuilder, programAddress common.Address) []string {
@@ -342,6 +364,14 @@ func validateResultAt(t *testing.T, ctx context.Context, builder *NodeBuilder, i
 		}
 		return nil
 	})
+}
+
+func blockNumberToMessageIndex(t *testing.T, ctx context.Context, builder *NodeBuilder, blockNumber uint64) arbutil.MessageIndex {
+	t.Helper()
+
+	pos, err := builder.L2.ExecNode.BlockNumberToMessageIndex(blockNumber).Await(ctx)
+	Require(t, err)
+	return pos
 }
 
 func runValidationInput(

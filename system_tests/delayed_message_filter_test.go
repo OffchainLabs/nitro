@@ -30,6 +30,8 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	filteringreportapi "github.com/offchainlabs/nitro/cmd/filtering-report/api"
 	"github.com/offchainlabs/nitro/cmd/filtering-report/forwarder"
+	"github.com/offchainlabs/nitro/cmd/filtering-report/signer/signertest"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
@@ -219,11 +221,12 @@ func SetupFilteringReport(t *testing.T) (*node.Node, *forwarder.MockExternalEndp
 	t.Helper()
 
 	queueClient := &sqsclient.MockQueueClient{}
-	pemPath, externalEndpoint := forwarder.NewMockExternalEndpoint(t)
+	signingPair := signertest.NewSigningPair(t)
+	externalEndpoint := forwarder.NewMockExternalEndpoint(t, signingPair.Verifier)
 
-	stack := filteringreportapi.NewTestStack(t, queueClient)
+	stack := filteringreportapi.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, signingPair.Signer)
 
-	fwd := forwarder.NewTestForwarder(t, queueClient, nil, externalEndpoint.URL(), pemPath)
+	fwd := forwarder.NewTestForwarder(t, queueClient, nil, externalEndpoint.URL(), signingPair.Signer)
 	fwd.Start(t.Context())
 	t.Cleanup(func() { fwd.StopAndWait() })
 

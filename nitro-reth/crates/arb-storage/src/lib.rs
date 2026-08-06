@@ -1,3 +1,5 @@
+// Copyright 2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 //! MOCK (NIT-5205): stand-in for the real `arb-storage` crate until the
 //! arbitrum-reth sources are migrated. Exists so the ported CI (nextest,
 //! doctests, clippy, rustdoc, miri) has real code to run against.

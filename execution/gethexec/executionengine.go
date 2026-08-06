@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"path"
 	"runtime/debug"
@@ -372,6 +373,14 @@ func NewExecutionEngine(
 		filteringReportRPCClient:       filteringReportRPCClient,
 		filteredTxFullRetryInterval:    filteredTxFullRetryInterval,
 	}
+}
+
+func (s *ExecutionEngine) GetFilteringReportRPCClient() *FilteringReportRPCClient {
+	return s.filteringReportRPCClient
+}
+
+func (s *ExecutionEngine) ChainID() *big.Int {
+	return s.bc.Config().ChainID
 }
 
 func (s *ExecutionEngine) backlogCallDataUnits() uint64 {
@@ -857,9 +866,12 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, nil, nil
 	}
 
-	sequencedTxes, err := hooks.SequencedTxes()
-	if err != nil {
-		return nil, nil, err
+	sequencedTxes := hooks.SequencedTxes()
+	for _, res := range sequencedTxes {
+		// This is not supposed to happen, if so we have a bug
+		if errors.Is(res.Err, txNotFinalized) {
+			return nil, nil, fmt.Errorf("block processor never reported tx %s's result", res.Tx.Hash())
+		}
 	}
 	allTxsErrored := !slices.ContainsFunc(sequencedTxes, func(res TxResult) bool { return res.Err == nil })
 	if allTxsErrored {
@@ -1324,8 +1336,7 @@ func (s *ExecutionEngine) finishTipRecording(session *tipRecordingSession, block
 	if session == nil || session.recordingStateDatabase == nil || block == nil || statedb == nil || s.tipRecorder == nil {
 		return nil
 	}
-	// Record before consensus/block side effects; canonical validation prevents
-	// serving this candidate if a later side effect fails.
+	// Persist before consensus/block side effects so write failures can abort cleanly.
 	session.recordingStateDatabase.StopRecording()
 	preimages := session.recordingStateDatabase.Preimages()
 	// StateDB owns VM SHA3 preimages and ArbOS preimages added during finalization.

@@ -7,7 +7,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,6 +31,9 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
+	filteringreportapi "github.com/offchainlabs/nitro/cmd/filtering-report/api"
+	"github.com/offchainlabs/nitro/cmd/filtering-report/signer/signertest"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
@@ -36,6 +42,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/s3client"
 	"github.com/offchainlabs/nitro/util/s3syncer"
+	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
 func storeFilterHashes(t *testing.T, store *addressfilter.HashStore, id uuid.UUID, salt uuid.UUID, scheme addressfilter.HashingScheme, hashes []common.Hash, digest string) {
@@ -44,7 +51,7 @@ func storeFilterHashes(t *testing.T, store *addressfilter.HashStore, id uuid.UUI
 		for _, h := range hashes {
 			addHash(h)
 		}
-		return &addressfilter.ListMeta{Id: id, Salt: salt, Scheme: scheme}, nil
+		return &addressfilter.ListMeta{ID: id, Salt: salt, Scheme: scheme}, nil
 	}))
 }
 
@@ -276,19 +283,19 @@ func TestAddressFilterMultipleTxsInBlock(t *testing.T) {
 
 	// sequenceTransactionsInTheSameBlock bypasses the tx queue and sequences every
 	// tx into a single block.
-	block, txErrors := sequenceTransactionsInTheSameBlock(
+	block, txResults := sequenceTransactionsInTheSameBlock(
 		t, builder, types.Transactions{clean1, badA, clean3, badB, clean5},
 	)
 	require.NotNil(t, block, "block should have been produced")
-	require.Len(t, txErrors, 5)
+	require.Len(t, txResults, 5)
 
-	require.NoError(t, txErrors[0], "clean tx 1 should have been sequenced")
-	require.Error(t, txErrors[1], "tx to FilteredUserA should have been rejected")
-	require.Truef(t, isFilteredError(txErrors[1]), "tx 2 rejection should be a filter error, got: %v", txErrors[1])
-	require.NoErrorf(t, txErrors[2], "clean tx 3 must not inherit filter state from tx 2, got: %v", txErrors[2])
-	require.Error(t, txErrors[3], "tx to FilteredUserB should have been rejected")
-	require.Truef(t, isFilteredError(txErrors[3]), "tx 4 rejection should be a filter error, got: %v", txErrors[3])
-	require.NoErrorf(t, txErrors[4], "clean tx 5 must not inherit filter state from tx 4, got: %v", txErrors[4])
+	require.NoError(t, txResults[0].Err, "clean tx 1 should have been sequenced")
+	require.Error(t, txResults[1].Err, "tx to FilteredUserA should have been rejected")
+	require.Truef(t, isFilteredError(txResults[1].Err), "tx 2 rejection should be a filter error, got: %v", txResults[1].Err)
+	require.NoErrorf(t, txResults[2].Err, "clean tx 3 must not inherit filter state from tx 2, got: %v", txResults[2].Err)
+	require.Error(t, txResults[3].Err, "tx to FilteredUserB should have been rejected")
+	require.Truef(t, isFilteredError(txResults[3].Err), "tx 4 rejection should be a filter error, got: %v", txResults[3].Err)
+	require.NoErrorf(t, txResults[4].Err, "clean tx 5 must not inherit filter state from tx 4, got: %v", txResults[4].Err)
 
 	cleanReceipt1, err := builder.L2.EnsureTxSucceeded(clean1)
 	require.NoError(t, err)
@@ -742,13 +749,13 @@ func TestAddressFilterStylusCacheNoLeak(t *testing.T) {
 	txB := builder.L2Info.PrepareTxTo("SenderB", &multicallAddr, 1e7, nil, multicallEmptyArgs())
 	txC := builder.L2Info.PrepareTxTo("SenderC", &multicallAddr, 1e7, nil, multicallEmptyArgs())
 
-	block, txErrors := sequenceTransactionsInTheSameBlock(t, builder, types.Transactions{txA, txB, txC})
+	block, txResults := sequenceTransactionsInTheSameBlock(t, builder, types.Transactions{txA, txB, txC})
 	require.NotNil(t, block, "block should have been created")
-	require.Len(t, txErrors, 3)
-	require.Error(t, txErrors[0], "txA should be dropped by the filter")
-	require.Truef(t, isFilteredError(txErrors[0]), "txA must fail with a filter error (not be included), got: %v", txErrors[0])
-	require.NoError(t, txErrors[1], "txB should commit")
-	require.NoError(t, txErrors[2], "txC should commit")
+	require.Len(t, txResults, 3)
+	require.Error(t, txResults[0].Err, "txA should be dropped by the filter")
+	require.Truef(t, isFilteredError(txResults[0].Err), "txA must fail with a filter error (not be included), got: %v", txResults[0].Err)
+	require.NoError(t, txResults[1].Err, "txB should commit")
+	require.NoError(t, txResults[2].Err, "txC should commit")
 
 	rcptB, err := builder.L2.EnsureTxSucceeded(txB)
 	require.NoError(t, err)
@@ -817,13 +824,13 @@ func TestStylusWarmStartCacheSurvivesRevert(t *testing.T) {
 	txW1 := builder.L2Info.PrepareTxTo("SenderW1", &multicallAddr, 1e7, nil, multicallEmptyArgs())
 	txW2 := builder.L2Info.PrepareTxTo("SenderW2", &multicallAddr, 1e7, nil, multicallEmptyArgs())
 
-	block, txErrors := sequenceTransactionsInTheSameBlock(t, builder, types.Transactions{txRevert, txW1, txW2})
+	block, txResults := sequenceTransactionsInTheSameBlock(t, builder, types.Transactions{txRevert, txW1, txW2})
 	require.NotNil(t, block)
-	require.Len(t, txErrors, 3)
+	require.Len(t, txResults, 3)
 	// A reverted tx is still included (not a sequencing drop), so no error here.
-	require.NoError(t, txErrors[0])
-	require.NoError(t, txErrors[1])
-	require.NoError(t, txErrors[2])
+	require.NoError(t, txResults[0].Err)
+	require.NoError(t, txResults[1].Err)
+	require.NoError(t, txResults[2].Err)
 
 	// txRevert is included with failed status (reverted), proving it ran and warmed
 	// the program rather than being dropped.
@@ -843,7 +850,7 @@ func TestStylusWarmStartCacheSurvivesRevert(t *testing.T) {
 	assertStylusInitGasDelta(t, rcptW1, rcptW2, 0)
 }
 
-func TestAddressFilterDisabled(t *testing.T) {
+func TestAddressFilterEmptyList(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -858,7 +865,6 @@ func TestAddressFilterDisabled(t *testing.T) {
 	builder.L2Info.GenerateAccount("TestUser")
 	builder.L2.TransferBalance(t, "Owner", "TestUser", big.NewInt(1e18), builder.L2Info)
 
-	// All transactions should succeed when filter is disabled
 	tx := builder.L2Info.PrepareTx("Owner", "TestUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	err := builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
@@ -1352,6 +1358,122 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	if !execNode.Synced(ctx) {
 		t.Fatal("Synced should return true when both SyncMonitor is synced and filtering is ready")
 	}
+}
+
+func TestPeriodicFilterSetIDReporting(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	signingPair := signertest.NewSigningPair(t)
+
+	// Capture every POST sent to the "external provider".
+	reportCh := make(chan addressfilter.FilterSetIDReport, 16)
+	externalEndpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+			http.Error(w, "bad method", http.StatusMethodNotAllowed)
+			return
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("expected Content-Type application/json, got %s", ct)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+			http.Error(w, "read failed", http.StatusInternalServerError)
+			return
+		}
+		if err := signingPair.Verifier.VerifyHTTPRequest(r, body); err != nil {
+			t.Errorf("verifier rejected filter-set id report: %v", err)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		var report addressfilter.FilterSetIDReport
+		if err := json.Unmarshal(body, &report); err != nil {
+			t.Errorf("unmarshal body: %v", err)
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		select {
+		case reportCh <- report:
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer externalEndpoint.Close()
+
+	// Stand up the filtering-report service pointing at the external endpoint.
+	filteringReportStack := filteringreportapi.NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfig{
+		URL:     externalEndpoint.URL,
+		Timeout: 5 * time.Second,
+	}, signingPair.Signer)
+
+	// Build an active sequencer node wired to the filtering-report service.
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	builder.execConfig.Sequencer.FilterSetReportingInterval = 200 * time.Millisecond
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Inject an enabled filter service (without S3) so the sequencer has a
+	// filter-set id to report, and wire it into the sequencer via the
+	// test-only setter. Using a direct hash store Store() lets us control the
+	// id deterministically.
+	filterCfg := &addressfilter.Config{
+		Files: []addressfilter.FileConfig{{
+			Config: s3syncer.Config{
+				Config:      s3client.Config{Region: "us-east-1"},
+				Bucket:      "test-bucket",
+				ObjectKey:   "test-key",
+				DownloadDir: t.TempDir(),
+			},
+			PollInterval: 5 * time.Minute,
+		}},
+		CacheSize:                 100,
+		AddressCheckerWorkerCount: 1,
+		AddressCheckerQueueSize:   10,
+	}
+	filterService, err := addressfilter.NewFilterService(filterCfg)
+	require.NoError(t, err)
+	builder.L2.ExecNode.Sequencer.SetAddressFilterServiceForTest(t, filterService)
+
+	salt, err := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
+	require.NoError(t, err)
+
+	// First id: assert we observe it at the external endpoint.
+	id1 := uuid.New()
+	storeFilterHashes(t, filterService.GetHashStore(0), id1, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-1")
+
+	expectedChainID := builder.L2.ExecNode.ExecEngine.ChainID().Uint64()
+	waitForReport := func(wantID uuid.UUID) addressfilter.FilterSetIDReport {
+		t.Helper()
+		deadline := time.After(10 * time.Second)
+		for {
+			select {
+			case got := <-reportCh:
+				if got.FilterSetID == wantID {
+					return got
+				}
+				// Drop stale reports (e.g. from the previous id during rotation).
+			case <-deadline:
+				t.Fatalf("timed out waiting for report with filter-set id %s", wantID)
+			}
+		}
+	}
+
+	first := waitForReport(id1)
+	require.Equal(t, expectedChainID, first.ChainID, "chain id mismatch")
+	require.False(t, first.ReportedAt.IsZero(), "reported-at should be set")
+
+	// Rotate the filter set; the next reporting tick must pick up id2.
+	id2 := uuid.New()
+	storeFilterHashes(t, filterService.GetHashStore(0), id2, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-2")
+
+	second := waitForReport(id2)
+	require.Equal(t, expectedChainID, second.ChainID, "chain id mismatch after rotation")
+	require.True(t, second.ReportedAt.After(first.ReportedAt) || second.ReportedAt.Equal(first.ReportedAt),
+		"second report's reported-at (%s) should be >= first (%s)", second.ReportedAt, first.ReportedAt)
 }
 
 func testAddressFilterDirectTransferWithScheme(t *testing.T, scheme addressfilter.HashingScheme) {

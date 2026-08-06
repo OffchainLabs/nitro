@@ -22,7 +22,7 @@ func storeHashes(t testing.TB, store *HashStore, id uuid.UUID, salt uuid.UUID, s
 		for _, h := range hashes {
 			addHash(h)
 		}
-		return &ListMeta{Id: id, Salt: salt, Scheme: scheme}, nil
+		return &ListMeta{ID: id, Salt: salt, Scheme: scheme}, nil
 	}))
 }
 
@@ -209,7 +209,7 @@ func TestHashStoreStoreFailureKeepsSnapshot(t *testing.T) {
 			// The next successful store must not resurrect the aborted fill's hashes.
 			require.NoError(t, store.Store("e3", 1, func(add func(common.Hash)) (*ListMeta, error) {
 				add(h1)
-				return &ListMeta{Id: uuid.New(), Salt: salt, Scheme: HashingSchemeStringInput}, nil
+				return &ListMeta{ID: uuid.New(), Salt: salt, Scheme: HashingSchemeStringInput}, nil
 			}))
 			if restricted, _ := store.IsRestricted(addr2); restricted {
 				t.Fatal("residue from the aborted fill leaked into the next snapshot")
@@ -240,7 +240,7 @@ func TestHashStoreStoreConcurrentReaders(t *testing.T) {
 			close(fillStarted)
 			add(h)
 			<-finishFill
-			return &ListMeta{Id: uuid.New(), Salt: salt, Scheme: HashingSchemeStringInput}, nil
+			return &ListMeta{ID: uuid.New(), Salt: salt, Scheme: HashingSchemeStringInput}, nil
 		})
 	}()
 
