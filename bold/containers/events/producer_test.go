@@ -6,6 +6,7 @@ package events
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -107,4 +108,129 @@ func TestRemovalUsesStableId(t *testing.T) {
 	require.Equal(t, 1, len(producer.subs))
 	require.Same(t, s2, producer.subs[0])
 	producer.RUnlock()
+}
+
+// TestBroadcastAfterSubscriberDone verifies the "send on closed channel" panic
+// is gone. Once a subscription is finished (Next returned done), delivering a
+// broadcast to it must not panic and the delivery goroutine must exit via the
+// subscription's canceled context instead of parking on the send.
+func TestBroadcastAfterSubscriberDone(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		producer := NewProducer[int]()
+		sub := producer.Subscribe()
+
+		// Finish the subscription: with an already-canceled context, Next returns
+		// done and cancels the subscription's own context.
+		subCtx, cancelSub := context.WithCancel(context.Background())
+		cancelSub()
+		_, done := sub.Next(subCtx)
+		require.True(t, done)
+
+		producer.Broadcast(context.Background(), 41)
+		synctest.Wait()
+	})
+}
+
+// TestTeardownDoesNotBlockWhenDoneListenerFull verifies that tearing a
+// subscription down never parks on the producer's doneListener. Nothing
+// receives from that channel unless Start is running, so once its buffer fills,
+// Next must drop its id rather than block forever on a receiver that will never
+// arrive. Without the non-blocking send, the teardown past the buffer's
+// capacity deadlocks the bubble.
+func TestTeardownDoesNotBlockWhenDoneListenerFull(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		// Start is deliberately not running: nothing drains doneListener.
+		producer := NewProducer[int]()
+
+		for i := 0; i < cap(producer.doneListener)+5; i++ {
+			sub := producer.Subscribe()
+			subCtx, cancelSub := context.WithCancel(context.Background())
+			cancelSub()
+			_, done := sub.Next(subCtx)
+			require.True(t, done)
+		}
+
+		// The teardowns past capacity dropped their ids instead of blocking.
+		require.Equal(t, cap(producer.doneListener), len(producer.doneListener))
+	})
+}
+
+// TestTeardownAfterProducerStopped verifies a subscription can still finish
+// after the producer's Start loop has exited. doneListener is intentionally
+// left open on shutdown: closing it would race with the send in Next and panic
+// with "send on closed channel".
+func TestTeardownAfterProducerStopped(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		producer := NewProducer[int]()
+		go producer.Start(ctx)
+
+		sub := producer.Subscribe()
+
+		// Stop the producer and wait until Start has provably returned, so the
+		// teardown below runs with no receiver on doneListener.
+		cancel()
+		synctest.Wait()
+
+		subCtx, cancelSub := context.WithCancel(context.Background())
+		cancelSub()
+		_, done := sub.Next(subCtx)
+		require.True(t, done)
+
+		// The id was buffered rather than dropped or sent on a closed channel.
+		require.Equal(t, 1, len(producer.doneListener))
+	})
+}
+
+// TestStartReapsFinishedSubscriptions verifies that, while Start is running, a
+// subscription that finishes (Next returned done) is removed from the producer's
+// table. The challenge manager relies on this by launching Producer.Start, so
+// finished block subscribers don't accumulate for the life of the process.
+func TestStartReapsFinishedSubscriptions(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		producer := NewProducer[int]()
+		go producer.Start(ctx)
+
+		sub := producer.Subscribe()
+		producer.RLock()
+		require.Equal(t, 1, len(producer.subs))
+		producer.RUnlock()
+
+		// Finish the subscription; its id is sent to doneListener.
+		subCtx, cancelSub := context.WithCancel(context.Background())
+		cancelSub()
+		_, done := sub.Next(subCtx)
+		require.True(t, done)
+
+		// Let Start drain doneListener and remove the finished subscription.
+		synctest.Wait()
+		producer.RLock()
+		require.Empty(t, producer.subs)
+		producer.RUnlock()
+	})
+}
+
+// TestNextIsIdempotentOnceDone verifies a finished subscription stays finished:
+// later calls to Next report done immediately instead of blocking on a channel
+// nobody will send to, and an in-flight broadcast cannot hand an event to a
+// subscriber that has already torn down.
+func TestNextIsIdempotentOnceDone(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		producer := NewProducer[int]()
+		sub := producer.Subscribe()
+
+		subCtx, cancelSub := context.WithCancel(context.Background())
+		cancelSub()
+		_, done := sub.Next(subCtx)
+		require.True(t, done)
+
+		producer.Broadcast(context.Background(), 41)
+
+		ev, done := sub.Next(context.Background())
+		require.True(t, done)
+		require.Zero(t, ev)
+	})
 }
