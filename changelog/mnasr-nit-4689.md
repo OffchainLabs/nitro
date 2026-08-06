@@ -3,3 +3,4 @@
 
 ### Configuration
 - `cmd/filtering-report`: the request signer is now configured via top-level `--signer.*` flags instead of `--report-forwarder.signer.*`, since the signer is shared by the report forwarder and the filter-set-id reporter.
+- `cmd/filtering-report`: HTTP client `timeout` settings (`--report-forwarder.external-endpoint.timeout`, `--filter-set-reporting.timeout`) must now be positive; a zero or negative timeout is rejected at startup.

@@ -1482,6 +1482,32 @@ func TestPeriodicFilterSetIDReporting(t *testing.T) {
 	require.Equal(t, expectedChainID, second.ChainID, "chain id mismatch after rotation")
 	require.True(t, second.ReportedAt.After(first.ReportedAt) || second.ReportedAt.Equal(first.ReportedAt),
 		"second report's reported-at (%s) should be >= first (%s)", second.ReportedAt, first.ReportedAt)
+
+	// An inactive sequencer must not report. Pause, then wait out any tick that
+	// was already past the IsActive check before draining stale reports.
+	builder.L2.ExecNode.Sequencer.Pause()
+	time.Sleep(500 * time.Millisecond)
+	for drained := false; !drained; {
+		select {
+		case <-reportCh:
+		default:
+			drained = true
+		}
+	}
+
+	id3 := uuid.New()
+	storeFilterHashes(t, filterService.GetHashStore(), id3, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-3")
+
+	select {
+	case got := <-reportCh:
+		t.Fatalf("paused sequencer sent filter-set id report %s", got.FilterSetID)
+	case <-time.After(1 * time.Second):
+	}
+
+	// Reporting must resume once the sequencer becomes active again.
+	builder.L2.ExecNode.Sequencer.Activate()
+	third := waitForReport(id3)
+	require.Equal(t, expectedChainID, third.ChainID, "chain id mismatch after reactivation")
 }
 
 func testAddressFilterDirectTransferWithScheme(t *testing.T, scheme addressfilter.HashingScheme) {
