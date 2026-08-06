@@ -73,7 +73,7 @@ jobs:
         run: make build-replay-env
 
       - name: Clippy check (non-SP1)
-        run: cargo clippy --workspace --exclude stylus-compiler-program --exclude stylus-compiler-runner -- -D warnings
+        run: cargo clippy --workspace -- -D warnings
 
       - name: Run rust tests
         id: run-rust-tests

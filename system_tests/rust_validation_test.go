@@ -23,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -52,7 +53,13 @@ func TestRustValidationServerAPI(t *testing.T) {
 //
 // Prerequisites: make build-validation-server && make build-replay-env
 func TestRustServerValidation(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, false)
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testRustServerValidation(t, recorderOpt)
+	})
+}
+
+func testRustServerValidation(t *testing.T, builderOpts ...func(*NodeBuilder)) {
+	builder, auth, cleanup := setupProgramTest(t, false, builderOpts...)
 	defer cleanup()
 	ctx, cancel := context.WithTimeout(builder.ctx, 120*time.Second)
 	defer cancel()
@@ -284,8 +291,16 @@ func validateBlockViaRustServer(
 	t.Helper()
 	sbv := builder.L2.ConsensusNode.StatelessBlockValidator
 
+	tipRecorder, _ := builder.L2.ExecNode.Recorder.(*gethexec.ChainTipBlockRecorder)
+	var servedTipRecordingsBefore uint64
+	if tipRecorder != nil {
+		servedTipRecordingsBefore = tipRecorder.ServedTipRecordings()
+	}
 	inputJSON, err := sbv.ValidationInputsAt(ctx, pos, rawdb.LocalTarget())
 	Require(t, err)
+	if tipRecorder != nil && tipRecorder.ServedTipRecordings() == servedTipRecordingsBefore {
+		t.Fatal("expected ValidationInputsAt to serve a chain-tip recording")
+	}
 	valInput, err := server_api.ValidationInputFromJson(&inputJSON)
 	Require(t, err)
 

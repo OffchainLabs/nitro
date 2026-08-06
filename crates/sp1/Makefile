@@ -97,8 +97,20 @@ record-blocks: nitro-deps
 .PHONY: build
 build: # Mocked system build (temporary solution until we have all the necessary crates available)
 build: nitro-deps
-	@cargo build -p stylus-compiler-runner --release
+	@cargo build --locked -p stylus-compiler-runner --release
+
+.PHONY: clippy
+clippy: # Run clippy on the sp1 workspace crates.
+	@cargo clippy --locked -p stylus-compiler-program -p stylus-compiler-runner -- -D warnings -A static_mut_refs -A clippy::too_many_arguments
+
+.PHONY: stylus-compiler-compare
+stylus-compiler-compare: # Compare Stylus compilation consistency between native and SP1 execution mode.
+	@cd $(TOP) && cargo run --locked --manifest-path $(CURDIR)/Cargo.toml -p stylus-compiler-runner --release -- compare
+
+.PHONY: stylus-compiler-prove
+stylus-compiler-prove: # Generate and verify a proof of correct Stylus compilation.
+	@cd $(TOP) && cargo run --locked --manifest-path $(CURDIR)/Cargo.toml -p stylus-compiler-runner --release -- prove
 
 .PHONY: clean
 clean: # Remove all generated artifacts.
-	@rm -rf $(BROTLI_SRC_DIR) $(BROTLI_BUILD_DIR) $(BROTLI_LIB_DIR) $(OUTPUT_DIR)
+	@rm -rf $(BROTLI_SRC_DIR) $(BROTLI_BUILD_DIR) $(BROTLI_LIB_DIR) target
