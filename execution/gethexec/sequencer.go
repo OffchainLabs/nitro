@@ -1686,7 +1686,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 func (s *Sequencer) reportFilterSetID(ctx context.Context, rpcClient *FilteringReportRPCClient) error {
 	service := s.addressFilterService.Load()
 	if service == nil {
-		log.Warn("skipping filter-set id report: address-filter service not configured")
+		log.Debug("skipping filter-set id report: address-filter service not configured")
 		return nil
 	}
 	filterSetID := service.CurrentFilterSetID()
