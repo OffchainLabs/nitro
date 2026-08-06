@@ -114,8 +114,7 @@ fn clock_ns(_clock_id: libc::clockid_t) -> u64 {
 
 #[cfg(target_os = "linux")]
 fn process_cpu_ns() -> u64 {
-    // CLOCK_PROCESS_CPUTIME_ID = 2
-    clock_ns(2)
+    clock_ns(libc::CLOCK_PROCESS_CPUTIME_ID)
 }
 
 #[cfg(target_os = "macos")]
@@ -123,15 +122,7 @@ fn process_cpu_ns() -> u64 {
     unsafe extern "C" {
         fn clock_gettime_nsec_np(clock_id: u32) -> u64;
     }
-    // CLOCK_PROCESS_CPUTIME_ID == 12 on Darwin.
-    // SAFETY: `clock_gettime_nsec_np` is a Darwin-only libc call that
-    // returns a nanosecond reading or 0 on error; no buffers are passed.
-    let nsec = unsafe { clock_gettime_nsec_np(12) };
-    if nsec != 0 {
-        return nsec;
-    }
-    // Fallback to monotonic.
-    clock_ns(libc::CLOCK_MONOTONIC)
+    unsafe { clock_gettime_nsec_np(libc::CLOCK_PROCESS_CPUTIME_ID) }
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -197,9 +188,18 @@ mod tests {
         let idle_sw = Stopwatch::start_with(
             CpuClock::for_pid(idle.id()).expect("cpu clock resolves on linux"),
         );
-        thread::sleep(Duration::from_millis(200));
-        let (busy_wall, busy_cpu) = busy_sw.elapsed_ns();
-        let (idle_wall, idle_cpu) = idle_sw.elapsed_ns();
+
+        // Wait for the busy child to accrue an absolute amount of CPU rather
+        // than asserting a share of a fixed window, which a loaded CI machine
+        // does not guarantee.
+        const TARGET_NS: u64 = 50_000_000;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut busy_cpu = 0;
+        while busy_cpu < TARGET_NS && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+            busy_cpu = busy_sw.elapsed_ns().1;
+        }
+        let idle_cpu = idle_sw.elapsed_ns().1;
 
         let _ = busy.kill();
         let _ = busy.wait();
@@ -207,12 +207,12 @@ mod tests {
         let _ = idle.wait();
 
         assert!(
-            busy_cpu > busy_wall / 2,
-            "busy child burns a core: cpu {busy_cpu} should track wall {busy_wall}"
+            busy_cpu >= TARGET_NS,
+            "busy child accrued only {busy_cpu}ns of cpu within the deadline"
         );
         assert!(
-            idle_cpu < idle_wall / 10,
-            "sleeping child burns nothing: cpu {idle_cpu} should be near zero over {idle_wall}"
+            idle_cpu < TARGET_NS / 10,
+            "sleeping child burns nothing: cpu {idle_cpu} vs busy {busy_cpu}"
         );
     }
 }

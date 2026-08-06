@@ -69,20 +69,12 @@ arbreth-bench curate --input raw.json --out staging
 
 ### Metric attribution
 
-`cpu_ns` and `rss_bytes` always describe the process that executes the workload.
-`InProcessRunner` measures itself; `SubprocessRunner` measures the spawned
-`arb-reth` by resolving the node's per-process CPU clock
-(`metrics::clock::CpuClock::for_pid`) and reading the node's RSS.
-
-Billing CPU to another process takes a different mechanism per platform: Linux
-resolves the target's POSIX per-process clock via `clock_getcpuclockid`, macOS
-has no such call and instead reads `proc_pid_rusage`, converting from mach
-absolute time units. Both are limited to a process of the same user, which a
-node we spawned ourselves always is.
-
-On any other target — or for a pid we are not permitted to inspect — the
-subprocess runner logs a warning and reports `cpu_ns` as 0 rather than
-substituting the harness's own CPU time.
+`cpu_ns` and `rss_bytes` describe the process that executes the workload:
+`InProcessRunner` measures itself, `SubprocessRunner` measures the spawned
+`arb-reth` node. The node's RSS is read on all platforms; its CPU time comes
+from its per-process CPU clock, which is Linux-only. When that clock can't be
+read, the runner logs a warning and reports `cpu_ns` as 0 rather than falling
+back to the harness's own CPU time.
 
 ## Manifest schema
 
