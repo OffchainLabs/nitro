@@ -16,5 +16,15 @@ arbos-types.workspace = true
 alloy-primitives = { workspace = true, features = ["rlp"] }
 alloy-rlp = { workspace = true, features = ["derive"] }
 
+# Reth
+reth-libmdbx = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [lints]
 workspace = true
+
+[features]
+default = ["libmdbx"]
+libmdbx = ["dep:reth-libmdbx"]
