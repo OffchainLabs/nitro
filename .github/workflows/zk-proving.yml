@@ -52,6 +52,48 @@ jobs:
       - name: Build
         run: make -C crates/sp1 build
 
+      - name: Record block inputs
+        run: make -C crates/sp1 record-blocks
+
+      # Ground-truth check: every recorded block must validate under JIT.
+      # Once the SP1 runner is ported, it joins this loop and its hash is
+      # compared against JIT's.
+      - name: Validate recorded blocks with JIT
+        run: |
+          set -e -o pipefail
+          shopt -s nullglob
+          # Keep in sync with the number of TestRecordBlock* tests in
+          # system_tests/block_recording_test.go — catches a skipped or
+          # silently dropped recording, which a zero-check would miss.
+          EXPECTED_BLOCKS=8
+          INPUTS=(target/sp1/block-inputs/*.json)
+          if [ ${#INPUTS[@]} -ne "$EXPECTED_BLOCKS" ]; then
+            echo "::error::Expected $EXPECTED_BLOCKS recorded block inputs, found ${#INPUTS[@]}: ${INPUTS[*]}"
+            exit 1
+          fi
+          LOG=$(mktemp)
+          trap 'rm -f "$LOG"' EXIT
+          for INPUT in "${INPUTS[@]}"; do
+            BLOCK=$(basename "$INPUT" .json)
+            echo "--- Running JIT validation ($BLOCK) ---"
+            if ! ./target/bin/jit \
+              --debug --cranelift \
+              --binary target/machines/latest/replay.wasm \
+              --require-success \
+              json --inputs="$INPUT" >"$LOG" 2>&1; then
+              echo "::error::JIT validation failed for $BLOCK"
+              cat "$LOG"
+              exit 1
+            fi
+            JIT_HASH=$(grep "Completed in .* with hash" "$LOG" | awk '{print $NF}' | sed 's/\.$//' || true)
+            if [ -z "$JIT_HASH" ]; then
+              echo "::error::Failed to capture JIT hash for $BLOCK"
+              cat "$LOG"
+              exit 1
+            fi
+            echo "$BLOCK JIT hash: $JIT_HASH"
+          done
+
       # Clippy runs after build because sp1-builder uses include_elf!(), which requires the SP1 ELF to exist at compile time.
       - name: Clippy check (SP1 crates)
         run: cargo clippy -p stylus-compiler-program -p stylus-compiler-runner -- -D warnings -A static_mut_refs -A clippy::too_many_arguments
