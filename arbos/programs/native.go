@@ -167,6 +167,11 @@ func GetNativeStackSize() uint64 {
 	return uint64(C.stylus_get_native_stack_size())
 }
 
+// WasmerSerializeVersion returns wasmer's MetadataHeader::CURRENT_VERSION
+func WasmerSerializeVersion() uint32 {
+	return uint32(C.stylus_wasmer_serialize_version())
+}
+
 // RustWavmFormatVersion returns the WAVM wire-format version Rust will
 // produce and accept. `reconcileWavmSerializeVersion` in
 // cmd/nitro/init compares this against `WavmSerializeVersion` on startup

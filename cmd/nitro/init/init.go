@@ -61,8 +61,8 @@ import (
 
 var errNotFound = errors.New("file not found")
 
-// taken from wasmer's lib/types/src/serialize.rs: MetadataHeader::CURRENT_VERSION
-const WasmerSerializeVersion = 16
+// mirrors wasmer's MetadataHeader::CURRENT_VERSION (lib/types/src/serialize.rs)
+const WasmerSerializeVersion = 17
 const InitialWasmerSerializeVersion = 8
 
 // Version of the WAVM module wire format used for activated Stylus programs under

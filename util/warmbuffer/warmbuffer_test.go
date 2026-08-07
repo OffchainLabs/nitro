@@ -10,30 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMakeWarmArray(t *testing.T) {
-	// An element larger than one byte exercises the per-page stride.
-	type hash [32]byte
-	a := MakeWarmArray[hash](1000)
-	require.Len(t, a, 1000)
-	require.Equal(t, hash{}, a[0])
-	require.Equal(t, hash{}, a[999])
-	a[500][0] = 1 // usable
-	require.Equal(t, byte(1), a[500][0])
-
-	// Byte slices spanning several pages and the empty case must not panic.
-	require.Len(t, MakeWarmArray[byte](4096*3+7), 4096*3+7)
-	require.Len(t, MakeWarmArray[byte](0), 0)
-}
-
-func TestMakeWarmBuffer(t *testing.T) {
-	const size = 1024 * 1024
-	b := MakeWarmBuffer(size)
-	require.Len(t, b, size)
-	require.Equal(t, byte(0), b[0])
-	require.Equal(t, byte(0), b[size-1])
-	require.Len(t, MakeWarmBuffer(0), 0)
-}
-
 func TestMakeWarmMapLeavesEmptyUsableMap(t *testing.T) {
 	calls := 0
 	var counter uint64

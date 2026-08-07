@@ -1,3 +1,5 @@
+# Copyright 2026, Offchain Labs, Inc.
+# For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 TOP              := $(abspath $(CURDIR)/../..)
 RISCV            := $(HOME)/.sp1/riscv
 # Keep in sync with the sp1-* crate versions in Cargo.lock.
@@ -6,6 +8,7 @@ BROTLI_SRC_DIR   := $(TOP)/target/build-sp1/brotli-src
 BROTLI_BUILD_DIR := $(TOP)/target/build-sp1/brotli
 BROTLI_LIB_DIR   := $(TOP)/target/lib-sp1
 OUTPUT_DIR       := $(TOP)/target/sp1
+BLOCK_INPUTS_DIR := $(OUTPUT_DIR)/block-inputs
 
 # Bump SP1's maximum heap memory size.
 export SP1_ZKVM_MAX_MEMORY := 1099511627776
@@ -52,11 +55,62 @@ nitro-deps: # Build necessary nitro dependencies, including replay.wasm
 nitro-deps: brotli
 	@cd $(TOP) && $(MAKE) test-go-deps
 
+.PHONY: record-blocks
+record-blocks: # Run all block-recording system tests; artifacts go to $(BLOCK_INPUTS_DIR).
+record-blocks: nitro-deps
+	@rm -rf $(BLOCK_INPUTS_DIR)
+	@mkdir -p $(BLOCK_INPUTS_DIR)
+	@set -e; \
+	cd $(TOP); \
+	if ! go test \
+		-tags block_recording \
+		-run 'TestRecordBlock' \
+		-timeout 5m \
+		-parallel 1 \
+		./system_tests/ -- \
+		-recordBlockInputs.enable=true \
+		-recordBlockInputs.WithBaseDir=$(BLOCK_INPUTS_DIR) \
+		-recordBlockInputs.WithTimestampDirEnabled=false \
+		>$(BLOCK_INPUTS_DIR)/record.log 2>&1; then \
+		echo "FAIL — record.log:" >&2; cat $(BLOCK_INPUTS_DIR)/record.log >&2; exit 1; \
+	fi; \
+	found=0; \
+	for dir in $(BLOCK_INPUTS_DIR)/TestRecordBlock*/; do \
+		[ -d "$$dir" ] || continue; \
+		found=$$((found+1)); \
+		set -- "$$dir"*.json; \
+		if [ $$# -ne 1 ] || [ ! -f "$$1" ]; then \
+			echo "expected exactly one recording in $$dir, got: $$*" >&2; exit 1; \
+		fi; \
+		name=$$(basename "$$dir" | sed -e 's/^TestRecordBlock//' -e 's/\([a-z0-9]\)\([A-Z]\)/\1_\2/g' | tr '[:upper:]' '[:lower:]'); \
+		if [ -e "$(BLOCK_INPUTS_DIR)/$$name.json" ]; then \
+			echo "duplicate block name $$name.json (test names collide after snake_casing?)" >&2; exit 1; \
+		fi; \
+		mv "$$1" "$(BLOCK_INPUTS_DIR)/$$name.json"; \
+		rmdir "$$dir"; \
+	done; \
+	if [ "$$found" -eq 0 ]; then \
+		echo "no TestRecordBlock recordings produced — did all tests skip?" >&2; exit 1; \
+	fi; \
+	echo "Recorded $$found blocks"
+
 .PHONY: build
 build: # Mocked system build (temporary solution until we have all the necessary crates available)
 build: nitro-deps
-	@cargo build -p stylus-compiler-runner --release
+	@cargo build --locked -p stylus-compiler-runner --release
+
+.PHONY: clippy
+clippy: # Run clippy on the sp1 workspace crates.
+	@cargo clippy --locked -p stylus-compiler-program -p stylus-compiler-runner -- -D warnings -A static_mut_refs -A clippy::too_many_arguments
+
+.PHONY: stylus-compiler-compare
+stylus-compiler-compare: # Compare Stylus compilation consistency between native and SP1 execution mode.
+	@cd $(TOP) && cargo run --locked --manifest-path $(CURDIR)/Cargo.toml -p stylus-compiler-runner --release -- compare
+
+.PHONY: stylus-compiler-prove
+stylus-compiler-prove: # Generate and verify a proof of correct Stylus compilation.
+	@cd $(TOP) && cargo run --locked --manifest-path $(CURDIR)/Cargo.toml -p stylus-compiler-runner --release -- prove
 
 .PHONY: clean
 clean: # Remove all generated artifacts.
-	@rm -rf $(BROTLI_SRC_DIR) $(BROTLI_BUILD_DIR) $(BROTLI_LIB_DIR) $(OUTPUT_DIR)
+	@rm -rf $(BROTLI_SRC_DIR) $(BROTLI_BUILD_DIR) $(BROTLI_LIB_DIR) target
