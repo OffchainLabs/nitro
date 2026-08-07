@@ -1,4 +1,4 @@
 [toolchain]
 channel = "1.93.0"
-components = ["llvm-tools-preview", "rustfmt", "clippy"]
+components = ["llvm-tools-preview", "rustfmt", "clippy", "rust-analyzer"]
 targets = ["wasm32-wasip1", "wasm32-unknown-unknown"]
