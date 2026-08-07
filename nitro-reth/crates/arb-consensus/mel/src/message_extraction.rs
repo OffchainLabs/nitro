@@ -1,7 +1,7 @@
 use alloy_consensus::Header;
 use alloy_primitives::{B256, keccak256};
-use arb_da_provider_client::DaReaderSource;
-use arbos::types::{
+use arb_da_provider::DaReaderSource;
+use arbos_types::{
     L1_MESSAGE_TYPE_BATCH_POSTING_REPORT, MessageWithMetadata, get_data_stats,
     legacy_cost_for_stats, parse_batch_posting_report_fields,
 };
@@ -213,8 +213,8 @@ mod tests {
     use alloy_primitives::{Address, U256};
     use alloy_rpc_types_eth::Log;
     use alloy_sol_types::{SolEvent, sol};
-    use arb_da_provider_client::DaReaderRegistry;
-    use arbos::types::{L1_MESSAGE_TYPE_BATCH_POSTING_REPORT, L1IncomingMessageHeader};
+    use arb_da_provider::DaReaderRegistry;
+    use arbos_types::{L1_MESSAGE_TYPE_BATCH_POSTING_REPORT, L1IncomingMessageHeader};
 
     use super::*;
     use crate::{
@@ -322,7 +322,7 @@ mod tests {
         DelayedInboxMessage {
             block_hash: B256::ZERO,
             before_inbox_acc: B256::ZERO,
-            message: arbos::types::L1IncomingMessage {
+            message: arbos_types::L1IncomingMessage {
                 header: L1IncomingMessageHeader {
                     request_id: Some(request_id),
                     ..Default::default()

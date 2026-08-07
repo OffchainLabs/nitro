@@ -1,14 +1,13 @@
 use std::collections::HashMap;
 
 use alloy_primitives::B256;
-use alloy_transport::TransportErrorKind;
 
 use super::{DaError, DaReader, Payload, Preimages, Result};
 
 /// Builds a fresh [`DaError`] each time a registered failure is read.
 ///
 /// A closure rather than a stored `DaError` because `DaError` isn't `Clone`
-/// (it wraps `RpcError`, which holds boxed trait objects).
+/// (it holds boxed trait objects).
 type ErrorFactory = Box<dyn Fn() -> DaError + Send + Sync>;
 
 /// An in-memory [`DaReader`] for tests.
@@ -20,7 +19,7 @@ type ErrorFactory = Box<dyn Fn() -> DaError + Send + Sync>;
 ///
 /// A batch can be registered as a success (via [`Self::with_batch`]) or as a
 /// failure (via [`Self::with_error`] for an arbitrary [`DaError`], or
-/// [`Self::with_transport_error`] for the common "fail with this message" case).
+/// [`Self::with_provider_error`] for the common "fail with this message" case).
 /// A batch that was never registered reads back as an empty payload and empty
 /// preimages, mirroring the "missing field is empty" behaviour of the RPC
 /// reader.
@@ -68,9 +67,9 @@ impl MockDaReader {
     }
 
     /// Registers a batch that fails to recover with `message` surfaced as a
-    /// transport error — the only failure shape the real reader produces. A
-    /// convenience wrapper over [`Self::with_error`].
-    pub fn with_transport_error(
+    /// provider error — the failure shape a real reader produces. A convenience
+    /// wrapper over [`Self::with_error`].
+    pub fn with_provider_error(
         &mut self,
         batch_num: u64,
         batch_block_hash: B256,
@@ -79,7 +78,7 @@ impl MockDaReader {
     ) -> &mut Self {
         let message = message.into();
         self.with_error(batch_num, batch_block_hash, sequencer_msg, move || {
-            TransportErrorKind::custom_str(&message).into()
+            DaError::provider(std::io::Error::other(message.clone()))
         })
     }
 
@@ -206,15 +205,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn with_transport_error_surfaces_as_transport_error() {
+    async fn with_provider_error_surfaces_as_provider_error() {
         let mut mock = MockDaReader::new();
-        mock.with_transport_error(BATCH_NUM, block_hash(), SEQ_MSG, "batch not found");
+        mock.with_provider_error(BATCH_NUM, block_hash(), SEQ_MSG, "batch not found");
 
         let payload_err = mock
             .recover_payload(BATCH_NUM, block_hash(), SEQ_MSG)
             .await
             .unwrap_err();
-        assert!(matches!(payload_err, DaError::Transport(_)));
+        assert!(matches!(payload_err, DaError::Provider(_)));
         // The registered message is carried through.
         assert!(payload_err.to_string().contains("batch not found"));
 
@@ -222,19 +221,19 @@ mod tests {
             .collect_preimages(BATCH_NUM, block_hash(), SEQ_MSG)
             .await
             .unwrap_err();
-        assert!(matches!(preimages_err, DaError::Transport(_)));
+        assert!(matches!(preimages_err, DaError::Provider(_)));
 
         let both_err = mock
             .recover_payload_and_preimages(BATCH_NUM, block_hash(), SEQ_MSG)
             .await
             .unwrap_err();
-        assert!(matches!(both_err, DaError::Transport(_)));
+        assert!(matches!(both_err, DaError::Provider(_)));
     }
 
     #[tokio::test]
     async fn with_error_replays_arbitrary_variant() {
         let mut mock = MockDaReader::new();
-        // A non-transport variant, to show any DaError can be injected.
+        // A non-provider variant, to show any DaError can be injected.
         mock.with_error(BATCH_NUM, block_hash(), SEQ_MSG, || {
             DaError::Base64(base64::DecodeError::InvalidPadding)
         });

@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use arb_da_provider_client::DaReaderSource;
+use arb_da_provider::DaReaderSource;
 use arb_parent_chain_client::ParentChainReader;
 
 use crate::{

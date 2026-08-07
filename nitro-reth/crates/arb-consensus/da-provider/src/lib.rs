@@ -1,26 +1,27 @@
-//! A client for reading from an Arbitrum data availability (DA) provider over
-//! JSON-RPC.
+//! The Arbitrum data availability (DA) provider abstraction.
 //!
-//! Provides [`DaReader`], a small trait that wraps the `daprovider_*` calls for
-//! recovering batch payloads and collecting preimages, plus a ready-to-use
-//! implementation backed by a live RPC provider.
+//! Provides [`DaReader`], a small trait for recovering batch payloads and
+//! collecting preimages, plus its supporting types ([`DaError`], [`Payload`],
+//! [`Preimages`], [`PreimageType`]) and a [`DaReaderRegistry`].
 //!
 //! This only reads data; it doesn't interpret any of it. Code that needs to do
 //! deterministic, no-IO processing is expected to pull what it needs through
 //! this reader first and then work on the results.
+//!
+//! Dependency-light and wasm-compatible so `arb-mel`'s message extraction can
+//! depend on it. The live JSON-RPC reader lives in the sibling
+//! `arb-da-provider-rpc-client` crate, keeping the networking stack out of the
+//! wasm build.
 
 use std::{collections::HashMap, error::Error};
 
 use alloy_primitives::B256;
-use alloy_transport::{RpcError, TransportErrorKind};
 
 mod mock;
 mod registry;
-mod rpc;
 
 pub use mock::MockDaReader;
 pub use registry::{DaReaderRegistry, DaReaderSource};
-pub use rpc::RpcDaReader;
 
 /// Something went wrong while reading from the DA provider.
 #[derive(Debug, thiserror::Error)]
@@ -28,9 +29,6 @@ pub enum DaError {
     /// A base64-encoded byte field in the response could not be decoded.
     #[error(transparent)]
     Base64(#[from] base64::DecodeError),
-    /// RPC call failure
-    #[error(transparent)]
-    Transport(#[from] RpcError<TransportErrorKind>),
     /// The provider returned a preimage type this client doesn't recognise.
     #[error("unknown preimage type: {0}")]
     UnknownPreimageType(u8),

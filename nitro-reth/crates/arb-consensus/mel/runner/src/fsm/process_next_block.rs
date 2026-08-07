@@ -10,7 +10,7 @@ use std::{
 
 use alloy_eips::BlockNumberOrTag;
 use alloy_rpc_types_eth::{Log, Transaction};
-use arb_da_provider_client::DaReaderSource;
+use arb_da_provider::DaReaderSource;
 use arb_mel::{DelayedInboxMessage, DelayedMessageDB, MelError, MelResult, MelState, TxFetcher};
 use arb_parent_chain_client::ParentChainReader;
 

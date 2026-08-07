@@ -19,7 +19,7 @@ alloy-sol-types.workspace = true
 
 arb-parent-chain-client.workspace = true
 arb-mel.workspace = true
-arb-da-provider-client.workspace = true
+arb-da-provider.workspace = true
 arbos.workspace = true
 
 [dev-dependencies]
