@@ -96,6 +96,7 @@ record-blocks: nitro-deps
 
 .PHONY: build
 build: # Build the SP1 workspace; replay artifacts go to $(OUTPUT_DIR).
+build: brotli
 	@mkdir -p $(OUTPUT_DIR)
 	@cargo build --locked --release
 	@cargo run --locked --release -p replay-builder -- --output-folder $(OUTPUT_DIR)
