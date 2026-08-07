@@ -202,9 +202,9 @@ mod tests {
         let mut busy_cpu = 0;
         while busy_cpu < TARGET_NS && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(10));
-            busy_cpu = busy_sw.elapsed().cpu_ns.unwrap_or(0);
+            busy_cpu = busy_sw.elapsed_ns().1;
         }
-        let idle_cpu = idle_sw.elapsed().cpu_ns;
+        let idle_cpu = idle_sw.elapsed_ns().1;
 
         drop(busy);
         drop(idle);
@@ -213,7 +213,6 @@ mod tests {
             busy_cpu >= TARGET_NS,
             "busy child accrued only {busy_cpu}ns of cpu within the deadline"
         );
-        let idle_cpu = idle_cpu.expect("idle child's clock stays readable while it is unreaped");
         assert!(
             idle_cpu < TARGET_NS / 10,
             "sleeping child burns nothing: cpu {idle_cpu} vs busy {busy_cpu}"
