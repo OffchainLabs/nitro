@@ -15,6 +15,7 @@ alloy-primitives = { workspace = true, features = ["std", "serde", "k256"] }
 arb-node = { workspace = true }
 arb-primitives = { workspace = true }
 arbos = { workspace = true }
+arbos-types = { workspace = true }
 # Mock L1 server backend (kept lightweight; reused by spec tests)
 axum = { workspace = true, features = ["http1", "json", "tokio"] }
 base64 = { workspace = true }

@@ -35,10 +35,22 @@ libc = { workspace = true }
 rand = { workspace = true, features = ["std", "std_rng"] }
 rand_chacha = { workspace = true }
 # Frozen-corpus fetcher
-reqwest = { workspace = true, features = ["rustls-tls", "blocking", "stream", "json"] }
+reqwest = { workspace = true, features = [
+    "rustls-tls",
+    "blocking",
+    "stream",
+    "json",
+] }
 reth-chainspec = { workspace = true }
 reth-evm = { workspace = true }
-revm = { workspace = true, features = ["optional_balance_check", "optional_eip3541", "optional_eip3607", "optional_priority_fee_check", "optional_eip7623", "optional_no_base_fee"] }
+revm = { workspace = true, features = [
+    "optional_balance_check",
+    "optional_eip3541",
+    "optional_eip3607",
+    "optional_priority_fee_check",
+    "optional_eip7623",
+    "optional_no_base_fee",
+] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 # Process info for RSS
