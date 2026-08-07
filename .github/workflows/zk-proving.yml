@@ -59,6 +59,17 @@ jobs:
       - name: Build
         run: make -C crates/sp1 build
 
+      # The SP1 replay pipeline is mocked for now (NIT-5337): the guest
+      # performs no real validation, so this step only proves the
+      # build-and-execute plumbing end-to-end. It is replaced by a real
+      # SP1-vs-JIT hash comparison as guest functionality lands.
+      - name: Run SP1 validation (MOCKED)
+        run: |
+          set -o pipefail
+          # The guest's output is forwarded on the executor's stderr.
+          make -C crates/sp1 run 2>&1 | tee run.log
+          grep -q "Validation MOCKED" run.log
+
       - name: Record block inputs
         run: make -C crates/sp1 record-blocks
 
