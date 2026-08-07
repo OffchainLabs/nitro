@@ -11,7 +11,11 @@ version.workspace = true
 doctest = false
 
 [dependencies]
-arb-storage = { path = "../arb-storage" }
+alloy-primitives = { workspace = true, features = ["std"] }
+arb-primitives = { workspace = true }
+arb-storage = { workspace = true }
+arbos = { workspace = true }
+parking_lot = { workspace = true }
 
 [lints]
 workspace = true

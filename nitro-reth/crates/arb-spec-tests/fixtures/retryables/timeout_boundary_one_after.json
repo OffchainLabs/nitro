@@ -1,0 +1,24 @@
+{
+  "name": "timeout_boundary_one_after",
+  "description": "Retryable is NOT openable one second after its timeout",
+  "setup": {"arbos_version": 30, "chain_id": 412346},
+  "actions": [
+    {
+      "type": "retryable_create",
+      "id": "0x0000000000000000000000000000000000000000000000000000000000000088",
+      "timeout": 1000,
+      "from": "0x00000000000000000000000000000000000A11CE",
+      "callvalue": "0x0",
+      "beneficiary": "0x00000000000000000000000000000000000B0B00"
+    }
+  ],
+  "assertions": {
+    "retryable": {
+      "exists": {
+        "id": "0x0000000000000000000000000000000000000000000000000000000000000088",
+        "at_time": 1001,
+        "expected": false
+      }
+    }
+  }
+}
