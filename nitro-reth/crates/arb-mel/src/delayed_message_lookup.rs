@@ -45,7 +45,7 @@ sol! {
 
 /// Parses all delayed inbox messages observed in a single parent-chain block.
 #[allow(dead_code)] // Wired into MEL block processing in a later change.
-pub(crate) fn parse_delayed_messages_from_block<L, T>(
+pub(crate) async fn parse_delayed_messages_from_block<L, T>(
     mel_state: &MelState,
     parent_chain_header: &Header,
     tx_fetcher: &T,
@@ -96,7 +96,7 @@ where
         if !message_ids.contains(topic1) {
             continue;
         }
-        let (msg_num, data) = parse_delayed_message(log, tx_fetcher)?;
+        let (msg_num, data) = parse_delayed_message(log, tx_fetcher).await?;
         message_data.insert(message_id(msg_num), data);
     }
 
@@ -167,7 +167,7 @@ fn delayed_message_scaffolds_from_logs(
 }
 
 /// Extracts the message number and data bytes from a single inbox-message log.
-fn parse_delayed_message<T>(log: &Log, tx_fetcher: &T) -> MelResult<(U256, Vec<u8>)>
+async fn parse_delayed_message<T>(log: &Log, tx_fetcher: &T) -> MelResult<(U256, Vec<u8>)>
 where
     T: TxFetcher,
     T::Transaction: Transaction,
@@ -190,7 +190,7 @@ where
             })?
             .data;
 
-        let tx = tx_fetcher.transaction_by_log(log)?;
+        let tx = tx_fetcher.transaction_by_log(log).await?;
         let calldata = tx.input();
         if calldata.len() < SELECTOR_LEN {
             return Err(MelError::TxDataTooShort);
@@ -255,8 +255,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn reconstructs_delayed_message() -> MelResult<()> {
+    #[tokio::test]
+    async fn reconstructs_delayed_message() -> MelResult<()> {
         let (target, inbox) = target_and_inbox();
         let data = b"hello-delayed";
         let logs = MockLogs {
@@ -271,7 +271,8 @@ mod tests {
             &Header::default(),
             &MockTx,
             &logs,
-        )?;
+        )
+        .await?;
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].message.l2_msg, data.to_vec());
         assert_eq!(out[0].message.header.kind, 3);
@@ -283,8 +284,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn rejects_mismatched_data_hash() {
+    #[tokio::test]
+    async fn rejects_mismatched_data_hash() {
         let (target, inbox) = target_and_inbox();
         let logs = MockLogs {
             block_logs: vec![
@@ -299,15 +300,16 @@ mod tests {
             &Header::default(),
             &MockTx,
             &logs,
-        );
+        )
+        .await;
         assert!(matches!(
             result,
             Err(MelError::MessageDataHashMismatch { .. })
         ));
     }
 
-    #[test]
-    fn errors_when_message_data_missing() {
+    #[tokio::test]
+    async fn errors_when_message_data_missing() {
         let (target, inbox) = target_and_inbox();
         let logs = MockLogs {
             // MessageDelivered with no matching inbox-message data log.
@@ -319,12 +321,13 @@ mod tests {
             &Header::default(),
             &MockTx,
             &logs,
-        );
+        )
+        .await;
         assert!(matches!(result, Err(MelError::MessageDataNotFound { .. })));
     }
 
-    #[test]
-    fn ignores_logs_from_other_addresses() -> MelResult<()> {
+    #[tokio::test]
+    async fn ignores_logs_from_other_addresses() -> MelResult<()> {
         let (target, inbox) = target_and_inbox();
         // A MessageDelivered emitted by some other contract is not the configured
         // delayed-message posting target, so it is skipped and nothing is returned.
@@ -341,7 +344,8 @@ mod tests {
             &Header::default(),
             &MockTx,
             &logs,
-        )?;
+        )
+        .await?;
         assert!(out.is_empty());
         Ok(())
     }
@@ -350,9 +354,10 @@ mod tests {
         input: Vec<u8>,
     }
 
+    #[async_trait::async_trait]
     impl TxFetcher for MockOriginTx {
         type Transaction = TxLegacy;
-        fn transaction_by_log(&self, _log: &Log) -> MelResult<TxLegacy> {
+        async fn transaction_by_log(&self, _log: &Log) -> MelResult<TxLegacy> {
             Ok(TxLegacy {
                 input: self.input.clone().into(),
                 ..Default::default()
@@ -394,8 +399,8 @@ mod tests {
         rpc_log(inbox, ev.encode_log_data())
     }
 
-    #[test]
-    fn reconstructs_from_origin_message() -> MelResult<()> {
+    #[tokio::test]
+    async fn reconstructs_from_origin_message() -> MelResult<()> {
         let (target, inbox) = target_and_inbox();
         let data = b"foobar";
         let call = sendL2MessageFromOriginCall {
@@ -416,14 +421,15 @@ mod tests {
             &Header::default(),
             &tx,
             &logs,
-        )?;
+        )
+        .await?;
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].message.l2_msg.as_ref(), data);
         Ok(())
     }
 
-    #[test]
-    fn rejects_from_origin_tx_too_short() {
+    #[tokio::test]
+    async fn rejects_from_origin_tx_too_short() {
         let (target, inbox) = target_and_inbox();
         let tx = MockOriginTx {
             input: vec![1u8, 2],
@@ -440,12 +446,13 @@ mod tests {
             &Header::default(),
             &tx,
             &logs,
-        );
+        )
+        .await;
         assert!(matches!(result, Err(MelError::TxDataTooShort)));
     }
 
-    #[test]
-    fn sorts_by_request_id() -> MelResult<()> {
+    #[tokio::test]
+    async fn sorts_by_request_id() -> MelResult<()> {
         let (target, inbox) = target_and_inbox();
         let logs = MockLogs {
             block_logs: vec![
@@ -461,7 +468,8 @@ mod tests {
             &Header::default(),
             &MockTx,
             &logs,
-        )?;
+        )
+        .await?;
         assert_eq!(out.len(), 2);
         assert_eq!(
             out[0].message.header.request_id,

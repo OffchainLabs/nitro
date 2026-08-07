@@ -25,6 +25,7 @@ use crate::{
     consumer::MessageConsumer,
     database::Database,
     fsm::{FsmState, FsmStateKind},
+    logs_and_headers_fetcher::LogsAndHeadersFetcher,
     types::RollupAddresses,
 };
 
@@ -44,6 +45,7 @@ where
     pub(crate) db: Arc<D>,
     pub(crate) msg_consumer: Arc<C>,
     pub(crate) data_providers: Arc<S>,
+    pub(crate) logs_and_headers_prefetcher: LogsAndHeadersFetcher<P>,
     pub(crate) fsm_state: FsmState,
     stuck_count: u64,
     /// The highest parent-chain block the read-mode gate will let extraction
@@ -70,6 +72,11 @@ where
         msg_consumer: Arc<C>,
         data_providers: Arc<S>,
     ) -> Self {
+        let logs_and_headers_prefetcher = LogsAndHeadersFetcher::new(
+            parent_chain_reader.clone(),
+            config.blocks_to_prefetch,
+            addrs.rollup,
+        );
         Self {
             config,
             parent_chain_reader,
@@ -77,6 +84,7 @@ where
             db,
             msg_consumer,
             data_providers,
+            logs_and_headers_prefetcher,
             fsm_state: FsmState::Start,
             stuck_count: 0,
             last_block_to_read: Arc::new(AtomicU64::new(0)),

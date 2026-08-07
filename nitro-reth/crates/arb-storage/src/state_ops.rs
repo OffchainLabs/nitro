@@ -436,14 +436,12 @@ mod tests {
 
         // Step 2: EVM commit for internal tx (empty state).
         use revm_database::DatabaseCommit;
-        let empty_state: alloy_primitives::map::HashMap<Address, revm_state::Account> =
-            Default::default();
+        let empty_state = revm_state::EvmState::default();
         state.commit(empty_state);
 
         // Step 3: EVM commit for user tx (modifies a different account).
         let sender = address!("1111111111111111111111111111111111111111");
-        let mut user_changes: alloy_primitives::map::HashMap<Address, revm_state::Account> =
-            Default::default();
+        let mut user_changes = revm_state::EvmState::default();
         // Load sender into cache first so commit doesn't panic.
         let _ = state.load_cache_account(sender);
         let mut sender_acct = revm_state::Account::default();

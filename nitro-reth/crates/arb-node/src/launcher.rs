@@ -207,6 +207,7 @@ impl ArbEngineLauncher {
         } = self;
         let NodeBuilderWithComponents {
             adapter: NodeTypesAdapter { database },
+            rocksdb_provider,
             components_builder,
             add_ons:
                 AddOns {
@@ -232,6 +233,7 @@ impl ArbEngineLauncher {
             .with_adjusted_configs()
             .with_provider_factory::<_, <CB::Components as NodeComponents<T>>::Evm>(
                 changeset_cache.clone(),
+                rocksdb_provider,
             )
             .await?
             .inspect(|_| {
@@ -489,6 +491,7 @@ impl ArbEngineLauncher {
             ctx.sync_metrics_tx(),
             ctx.components().evm_config().clone(),
             changeset_cache,
+            ctx.task_executor().clone(),
         );
 
         let _ = TREE_SENDER.set(arb_tree_sender);
@@ -542,7 +545,7 @@ impl ArbEngineLauncher {
         let startup_sync_state_idle = ctx.node_config().debug.startup_sync_state_idle;
 
         info!(target: "reth::cli", "Starting consensus engine");
-        let consensus_engine = async move {
+        let consensus_engine = move |mut on_graceful_shutdown| async move {
             if let Some(initial_target) = initial_target {
                 debug!(target: "reth::cli", %initial_target, "start backfill sync");
                 orchestrator.start_backfill_sync(initial_target);
@@ -615,13 +618,25 @@ impl ArbEngineLauncher {
                             );
                         }
                     }
+                    _guard = &mut on_graceful_shutdown => {
+                        // Shutdown signal received.
+                        // Send Terminate so the engine OS thread can exit cleanly before we
+                        // drop the orchestrator.
+                        debug!(target: "reth::cli", "shutdown signal received, terminating engine");
+                        let (done_tx, done_rx) = oneshot::channel();
+                        orchestrator.handler_mut().handler_mut().on_event(
+                            FromOrchestrator::Terminate { tx: done_tx }.into()
+                        );
+                        let _ = done_rx.await;
+                        break;
+                    }
                 }
             }
 
             let _ = exit.send(res);
         };
         ctx.task_executor()
-            .spawn_critical_task("consensus engine", Box::pin(consensus_engine));
+            .spawn_critical_with_graceful_shutdown_signal("consensus engine", consensus_engine);
 
         let engine_events_for_ethstats = engine_events.new_listener();
 
@@ -647,10 +662,7 @@ impl ArbEngineLauncher {
         ctx.spawn_ethstats(engine_events_for_ethstats).await?;
 
         let handle = NodeHandle {
-            node_exit_future: NodeExitFuture::new(
-                async { rx.await? },
-                full_node.config.debug.terminate,
-            ),
+            node_exit_future: NodeExitFuture::new(async { rx.await? }),
             node: full_node,
         };
 
