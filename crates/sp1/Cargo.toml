@@ -1,5 +1,8 @@
 [workspace]
 members = [
+    "replay-builder",
+    "replay-program",
+    "replay-runner",
     "stylus-compiler-program",
     "stylus-compiler-runner",
 ]
