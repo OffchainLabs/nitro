@@ -2,7 +2,7 @@
 
 use alloy_primitives::{B256, keccak256};
 use arb_mel_types::{DelayedInboxMessage, MelState};
-use arbos::types::MessageWithMetadata;
+use arbos_types::MessageWithMetadata;
 
 use crate::{DelayedMessageDB, MelError, MelResult};
 

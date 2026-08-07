@@ -23,7 +23,7 @@ alloy-rlp.workspace = true
 alloy-rpc-types-beacon.workspace = true
 
 # Internal
-arb-da-provider-client.workspace = true
+arb-da-provider.workspace = true
 arb-parent-chain-client.workspace = true
 
 [dev-dependencies]
