@@ -95,13 +95,20 @@ record-blocks: nitro-deps
 	echo "Recorded $$found blocks"
 
 .PHONY: build
-build: # Mocked system build (temporary solution until we have all the necessary crates available)
-build: nitro-deps
-	@cargo build --locked -p stylus-compiler-runner --release
+build: # Build the SP1 workspace; replay artifacts go to $(OUTPUT_DIR).
+	@mkdir -p $(OUTPUT_DIR)
+	@cargo build --locked --release
+	@cargo run --locked --release -p replay-builder -- --output-folder $(OUTPUT_DIR)
+	@cp $(CURDIR)/target/release/replay-runner $(OUTPUT_DIR)
+
+.PHONY: run
+run: # Validate a block with the SP1 replay runner.
+	$(OUTPUT_DIR)/replay-runner --program $(OUTPUT_DIR)/replay-program.elf
 
 .PHONY: clippy
 clippy: # Run clippy on the sp1 workspace crates.
-	@cargo clippy --locked -p stylus-compiler-program -p stylus-compiler-runner -- -D warnings -A static_mut_refs -A clippy::too_many_arguments
+clippy: build
+	@cargo clippy --locked --workspace -- -D warnings -A static_mut_refs -A clippy::too_many_arguments
 
 .PHONY: stylus-compiler-compare
 stylus-compiler-compare: # Compare Stylus compilation consistency between native and SP1 execution mode.
