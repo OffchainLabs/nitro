@@ -460,7 +460,7 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 	}
 	s.wasmTargets = targetConfig.WasmTargets()
 	programs.SetAllowFallback(targetConfig.AllowFallback)
-	s.bc.StateCache().SetArbNodeConfig(&programs.ArbNodeConfig{
+	s.bc.CodeDB().SetArbNodeConfig(&programs.ArbNodeConfig{
 		MaxOpenPages:       targetConfig.MaxStylusOpenPages,
 		MaxStylusCallDepth: targetConfig.MaxStylusCallDepth,
 	})
@@ -829,17 +829,13 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, nil, errors.New("can't find block for current header")
 	}
 	var witness *stateless.Witness
-	var witnessStats *stateless.WitnessStats
-	if s.bc.GetVMConfig().StatelessSelfValidation {
-		witness, err = stateless.NewWitness(lastBlock.Header(), s.bc)
+	if s.bc.StatelessSelfValidation() {
+		witness, err = stateless.NewWitness(lastBlock.Header(), s.bc, s.bc.EnableWitnessStats())
 		if err != nil {
 			return nil, nil, err
 		}
-		if s.bc.GetVMConfig().EnableWitnessStats {
-			witnessStats = stateless.NewWitnessStats()
-		}
 	}
-	statedb.StartPrefetcher("Sequencer", witness, witnessStats)
+	statedb.StartPrefetcher("Sequencer", witness)
 	defer statedb.StopPrefetcher()
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
 
@@ -1160,7 +1156,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		return nil, nil, nil, errors.New("can't find block for current header")
 	}
 
-	err := s.bc.RecoverState(currentBlock)
+	err := s.bc.RecoverState(s.GetContext(), currentBlock)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to recover block %v state: %w", currentBlock.Number(), err)
 	}
@@ -1184,17 +1180,13 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	runCtx = session.runCtx
 
 	var witness *stateless.Witness
-	var witnessStats *stateless.WitnessStats
-	if s.bc.GetVMConfig().StatelessSelfValidation {
-		witness, err = stateless.NewWitness(currentBlock.Header(), s.bc)
+	if s.bc.StatelessSelfValidation() {
+		witness, err = stateless.NewWitness(currentBlock.Header(), s.bc, s.bc.EnableWitnessStats())
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		if s.bc.GetVMConfig().EnableWitnessStats {
-			witnessStats = stateless.NewWitnessStats()
-		}
 	}
-	statedb.StartPrefetcher("TransactionStreamer", witness, witnessStats)
+	statedb.StartPrefetcher("TransactionStreamer", witness)
 	defer statedb.StopPrefetcher()
 
 	// For delayed message sequencing, we use DelayedFilteringSequencingHooks which can
@@ -1310,7 +1302,8 @@ func (s *ExecutionEngine) beginTipRecording(parentHeader *types.Header, runCtx *
 		}
 		return &tipRecordingSession{statedb: statedb, chainContext: s.bc, runCtx: runCtx}, nil
 	}
-	recordingStateDatabase := arbitrum.NewTipRecordingStateDatabase(s.bc.StateCache())
+	stateDatabase := state.NewDatabase(s.bc.TrieDB(), s.bc.CodeDB()).WithSnapshot(s.bc.Snapshots())
+	recordingStateDatabase := arbitrum.NewTipRecordingStateDatabase(stateDatabase)
 	recordingChainContext := arbitrum.NewRecordingChainContext(s.bc, parentHeader)
 	statedb, err := state.NewRecording(parentHeader.Root, recordingStateDatabase)
 	if err != nil {

@@ -15,7 +15,7 @@ import (
 func TestAccessingPathSchemeState(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithDatabase(rawdb.DBPebble)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithDatabase(rawdb.DBPebble).WithNoHistoryIndexDelay()
 
 	// This test is PathScheme specific, it shouldn't be run with HashScheme
 	builder.RequireScheme(t, rawdb.PathScheme)
@@ -57,7 +57,7 @@ func TestAccessingPathSchemeState(t *testing.T) {
 func TestAccessingPathSchemeArchivalState(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithDatabase(rawdb.DBPebble)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithDatabase(rawdb.DBPebble).WithNoHistoryIndexDelay()
 	builder.execConfig.Caching.Archive = true
 	builder.execConfig.Caching.StateHistory = 2
 	// There's a race condition for when persisted state ID is updated and checked against
@@ -96,6 +96,7 @@ func TestAccessingPathSchemeArchivalState(t *testing.T) {
 	heightWhereStateShouldBeMissing := head - 132
 	_, err := l2client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(heightWhereStateShouldBeMissing))
 	require.Error(t, err, "expected BalanceAt to fail for missing historical state")
-	// `metadata is not found` is the error returned when archival data is pruned for some reason
-	require.Contains(t, err.Error(), "metadata is not found", "unexpected error message: %v", err)
+	// `historical state ... is not available` is the error returned when archival data is pruned
+	require.Contains(t, err.Error(), "historical state", "unexpected error message: %v", err)
+	require.Contains(t, err.Error(), "is not available", "unexpected error message: %v", err)
 }

@@ -229,7 +229,7 @@ func testProgramCraneliftPersistenceIntegration(t *testing.T, builderOpts ...fun
 	programAddress := deployWasm(t, ctx, auth, l2client, stackOverflowWatFile(t))
 
 	// Verify wasm store has NO cranelift ASM before the overflow-triggering call.
-	wasmDB := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDB := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	asmBefore := readCraneliftAsm(t, wasmDB)
 	if len(asmBefore) > 0 {
 		t.Fatalf("expected no cranelift ASM before overflow trigger, found %d bytes", len(asmBefore))
@@ -307,7 +307,7 @@ func testProgramCraneliftTargetCacheRegistration(t *testing.T, builderOpts ...fu
 	programAddress := deployWasm(t, ctx, auth, l2client, stackOverflowWatFile(t))
 
 	// Verify no cranelift ASM exists before the overflow.
-	wasmDB := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDB := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	if asm := readCraneliftAsm(t, wasmDB); len(asm) > 0 {
 		t.Fatalf("expected no cranelift ASM before overflow, found %d bytes", len(asm))
 	}
