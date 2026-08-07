@@ -1,0 +1,18 @@
+{
+  "name": "blockhash_record_and_query",
+  "description": "Record an L1 block then verify it's retrievable",
+  "setup": { "arbos_version": 30, "chain_id": 412346 },
+  "actions": [
+    {
+      "type": "blockhash_record",
+      "number": 100,
+      "hash": "0x000000000000000000000000000000000000000000000000000000000000abcd"
+    }
+  ],
+  "assertions": {
+    "blockhash": {
+      "l1_block_number": 101,
+      "has_hash_for": 100
+    }
+  }
+}
