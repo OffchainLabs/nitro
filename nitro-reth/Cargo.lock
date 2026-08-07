@@ -1055,7 +1055,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-rpc-types-beacon",
  "alloy-rpc-types-eth",
- "arb-da-provider-client",
+ "arb-da-provider",
  "arb-parent-chain-client",
  "async-trait",
  "c-kzg",
@@ -1100,18 +1100,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "arb-da-provider-client"
+name = "arb-da-provider"
+version = "0.1.5"
+dependencies = [
+ "alloy-primitives",
+ "async-trait",
+ "base64 0.22.1",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "arb-da-provider-rpc-client"
 version = "0.1.5"
 dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-rpc-client",
- "alloy-transport",
+ "arb-da-provider",
  "async-trait",
  "base64 0.22.1",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
  "tokio",
 ]
 
@@ -1219,10 +1229,10 @@ dependencies = [
  "alloy-rlp",
  "alloy-rpc-types-eth",
  "alloy-sol-types",
- "arb-da-provider-client",
+ "arb-da-provider",
  "arb-mel-types",
  "arb-storage-errors",
- "arbos",
+ "arbos-types",
  "async-trait",
  "brotli 8.0.2",
  "thiserror 2.0.18",
@@ -1251,7 +1261,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-rpc-types-eth",
  "alloy-sol-types",
- "arb-da-provider-client",
+ "arb-da-provider",
  "arb-mel",
  "arb-parent-chain-client",
  "arbos",
@@ -1593,6 +1603,7 @@ dependencies = [
  "arb-node",
  "arb-primitives",
  "arbos",
+ "arbos-types",
  "axum",
  "base64 0.22.1",
  "hex",
@@ -4265,7 +4276,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5240,7 +5251,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.57.0",
 ]
 
 [[package]]
@@ -5565,7 +5576,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi 0.5.2",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -10767,9 +10778,9 @@ dependencies = [
 
 [[package]]
 name = "rkyv"
-version = "0.8.17"
+version = "0.8.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "815cc8a37159a463064825246cadb07961e25cd9885908606f6d08a98d8f8874"
+checksum = "d9776093b7ca170454ab1406954f7b7d97a57c51dc6c0642957fb2ef25c2d399"
 dependencies = [
  "bytecheck",
  "bytes",
@@ -10786,13 +10797,13 @@ dependencies = [
 
 [[package]]
 name = "rkyv_derive"
-version = "0.8.17"
+version = "0.8.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0ed1a78a1b19d184b0daa629dd9a024573173ec7d485b287cb369fb3607cc1c"
+checksum = "1c25ef604ac7dd839d44d64648952ea23c97866f124ff671b0ed2cf3ad9bb06e"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -10980,7 +10991,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -11060,7 +11071,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs 1.0.6",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -11817,6 +11828,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "syn"
+version = "3.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53e9bae58849f64dfa4f5d5ae372c8341f7305f82a3868709269343628b659a3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
 name = "syn-solidity"
 version = "1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11920,7 +11942,7 @@ dependencies = [
  "getrandom 0.4.1",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

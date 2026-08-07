@@ -9,7 +9,7 @@
 use std::sync::Arc;
 
 use alloy_primitives::B256;
-use arb_da_provider_client::{DaError, DaReader, Payload, PreimageType, Preimages, Result};
+use arb_da_provider::{DaError, DaReader, Payload, PreimageType, Preimages, Result};
 
 use crate::{BlobReader, blobs::decode_blobs};
 

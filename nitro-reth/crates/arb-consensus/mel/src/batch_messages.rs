@@ -1,10 +1,7 @@
 use alloy_primitives::U256;
-use arbos::{
-    l1_pricing::BATCH_POSTER_ADDRESS,
-    types::{
-        L1_MESSAGE_TYPE_L2_MESSAGE, L1IncomingMessage, L1IncomingMessageHeader,
-        MAX_L2_MESSAGE_SIZE, MessageWithMetadata, invalid_l1_message,
-    },
+use arbos_types::{
+    BATCH_POSTER_ADDRESS, L1_MESSAGE_TYPE_L2_MESSAGE, L1IncomingMessage, L1IncomingMessageHeader,
+    MAX_L2_MESSAGE_SIZE, MessageWithMetadata, invalid_l1_message,
 };
 use tracing::{error, info, warn};
 
@@ -229,7 +226,7 @@ fn extract_delayed_msg_from_segment<D: DelayedMessageDB>(
 #[cfg(test)]
 mod tests {
     use alloy_primitives::B256;
-    use arbos::types::{L1_MESSAGE_TYPE_INVALID, L1IncomingMessage};
+    use arbos_types::{L1_MESSAGE_TYPE_INVALID, L1IncomingMessage};
 
     use super::*;
     use crate::{
