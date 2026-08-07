@@ -108,7 +108,7 @@ run: # Validate a block with the SP1 replay runner.
 .PHONY: clippy
 clippy: # Run clippy on the sp1 workspace crates.
 clippy: build
-	@cargo clippy --locked --workspace -- -D warnings -A static_mut_refs -A clippy::too_many_arguments
+	@cargo clippy --locked --workspace -- -D warnings
 
 .PHONY: stylus-compiler-compare
 stylus-compiler-compare: # Compare Stylus compilation consistency between native and SP1 execution mode.
