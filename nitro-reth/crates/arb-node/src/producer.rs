@@ -33,7 +33,6 @@ use arbos::{
 use parking_lot::Mutex;
 use reth_chain_state::{CanonicalInMemoryState, ExecutedBlock, NewCanonicalChain};
 use reth_chainspec::ChainSpec;
-use reth_engine_tree::tree::TreeConfig;
 use reth_evm::ConfigureEvm;
 use reth_execution_cache::{CachedStateMetrics, CachedStateProvider, ExecutionCache};
 use reth_metrics::{
@@ -169,6 +168,7 @@ pub struct ArbBlockProducer<Provider> {
     /// the `arb_getValidatedBlock` RPC handler can read it without
     /// holding a strong reference to the producer.
     validated_watcher: Mutex<Option<Arc<parking_lot::RwLock<alloy_primitives::B256>>>>,
+    cross_block_cache_size: usize,
     cached_execution: Mutex<Option<CachedExecution>>,
     cached_prestate: Mutex<Option<CachedPrestate>>,
     metrics: ArbBlockProducerMetrics,
@@ -201,6 +201,7 @@ where
         evm_config: ArbEvmConfig,
         in_memory_state: CanonicalInMemoryState<ArbPrimitives>,
         flush_interval: u64,
+        cross_block_cache_size: usize,
     ) -> Self {
         let head = provider.last_block_number().unwrap_or(0);
         Self {
@@ -218,6 +219,7 @@ where
             cached_init: Mutex::new(None),
             finality: Mutex::new(FinalityMarkers::default()),
             validated_watcher: Mutex::new(None),
+            cross_block_cache_size,
             cached_execution: Mutex::new(None),
             cached_prestate: Mutex::new(None),
             metrics: ArbBlockProducerMetrics::default(),
@@ -231,7 +233,7 @@ where
         {
             return cached.cache.clone();
         }
-        let cache = ExecutionCache::new(TreeConfig::default().cross_block_cache_size());
+        let cache = ExecutionCache::new(self.cross_block_cache_size);
         *guard = Some(CachedExecution {
             parent_hash,
             cache: cache.clone(),
