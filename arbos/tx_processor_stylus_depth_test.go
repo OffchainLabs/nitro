@@ -30,7 +30,7 @@ func newTxProcessorWithDepthLimit(t *testing.T, limit uint16, runCtx *core.Messa
 	t.Helper()
 	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	_, statedb := arbosState.NewArbosMemoryBackedArbOSStateWithConfig(chainConfig)
-	statedb.Database().SetArbNodeConfig(&programs.ArbNodeConfig{MaxStylusCallDepth: limit})
+	statedb.Database().CodeDB().SetArbNodeConfig(&programs.ArbNodeConfig{MaxStylusCallDepth: limit})
 	evm := vm.NewEVM(vm.BlockContext{}, statedb, chainConfig, vm.Config{})
 	msg := &core.Message{TxRunContext: runCtx}
 	return NewTxProcessor(evm, msg), evm

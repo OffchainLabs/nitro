@@ -70,6 +70,7 @@ var IPCConfigDefault = genericconf.IPCConfig{
 
 var DefaultFilteringReportConfig = FilteringReportConfig{
 	Conf:            genericconf.ConfConfigDefault,
+	Persistent:      conf.PersistentConfigDefaultNoReadCompact,
 	LogLevel:        "INFO",
 	LogType:         "plaintext",
 	Metrics:         false,
@@ -96,7 +97,7 @@ func (c *FilteringReportConfig) Validate() error {
 
 func addFlags(f *pflag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
-	conf.PersistentConfigAddOptions("persistent", f)
+	conf.PersistentConfigAddOptions("persistent", f, DefaultFilteringReportConfig.Persistent)
 
 	genericconf.FileLoggingConfigAddOptions("file-logging", f)
 	f.String("log-level", DefaultFilteringReportConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
