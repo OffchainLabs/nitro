@@ -56,8 +56,16 @@ jobs:
       - name: Install SP1 toolchain
         run: make -C crates/sp1 install-sp1
 
-      - name: Build
-        run: make -C crates/sp1 build
+      - name: Clippy check (SP1 crates)
+        run: make -C crates/sp1 clippy
+
+      - name: Run stylus-compiler-runner compare
+        # Compare compilation consistency between running it natively and in the SP1 execution mode.
+        run: make -C crates/sp1 stylus-compiler-compare
+
+      - name: Run stylus-compiler-runner proving
+        # Generate and verify a proof of correct Stylus compilation.
+        run: make -C crates/sp1 stylus-compiler-prove
 
       # The SP1 replay pipeline is mocked for now (NIT-5337): the guest
       # performs no real validation, so this step only proves the
@@ -111,15 +119,3 @@ jobs:
             fi
             echo "$BLOCK JIT hash: $JIT_HASH"
           done
-
-      # Clippy runs after build because sp1-builder uses include_elf!(), which requires the SP1 ELF to exist at compile time.
-      - name: Clippy check (SP1 crates)
-        run: make -C crates/sp1 clippy
-
-      - name: Run stylus-compiler-runner compare
-        # Compare compilation consistency between running it natively and in the SP1 execution mode.
-        run: make -C crates/sp1 stylus-compiler-compare
-
-      - name: Run stylus-compiler-runner proving
-        # Generate and verify a proof of correct Stylus compilation.
-        run: make -C crates/sp1 stylus-compiler-prove
