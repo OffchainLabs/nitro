@@ -1,8 +1,8 @@
 use alloy_eips::eip4895::Withdrawal;
 use alloy_primitives::{B256, Bytes, address};
 use alloy_rpc_types_engine::PayloadAttributes as AlloyPayloadAttributes;
-use arb_payload::{ArbPayloadAttributes, ArbPayloadBuilderAttributes, arb_payload_id};
-use reth_payload_primitives::{PayloadAttributes, PayloadBuilderAttributes};
+use arb_payload::{ArbPayloadAttributes, arb_payload_id};
+use reth_payload_primitives::PayloadAttributes;
 
 fn base_attrs() -> ArbPayloadAttributes {
     ArbPayloadAttributes {
@@ -108,45 +108,6 @@ fn payload_id_differs_with_withdrawals() {
     }]);
     let id2 = arb_payload_id(&parent, &a);
     assert_ne!(id1, id2);
-}
-
-// ==== ArbPayloadBuilderAttributes ====
-
-#[test]
-fn builder_attrs_try_new_populates_fields() {
-    let parent = B256::repeat_byte(0xAB);
-    let attrs = base_attrs();
-    let ba = ArbPayloadBuilderAttributes::try_new(parent, attrs.clone(), 0).expect("ok");
-    assert_eq!(ba.parent(), parent);
-    assert_eq!(ba.timestamp(), attrs.inner.timestamp);
-    assert_eq!(ba.prev_randao(), attrs.inner.prev_randao);
-    assert_eq!(
-        ba.suggested_fee_recipient(),
-        attrs.inner.suggested_fee_recipient
-    );
-    assert!(!ba.no_tx_pool);
-    assert!(ba.transactions.is_empty());
-}
-
-#[test]
-fn builder_attrs_propagates_no_tx_pool_flag_and_forced_transactions() {
-    let parent = B256::repeat_byte(0xCD);
-    let mut attrs = base_attrs();
-    attrs.no_tx_pool = true;
-    attrs.transactions = Some(vec![Bytes::from(vec![1, 2, 3]), Bytes::from(vec![4, 5])]);
-    let ba = ArbPayloadBuilderAttributes::try_new(parent, attrs, 0).expect("ok");
-    assert!(ba.no_tx_pool);
-    assert_eq!(ba.transactions.len(), 2);
-    assert_eq!(ba.transactions[0], Bytes::from(vec![1u8, 2, 3]));
-}
-
-#[test]
-fn builder_attrs_payload_id_matches_freestanding() {
-    let parent = B256::repeat_byte(0x01);
-    let attrs = base_attrs();
-    let expected = arb_payload_id(&parent, &attrs);
-    let ba = ArbPayloadBuilderAttributes::try_new(parent, attrs, 0).expect("ok");
-    assert_eq!(ba.payload_id(), expected);
 }
 
 // ==== ArbPayloadAttributes trait ====

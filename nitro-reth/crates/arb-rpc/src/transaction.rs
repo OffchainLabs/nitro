@@ -62,12 +62,12 @@ impl TryIntoSimTx<ArbTransactionSigned> for ArbTransactionRequest {
     }
 }
 
-impl<Block: alloy_evm::env::BlockEnvironment> TryIntoTxEnv<arb_evm::ArbTransaction, Block>
-    for ArbTransactionRequest
+impl<Spec, Block: alloy_evm::env::BlockEnvironment>
+    TryIntoTxEnv<arb_evm::ArbTransaction, Spec, Block> for ArbTransactionRequest
 {
     type Err = alloy_evm::rpc::EthTxEnvError;
 
-    fn try_into_tx_env<Spec>(
+    fn try_into_tx_env(
         self,
         evm_env: &alloy_evm::EvmEnv<Spec, Block>,
     ) -> Result<arb_evm::ArbTransaction, Self::Err> {
