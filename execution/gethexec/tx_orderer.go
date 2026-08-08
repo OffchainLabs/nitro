@@ -22,8 +22,6 @@ type nextTxFetcher interface {
 type fixedTxFetcher struct {
 	items     []txQueueItem
 	exhausted []txQueueItem
-
-	sizeLimited bool
 }
 
 var _ nextTxFetcher = (*fixedTxFetcher)(nil)
@@ -37,10 +35,6 @@ func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSiz
 
 	// If the tx is too big for the remaining block size, we exhaust it and continue to the next one.
 	if item.txSize > remainingBlockSize {
-		if !f.sizeLimited {
-			dataLimitedBlocksCounter.Inc(1)
-			f.sizeLimited = true
-		}
 		f.exhausted = append(f.exhausted, item)
 		return f.NextQueueItem(statedb, remainingBlockSize)
 	}
@@ -60,6 +54,10 @@ func (f *fixedTxFetcher) TakeRemaining() []txQueueItem {
 	return items
 }
 
+func (f *fixedTxFetcher) RemainingLen() int {
+	return len(f.items)
+}
+
 // txOrderer decides the tx order of one block. The sequencer creates an orderer per regular-tx
 // block and drives it under the createBlockMutex, so implementations don't need to be
 // thread-safe.
@@ -74,6 +72,9 @@ type txOrderer interface {
 	// TakeRemaining removes and returns the never-yielded candidates for the caller to
 	// dispose of.
 	TakeRemaining() []txQueueItem
+
+	// RemainingLen returns the number of candidates that have not yet been yielded.
+	RemainingLen() int
 
 	// OnNonceGapResolved hands the orderer a parked tx whose nonce gap the last
 	// inclusion just closed, so it can re-enter the block's candidates.
