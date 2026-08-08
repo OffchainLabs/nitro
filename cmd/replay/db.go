@@ -104,6 +104,8 @@ func (b NopBatcher) Replay(w ethdb.KeyValueWriter) error {
 	return nil
 }
 
+func (b NopBatcher) Close() {}
+
 type ErrorIterator struct{}
 
 func (i ErrorIterator) Next() bool {

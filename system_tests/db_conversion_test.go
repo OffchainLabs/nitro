@@ -107,7 +107,7 @@ func TestDatabaseConversion(t *testing.T) {
 	if current == nil {
 		Fatal(t, "failed to get current block header")
 	}
-	triedb := bc.StateCache().TrieDB()
+	triedb := bc.TrieDB()
 	visited := 0
 	i := uint64(0)
 	// don't query historical blocks when PathSchem is used

@@ -99,7 +99,7 @@ func (r *ChainTipBlockRecorder) loadCodePreimages(record *execution.RecordResult
 	if record.Preimages == nil {
 		record.Preimages = make(map[common.Hash][]byte, len(codeHashes))
 	}
-	disk := r.execEngine.bc.StateCache().TrieDB().Disk()
+	disk := r.execEngine.bc.TrieDB().Disk()
 	for _, codeHash := range codeHashes {
 		code := rawdb.ReadCode(disk, codeHash)
 		if len(code) == 0 {
@@ -124,14 +124,14 @@ func (r *ChainTipBlockRecorder) loadUserWasms(record *execution.RecordResult, ke
 		targets[key.target] = struct{}{}
 	}
 	userWasms := make(state.UserWasms, len(recordedTargets))
-	stateCache := r.execEngine.bc.StateCache()
+	codeDB := r.execEngine.bc.CodeDB()
 	for moduleHash, recorded := range recordedTargets {
 		asmMap := make(state.ActivatedWasm, len(wasmTargets))
 		for _, target := range wasmTargets {
 			if _, ok := recorded[target]; !ok {
 				return fmt.Errorf("chain-tip recording for module %s missing requested target %s", moduleHash, target)
 			}
-			asm := stateCache.ActivatedAsm(target, moduleHash)
+			asm := codeDB.ActivatedAsm(target, moduleHash)
 			if len(asm) == 0 {
 				return fmt.Errorf("chain-tip recording missing user wasm for module %s target %s", moduleHash, target)
 			}
@@ -195,6 +195,10 @@ func (r *ChainTipBlockRecorder) recordingBlockMetadata(recording *chainTipRecord
 
 func (r *ChainTipBlockRecorder) ServedTipRecordings() uint64 {
 	return r.servedTipRecordings.Load()
+}
+
+func (r *ChainTipBlockRecorder) PruneRecordingsBefore(pos arbutil.MessageIndex) error {
+	return r.recordsFreezer.pruneRecordingsBefore(pos)
 }
 
 func (r *ChainTipBlockRecorder) Close() error {

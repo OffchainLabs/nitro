@@ -89,6 +89,7 @@ type ExecutionBlockRecorder interface {
 	RecordBlockCreation(ctx context.Context, pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, wasmTargets []rawdb.WasmTarget) (*execution.RecordResult, error)
 	PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error
 	MarkValid(pos arbutil.MessageIndex, blockHash common.Hash)
+	PruneRecordingsBefore(pos arbutil.MessageIndex) error
 	OrderlyShutdown()
 	Close() error
 }
@@ -404,6 +405,11 @@ func (r *BlockRecorder) WriteValidStateToDb() error {
 }
 
 func (r *BlockRecorder) Close() error {
+	return nil
+}
+
+// The legacy recorder re-executes blocks on demand and stores nothing to prune.
+func (r *BlockRecorder) PruneRecordingsBefore(arbutil.MessageIndex) error {
 	return nil
 }
 

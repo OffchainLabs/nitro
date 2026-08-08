@@ -1,0 +1,32 @@
+# Introduction
+
+Arbitrum Reth is a ground-up Rust implementation of [Arbitrum Nitro](https://github.com/OffchainLabs/nitro)'s execution layer. It replaces Nitro's embedded Geth fork with [reth](https://github.com/paradigmxyz/reth), delivering the same state-transition logic through a modular crate architecture.
+
+Each component - ArbOS state management, L1/L2 pricing, precompiles, Stylus WASM execution - lives in its own crate and builds on reth's trait system (`BlockExecutor`, `StateProvider`, `EvmConfig`).
+
+## Why Arbitrum Reth?
+
+- **Native Rust performance** - no CGo boundary, no garbage collector pauses
+- **Modular by design** - each subsystem is an independent crate, consumable as a library
+- **reth ecosystem** - inherits reth's database layer, networking, RPC framework, and CLI
+- **SDK-ready** - build custom Arbitrum tooling, indexers, or alternative node configurations using individual crates
+
+## Supported Networks
+
+| Network | Chain ID | Status |
+|---------|----------|--------|
+| Arbitrum Sepolia | 421614 | Supported |
+| Arbitrum One | 42161 | Planned |
+
+## How It Works
+
+Arbitrum Reth runs as the **execution layer** in a two-component architecture:
+
+1. **Nitro consensus node** - handles L1 interaction, sequencer feed, and message ordering
+2. **Arbitrum Reth execution node** - executes ordered messages into blocks and manages state
+
+The consensus node drives Arbitrum Reth over the authenticated RPC port (8551) using the `nitroexecution_` namespace. The main call is `nitroexecution_digestMessage`: it delivers one ordered L1-to-L2 message and returns the block Arbitrum Reth produces from it.
+
+## License
+
+Arbitrum Reth is licensed under the [Business Source License 1.1](https://github.com/0xBloctopus/arbitrum-reth/blob/master/LICENSE.md), consistent with the Arbitrum Nitro license. It converts to Apache 2.0 on December 31, 2030.

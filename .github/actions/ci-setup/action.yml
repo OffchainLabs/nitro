@@ -7,10 +7,19 @@ runs:
 
   steps:
     - name: Install dependencies
-      run: sudo apt update && sudo apt install -y wabt gotestsum protobuf-compiler
+      run: sudo apt update && sudo apt install -y build-essential cmake clang wabt gotestsum protobuf-compiler python3 jq curl wget uuid-runtime
       shell: bash
 
     - name: Setup Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: "24"
+
+    - name: Enable corepack (provides yarn)
+      run: corepack enable
+      shell: bash
+
+    - name: Setup Node.js with yarn cache
       uses: actions/setup-node@v6
       with:
         node-version: "24"

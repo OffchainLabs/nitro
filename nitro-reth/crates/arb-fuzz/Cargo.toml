@@ -1,0 +1,116 @@
+[package]
+name = "arb-fuzz"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+description = "Fuzz targets for arbreth: tx/receipt decoding plus differential vs Nitro reference."
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+alloy-eips = { workspace = true, default-features = true }
+alloy-primitives = { workspace = true, features = ["arbitrary"] }
+arb-alloy-consensus = { workspace = true }
+arb-primitives = { workspace = true }
+arb-test-harness = { workspace = true }
+arbitrary = { workspace = true, features = ["derive"] }
+arbos = { workspace = true }
+hex = { workspace = true }
+libfuzzer-sys = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+wasm-smith = { workspace = true }
+
+[dev-dependencies]
+arb-stylus = { workspace = true }
+wat = { workspace = true }
+
+[lib]
+name = "arb_fuzz"
+path = "src/lib.rs"
+
+[[bin]]
+name = "parse_l2_transactions"
+path = "fuzz_targets/parse_l2_transactions.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_arb_receipt"
+path = "fuzz_targets/decode_arb_receipt.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_arb_tx_envelope"
+path = "fuzz_targets/decode_arb_tx_envelope.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_internal_tx"
+path = "fuzz_targets/decode_internal_tx.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "diff_precompile"
+path = "fuzz_targets/diff_precompile.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "diff_tx"
+path = "fuzz_targets/diff_tx.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "diff_stylus_wasm"
+path = "fuzz_targets/diff_stylus_wasm.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "property_invariants"
+path = "fuzz_targets/property_invariants.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "diff_signed_tx"
+path = "fuzz_targets/diff_signed_tx.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "diff_retryable"
+path = "fuzz_targets/diff_retryable.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "diff_stylus_interop"
+path = "fuzz_targets/diff_stylus_interop.rs"
+test = false
+doc = false
+bench = false
+
+[lints]
+workspace = true

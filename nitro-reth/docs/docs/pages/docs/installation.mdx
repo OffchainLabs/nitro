@@ -1,0 +1,121 @@
+# Installation
+
+## Docker (recommended)
+
+Docker Compose runs the full stack: the Arbitrum Reth execution client plus the Nitro consensus node that drives block production.
+
+A prebuilt multi-arch image (linux/amd64 and linux/arm64) is published for every release at `ghcr.io/0xbloctopus/arbitrum-reth`. `docker compose up -d` pulls and runs that image by default. Use `docker compose up -d --build` to build the image from source instead.
+
+> Syncing Arbitrum Sepolia from genesis takes time. To start from a recent state instead, download a datadir snapshot first. See [Snapshots](/docs/snapshots).
+
+```bash
+git clone https://github.com/0xBloctopus/arbitrum-reth.git
+cd arbitrum-reth
+cp .env.example .env
+```
+
+Edit `.env` to set your Ethereum Sepolia L1 endpoints:
+
+```bash
+PARENT_CHAIN_RPC_URL=<ethereum-sepolia-rpc>
+PARENT_CHAIN_BEACON_URL=<ethereum-sepolia-beacon>
+```
+
+Start the stack:
+
+```bash
+docker compose up -d
+```
+
+Arbitrum Reth starts syncing Arbitrum Sepolia (chain id 421614). Nitro waits for the execution client to pass its healthcheck before starting.
+
+### Verify sync progress
+
+```bash
+curl -s -X POST http://localhost:8545 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
+```
+
+### View logs
+
+```bash
+docker compose logs -f arbitrum-reth    # execution client
+docker compose logs -f nitro            # consensus node
+```
+
+### Stop
+
+```bash
+docker compose down
+```
+
+Data persists in the volumes (`arbitrum-reth-data`, `nitro-data`) and survives restarts.
+
+## Build from Source
+
+### Requirements
+
+- **Rust** 1.93 or later
+- **clang** and **libclang-dev**
+- **cmake**
+
+### Build
+
+```bash
+git clone https://github.com/0xBloctopus/arbitrum-reth.git
+cd arbitrum-reth
+git submodule update --init --recursive
+cargo build --release -p arb-reth
+```
+
+The submodule step fetches the brotli and Nitro interface dependencies; the build fails without it. The binary lands at `./target/release/arb-reth`.
+
+### Run
+
+The execution client and Nitro authenticate to each other with a shared JWT secret:
+
+```bash
+openssl rand -hex 32 > /path/to/jwt.hex
+```
+
+Start the node:
+
+```bash
+./target/release/arb-reth node \
+  --chain=genesis/arbitrum-sepolia.json \
+  --datadir=/path/to/data \
+  --http \
+  --http.addr=0.0.0.0 \
+  --http.api=eth,web3,net,debug \
+  --authrpc.addr=0.0.0.0 \
+  --authrpc.jwtsecret=/path/to/jwt.hex
+```
+
+### Ports
+
+| Port | Service | Auth |
+|------|---------|------|
+| 8545 | JSON-RPC (HTTP) | None |
+| 8551 | Authenticated RPC | JWT |
+
+Nitro connects on port 8551 with the shared JWT and drives block production over the `nitroexecution_` RPC namespace (`nitroexecution_digestMessage`), not the Engine API.
+
+## Running the Consensus Node
+
+Arbitrum Reth is an execution client only. It needs Nitro to ingest L1 messages and drive block production. To run Nitro standalone:
+
+```bash
+docker run offchainlabs/nitro-node:v3.10.0-rc.10-b1cf6db \
+  --init.empty=true \
+  --init.validate-genesis-assertion=false \
+  --parent-chain.connection.url=<ethereum-sepolia-rpc> \
+  --parent-chain.blob-client.beacon-url=<ethereum-sepolia-beacon> \
+  --chain.id=421614 \
+  --node.execution-rpc-client.url=http://HOST:8551 \
+  --node.execution-rpc-client.jwtsecret=/path/to/jwt.hex \
+  --node.sequencer=false \
+  --node.feed.input.url=wss://sepolia-rollup.arbitrum.io/feed
+```
+
+Compose sets this image to `offchainlabs/nitro-node:v3.10.0-rc.10-b1cf6db` by default; override it with the `NITRO_IMAGE` variable in `.env`. The bundled `docker-compose.yml` wires this up automatically.

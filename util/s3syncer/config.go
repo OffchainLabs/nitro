@@ -6,6 +6,7 @@ package s3syncer
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/spf13/pflag"
 
@@ -22,6 +23,7 @@ type Config struct {
 	Concurrency       int    `koanf:"concurrency"`
 	MaxFileSizeMB     int    `koanf:"max-file-size-mb"`
 	PreallocateMemory bool   `koanf:"preallocate-memory"`
+	DownloadDir       string `koanf:"download-dir"`
 }
 
 // ConfigAddOptions adds S3 configuration flags to the given flag set.
@@ -33,7 +35,8 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".concurrency", DefaultS3Config.Concurrency, "S3 multipart download concurrency")
 	f.Int(prefix+".max-retries", DefaultS3Config.MaxRetries, "maximum retries for S3 part body download")
 	f.Int(prefix+".max-file-size-mb", DefaultS3Config.MaxFileSizeMB, "maximum allowed S3 object size in MB; if the object is larger, skip the download (0 disables the check)")
-	f.Bool(prefix+".preallocate-memory", DefaultS3Config.PreallocateMemory, "preallocate the download buffer at startup, so downloads reuse it instead of allocating a per-object buffer; engages only when max-file-size-mb is set")
+	f.Bool(prefix+".preallocate-memory", DefaultS3Config.PreallocateMemory, "preallocate the data structures the downloaded object is loaded into at startup, so reloads reuse them instead of allocating per download; engages only when max-file-size-mb is set")
+	f.String(prefix+".download-dir", DefaultS3Config.DownloadDir, "directory for the temporary download file, which must have room for the whole object (required); point it at real disk — on many Linux systems /tmp is RAM-backed tmpfs, which would keep the download in memory")
 }
 
 // Validate checks that required S3 configuration fields are set.
@@ -50,21 +53,17 @@ func (c *Config) Validate() error {
 	if c.MaxFileSizeMB < 0 {
 		return fmt.Errorf("s3 max-file-size-mb must be >= 0, got %d", c.MaxFileSizeMB)
 	}
-	return nil
-}
-
-// minBytesPerHashEntry is a hard lower bound on the JSON size of one 32-byte hash entry: 64 hex chars plus the two
-// surrounding quotes. Dividing the max file size by it yields a safe upper bound on the number of hashes.
-const minBytesPerHashEntry = 66
-
-// NumPreallocatedHashes returns how many hashes to preallocate structures for, derived from max-file-size-mb, or 0 when
-// preallocation is disabled (the toggle is off or max-file-size-mb is unset).
-func (c *Config) NumPreallocatedHashes() int {
-	if !c.PreallocateMemory || c.MaxFileSizeMB <= 0 {
-		return 0
+	if c.DownloadDir == "" {
+		return errors.New("s3 download-dir is required")
 	}
-	// Compute the byte count in int64; it exceeds 32 bits for multi-GB files.
-	return int(int64(c.MaxFileSizeMB) * bytesInMB / minBytesPerHashEntry)
+	info, err := os.Stat(c.DownloadDir)
+	if err != nil {
+		return fmt.Errorf("s3 download-dir: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("s3 download-dir %q is not a directory", c.DownloadDir)
+	}
+	return nil
 }
 
 var DefaultS3Config = Config{

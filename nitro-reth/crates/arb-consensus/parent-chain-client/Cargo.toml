@@ -1,0 +1,30 @@
+[package]
+name = "arb-parent-chain-client"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[features]
+# Exposes the dependency-light `test_utils` builders (headers, logs) and the
+# `MockParentChainReader` for downstream crates' tests.
+test-utils = []
+
+[dependencies]
+alloy-eips = { workspace = true }
+alloy-primitives = { workspace = true }
+alloy-provider = { workspace = true }
+alloy-rpc-client = { workspace = true }
+alloy-rpc-types-eth = { workspace = true }
+alloy-transport = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+alloy-consensus = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

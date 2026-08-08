@@ -54,6 +54,7 @@ jobs:
     name: Notify Slack on failure
     needs: [tests-scheduled, mel-tests-scheduled]
     runs-on: ubuntu-4
+    timeout-minutes: 10
     if: ${{ failure() }}
     env:
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
