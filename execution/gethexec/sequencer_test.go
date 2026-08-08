@@ -43,33 +43,11 @@ func TestSequencerConfigValidatePGA(t *testing.T) {
 		{"one round per block", func(c *SequencerConfig) {
 			c.ExperimentalPGA.RoundsPerBlock = 1
 		}, false},
-		{"round length below minimum", func(c *SequencerConfig) {
+		{"many rounds per block", func(c *SequencerConfig) {
 			c.Enable = true
 			c.MaxBlockSpeed = 250 * time.Millisecond
 			c.ExperimentalPGA.RoundsPerBlock = 6
-		}, true},
-		{"round length at minimum", func(c *SequencerConfig) {
-			c.Enable = true
-			c.MaxBlockSpeed = 250 * time.Millisecond
-			c.ExperimentalPGA.RoundsPerBlock = 5
 		}, false},
-		{"disabled sequencer skips the round length check", func(c *SequencerConfig) {
-			c.MaxBlockSpeed = 10 * time.Millisecond
-			c.ExperimentalPGA.RoundsPerBlock = 1
-		}, false},
-		{"forced fifo skips the round length check", func(c *SequencerConfig) {
-			c.Enable = true
-			c.ExperimentalPGA.DangerousForceFIFO = true
-			c.MaxBlockSpeed = 10 * time.Millisecond
-			c.ExperimentalPGA.RoundsPerBlock = 1
-		}, false},
-		{"timeboost does not skip the round length check", func(c *SequencerConfig) {
-			c.Enable = true
-			c.Timeboost.Enable = true
-			c.Timeboost.RedisUrl = "redis://localhost:6379"
-			c.MaxBlockSpeed = 10 * time.Millisecond
-			c.ExperimentalPGA.RoundsPerBlock = 1
-		}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

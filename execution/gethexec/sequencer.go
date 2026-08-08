@@ -114,8 +114,6 @@ type PGAConfig struct {
 	RoundsPerBlock     uint `koanf:"rounds-per-block"`
 }
 
-const minPGARoundLength = 50 * time.Millisecond
-
 // PGARoundLength returns the length of a PGA round. It is derived from the
 // block time rather than configured directly, so MaxBlockSpeed remains the
 // single source of truth.
@@ -177,12 +175,6 @@ func (c *SequencerConfig) Validate() error {
 	if c.ExperimentalPGA.RoundsPerBlock == 0 {
 		return errors.New("experimental-pga.rounds-per-block must be at least 1")
 	}
-	// Forced FIFO precludes PGA, so the round length only matters without it.
-	if c.Enable && !c.ExperimentalPGA.DangerousForceFIFO {
-		if roundLength := c.PGARoundLength(); roundLength < minPGARoundLength {
-			return fmt.Errorf("PGA round length %v (max-block-speed / experimental-pga.rounds-per-block) is below the minimum supported %v", roundLength, minPGARoundLength)
-		}
-	}
 	if c.PollInterval <= 0 {
 		return fmt.Errorf("sequencer poll-interval must be positive, got %v", c.PollInterval)
 	}
@@ -223,7 +215,7 @@ var DefaultDangerousConfig = DangerousConfig{
 
 var DefaultPGAConfig = PGAConfig{
 	DangerousForceFIFO: false,
-	RoundsPerBlock:     2,
+	RoundsPerBlock:     1,
 }
 
 func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
