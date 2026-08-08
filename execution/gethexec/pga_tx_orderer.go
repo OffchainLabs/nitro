@@ -48,7 +48,7 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 				log.Warn("PGA round wait interrupted; ending the block early", "err", err)
 				return txQueueItem{}, false
 			}
-			p.mempool.PushBatch(p.seq.drainValidatedTxs(statedb))
+			p.mempool.PushBatch(p.seq.drainValidatedTxs(statedb, p.baseFee))
 		}
 		item, ok := p.mempool.Pop()
 		if !ok {
@@ -72,7 +72,7 @@ func (p *pgaTxOrderer) StartBlock(statedb *state.StateDB) (hasWork bool) {
 	p.schedule = pga.NewSchedule(config.ExperimentalPGA.RoundsPerBlock, config.PGARoundLength())
 	p.mempool = pga.NewMempool[txQueueItem](config.ExperimentalPGA.RoundsPerBlock, p.baseFee)
 
-	p.mempool.PushBatch(p.seq.drainValidatedTxs(statedb))
+	p.mempool.PushBatch(p.seq.drainValidatedTxs(statedb, p.baseFee))
 
 	return p.mempool.PriorityQueueLen() > 0
 }

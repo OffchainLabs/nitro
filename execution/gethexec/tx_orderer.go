@@ -3,7 +3,11 @@
 
 package gethexec
 
-import "github.com/ethereum/go-ethereum/core/state"
+import (
+	"math/big"
+
+	"github.com/ethereum/go-ethereum/core/state"
+)
 
 // nextTxFetcher supplies a block's tx candidates to the sequencing hooks one at a time.
 type nextTxFetcher interface {
@@ -80,13 +84,13 @@ type txOrderer interface {
 type txOrdererSequencer interface {
 	// drainValidatedTxs drains, validates, and nonce-prechecks the pending txs for the next
 	// block, in priority order.
-	drainValidatedTxs(*state.StateDB) []txQueueItem
+	drainValidatedTxs(statedb *state.StateDB, baseFee *big.Int) []txQueueItem
 }
 
 // fifoTxOrderer yields the block's candidates in the order the sequencer drained them.
 type fifoTxOrderer struct {
-	seq txOrdererSequencer
-
+	seq     txOrdererSequencer
+	baseFee *big.Int
 	// The embedded fetcher holds the not-yet-yielded candidates; set by StartBlock, consumed
 	// through NextQueueItem, and emptied by TakeRemaining.
 	fixedTxFetcher
@@ -94,13 +98,13 @@ type fifoTxOrderer struct {
 
 var _ txOrderer = (*fifoTxOrderer)(nil)
 
-func newFIFOTxOrderer(seq txOrdererSequencer) *fifoTxOrderer {
-	return &fifoTxOrderer{seq: seq}
+func newFIFOTxOrderer(seq txOrdererSequencer, baseFee *big.Int) *fifoTxOrderer {
+	return &fifoTxOrderer{seq: seq, baseFee: baseFee}
 }
 
 // StartBlock drains the sequencer's pending txs as the block's candidates.
 func (o *fifoTxOrderer) StartBlock(statedb *state.StateDB) bool {
-	items := o.seq.drainValidatedTxs(statedb)
+	items := o.seq.drainValidatedTxs(statedb, o.baseFee)
 	o.fixedTxFetcher = fixedTxFetcher{items: items}
 	return len(items) > 0
 }

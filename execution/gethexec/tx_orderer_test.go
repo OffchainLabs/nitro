@@ -5,6 +5,7 @@ package gethexec
 
 import (
 	"math"
+	"math/big"
 	"slices"
 	"testing"
 
@@ -18,7 +19,7 @@ type stubOrdererSequencer struct {
 	batches [][]txQueueItem
 }
 
-func (s *stubOrdererSequencer) drainValidatedTxs(statedb *state.StateDB) []txQueueItem {
+func (s *stubOrdererSequencer) drainValidatedTxs(statedb *state.StateDB, baseFee *big.Int) []txQueueItem {
 	if s.items != nil {
 		items := s.items
 		s.items = nil
@@ -41,7 +42,7 @@ func queueItemNonces(items []txQueueItem) []uint64 {
 }
 
 func TestFIFOTxOrdererStartBlockEmpty(t *testing.T) {
-	o := newFIFOTxOrderer(&stubOrdererSequencer{})
+	o := newFIFOTxOrderer(&stubOrdererSequencer{}, nil)
 	if o.StartBlock(nil) {
 		t.Fatal("StartBlock on empty = true, want false")
 	}
@@ -62,7 +63,7 @@ func TestFIFOTxOrdererBlockLifecycle(t *testing.T) {
 		item, _ := makeTestQueueItem(t, nonce, testBaseFee)
 		items = append(items, item)
 	}
-	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items})
+	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items}, nil)
 
 	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")
@@ -99,7 +100,7 @@ func TestFIFOTxOrdererSkipsOversizedTxs(t *testing.T) {
 	}
 	items[1].txSize = 11 // oversized for the block space below
 	items[2].txSize = 11
-	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items})
+	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items}, nil)
 
 	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")
@@ -126,7 +127,7 @@ func TestFIFOTxOrdererAllOversizedExhausts(t *testing.T) {
 		item.txSize = 100
 		items = append(items, item)
 	}
-	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items})
+	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items}, nil)
 
 	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")
@@ -146,7 +147,7 @@ func TestFIFOTxOrdererAllOversizedExhausts(t *testing.T) {
 // predecessor into the same block; if never yielded it leaves through TakeRemaining.
 func TestFIFOTxOrdererNonceGapResolvedJoinsCandidates(t *testing.T) {
 	drained, _ := makeTestQueueItem(t, 0, testBaseFee)
-	o := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{drained}})
+	o := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{drained}}, nil)
 
 	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")

@@ -6,6 +6,7 @@ package gethexec
 import (
 	"context"
 	"errors"
+	"math/big"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -270,7 +271,7 @@ func TestCreateBlockRequeuesNeverAttemptedTxs(t *testing.T) {
 	}
 
 	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
-	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}})
+	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}}, big.NewInt(testBaseFee))
 
 	sequencedMsg, _ := seq.createBlockWithTxOrderer(context.Background(), orderer)
 
@@ -307,7 +308,7 @@ func TestCreateBlockPanicFailsTxsInsteadOfRequeueing(t *testing.T) {
 	}
 
 	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
-	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}})
+	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}}, big.NewInt(testBaseFee))
 
 	sequencedMsg, throttle := seq.createBlockWithTxOrderer(context.Background(), panicAfterArmOrderer{orderer})
 
