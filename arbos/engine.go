@@ -4,6 +4,7 @@
 package arbos
 
 import (
+	"context"
 	"errors"
 	"math/big"
 
@@ -53,7 +54,7 @@ func (e Engine) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 	FinalizeBlock(header, body.Transactions, state, chain.Config())
 }
 
-func (e Engine) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt) (*types.Block, error) {
+func (e Engine) FinalizeAndAssemble(_ context.Context, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt) (*types.Block, error) {
 
 	e.Finalize(chain, header, state, body)
 

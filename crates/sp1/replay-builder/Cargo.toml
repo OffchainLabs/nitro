@@ -1,0 +1,23 @@
+[package]
+name = "replay-builder"
+description = "Builds the SP1 replay-program artifacts"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "replay-builder"
+path = "main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+sp1-sdk = { workspace = true }
+
+[build-dependencies]
+sp1-build = { workspace = true }
