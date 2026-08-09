@@ -18,6 +18,8 @@ jobs:
 
   # --- Fast: Build + Lint only (required by can_proceed) ---
   fast:
+    needs: changes
+    if: needs.changes.outputs.code_changed == 'true' || needs.changes.outputs.has_prior_success == 'false'
     uses: ./.github/workflows/_fast.yml
     secrets: inherit
 
@@ -37,8 +39,32 @@ jobs:
 
   # --- Full GO tests (not required by can_proceed) ---
   go-tests:
+    needs: changes
+    if: needs.changes.outputs.code_changed == 'true' || needs.changes.outputs.has_prior_success == 'false'
     uses: ./.github/workflows/_standard-go-test-suite.yml
     secrets: inherit
+
+  # --- Record the tested tree so the merge queue can skip an identical re-run ---
+  record-tested-tree:
+    runs-on: ubuntu-4
+    needs: go-tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Create tree marker
+        id: tree
+        run: |
+          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+          touch go-tests-passed
+
+      - name: Upload tree marker
+        uses: actions/upload-artifact@v6
+        with:
+          name: go-tests-passed-tree-${{ steps.tree.outputs.tree }}
+          path: go-tests-passed
 
   # --- MEL test modes: opt-in per-PR via the `test-mel` label. ---
   # MEL triples runner contention on arbitrator-ci; see _mel-go-test-suite.yml.
@@ -49,16 +75,19 @@ jobs:
 
   # --- Validation tests (not required by can_proceed) ---
   validation-tests:
+    needs: changes
+    if: needs.changes.outputs.code_changed == 'true' || needs.changes.outputs.has_prior_success == 'false'
     uses: ./.github/workflows/_validation-tests.yml
     secrets: inherit
 
   # --- Summarize test results (not required by can_proceed) ---
   codecov:
     needs: [go-tests, rust-tests]
-    if: always()
+    if: '!cancelled() && (needs.go-tests.result != ''skipped'' || needs.rust-tests.result != ''skipped'')'
     uses: ./.github/workflows/_codecov.yml
     secrets: inherit
     permissions:
+      contents: read
       pull-requests: write
     with:
       post_comment: true

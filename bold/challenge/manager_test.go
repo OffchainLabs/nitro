@@ -13,16 +13,17 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
+	"github.com/offchainlabs/nitro/bold/api/db"
 	"github.com/offchainlabs/nitro/bold/challenge/chain"
 	"github.com/offchainlabs/nitro/bold/challenge/tracker"
 	"github.com/offchainlabs/nitro/bold/challenge/types"
 	"github.com/offchainlabs/nitro/bold/clock"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/bold/testing/mocks"
 	"github.com/offchainlabs/nitro/bold/testing/setup"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 var _ = types.RivalHandler(&Manager{})
@@ -32,7 +33,7 @@ func TestEdgeTracker_Act(t *testing.T) {
 	createdData, err := setup.CreateTwoValidatorFork(ctx, t, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
 	require.NoError(t, err)
 
-	tkr, _ := setupEdgeTrackersForBisection(t, ctx, createdData, option.None[uint64]())
+	tkr, _ := setupEdgeTrackersForBisection(t, ctx, createdData, containers.None[uint64]())
 	err = tkr.Act(ctx)
 	require.NoError(t, err)
 	require.Equal(t, tracker.EdgeBisecting, tkr.CurrentState())
@@ -55,7 +56,7 @@ func TestEdgeTracker_Act_ConfirmedByTime(t *testing.T) {
 	chalPeriodBlocks := chalManager.ChallengePeriodBlocks()
 
 	// Delay the evil root edge creation by a challenge period.
-	delayEvilRootEdgeCreation := option.Some(chalPeriodBlocks)
+	delayEvilRootEdgeCreation := containers.Some(chalPeriodBlocks)
 	honestTracker, evilTracker := setupEdgeTrackersForBisection(t, ctx, createdData, delayEvilRootEdgeCreation)
 
 	honestEdgeOpt, err := chalManager.GetEdge(ctx, honestTracker.EdgeId())
@@ -92,7 +93,7 @@ func Test_getEdgeTrackers(t *testing.T) {
 	edge.On("CreatedAtBlock").Return(uint64(1), nil)
 	parentAssertionHash := protocol.AssertionHash{Hash: common.BytesToHash([]byte("par"))}
 	assertionHash := protocol.AssertionHash{Hash: common.BytesToHash([]byte("bar"))}
-	edge.On("ClaimId").Return(option.Some(protocol.ClaimId(assertionHash.Hash)))
+	edge.On("ClaimId").Return(containers.Some(protocol.ClaimId(assertionHash.Hash)))
 	edge.On("AssertionHash", ctx).Return(assertionHash, nil)
 	edge.On("StartCommitment").Return(protocol.Height(0), common.Hash{})
 	edge.On("EndCommitment").Return(protocol.Height(0), common.Hash{})
@@ -131,7 +132,7 @@ func setupEdgeTrackersForBisection(
 	t *testing.T,
 	ctx context.Context,
 	createdData *setup.CreatedValidatorFork,
-	delayEvilRootEdgeCreationByBlocks option.Option[uint64],
+	delayEvilRootEdgeCreationByBlocks containers.Option[uint64],
 ) (*tracker.Tracker, *tracker.Tracker) {
 	t.Helper()
 	confInterval := time.Second * 10
@@ -182,7 +183,7 @@ func setupEdgeTrackersForBisection(
 		honestValidator.chain,
 		honestValidator.stateManager,
 		"alice",
-		nil,
+		containers.None[db.Database](),
 		confInterval,
 		avgBlockTime,
 		nil,
@@ -214,7 +215,7 @@ func setupEdgeTrackersForBisection(
 		evilValidator.chain,
 		evilValidator.stateManager,
 		"bob",
-		nil,
+		containers.None[db.Database](),
 		confInterval,
 		avgBlockTime,
 		nil,

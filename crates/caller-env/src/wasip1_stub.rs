@@ -18,9 +18,8 @@ pub const ERRNO_INVAL: Errno = Errno(28);
 
 /// Writes the number and total size of args passed by the OS.
 /// Note that this currently consists of just the program name `bin`.
-pub fn args_sizes_get<M: MemAccess, E: ExecEnv>(
+pub fn args_sizes_get<M: MemAccess>(
     mem: &mut M,
-    _: &mut E,
     length_ptr: GuestPtr,
     data_size_ptr: GuestPtr,
 ) -> Errno {
@@ -31,12 +30,7 @@ pub fn args_sizes_get<M: MemAccess, E: ExecEnv>(
 
 /// Writes the args passed by the OS.
 /// Note that this currently consists of just the program name `bin`.
-pub fn args_get<M: MemAccess, E: ExecEnv>(
-    mem: &mut M,
-    _: &mut E,
-    argv_buf: GuestPtr,
-    data_buf: GuestPtr,
-) -> Errno {
+pub fn args_get<M: MemAccess>(mem: &mut M, argv_buf: GuestPtr, data_buf: GuestPtr) -> Errno {
     mem.write_u32(argv_buf, data_buf.into());
     mem.write_u32(data_buf, 0x6E6962); // "bin\0"
     ERRNO_SUCCESS
@@ -44,9 +38,8 @@ pub fn args_get<M: MemAccess, E: ExecEnv>(
 
 /// Writes the number and total size of OS environment variables.
 /// Note that none exist in Nitro.
-pub fn environ_sizes_get<M: MemAccess, E: ExecEnv>(
+pub fn environ_sizes_get<M: MemAccess>(
     mem: &mut M,
-    _env: &mut E,
     length_ptr: GuestPtr,
     data_size_ptr: GuestPtr,
 ) -> Errno {
@@ -57,12 +50,7 @@ pub fn environ_sizes_get<M: MemAccess, E: ExecEnv>(
 
 /// Writes the number and total size of OS environment variables.
 /// Note that none exist in Nitro.
-pub fn environ_get<M: MemAccess, E: ExecEnv>(
-    _: &mut M,
-    _: &mut E,
-    _: GuestPtr,
-    _: GuestPtr,
-) -> Errno {
+pub fn environ_get<M: MemAccess>(_: &mut M, _: GuestPtr, _: GuestPtr) -> Errno {
     ERRNO_SUCCESS
 }
 
@@ -81,10 +69,10 @@ pub fn fd_write<M: MemAccess, E: ExecEnv>(
     }
     let mut size = 0;
     for i in 0..iovecs_len {
-        let ptr = iovecs_ptr + i * 8;
+        let ptr = iovecs_ptr + i.checked_mul(8).expect("iovec offset overflow");
         let len = mem.read_u32(ptr + 4);
         let ptr = mem.read_u32(ptr); // TODO: string might be split across utf-8 character boundary
-        let data = mem.read_slice(GuestPtr(ptr), len as usize);
+        let data = mem.read_slice(GuestPtr::new(ptr), len as usize);
         env.print_string(&data);
         size += len;
     }
@@ -93,76 +81,48 @@ pub fn fd_write<M: MemAccess, E: ExecEnv>(
 }
 
 /// Closes the given file descriptor. Unsupported.
-pub fn fd_close<M: MemAccess, E: ExecEnv>(_: &mut M, _: &mut E, _: u32) -> Errno {
+pub fn fd_close<M: MemAccess>(_: &mut M, _: u32) -> Errno {
     ERRNO_BADF
 }
 
 /// Reads from the given file descriptor. Unsupported.
-pub fn fd_read<M: MemAccess, E: ExecEnv>(
-    _: &mut M,
-    _: &mut E,
-    _: u32,
-    _: u32,
-    _: u32,
-    _: u32,
-) -> Errno {
+pub fn fd_read<M: MemAccess>(_: &mut M, _: u32, _: u32, _: u32, _: u32) -> Errno {
     ERRNO_BADF
 }
 
 /// Reads the contents of a directory. Unsupported.
-pub fn fd_readdir<M: MemAccess, E: ExecEnv>(
-    _: &mut M,
-    _: &mut E,
-    _fd: u32,
-    _: u32,
-    _: u32,
-    _: u64,
-    _: u32,
-) -> Errno {
+pub fn fd_readdir<M: MemAccess>(_: &mut M, _: u32, _: u32, _: u32, _: u64, _: u32) -> Errno {
     ERRNO_BADF
 }
 
 /// Syncs a file to disk. Unsupported.
-pub fn fd_sync<M: MemAccess, E: ExecEnv>(_: &mut M, _: &mut E, _: u32) -> Errno {
+pub fn fd_sync<M: MemAccess>(_: &mut M, _: u32) -> Errno {
     ERRNO_SUCCESS
 }
 
 /// Move within a file. Unsupported.
-pub fn fd_seek<M: MemAccess, E: ExecEnv>(
-    _: &mut M,
-    _: &mut E,
-    _fd: u32,
-    _offset: u64,
-    _whence: u8,
-    _filesize: u32,
-) -> Errno {
+pub fn fd_seek<M: MemAccess>(_: &mut M, _: u32, _: u64, _: u8, _: u32) -> Errno {
     ERRNO_BADF
 }
 
 /// Syncs file contents to disk. Unsupported.
-pub fn fd_datasync<M: MemAccess, E: ExecEnv>(_: &mut M, _: &mut E, _fd: u32) -> Errno {
+pub fn fd_datasync<M: MemAccess>(_: &mut M, _: u32) -> Errno {
     ERRNO_BADF
 }
 
 /// Retrieves attributes about a file descriptor. Unsupported.
-pub fn fd_fdstat_get<M: MemAccess, E: ExecEnv>(_: &mut M, _: &mut E, _: u32, _: u32) -> Errno {
+pub fn fd_fdstat_get<M: MemAccess>(_: &mut M, _: u32, _: u32) -> Errno {
     ERRNO_INVAL
 }
 
 /// Sets the attributes of a file descriptor. Unsupported.
-pub fn fd_fdstat_set_flags<M: MemAccess, E: ExecEnv>(
-    _: &mut M,
-    _: &mut E,
-    _: u32,
-    _: u32,
-) -> Errno {
+pub fn fd_fdstat_set_flags<M: MemAccess>(_: &mut M, _: u32, _: u32) -> Errno {
     ERRNO_INVAL
 }
 
 /// Opens the file or directory at the given path. Unsupported.
-pub fn path_open<M: MemAccess, E: ExecEnv>(
+pub fn path_open<M: MemAccess>(
     _: &mut M,
-    _: &mut E,
     _: u32,
     _: u32,
     _: u32,
@@ -177,31 +137,18 @@ pub fn path_open<M: MemAccess, E: ExecEnv>(
 }
 
 /// Creates a directory. Unsupported.
-pub fn path_create_directory<M: MemAccess, E: ExecEnv>(
-    _: &mut M,
-    _: &mut E,
-    _: u32,
-    _: u32,
-    _: u32,
-) -> Errno {
+pub fn path_create_directory<M: MemAccess>(_: &mut M, _: u32, _: u32, _: u32) -> Errno {
     ERRNO_BADF
 }
 
 /// Unlinks a directory. Unsupported.
-pub fn path_remove_directory<M: MemAccess, E: ExecEnv>(
-    _: &mut M,
-    _: &mut E,
-    _: u32,
-    _: u32,
-    _: u32,
-) -> Errno {
+pub fn path_remove_directory<M: MemAccess>(_: &mut M, _: u32, _: u32, _: u32) -> Errno {
     ERRNO_BADF
 }
 
 /// Resolves a symbolic link. Unsupported.
-pub fn path_readlink<M: MemAccess, E: ExecEnv>(
+pub fn path_readlink<M: MemAccess>(
     _: &mut M,
-    _: &mut E,
     _: u32,
     _: u32,
     _: u32,
@@ -213,9 +160,8 @@ pub fn path_readlink<M: MemAccess, E: ExecEnv>(
 }
 
 /// Moves a file. Unsupported.
-pub fn path_rename<M: MemAccess, E: ExecEnv>(
+pub fn path_rename<M: MemAccess>(
     _: &mut M,
-    _: &mut E,
     _: u32,
     _: u32,
     _: u32,
@@ -227,110 +173,58 @@ pub fn path_rename<M: MemAccess, E: ExecEnv>(
 }
 
 /// Retrieves info about an open file. Unsupported.
-pub fn path_filestat_get<M: MemAccess, E: ExecEnv>(
-    _: &mut M,
-    _: &mut E,
-    _: u32,
-    _: u32,
-    _: u32,
-    _: u32,
-    _: u32,
-) -> Errno {
+pub fn path_filestat_get<M: MemAccess>(_: &mut M, _: u32, _: u32, _: u32, _: u32, _: u32) -> Errno {
     ERRNO_BADF
 }
 
 /// Unlinks the file at the given path. Unsupported.
-pub fn path_unlink_file<M: MemAccess, E: ExecEnv>(
-    _: &mut M,
-    _: &mut E,
-    _: u32,
-    _: u32,
-    _: u32,
-) -> Errno {
+pub fn path_unlink_file<M: MemAccess>(_: &mut M, _: u32, _: u32, _: u32) -> Errno {
     ERRNO_BADF
 }
 
 /// Retrieves info about a file. Unsupported.
-pub fn fd_prestat_get<M: MemAccess, E: ExecEnv>(_: &mut M, _: &mut E, _: u32, _: u32) -> Errno {
+pub fn fd_prestat_get<M: MemAccess>(_: &mut M, _: u32, _: u32) -> Errno {
     ERRNO_BADF
 }
 
 /// Retrieves info about a directory. Unsupported.
-pub fn fd_prestat_dir_name<M: MemAccess, E: ExecEnv>(
-    _: &mut M,
-    _: &mut E,
-    _: u32,
-    _: u32,
-    _: u32,
-) -> Errno {
+pub fn fd_prestat_dir_name<M: MemAccess>(_: &mut M, _: u32, _: u32, _: u32) -> Errno {
     ERRNO_BADF
 }
 
 /// Retrieves info about a file. Unsupported.
-pub fn fd_filestat_get<M: MemAccess, E: ExecEnv>(
-    _: &mut M,
-    _: &mut E,
-    _fd: u32,
-    _filestat: u32,
-) -> Errno {
+pub fn fd_filestat_get<M: MemAccess>(_: &mut M, _: u32, _: u32) -> Errno {
     ERRNO_BADF
 }
 
 /// Sets the size of an open file. Unsupported.
-pub fn fd_filestat_set_size<M: MemAccess, E: ExecEnv>(
-    _: &mut M,
-    _: &mut E,
-    _fd: u32,
-    _: u64,
-) -> Errno {
+pub fn fd_filestat_set_size<M: MemAccess>(_: &mut M, _: u32, _: u64) -> Errno {
     ERRNO_BADF
 }
 
 /// Peaks within a descriptor without modifying its state. Unsupported.
-pub fn fd_pread<M: MemAccess, E: ExecEnv>(
-    _: &mut M,
-    _: &mut E,
-    _fd: u32,
-    _: u32,
-    _: u32,
-    _: u64,
-    _: u32,
-) -> Errno {
+pub fn fd_pread<M: MemAccess>(_: &mut M, _: u32, _: u32, _: u32, _: u64, _: u32) -> Errno {
     ERRNO_BADF
 }
 
 /// Writes to a descriptor without modifying the current offset. Unsupported.
-pub fn fd_pwrite<M: MemAccess, E: ExecEnv>(
-    _: &mut M,
-    _: &mut E,
-    _fd: u32,
-    _: u32,
-    _: u32,
-    _: u64,
-    _: u32,
-) -> Errno {
+pub fn fd_pwrite<M: MemAccess>(_: &mut M, _: u32, _: u32, _: u32, _: u64, _: u32) -> Errno {
     ERRNO_BADF
 }
 
 /// Accepts a new connection. Unsupported.
-pub fn sock_accept<M: MemAccess, E: ExecEnv>(
-    _: &mut M,
-    _: &mut E,
-    _fd: u32,
-    _: u32,
-    _: u32,
-) -> Errno {
+pub fn sock_accept<M: MemAccess>(_: &mut M, _: u32, _: u32, _: u32) -> Errno {
     ERRNO_BADF
 }
 
 /// Shuts down a socket. Unsupported.
-pub fn sock_shutdown<M: MemAccess, E: ExecEnv>(_: &mut M, _: &mut E, _: u32, _: u32) -> Errno {
+pub fn sock_shutdown<M: MemAccess>(_: &mut M, _: u32, _: u32) -> Errno {
     ERRNO_BADF
 }
 
 /// Yields execution to the OS scheduler. Effectively does nothing in Nitro due to the lack of
 /// threads.
-pub fn sched_yield<M: MemAccess, E: ExecEnv>(_: &mut M, _: &mut E) -> Errno {
+pub fn sched_yield<M: MemAccess>(_: &mut M) -> Errno {
     ERRNO_SUCCESS
 }
 
@@ -392,7 +286,10 @@ pub fn poll_oneoff<M: MemAccess, E: ExecEnv>(
 
     const SUBSCRIPTION_SIZE: u32 = 48; // user data + 40-byte union
     for index in 0..num_subscriptions {
-        let subs_base = in_subs + (SUBSCRIPTION_SIZE * index);
+        let subs_base = in_subs
+            + SUBSCRIPTION_SIZE
+                .checked_mul(index)
+                .expect("subscription offset overflow");
         let subs_type = mem.read_u32(subs_base + 8);
         if subs_type != 0 {
             // not a clock subscription type
@@ -405,4 +302,43 @@ pub fn poll_oneoff<M: MemAccess, E: ExecEnv>(
         return ERRNO_SUCCESS;
     }
     ERRNO_INVAL
+}
+
+#[cfg(feature = "wasmer_traits")]
+pub mod host {
+    use super::Errno;
+    use crate::GuestPtr;
+
+    host_fn!(fn args_sizes_get(a: GuestPtr, b: GuestPtr) -> Errno);
+    host_fn!(fn args_get(a: GuestPtr, b: GuestPtr) -> Errno);
+    host_fn!(fn environ_sizes_get(a: GuestPtr, b: GuestPtr) -> Errno);
+    host_fn!(fn environ_get(a: GuestPtr, b: GuestPtr) -> Errno);
+    host_fn_exec!(fn fd_write(a: u32, b: GuestPtr, c: u32, d: GuestPtr));
+    host_fn!(fn fd_close(a: u32) -> Errno);
+    host_fn!(fn fd_read(a: u32, b: u32, c: u32, d: u32) -> Errno);
+    host_fn!(fn fd_readdir(a: u32, b: u32, c: u32, d: u64, e: u32) -> Errno);
+    host_fn!(fn fd_sync(a: u32) -> Errno);
+    host_fn!(fn fd_seek(a: u32, b: u64, c: u8, d: u32) -> Errno);
+    host_fn!(fn fd_datasync(a: u32) -> Errno);
+    host_fn!(fn fd_fdstat_get(a: u32, b: u32) -> Errno);
+    host_fn!(fn fd_fdstat_set_flags(a: u32, b: u32) -> Errno);
+    host_fn!(fn fd_prestat_get(a: u32, b: u32) -> Errno);
+    host_fn!(fn fd_prestat_dir_name(a: u32, b: u32, c: u32) -> Errno);
+    host_fn!(fn fd_filestat_get(a: u32, b: u32) -> Errno);
+    host_fn!(fn fd_filestat_set_size(a: u32, b: u64) -> Errno);
+    host_fn!(fn fd_pread(a: u32, b: u32, c: u32, d: u64, e: u32) -> Errno);
+    host_fn!(fn fd_pwrite(a: u32, b: u32, c: u32, d: u64, e: u32) -> Errno);
+    host_fn!(fn path_open(a: u32, b: u32, c: u32, d: u32, e: u32, f: u64, g: u64, h: u32, i: u32) -> Errno);
+    host_fn!(fn path_create_directory(a: u32, b: u32, c: u32) -> Errno);
+    host_fn!(fn path_remove_directory(a: u32, b: u32, c: u32) -> Errno);
+    host_fn!(fn path_readlink(a: u32, b: u32, c: u32, d: u32, e: u32, f: u32) -> Errno);
+    host_fn!(fn path_rename(a: u32, b: u32, c: u32, d: u32, e: u32, f: u32) -> Errno);
+    host_fn!(fn path_filestat_get(a: u32, b: u32, c: u32, d: u32, e: u32) -> Errno);
+    host_fn!(fn path_unlink_file(a: u32, b: u32, c: u32) -> Errno);
+    host_fn!(fn sock_accept(a: u32, b: u32, c: u32) -> Errno);
+    host_fn!(fn sock_shutdown(a: u32, b: u32) -> Errno);
+    host_fn!(fn sched_yield() -> Errno);
+    host_fn_exec!(fn clock_time_get(a: u32, b: u64, c: GuestPtr));
+    host_fn_exec!(fn random_get(a: GuestPtr, b: u32));
+    host_fn_exec!(fn poll_oneoff(a: GuestPtr, b: GuestPtr, c: u32, d: GuestPtr));
 }

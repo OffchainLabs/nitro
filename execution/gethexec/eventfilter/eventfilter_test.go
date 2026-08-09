@@ -186,7 +186,7 @@ func TestExtractAddresses_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := filter.AddressesForFiltering(tt.topics, tt.data, common.Address{}, common.Address{})
+			result := filter.AddressesForFiltering(tt.topics, tt.data, common.Address{})
 			if len(result) != tt.expected {
 				t.Errorf("expected %d addresses, got %d", tt.expected, len(result))
 			}
@@ -293,7 +293,7 @@ func TestExtractAddresses_TransferRules(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := filter.AddressesForFiltering(tt.topics, nil, common.Address{}, common.Address{})
+			result := filter.AddressesForFiltering(tt.topics, nil, common.Address{})
 
 			if len(result) != len(tt.wantAddrs) {
 				t.Errorf("expected %d addresses, got %d", len(tt.wantAddrs), len(result))

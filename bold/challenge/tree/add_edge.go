@@ -12,10 +12,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/containers/threadsafe"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/state"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 // AddRoyalEdge known to be honest, such as those created by the local validator.
@@ -161,7 +161,7 @@ func (ht *RoyalChallengeTree) prepareHistoryCommitmentRequest(
 		return &state.HistoryCommitmentRequest{
 			AssertionMetadata:           assertionMetadata,
 			UpperChallengeOriginHeights: make([]state.Height, 0),
-			UpToHeight:                  option.Some(state.Height(endHeight)),
+			UpToHeight:                  containers.Some(state.Height(endHeight)),
 		}, nil
 	}
 
@@ -171,7 +171,7 @@ func (ht *RoyalChallengeTree) prepareHistoryCommitmentRequest(
 	return &state.HistoryCommitmentRequest{
 		AssertionMetadata:           assertionMetadata,
 		UpperChallengeOriginHeights: startHeights,
-		UpToHeight:                  option.Some(state.Height(endHeight)),
+		UpToHeight:                  containers.Some(state.Height(endHeight)),
 	}, nil
 }
 

@@ -24,7 +24,7 @@ const InitialPageGas = 1000           // linear cost per allocation.
 const initialPageRamp = 620674314     // targets 8MB costing 32 million gas, minus the linear term.
 const initialPageLimit = 128          // reject wasms with memories larger than 8MB.
 const initialInkPrice = 10000         // 1 evm gas buys 10k ink.
-const initialMaxFragmentCount = 2
+const initialMaxFragmentCount = 4
 const initialMinInitGas = 72       // charge 72 * 128 = 9216 gas.
 const initialMinCachedGas = 11     // charge 11 *  32 = 352 gas.
 const initialInitCostScalar = 50   // scale costs 1:1 (100%)
@@ -39,7 +39,8 @@ const MinCachedGasUnits = 32 /// 32 gas for each unit
 const MinInitGasUnits = 128  // 128 gas for each unit
 const CostScalarPercent = 2  // 2% for each unit
 
-const arbOS50MaxWasmSize = 22000 // Default wasmer stack depth for ArbOS 50
+const arbOS50MaxStackDepth = 22000    // Default wasmer stack depth for ArbOS 50
+const arbOS60MaxWasmSize = 256 * 1024 // 256 KB max decompressed wasm size for ArbOS 60
 
 // This struct exists to collect the many Stylus configuration parameters into a single word.
 // The items here must only be modified in ArbOwner precompile methods (or in ArbOS upgrades).
@@ -124,8 +125,9 @@ func (p Programs) Params() (*StylusParams, error) {
 	return stylusParams, nil
 }
 
-// Writes the params to permanent storage.
-func (p *StylusParams) Save() error {
+// Writes the params to permanent storage. If persistToStorage is false, the params
+// are not actually written but the equivalent storage gas is still charged.
+func (p *StylusParams) Save(persistToStorage bool) error {
 	if p.backingStorage == nil {
 		log.Error("tried to Save invalid StylusParams")
 		return errors.New("invalid StylusParams")
@@ -163,8 +165,17 @@ func (p *StylusParams) Save() error {
 
 		word := common.Hash{}
 		copy(word[:], info) // right-pad with zeros
-		if err := p.backingStorage.SetByUint64(slot, word); err != nil {
-			return err
+		if persistToStorage {
+			if err := p.backingStorage.SetByUint64(slot, word); err != nil {
+				return err
+			}
+		} else {
+			if err := p.backingStorage.Burner().Burn(multigas.ResourceKindStorageAccessWrite, storage.WriteCost(word)); err != nil {
+				return err
+			}
+			if info := p.backingStorage.Burner().TracingInfo(); info != nil {
+				info.RecordStorageSet(p.backingStorage.GetStorageSlot(util.UintToHash(slot)), word)
+			}
 		}
 		slot += 1
 	}
@@ -180,8 +191,14 @@ func (p *StylusParams) UpgradeToVersion(version uint16) error {
 		p.Version = 2
 		p.MinInitGas = v2MinInitGas
 		return nil
+	case 3:
+		if p.Version != 2 {
+			return fmt.Errorf("unexpected upgrade from %d to %d", p.Version, version)
+		}
+		p.Version = 3
+		return nil
 	default:
-		return fmt.Errorf("unsupported upgrade to %d. Only 2 is supported", version)
+		return fmt.Errorf("unsupported upgrade to %d. Only 2 and 3 are supported", version)
 	}
 }
 
@@ -192,8 +209,8 @@ func (p *StylusParams) UpgradeToArbosVersion(newArbosVersion uint64) error {
 
 	switch newArbosVersion {
 	case params.ArbosVersion_50:
-		if p.MaxStackDepth > arbOS50MaxWasmSize {
-			p.MaxStackDepth = arbOS50MaxWasmSize
+		if p.MaxStackDepth > arbOS50MaxStackDepth {
+			p.MaxStackDepth = arbOS50MaxStackDepth
 		}
 	case params.ArbosVersion_40:
 		if p.Version != 2 {
@@ -201,6 +218,7 @@ func (p *StylusParams) UpgradeToArbosVersion(newArbosVersion uint64) error {
 		}
 		p.MaxWasmSize = initialMaxWasmSize
 	case params.ArbosVersion_StylusContractLimit:
+		p.MaxWasmSize = arbOS60MaxWasmSize
 		p.MaxFragmentCount = initialMaxFragmentCount
 	}
 
@@ -227,12 +245,14 @@ func initStylusParams(arbosVersion uint64, sto *storage.Storage) {
 		KeepaliveDays:    initialKeepaliveDays,
 		BlockCacheSize:   initialRecentCacheSize,
 	}
-	if arbosVersion >= params.ArbosVersion_40 {
+	if arbosVersion >= params.ArbosVersion_60 {
+		stylusParams.MaxWasmSize = arbOS60MaxWasmSize
+	} else if arbosVersion >= params.ArbosVersion_40 {
 		stylusParams.MaxWasmSize = initialMaxWasmSize
 	}
 	if arbosVersion >= params.ArbosVersion_StylusContractLimit {
 		stylusParams.MaxFragmentCount = initialMaxFragmentCount
 	}
 
-	_ = stylusParams.Save()
+	_ = stylusParams.Save(true)
 }

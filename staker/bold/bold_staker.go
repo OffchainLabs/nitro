@@ -23,6 +23,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/bold/api/db"
 	"github.com/offchainlabs/nitro/bold/challenge"
 	"github.com/offchainlabs/nitro/bold/challenge/types"
 	"github.com/offchainlabs/nitro/bold/protocol"
@@ -32,8 +33,9 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/challengeV2gen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/staker/legacy"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/floatmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -641,7 +643,7 @@ func newBOLDChallengeManager(
 		stateProvider,
 		providerHeights,
 		stateProvider,
-		nil, // Nil API database for the history commitment provider, as it will be provided later. TODO: Improve this dependency injection.
+		containers.None[db.Database](), // Nil API database for the history commitment provider, as it will be provided later. TODO: Improve this dependency injection.
 	)
 	// The interval at which the challenge manager will attempt to post assertions.
 	postingInterval := config.AssertionPostingInterval

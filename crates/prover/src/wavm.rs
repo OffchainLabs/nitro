@@ -4,11 +4,10 @@
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
 use arbutil::{Bytes32, Color, DebugColor};
-use digest::Digest;
 use eyre::{Result, bail, ensure};
 use fnv::FnvHashMap as HashMap;
 use serde::{Deserialize, Serialize};
-use sha3::Keccak256;
+use tiny_keccak::{Hasher, Keccak};
 use wasmparser::{BlockType, Operator};
 
 use crate::{
@@ -179,6 +178,8 @@ pub enum Opcode {
     SwitchThread,
     /// Validates the DACertificate certificate before allowing ReadPreImage to access it
     ValidateCertificate,
+    /// Gets the end parent chain block hash for MEL
+    GetEndParentChainBlockHash,
 }
 
 impl Opcode {
@@ -293,6 +294,7 @@ impl Opcode {
             Opcode::NewCoThread => 0x8030,
             Opcode::PopCoThread => 0x8031,
             Opcode::SwitchThread => 0x8032,
+            Opcode::GetEndParentChainBlockHash => 0x8033,
         }
     }
 
@@ -306,6 +308,7 @@ impl Opcode {
                 | Opcode::ValidateCertificate
                 | Opcode::ReadPreImage
                 | Opcode::ReadInboxMessage
+                | Opcode::GetEndParentChainBlockHash
         )
     }
 }
@@ -375,14 +378,16 @@ impl Instruction {
     }
 
     pub fn hash(code: &[Self]) -> Bytes32 {
-        let mut h = Keccak256::new();
+        let mut h = Keccak::v256();
         h.update(b"Instructions:");
-        h.update((code.len() as u8).to_be_bytes());
+        h.update(&(code.len() as u8).to_be_bytes());
         for inst in code {
-            h.update(inst.opcode.repr().to_be_bytes());
-            h.update(inst.get_proving_argument_data());
+            h.update(&inst.opcode.repr().to_be_bytes());
+            h.update(inst.get_proving_argument_data().as_ref());
         }
-        h.finalize().into()
+        let mut out = [0u8; 32];
+        h.finalize(&mut out);
+        out.into()
     }
 }
 

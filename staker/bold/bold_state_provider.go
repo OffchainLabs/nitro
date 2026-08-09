@@ -16,12 +16,12 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/bold/commitment/history"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/state"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/proofenhancement"
 	"github.com/offchainlabs/nitro/validator/server_arb"
@@ -358,7 +358,7 @@ func (s *BOLDStateProvider) L2MessageStatesUpTo(
 	ctx context.Context,
 	fromState protocol.GoGlobalState,
 	batchLimit state.Batch,
-	toHeight option.Option[state.Height],
+	toHeight containers.Option[state.Height],
 ) ([]common.Hash, error) {
 	var to state.Height
 	if !toHeight.IsNone() {
@@ -488,8 +488,8 @@ func (s *BOLDStateProvider) messageNum(md *state.AssociatedAssertionMetadata, ch
 // to actually step through a machine to produce a series of hashes, because all
 // of the hashes can just be "virtual" copies of a single machine in the
 // FINISHED state's hash.
-func (s *BOLDStateProvider) virtualState(msgNum arbutil.MessageIndex, limit state.Batch) (option.Option[validator.GoGlobalState], error) {
-	gs := option.None[validator.GoGlobalState]()
+func (s *BOLDStateProvider) virtualState(msgNum arbutil.MessageIndex, limit state.Batch) (containers.Option[validator.GoGlobalState], error) {
+	gs := containers.None[validator.GoGlobalState]()
 	limitMsgCount, err := s.inboxTracker.GetBatchMessageCount(uint64(limit) - 1)
 	if err != nil {
 		return gs, fmt.Errorf("could not get limitMsgCount at %d: %w", limit, err)
@@ -502,7 +502,7 @@ func (s *BOLDStateProvider) virtualState(msgNum arbutil.MessageIndex, limit stat
 				return gs, fmt.Errorf("could not get global state at limitMsgCount %d: %w", limitMsgCount, err)
 			}
 		}
-		gs = option.Some(validator.GoGlobalState{
+		gs = containers.Some(validator.GoGlobalState{
 			BlockHash:  result.BlockHash,
 			SendRoot:   result.SendRoot,
 			Batch:      uint64(limit),

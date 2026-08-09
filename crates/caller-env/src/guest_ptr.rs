@@ -1,18 +1,22 @@
 // Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use core::ops::{Add, AddAssign, Deref};
+use core::ops::{Add, AddAssign};
 
 /// Represents a pointer to a Guest WASM's memory.
 #[derive(Clone, Copy, Eq, PartialEq)]
 #[repr(transparent)]
-pub struct GuestPtr(pub u32);
+pub struct GuestPtr(u32);
 
 impl Add<u32> for GuestPtr {
     type Output = Self;
 
     fn add(self, rhs: u32) -> Self::Output {
-        Self(self.0 + rhs)
+        Self(
+            self.0
+                .checked_add(rhs)
+                .expect("GuestPtr arithmetic overflow"),
+        )
     }
 }
 
@@ -34,16 +38,8 @@ impl From<GuestPtr> for u64 {
     }
 }
 
-impl Deref for GuestPtr {
-    type Target = u32;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
 impl GuestPtr {
-    pub fn to_u64(self) -> u64 {
-        self.into()
+    pub const fn new(ptr: u32) -> Self {
+        Self(ptr)
     }
 }

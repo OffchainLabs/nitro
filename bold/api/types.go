@@ -4,7 +4,6 @@
 package api
 
 import (
-	"reflect"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -119,8 +118,4 @@ type JsonCollectMachineHashes struct {
 	StepSize             uint64      `json:"stepSize" db:"StepSize"`
 	StartTime            time.Time   `json:"startTime" db:"StartTime"`
 	FinishTime           *time.Time  `json:"finishTime" db:"FinishTime"`
-}
-
-func IsNil(i any) bool {
-	return i == nil || reflect.ValueOf(i).IsNil()
 }

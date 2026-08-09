@@ -127,6 +127,24 @@ func TestCompressionLevelsConflict(t *testing.T) {
 	}
 }
 
+func TestGenesisJsonFileDirectoryClearsDefaultEmptyInit(t *testing.T) {
+	chainId := uint64(42170)
+	tempDir := t.TempDir()
+	genesisFile := filepath.Join(tempDir, fmt.Sprintf("%d.json", chainId))
+	Require(t, os.WriteFile(genesisFile, []byte("{}"), 0600))
+
+	args := strings.Split(fmt.Sprintf("--persistent.chain /tmp/data --chain.id %d --init.genesis-json-file-directory %s", chainId, tempDir), " ")
+	nodeConfig, _, err := ParseNode(context.Background(), args)
+	Require(t, err)
+
+	if nodeConfig.Init.GenesisJsonFile != genesisFile {
+		Fail(t, "expected genesis file from directory", genesisFile, "got", nodeConfig.Init.GenesisJsonFile)
+	}
+	if nodeConfig.Init.Empty {
+		Fail(t, "expected genesis file from directory to disable empty init")
+	}
+}
+
 func TestReloads(t *testing.T) {
 	var check func(node reflect.Value, cold bool, path string)
 	check = func(node reflect.Value, cold bool, path string) {

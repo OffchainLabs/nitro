@@ -17,6 +17,7 @@ pub mod merkle;
 pub mod prepare;
 mod print;
 pub mod programs;
+#[cfg(feature = "native")]
 mod reinterpret;
 pub mod utils;
 pub mod value;

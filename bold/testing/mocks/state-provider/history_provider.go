@@ -8,9 +8,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/state"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 // Collects a list of machine hashes at a message number based on some configuration parameters.
@@ -63,7 +63,7 @@ func (s *L2StateBackend) L2MessageStatesUpTo(
 	ctx context.Context,
 	fromState protocol.GoGlobalState,
 	batchLimit state.Batch,
-	toHeight option.Option[state.Height],
+	toHeight containers.Option[state.Height],
 ) ([]common.Hash, error) {
 	var to state.Height
 	if !toHeight.IsNone() {

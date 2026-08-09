@@ -188,11 +188,11 @@ func deleteFromLastPrunedUptoEndKey(ctx context.Context, db ethdb.Database, pref
 func insertLastPrunedKey(db ethdb.Database, lastPrunedKey []byte, lastPrunedValue uint64) {
 	lastPrunedValueByte, err := rlp.EncodeToBytes(lastPrunedValue)
 	if err != nil {
-		log.Error("error encoding last pruned value: %w", err)
+		log.Error("error encoding last pruned value", "err", err)
 	} else {
 		err = db.Put(lastPrunedKey, lastPrunedValueByte)
 		if err != nil {
-			log.Error("error saving last pruned value: %w", err)
+			log.Error("error saving last pruned value", "err", err)
 		}
 	}
 }
@@ -200,7 +200,7 @@ func insertLastPrunedKey(db ethdb.Database, lastPrunedKey []byte, lastPrunedValu
 func fetchLastPrunedKey(db ethdb.Database, lastPrunedKey []byte) uint64 {
 	hasKey, err := db.Has(lastPrunedKey)
 	if err != nil {
-		log.Warn("error checking for last pruned key: %w", err)
+		log.Warn("error checking for last pruned key", "err", err)
 		return 0
 	}
 	if !hasKey {
@@ -208,13 +208,13 @@ func fetchLastPrunedKey(db ethdb.Database, lastPrunedKey []byte) uint64 {
 	}
 	lastPrunedValueByte, err := db.Get(lastPrunedKey)
 	if err != nil {
-		log.Warn("error fetching last pruned key: %w", err)
+		log.Warn("error fetching last pruned key", "err", err)
 		return 0
 	}
 	var lastPrunedValue uint64
 	err = rlp.DecodeBytes(lastPrunedValueByte, &lastPrunedValue)
 	if err != nil {
-		log.Warn("error decoding last pruned value: %w", err)
+		log.Warn("error decoding last pruned value", "err", err)
 		return 0
 	}
 	return lastPrunedValue

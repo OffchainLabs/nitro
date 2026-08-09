@@ -793,7 +793,7 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	}
 }
 
-func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
+func TestBroadcasterSendsCachedMessagesOnClientConnectFlaky(t *testing.T) {
 	t.Parallel()
 	/* Uncomment to enable logging
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))

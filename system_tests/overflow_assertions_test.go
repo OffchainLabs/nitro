@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/bold/api/db"
 	"github.com/offchainlabs/nitro/bold/challenge"
 	modes "github.com/offchainlabs/nitro/bold/challenge/types"
 	"github.com/offchainlabs/nitro/bold/protocol"
@@ -35,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
@@ -225,7 +227,7 @@ func TestOverflowAssertions(t *testing.T) {
 			state.Height(smallStepChallengeLeafHeight),
 		},
 		stateManager,
-		nil, // Api db
+		containers.None[db.Database](), // Api db
 	)
 
 	stackOpts := []challenge.StackOpt{

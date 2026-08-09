@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/offchainlabs/nitro/bold/containers/option"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 func Test_computeRequiredNumberOfHashes(t *testing.T) {
@@ -24,13 +24,13 @@ func Test_computeRequiredNumberOfHashes(t *testing.T) {
 	challengeLevel := uint64(0)
 	_, err := provider.computeRequiredNumberOfHashes(
 		challengeLevel,
-		option.Some(Height(5)),
+		containers.Some(Height(5)),
 	)
 	require.ErrorContains(t, err, "end 5 was greater than max height for level 4")
 
 	got, err := provider.computeRequiredNumberOfHashes(
 		challengeLevel,
-		option.Some(Height(4)),
+		containers.Some(Height(4)),
 	)
 	require.NoError(t, err)
 	require.Equal(t, uint64(5), got)
@@ -38,14 +38,14 @@ func Test_computeRequiredNumberOfHashes(t *testing.T) {
 	challengeLevel = uint64(1)
 	got, err = provider.computeRequiredNumberOfHashes(
 		challengeLevel,
-		option.Some(Height(4)),
+		containers.Some(Height(4)),
 	)
 	require.NoError(t, err)
 	require.Equal(t, uint64(5), got)
 
 	got, err = provider.computeRequiredNumberOfHashes(
 		challengeLevel,
-		option.None[Height](),
+		containers.None[Height](),
 	)
 	require.NoError(t, err)
 	require.Equal(t, uint64(9), got)
@@ -53,7 +53,7 @@ func Test_computeRequiredNumberOfHashes(t *testing.T) {
 	challengeLevel = uint64(2)
 	got, err = provider.computeRequiredNumberOfHashes(
 		challengeLevel,
-		option.None[Height](),
+		containers.None[Height](),
 	)
 	require.NoError(t, err)
 	require.Equal(t, uint64(17), got)
@@ -61,7 +61,7 @@ func Test_computeRequiredNumberOfHashes(t *testing.T) {
 	challengeLevel = uint64(1)
 	got, err = provider.computeRequiredNumberOfHashes(
 		challengeLevel,
-		option.Some(Height(8)),
+		containers.Some(Height(8)),
 	)
 	require.NoError(t, err)
 	require.Equal(t, uint64(9), got)

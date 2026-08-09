@@ -3,6 +3,11 @@
 ;;
 ;; This file implements the bulk memory instructions as per the specification below
 ;; https://github.com/WebAssembly/bulk-memory-operations/blob/master/proposals/bulk-memory-operations/Overview.md
+;;
+;; WARNING: memory_fill in this file has a bug — the value argument is not masked to 8 bits
+;; before building the 64-bit fill pattern, violating the WebAssembly spec.
+;; This file must not be modified, as doing so would change the ModuleHash of existing
+;; compiled Stylus programs. Use bulk_memory_v2.wat for Stylus V3+ instead.
 
 (module
     (memory (export "memory") 0 0)

@@ -28,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/retry"
 	"github.com/offchainlabs/nitro/bold/state"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -37,6 +38,19 @@ var (
 	errorConfirmingAssertionByTimeCounter = metrics.NewRegisteredCounter("arb/validator/scanner/error_confirming_assertion_by_time", nil)
 	latestConfirmedAssertionGauge         = metrics.NewRegisteredGauge("arb/validator/scanner/latest_confirmed_assertion_block_number", nil)
 	safeBlockDelayCounter                 = metrics.GetOrRegisterCounter("arb/validator/scanner/safe_block_delay", nil)
+	// assertionPointerSkipNonChildCounter increments when the catchup goroutine
+	// tries to advance latestAgreedAssertion to an assertion that is not a
+	// direct child of the current cursor — the cursor stays put. Non-zero in
+	// production means the catchup-vs-sync race documented in
+	// applyRecordAgreedAssertion is firing; sustained increments warrant
+	// investigation.
+	assertionPointerSkipNonChildCounter = metrics.NewRegisteredCounter("arb/validator/scanner/assertion_pointer_skip_non_child", nil)
+	// selfChallengeBailoutCounter increments when the rival path computed an
+	// "evil" assertion whose hash equals the assertion under review — meaning
+	// the validator was about to challenge a canonical assertion. The same-hash
+	// short-circuit in maybePostRivalAssertionAndChallenge catches it; this
+	// counter exists so SRE can see how often the upstream race fires.
+	selfChallengeBailoutCounter = metrics.NewRegisteredCounter("arb/validator/scanner/self_challenge_bailout", nil)
 )
 
 type timings struct {
@@ -80,7 +94,7 @@ type Manager struct {
 	assertionsProcessedCount    uint64
 	submittedRivalsCount        uint64
 	submittedAssertions         *threadsafe.LruSet[protocol.AssertionHash]
-	apiDB                       db.Database
+	apiDB                       containers.Option[db.Database]
 	assertionChainData          *assertionChainData
 	observedCanonicalAssertions chan protocol.AssertionHash
 	isReadyToPost               bool
@@ -144,7 +158,7 @@ func WithoutAutoAllowanceApproval() Opt {
 // WithAPIDB sets the database to use for the assertion manager.
 func WithAPIDB(db db.Database) Opt {
 	return func(m *Manager) {
-		m.apiDB = db
+		m.apiDB = containers.Some(db)
 	}
 }
 
@@ -228,7 +242,7 @@ func NewManager(
 	}
 	m := &Manager{
 		chain:                    chain,
-		apiDB:                    nil,
+		apiDB:                    containers.None[db.Database](),
 		backend:                  chain.Backend(),
 		execProvider:             execProvider,
 		rollupAddr:               chain.RollupAddress(),

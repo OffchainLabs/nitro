@@ -51,11 +51,11 @@ type S3Config struct {
 }
 
 func S3ConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.String(prefix+".access-key", DefaultS3Config.AccessKey, "S3 access key")
-	f.String(prefix+".bucket", DefaultS3Config.Bucket, "S3 bucket")
-	f.String(prefix+".object-key", DefaultS3Config.ObjectKey, "S3 object key")
-	f.String(prefix+".region", DefaultS3Config.Region, "S3 region")
-	f.String(prefix+".secret-key", DefaultS3Config.SecretKey, "S3 secret key")
+	f.String(prefix+".access-key", DefaultS3Config.AccessKey, "S3 access key for fetching the node configuration file from S3")
+	f.String(prefix+".bucket", DefaultS3Config.Bucket, "S3 bucket containing the node configuration file")
+	f.String(prefix+".object-key", DefaultS3Config.ObjectKey, "S3 object key of the node configuration file (JSON format)")
+	f.String(prefix+".region", DefaultS3Config.Region, "S3 region of the bucket containing the node configuration file")
+	f.String(prefix+".secret-key", DefaultS3Config.SecretKey, "S3 secret key for fetching the node configuration file from S3 (triggers S3 config loading)")
 }
 
 var DefaultS3Config = S3Config{

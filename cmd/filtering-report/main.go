@@ -112,7 +112,7 @@ func addFlags(f *pflag.FlagSet) {
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
 
-	sqsclient.QueueConfigAddOptions("queue", f)
+	sqsclient.QueueConfigAddOptions("queue", f, "SQS queue URL for filtered transaction reports")
 	forwarder.ConfigAddOptions("report-forwarder", f)
 }
 
@@ -132,8 +132,10 @@ func parseConfig(args []string) (*FilteringReportConfig, error) {
 	}
 	if config.Conf.Dump {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
-			"queue.sqs-client.access-key": "",
-			"queue.sqs-client.secret-key": "",
+			"queue.sqs-client.access-key":                         "",
+			"queue.sqs-client.secret-key":                         "",
+			"report-forwarder.poison-queue.sqs-client.access-key": "",
+			"report-forwarder.poison-queue.sqs-client.secret-key": "",
 		})
 		if err != nil {
 			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
@@ -202,7 +204,15 @@ func mainImpl() int {
 		fmt.Fprintf(os.Stderr, "error creating SQS client: %v\n", err)
 		return 1
 	}
-	fwd, err := forwarder.New(&config.ReportForwarder, queueClient)
+	var poisonQueueClient sqsclient.QueueClient
+	if config.ReportForwarder.PoisonQueue.QueueURL != "" {
+		poisonQueueClient, err = sqsclient.NewQueueClient(ctx, &config.ReportForwarder.PoisonQueue)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error creating poison queue SQS client: %v\n", err)
+			return 1
+		}
+	}
+	fwd, err := forwarder.New(&config.ReportForwarder, queueClient, poisonQueueClient)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating forwarder: %v\n", err)
 		return 1

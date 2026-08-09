@@ -18,6 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -214,6 +215,104 @@ func TestRetryableCreate(t *testing.T) {
 
 	if !equal {
 		Fail(t)
+	}
+}
+
+// TestRetryableKeepaliveBeforeReap exercises the ArbosVersion_60 fix:
+// Keepalive extends a retryable's effective lifetime by incrementing
+// timeoutWindowsLeft, but the raw stored timeout is only advanced later by
+// TryToReapOneRetryable. Before v60, OpenRetryable gated existence on the
+// raw stored timeout alone, so a paying-for-extension retryable could
+// appear to vanish once the original timeout passed. This test confirms
+// the retryable stays reachable at v60+ in that window and goes away
+// only once the effective (extended) timeout is exceeded.
+func TestRetryableKeepaliveBeforeReap(t *testing.T) {
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_60
+	s, _ := arbosState.NewArbosMemoryBackedArbOSStateWithConfig(chainConfig)
+	retryableState := s.RetryableState()
+
+	lifetime := uint64(retryables.RetryableLifetimeSeconds)
+	timestampAtCreation := uint64(1_000_000)
+	originalTimeout := timestampAtCreation + lifetime
+
+	id := common.BigToHash(big.NewInt(42))
+	from := testhelpers.RandomAddress()
+	to := testhelpers.RandomAddress()
+	beneficiary := testhelpers.RandomAddress()
+	calldata := []byte{1, 2, 3, 4}
+
+	_, err := retryableState.CreateRetryable(id, originalTimeout, from, &to, common.Big0, beneficiary, calldata)
+	Require(t, err)
+
+	// Extend via Keepalive at mid-life. This increments timeoutWindowsLeft
+	// but does not advance the stored timeout.
+	midLife := timestampAtCreation + lifetime/2
+	window := midLife + lifetime
+	newTimeout, err := retryableState.Keepalive(id, midLife, window, lifetime)
+	Require(t, err)
+	if newTimeout != originalTimeout+lifetime {
+		Fail(t, "unexpected keepalive result", newTimeout, originalTimeout+lifetime)
+	}
+
+	// Advance past the original (raw) timeout. The reaper has NOT run yet,
+	// so the stored timeout is still originalTimeout. The retryable is
+	// logically alive — effective timeout is originalTimeout+lifetime.
+	now := originalTimeout + 1
+
+	r, err := retryableState.OpenRetryable(id, now)
+	Require(t, err)
+	if r == nil {
+		Fail(t, "OpenRetryable returned nil for a live retryable past its original stored timeout")
+	}
+	effTimeout, err := r.CalculateTimeout()
+	Require(t, err)
+	if effTimeout != originalTimeout+lifetime {
+		Fail(t, "unexpected effective timeout", effTimeout, originalTimeout+lifetime)
+	}
+
+	// Past the extended lifetime: the retryable must disappear.
+	beyond := originalTimeout + lifetime + 1
+	r2, err := retryableState.OpenRetryable(id, beyond)
+	Require(t, err)
+	if r2 != nil {
+		Fail(t, "OpenRetryable returned non-nil for a retryable past its extended lifetime")
+	}
+}
+
+// TestRetryableKeepaliveBeforeReapPreV60 confirms the gate: before
+// ArbosVersion_60, OpenRetryable keeps its legacy behavior and returns
+// nil once the raw stored timeout has elapsed, even if Keepalive has
+// already extended the effective lifetime.
+func TestRetryableKeepaliveBeforeReapPreV60(t *testing.T) {
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	chainConfig.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_51
+	s, _ := arbosState.NewArbosMemoryBackedArbOSStateWithConfig(chainConfig)
+	retryableState := s.RetryableState()
+
+	lifetime := uint64(retryables.RetryableLifetimeSeconds)
+	timestampAtCreation := uint64(1_000_000)
+	originalTimeout := timestampAtCreation + lifetime
+
+	id := common.BigToHash(big.NewInt(43))
+	from := testhelpers.RandomAddress()
+	to := testhelpers.RandomAddress()
+	beneficiary := testhelpers.RandomAddress()
+	calldata := []byte{1, 2, 3, 4}
+
+	_, err := retryableState.CreateRetryable(id, originalTimeout, from, &to, common.Big0, beneficiary, calldata)
+	Require(t, err)
+
+	midLife := timestampAtCreation + lifetime/2
+	window := midLife + lifetime
+	_, err = retryableState.Keepalive(id, midLife, window, lifetime)
+	Require(t, err)
+
+	now := originalTimeout + 1
+	r, err := retryableState.OpenRetryable(id, now)
+	Require(t, err)
+	if r != nil {
+		Fail(t, "pre-v60 OpenRetryable should return nil past the raw stored timeout")
 	}
 }
 

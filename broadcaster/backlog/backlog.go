@@ -69,21 +69,26 @@ func (b *backlog) backlogSizeInBytes() (uint64, error) {
 		return 0, errors.New("the head or tail segment of feed backlog is nil")
 	}
 
-	headSeg.messagesLock.RLock()
-	if len(headSeg.messages) == 0 {
-		return 0, errors.New("head segment of the feed backlog is empty")
+	headMsg, err := func() (*message.BroadcastFeedMessage, error) {
+		headSeg.messagesLock.RLock()
+		defer headSeg.messagesLock.RUnlock()
+		if len(headSeg.messages) == 0 {
+			return nil, errors.New("head segment of the feed backlog is empty")
+		}
+		return headSeg.messages[0], nil
+	}()
+	if err != nil {
+		return 0, err
 	}
-	headMsg := headSeg.messages[0]
-	headSeg.messagesLock.RUnlock()
 
 	tailSeg.messagesLock.RLock()
+	defer tailSeg.messagesLock.RUnlock()
 	if len(tailSeg.messages) == 0 {
 		return 0, errors.New("tail segment of the feed backlog is empty")
 	}
 	tailMsg := tailSeg.messages[len(tailSeg.messages)-1]
-	size := tailMsg.CumulativeSumMsgSize
-	tailSeg.messagesLock.RUnlock()
 
+	size := tailMsg.CumulativeSumMsgSize
 	size -= headMsg.CumulativeSumMsgSize
 	size += headMsg.Size()
 	return size, nil

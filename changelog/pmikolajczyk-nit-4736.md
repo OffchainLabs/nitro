@@ -1,2 +1,0 @@
-### Internal
-- Introduce rustfmt.toml

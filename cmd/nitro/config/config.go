@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"time"
@@ -135,7 +137,8 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 
 func (c *NodeConfig) Validate() error {
 	if c.Init.RecreateMissingStateFrom > 0 && !c.Execution.Caching.Archive {
-		return errors.New("recreate-missing-state-from enabled for a non-archive node")
+		return errors.New("--init.recreate-missing-state-from requires an archive node (--execution.caching.archive), " +
+			"because it needs historical state data. For pruned (full) nodes, use --init.latest pruned to reinitialize instead")
 	}
 	if err := c.Init.Validate(); err != nil {
 		return err
@@ -298,12 +301,37 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		nodeConfig.Execution.TxIndexer.Enable = true
 		nodeConfig.Execution.TxIndexer.TxLookupLimit = 0
 	}
+	if err := resolveGenesisJsonFileDirectory(&nodeConfig); err != nil {
+		return nil, nil, err
+	}
 
 	err = nodeConfig.Validate()
 	if err != nil {
 		return nil, nil, err
 	}
 	return &nodeConfig, &l2DevWallet, nil
+}
+
+func resolveGenesisJsonFileDirectory(nodeConfig *NodeConfig) error {
+	if nodeConfig.Init.GenesisJsonFile != "" || nodeConfig.Chain.ID == 0 || nodeConfig.Init.GenesisJsonFileDirectory == "" {
+		return nil
+	}
+	files, err := os.ReadDir(nodeConfig.Init.GenesisJsonFileDirectory)
+	if err != nil {
+		return fmt.Errorf("error reading genesis json file directory %s: %w", nodeConfig.Init.GenesisJsonFileDirectory, err)
+	}
+	requiredFileName := fmt.Sprintf("%d.json", nodeConfig.Chain.ID)
+	for _, file := range files {
+		if file.IsDir() || file.Name() != requiredFileName {
+			continue
+		}
+		fullPath := filepath.Join(nodeConfig.Init.GenesisJsonFileDirectory, file.Name())
+		nodeConfig.Init.GenesisJsonFile = fullPath
+		nodeConfig.Init.Empty = false
+		log.Info("found genesis json file for chain id from genesis json file directory", "file", fullPath, "chainId", nodeConfig.Chain.ID)
+		break
+	}
+	return nil
 }
 
 func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2GenesisJsonFile string) error {

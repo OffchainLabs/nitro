@@ -15,8 +15,8 @@ import (
 
 	"github.com/offchainlabs/nitro/bold/api/db"
 	"github.com/offchainlabs/nitro/bold/commitment/history"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 var ErrChainCatchingUp = errors.New("chain is catching up to the execution state")
@@ -107,7 +107,7 @@ type HistoryCommitmentRequest struct {
 	UpperChallengeOriginHeights []Height
 	// An optional height at which to end the history commitment. If none, the
 	// request will commit to all the leaves at the specified challenge level.
-	UpToHeight option.Option[Height]
+	UpToHeight containers.Option[Height]
 }
 
 type GeneralHistoryCommitter interface {
@@ -117,7 +117,7 @@ type GeneralHistoryCommitter interface {
 		ctx context.Context,
 		req *HistoryCommitmentRequest,
 	) (history.History, error)
-	UpdateAPIDatabase(db.Database)
+	UpdateAPIDatabase(containers.Option[db.Database])
 }
 
 type GeneralPrefixProver interface {

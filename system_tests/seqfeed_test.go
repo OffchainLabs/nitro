@@ -367,6 +367,9 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise().WithTakeOwnership(false)
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
+	// Default shuts the node down on mismatch; opt out so the tx-processing
+	// assertions below still mean something.
+	builder.nodeConfig.TransactionStreamer.ShutdownOnBlockhashMismatch = false
 	cleanup := builder.Build(t)
 	defer cleanup()
 	testClient := builder.L2

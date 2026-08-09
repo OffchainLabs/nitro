@@ -173,7 +173,7 @@ pub unsafe extern "C" fn programs__program_prepare(
 pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: GuestPtr) -> u32 {
     unsafe {
         let (req_type, len) = Program::current().request_handler().get_request_meta(id);
-        if len_ptr != GuestPtr(0) {
+        if len_ptr != GuestPtr::new(0) {
             StaticMem.write_u32(len_ptr, len as u32);
         }
         req_type

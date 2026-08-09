@@ -24,8 +24,8 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/bold/api/db"
 	"github.com/offchainlabs/nitro/bold/commitment/proof/prefix"
-	"github.com/offchainlabs/nitro/bold/containers/option"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/state"
 	stateprovider "github.com/offchainlabs/nitro/bold/testing/mocks/state-provider"
@@ -37,6 +37,7 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/bold"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
@@ -117,7 +118,7 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 			1 << 5,
 		},
 		stateManager,
-		nil, // api db
+		containers.None[db.Database](), // api db
 	)
 	bisectionHeight := state.Height(16)
 	request := &state.HistoryCommitmentRequest{
@@ -129,12 +130,12 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 			WasmModuleRoot: common.Hash{},
 		},
 		UpperChallengeOriginHeights: []state.Height{},
-		UpToHeight:                  option.Some(bisectionHeight),
+		UpToHeight:                  containers.Some(bisectionHeight),
 	}
 	bisectionCommitment, err := historyCommitter.HistoryCommitment(ctx, request)
 	Require(t, err)
 
-	request.UpToHeight = option.None[state.Height]()
+	request.UpToHeight = containers.None[state.Height]()
 	packedProof, err := historyCommitter.PrefixProof(ctx, request, bisectionHeight)
 	Require(t, err)
 

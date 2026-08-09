@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/parent"
+	"github.com/offchainlabs/nitro/bold/api/db"
 	"github.com/offchainlabs/nitro/bold/challenge"
 	modes "github.com/offchainlabs/nitro/bold/challenge/types"
 	"github.com/offchainlabs/nitro/bold/protocol/sol"
@@ -30,6 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/bold"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 func TestL3ChallengeProtocolBOLD(t *testing.T) {
@@ -235,7 +237,7 @@ func startL3BoldChallengeManager(t *testing.T, ctx context.Context, builder *Nod
 			state.Height(smallStepChallengeLeafHeight),
 		},
 		stateManager,
-		nil, // Api db
+		containers.None[db.Database](), // Api db
 	)
 
 	rollupUserLogic, err := rollupgen.NewRollupUserLogic(builder.l3Addresses.Rollup, builder.L2.Client)

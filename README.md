@@ -41,6 +41,22 @@ compiled to WASM.
 
 Arbitrum One successfully migrated from the Classic Arbitrum stack onto Nitro on 8/31/22. (See [state migration](https://developer.arbitrum.io/migration/state-migration) and [dapp migration](https://developer.arbitrum.io/migration/dapp_migration) for more info).
 
+## Building `nitro-private`
+
+`nitro-private` routes a subset of submodules (`go-ethereum`, `wasmer`)
+through `-private` forks. First-time setup:
+
+```sh
+git clone git@github.com:OffchainLabs/nitro-private.git   # no need for --recurse-submodules
+cd nitro-private
+make init-submodules
+make check-submodules
+```
+
+See [`docs/private-submodules.md`](./docs/private-submodules.md) for the
+full workflow, including branch switching, the pre-push guard hook, and
+the CI counterpart.
+
 ## License
 
 Nitro is currently licensed under a [Business Source License](./LICENSE.md), similar to our friends at Uniswap and Aave, with an "Additional Use Grant" to ensure that everyone can have full comfort using and running nodes on all public Arbitrum chains.
@@ -48,6 +64,28 @@ Nitro is currently licensed under a [Business Source License](./LICENSE.md), sim
 The Additional Use Grant also permits the deployment of the Nitro software, in a permissionless fashion and without cost, as a new blockchain provided that the chain settles to either Arbitrum One or Arbitrum Nova.
 
 For those that prefer to deploy the Nitro software either directly on Ethereum (i.e. an L2) or have it settle to another Layer-2 on top of Ethereum, the [Arbitrum Expansion Program (the "AEP")](https://docs.arbitrum.foundation/aep/ArbitrumExpansionProgramTerms.pdf) was recently established. The AEP allows for the permissionless deployment in the aforementioned fashion provided that 10% of net revenue (as more fully described in the AEP) is contributed back to the Arbitrum community in accordance with the requirements of the AEP.
+
+## Support policy and supported versions
+
+We will always support the current minor release of Nitro. Older versions of Nitro will be supported until either (shortest of):
+
+- 30 calendar days have passed since its release and there is a newer minor release, or
+- Offchain communicates a critical security concern about a version that warrants immediate upgrading to a newer, fixed version.
+
+Visit the documentation [Support policy page](https://docs.arbitrum.io/run-arbitrum-node/nitro-support-policy) for more detail.
+
+### Current supported Nitro versions
+
+| Currently supported | Relevant links |
+| ------------------- | -------------- |
+| Nitro 3.10.x        | [GitHub](https://github.com/OffchainLabs/nitro/releases/tag/v3.10.0) |
+| Nitro 3.9.9         | [GitHub](https://github.com/OffchainLabs/nitro/releases/tag/v3.9.9)
+
+### Special note about ArbOS & Arbitrum Classic
+
+- Only the ArbOS release that is activated on mainnet Arbitrum One will receive security updates and urgent vulnerability patches. We strongly recommend you stay up to date with the latest ArbOS since only the latest version will receive security updates. The activation timestamps for ArbOS upgrades on Arbitrum One can be found [here](https://docs.arbitrum.foundation/network-upgrades), with the most recent entry being the ArbOS version that is actively being used on Arbitrum One.
+  - Alternatively, you may verify the ArbOS version on Arbitrum One using the `arbOSVersion()` method on the `ArbSys` percompile at `0x000....64`. The result will be offset by 55 as the first version of Nitro is known as version 56 (e.g,. a response of 106 indicates that the ArbOS version is 51).
+- Arbitrum Classic will also continue to be supported.
 
 ## Contact
 

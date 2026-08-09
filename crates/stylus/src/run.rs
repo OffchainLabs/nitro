@@ -101,7 +101,6 @@ impl<D: DataReader, E: EvmApi<D>> RunProgram for NativeInstance<D, E> {
                 if outcome.clone().to_trap() == Some(TrapCode::StackOverflow) {
                     return Ok(NativeStackOverflow);
                 }
-
                 if self.stack_left() == 0 {
                     return Ok(OutOfStack);
                 }

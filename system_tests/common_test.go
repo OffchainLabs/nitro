@@ -28,7 +28,6 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -125,7 +124,7 @@ type TestClient struct {
 	ctx                    context.Context
 	Client                 *ethclient.Client
 	L1Backend              *eth.Ethereum
-	L1BlobReader           daprovider.BlobReader
+	L1BlobReader           containers.Option[daprovider.BlobReader]
 	Stack                  *node.Node
 	ConsensusNode          *arbnode.Node
 	ExecNode               *gethexec.ExecutionNode
@@ -866,7 +865,7 @@ func buildOnParentChain(
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
 	execConfigFetcher := NewCommonConfigFetcher(execConfig)
-	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, executionDB, blockchain, parentChainTestClient.Client, execConfigFetcher, 0, parentChain)
+	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, executionDB, blockchain, containers.Some(parentChainTestClient.Client), execConfigFetcher, 0, parentChain)
 	Require(t, err)
 	chainTestClient.ExecutionConfigFetcher = execConfigFetcher
 
@@ -1076,7 +1075,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 		t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, nil, b.l2StackConfig, b.execConfig, b.TrieNoAsyncFlush)
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, executionDB, blockchain, nil, execConfigFetcher, 0, nil)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, executionDB, blockchain, containers.None[*ethclient.Client](), execConfigFetcher, 0, nil)
 	Require(t, err)
 	b.L2.ExecutionConfigFetcher = execConfigFetcher
 
@@ -1086,7 +1085,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	consensusConfigFetcher := NewCommonConfigFetcher(b.nodeConfig)
 	b.L2.ConsensusNode, err = arbnode.CreateConsensusNode(
 		b.ctx, b.L2.Stack, execNode, consensusDB, consensusConfigFetcher, blockchain.Config(),
-		nil, nil, nil, nil, nil, fatalErrChan, nil, locator.LatestWasmModuleRoot(), nil)
+		nil, nil, nil, nil, nil, fatalErrChan, containers.None[daprovider.BlobReader](), locator.LatestWasmModuleRoot(), nil)
 	Require(t, err)
 	b.L2.ConsensusConfigFetcher = consensusConfigFetcher
 
@@ -1160,7 +1159,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	l2info, stack, executionDB, consensusDB, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, b.initMessage, b.l2StackConfig, b.execConfig, b.TrieNoAsyncFlush)
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, executionDB, blockchain, nil, execConfigFetcher, 0, b.L2.ExecNode.ParentChain)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, executionDB, blockchain, containers.None[*ethclient.Client](), execConfigFetcher, 0, b.L2.ExecNode.ParentChain)
 	Require(t, err)
 
 	feedErrChan := make(chan error, 10)
@@ -1179,7 +1178,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 		l1Client = b.L1.Client
 	}
 	consensusConfigFetcher := NewCommonConfigFetcher(b.nodeConfig)
-	currentNode, err := arbnode.CreateConsensusNode(b.ctx, stack, execNode, consensusDB, consensusConfigFetcher, blockchain.Config(), l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, nil, locator.LatestWasmModuleRoot(), b.L2.ConsensusNode.ParentChain)
+	currentNode, err := arbnode.CreateConsensusNode(b.ctx, stack, execNode, consensusDB, consensusConfigFetcher, blockchain.Config(), l1Client, b.addresses, validatorTxOpts, sequencerTxOpts, dataSigner, feedErrChan, containers.None[daprovider.BlobReader](), locator.LatestWasmModuleRoot(), b.L2.ConsensusNode.ParentChain)
 	Require(t, err)
 
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(b.ctx, stack, execNode, currentNode)
@@ -1698,7 +1697,7 @@ func createRedisGroup(ctx context.Context, t *testing.T, streamName string, clie
 	t.Helper()
 	// Stream name and group name are the same.
 	if _, err := client.XGroupCreateMkStream(ctx, streamName, streamName, "$").Result(); err != nil {
-		log.Debug("Error creating stream group: %v", err)
+		log.Debug("Error creating stream group", "err", err)
 	}
 }
 
@@ -1822,7 +1821,7 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 	return valStack
 }
 
-func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, stackConfig *node.Config, l1ChainConfig *params.ChainConfig) (info, *ethclient.Client, *eth.Ethereum, *node.Node, *ClientWrapper, daprovider.BlobReader) {
+func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, stackConfig *node.Config, l1ChainConfig *params.ChainConfig) (info, *ethclient.Client, *eth.Ethereum, *node.Node, *ClientWrapper, containers.Option[daprovider.BlobReader]) {
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
 	}
@@ -1878,6 +1877,7 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, s
 
 	simBeacon, err := catalyst.NewSimulatedBeacon(0, common.Address{}, l1backend)
 	Require(t, err)
+	Require(t, simBeacon.Initialize(context.Background()))
 	catalyst.RegisterSimulatedBeaconAPIs(stack, simBeacon)
 	stack.RegisterLifecycle(simBeacon)
 
@@ -1908,7 +1908,7 @@ func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, s
 
 	l1Client := ethclient.NewClient(rpcClient)
 
-	return l1info, l1Client, l1backend, stack, clientWrapper, simBeacon
+	return l1info, l1Client, l1backend, stack, clientWrapper, containers.Some[daprovider.BlobReader](simBeacon)
 }
 
 var (
@@ -2422,7 +2422,7 @@ func Create2ndNodeWithConfig(
 	addresses *chaininfo.RollupAddresses,
 	initMessage *arbostypes.ParsedInitMessage,
 	useExecutionClientOnly bool,
-	blobReader daprovider.BlobReader,
+	blobReader containers.Option[daprovider.BlobReader],
 	parentChain *parent.ParentChain,
 ) (*ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, func(), ConfigFetcher[arbnode.Config], ConfigFetcher[gethexec.Config]) {
 	if nodeConfig == nil {
@@ -2480,7 +2480,7 @@ func Create2ndNodeWithConfig(
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
 	execConfigFetcher := NewCommonConfigFetcher(execConfig)
-	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, executionDB, blockchain, parentChainClient, execConfigFetcher, 0, parentChain)
+	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, executionDB, blockchain, containers.Some(parentChainClient), execConfigFetcher, 0, parentChain)
 	Require(t, err)
 
 	var currentNode *arbnode.Node
@@ -2995,18 +2995,9 @@ func waitForTCP(t *testing.T, addr string, timeout time.Duration) {
 	Fatal(t, "timed out waiting for TCP", addr)
 }
 
-func getFreePort(t testing.TB) int {
-	t.Helper()
-	listener, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	defer listener.Close()
-	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
-	if !ok {
-		t.Fatalf("failed to cast listener address to *net.TCPAddr")
-	}
-	return tcpAddr.Port
-}
-
+// Used only by challengetest-tagged files; the linter doesn't see those callers in default builds.
+//
+//nolint:unused
 func keepChainMoving(t *testing.T, delay time.Duration, ctx context.Context, l1Info *BlockchainTestInfo, client *ethclient.Client) {
 	for {
 		select {
@@ -3020,10 +3011,16 @@ func keepChainMoving(t *testing.T, delay time.Duration, ctx context.Context, l1I
 			to := l1Info.GetAddress("Faucet")
 			tx := l1Info.PrepareTxTo("Faucet", &to, l1Info.TransferGas, common.Big0, nil)
 			if err := client.SendTransaction(ctx, tx); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				t.Log("Error sending tx:", err)
 				continue
 			}
 			if _, err := EnsureTxSucceeded(ctx, client, tx); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				t.Log("Error ensuring tx succeeded:", err)
 				continue
 			}

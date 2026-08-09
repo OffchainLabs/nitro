@@ -11,9 +11,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/bold/containers/option"
+	"github.com/offchainlabs/nitro/bold/api/db"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/bold/state"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 var (
@@ -56,7 +57,7 @@ func TestHistoryCommitment(t *testing.T) {
 		stateBackend,
 		challengeLeafHeights,
 		stateBackend,
-		nil,
+		containers.None[db.Database](),
 	)
 	t.Run("produces a block challenge commitment with height equal to leaf height const", func(t *testing.T) {
 		got, err := provider.HistoryCommitment(
@@ -64,7 +65,7 @@ func TestHistoryCommitment(t *testing.T) {
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []state.Height{},
-				UpToHeight:                  option.None[state.Height](),
+				UpToHeight:                  containers.None[state.Height](),
 			},
 		)
 		require.NoError(t, err)
@@ -76,7 +77,7 @@ func TestHistoryCommitment(t *testing.T) {
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []state.Height{},
-				UpToHeight:                  option.Some(state.Height(2)),
+				UpToHeight:                  containers.Some(state.Height(2)),
 			},
 		)
 		require.NoError(t, err)
@@ -88,7 +89,7 @@ func TestHistoryCommitment(t *testing.T) {
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []state.Height{},
-				UpToHeight:                  option.Some(state.Height(1)),
+				UpToHeight:                  containers.Some(state.Height(1)),
 			},
 		)
 		require.NoError(t, err)
@@ -98,7 +99,7 @@ func TestHistoryCommitment(t *testing.T) {
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []state.Height{0},
-				UpToHeight:                  option.None[state.Height](),
+				UpToHeight:                  containers.None[state.Height](),
 			},
 		)
 		require.NoError(t, err)
@@ -113,7 +114,7 @@ func TestHistoryCommitment(t *testing.T) {
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []state.Height{},
-				UpToHeight:                  option.Some(state.Height(1)),
+				UpToHeight:                  containers.Some(state.Height(1)),
 			},
 		)
 		require.NoError(t, err)
@@ -123,7 +124,7 @@ func TestHistoryCommitment(t *testing.T) {
 			&state.HistoryCommitmentRequest{
 				AssertionMetadata:           simpleAssertionMetadata(),
 				UpperChallengeOriginHeights: []state.Height{0, 0},
-				UpToHeight:                  option.None[state.Height](),
+				UpToHeight:                  containers.None[state.Height](),
 			},
 		)
 		require.NoError(t, err)

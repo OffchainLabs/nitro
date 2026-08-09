@@ -8,19 +8,24 @@ on:
     # Run at 00:00 AM UTC
     - cron: '0 0 * * *'
 
+permissions:
+  contents: read
+
 jobs:
   # Only run on schedule
   tests-scheduled:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [legacychallenge, long, challenge, l3challenge, execution-spec-tests, pebble-a, pebble-b]
+        test-mode: [legacychallenge, long, challenge-A, challenge-B, l3challenge, execution-spec-tests, pebble-a, pebble-b]
     uses: ./.github/workflows/_go-tests.yml
+    secrets: inherit
     with:
       run-name: ${{ matrix.test-mode }}
       run-legacy-challenge: ${{ matrix.test-mode == 'legacychallenge' }}
       run-long: ${{ matrix.test-mode == 'long' }}
-      run-challenge: ${{ matrix.test-mode == 'challenge' }}
+      run-challenge-a: ${{ matrix.test-mode == 'challenge-A' }}
+      run-challenge-b: ${{ matrix.test-mode == 'challenge-B' }}
       run-l3challenge: ${{ matrix.test-mode == 'l3challenge' }}
       run-execution-spec-tests: ${{ matrix.test-mode == 'execution-spec-tests' }}
       run-pebble-a: ${{ matrix.test-mode == 'pebble-a' }}
@@ -41,7 +46,7 @@ jobs:
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - name: Send Slack notification
-        uses: slackapi/slack-github-action@v2.1.1
+        uses: slackapi/slack-github-action@91efab103c0de0a537f72a35f6b8cda0ee76bf0a  # v2.1.1
         with:
           errors: true
           method: chat.postMessage

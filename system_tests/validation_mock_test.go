@@ -320,7 +320,7 @@ func TestValidationServerAPIWithBoldValidationConsumerProducer(t *testing.T) {
 	Require(t, err)
 	err = redisValClient.Start(ctx)
 	Require(t, err)
-	err = redisValClient.Initialize(ctx, mockWasmModuleRoots)
+	err = redisValClient.StartValidators(mockWasmModuleRoots)
 	Require(t, err)
 
 	config := server_arb.DefaultArbitratorSpawnerConfig

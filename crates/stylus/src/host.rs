@@ -448,7 +448,7 @@ pub(crate) fn tx_origin<D: DataReader, E: EvmApi<D>>(
 
 pub(crate) fn pay_for_memory_grow<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
-    pages: u16,
+    pages: u32,
 ) -> MaybeEscape {
     hostio!(env, pay_for_memory_grow(pages))
 }

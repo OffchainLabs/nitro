@@ -245,6 +245,97 @@
 	(call $assert_f64 (f64.const 0.30000000000000004))
 	(drop)
 
+	;; NaN canonicalization: soft-float must produce canonical quiet NaN
+
+	;; f64.min / f64.max with a signaling NaN operand (0x7FF0000000000001)
+	(i64.const 0x7FF0000000000001)
+	(f64.reinterpret_i64)
+	(f64.const 1)
+	(f64.min)
+	(i64.reinterpret_f64)
+	(call $assert_i64 (i64.const 0x7FF8000000000000))
+
+	(i64.const 0x7FF0000000000001)
+	(f64.reinterpret_i64)
+	(f64.const 1)
+	(f64.max)
+	(i64.reinterpret_f64)
+	(call $assert_i64 (i64.const 0x7FF8000000000000))
+
+	;; f64.add(+∞, -∞) generates NaN; SoftFloat 8086 default is negative
+	(f64.const inf)
+	(f64.const -inf)
+	(f64.add)
+	(i64.reinterpret_f64)
+	(call $assert_i64 (i64.const 0x7FF8000000000000))
+
+	;; f32.demote_f64: NaN f64 → canonical f32 NaN (0x7FC00000)
+	(i64.const 0x7FF0000000000001)
+	(f64.reinterpret_i64)
+	(f32.demote_f64)
+	(i32.reinterpret_f32)
+	(call $assert_i32 (i32.const 0x7FC00000))
+
+	;; f64.promote_f32: NaN f32 → canonical f64 NaN (0x7FF8000000000000)
+	(i32.const 0x7F800001)
+	(f32.reinterpret_i32)
+	(f64.promote_f32)
+	(i64.reinterpret_f64)
+	(call $assert_i64 (i64.const 0x7FF8000000000000))
+
+	;; unary ops: sNaN input must produce canonical NaN
+	(i64.const 0x7FF0000000000001)
+	(f64.reinterpret_i64)
+	(f64.ceil)
+	(i64.reinterpret_f64)
+	(call $assert_i64 (i64.const 0x7FF8000000000000))
+
+	(i64.const 0x7FF0000000000001)
+	(f64.reinterpret_i64)
+	(f64.floor)
+	(i64.reinterpret_f64)
+	(call $assert_i64 (i64.const 0x7FF8000000000000))
+
+	(i64.const 0x7FF0000000000001)
+	(f64.reinterpret_i64)
+	(f64.trunc)
+	(i64.reinterpret_f64)
+	(call $assert_i64 (i64.const 0x7FF8000000000000))
+
+	(i64.const 0x7FF0000000000001)
+	(f64.reinterpret_i64)
+	(f64.nearest)
+	(i64.reinterpret_f64)
+	(call $assert_i64 (i64.const 0x7FF8000000000000))
+
+	(i64.const 0x7FF0000000000001)
+	(f64.reinterpret_i64)
+	(f64.sqrt)
+	(i64.reinterpret_f64)
+	(call $assert_i64 (i64.const 0x7FF8000000000000))
+
+	;; binary ops: sNaN operand must produce canonical NaN
+	(i64.const 0x7FF0000000000001)
+	(f64.reinterpret_i64)
+	(f64.const 1)
+	(f64.sub)
+	(i64.reinterpret_f64)
+	(call $assert_i64 (i64.const 0x7FF8000000000000))
+
+	(i64.const 0x7FF0000000000001)
+	(f64.reinterpret_i64)
+	(f64.const 1)
+	(f64.mul)
+	(i64.reinterpret_f64)
+	(call $assert_i64 (i64.const 0x7FF8000000000000))
+
+	(i64.const 0x7FF0000000000001)
+	(f64.reinterpret_i64)
+	(f64.const 1)
+	(f64.div)
+	(i64.reinterpret_f64)
+	(call $assert_i64 (i64.const 0x7FF8000000000000))
+
 	(call $wavm_halt_and_set_finished)
 )
 

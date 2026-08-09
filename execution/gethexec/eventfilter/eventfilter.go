@@ -207,10 +207,9 @@ func (f *EventFilter) HasRules() bool {
 	return len(f.rules) > 0
 }
 
-// AddressesForFiltering returns FilteredAddressRecords for all addresses
-// referenced by the matching event rule. Each record includes the event rule
-// match details (event name, topic index, raw log).
-func (f *EventFilter) AddressesForFiltering(topics []common.Hash, data []byte, emitter common.Address, _sender common.Address) []filter.FilteredAddressRecord {
+// AddressesForFiltering returns addresses referenced by the matching event rule,
+// each paired with the reason and match details (event name, topic index, raw log).
+func (f *EventFilter) AddressesForFiltering(topics []common.Hash, data []byte, emitter common.Address) []filter.FilteredAddressWithReason {
 	if len(topics) == 0 {
 		return nil
 	}
@@ -238,12 +237,12 @@ func (f *EventFilter) AddressesForFiltering(topics []common.Hash, data []byte, e
 		Data:    hexutil.Bytes(data),
 	}
 
-	var out []filter.FilteredAddressRecord
+	var out []filter.FilteredAddressWithReason
 
 	for _, idx := range rule.TopicAddresses {
 		if idx > 0 && idx < len(topics) {
 			address := common.BytesToAddress(topics[idx][abiAddressOffset:])
-			out = append(out, filter.FilteredAddressRecord{
+			out = append(out, filter.FilteredAddressWithReason{
 				Address: address,
 				FilterReason: filter.FilterReason{
 					Reason: filter.ReasonEventRule,
