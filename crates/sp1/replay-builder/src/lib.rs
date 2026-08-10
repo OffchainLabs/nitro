@@ -54,3 +54,74 @@ pub fn extract_function_names(wasm: &[u8]) -> anyhow::Result<Vec<Option<String>>
     }
     Ok(names)
 }
+
+#[cfg(test)]
+mod tests {
+    use wasm_encoder::{Module, NameMap, NameSection};
+
+    use super::*;
+
+    /// Builds a minimal wasm module whose custom `name` section names the
+    /// given function indices (which must be ascending).
+    fn wasm_with_function_names(names: &[(u32, &str)]) -> Vec<u8> {
+        let mut name_map = NameMap::new();
+        for (index, name) in names {
+            name_map.append(*index, name);
+        }
+        let mut section = NameSection::new();
+        section.functions(&name_map);
+        let mut module = Module::new();
+        module.section(&section);
+        module.finish()
+    }
+
+    #[test]
+    fn extracts_dense_names() {
+        let wasm = wasm_with_function_names(&[(0, "a"), (1, "b"), (2, "c")]);
+        let names = extract_function_names(&wasm).unwrap();
+        assert_eq!(
+            names,
+            [
+                Some("a".to_owned()),
+                Some("b".to_owned()),
+                Some("c".to_owned())
+            ]
+        );
+    }
+
+    #[test]
+    fn rebases_indices_and_keeps_gaps() {
+        // Named functions start at index 5 (e.g. after unnamed imports) with
+        // a hole at 6: the mapping is rebased so the first named function
+        // sits at 0, and the hole stays None.
+        let wasm = wasm_with_function_names(&[(5, "first"), (7, "third")]);
+        let names = extract_function_names(&wasm).unwrap();
+        assert_eq!(
+            names,
+            [Some("first".to_owned()), None, Some("third".to_owned())]
+        );
+    }
+
+    #[test]
+    fn errors_without_name_section() {
+        let wasm = Module::new().finish();
+        let err = extract_function_names(&wasm).unwrap_err();
+        assert!(err.to_string().contains("no function names"), "{err:#}");
+    }
+
+    #[test]
+    fn errors_on_malformed_wasm() {
+        let err = extract_function_names(b"not a wasm module").unwrap_err();
+        assert!(err.to_string().contains("parse wasm payload"), "{err:#}");
+    }
+
+    /// The guest deserializes the mapping from JSON; unnamed slots must
+    /// round-trip as `null`, names as plain strings.
+    #[test]
+    fn json_wire_shape() {
+        let wasm = wasm_with_function_names(&[(3, "foo"), (5, "bar")]);
+        let names = extract_function_names(&wasm).unwrap();
+        let json = serde_json::to_string(&names).unwrap();
+        assert_eq!(json, r#"["foo",null,"bar"]"#);
+    }
+}

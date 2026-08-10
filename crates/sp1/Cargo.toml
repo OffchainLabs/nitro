@@ -29,6 +29,7 @@ sp1-core-executor = { version = "6.2.1" }
 sp1-sdk = { version = "6.2.1" }
 sp1-zkvm = { version = "6.2.1" }
 tracing = { version = "0.1.44" }
+wasm-encoder = { version = "0.245.0" }
 wasmparser = { version = "0.245.0" }
 
 prover = { path = "../prover", default-features = false }

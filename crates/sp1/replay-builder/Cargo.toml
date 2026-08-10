@@ -21,5 +21,8 @@ serde_json = { workspace = true }
 sp1-sdk = { workspace = true }
 wasmparser = { workspace = true }
 
+[dev-dependencies]
+wasm-encoder = { workspace = true }
+
 [build-dependencies]
 sp1-build = { workspace = true }
