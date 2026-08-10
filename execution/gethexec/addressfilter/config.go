@@ -45,7 +45,8 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".files-list", DefaultConfig.FilesList,
 		"array of S3 hash-list file configs given as a json string, "+
 			`e.g. [{"bucket":"b","object-key":"k","region":"us-east-1","download-dir":"/data/tmp","poll-interval":300000000000}]; `+
-			"json keys match the "+prefix+".files config-file field names and time durations must be supplied as an integer number of nanoseconds")
+			"json keys match the "+prefix+".files config-file field names and time durations must be supplied as an integer number of nanoseconds; "+
+			"omitted or zero chunk-size-mb, max-retries, concurrency and poll-interval fall back to their defaults, so max-retries cannot be set to 0")
 	f.String(prefix+".static-list", DefaultConfig.StaticList,
 		"hash-list JSON document given inline as a json string, with the same schema as the S3 hash-list files, "+
 			`e.g. {"id":"<uuid>","salt":"<uuid>","hashing_scheme":"sha256-stringinput|sha256-rawbytesinput|plaintext","hashes":["0x...."]}; `+
