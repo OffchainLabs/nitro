@@ -215,25 +215,28 @@ jobs:
       - name: run flaky tests (hash state scheme)
         if: inputs.run-flaky
         continue-on-error: true
+        timeout-minutes: 30
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash --flaky
+          --tags cionly --timeout 25m --test_state_scheme hash --flaky
           --junitfile test-results/junit-flaky-hash.xml
 
       - name: run flaky tests (path state scheme)
         if: inputs.run-flaky
         continue-on-error: true
+        timeout-minutes: 30
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme path --flaky
+          --tags cionly --timeout 25m --test_state_scheme path --flaky
           --junitfile test-results/junit-flaky-path.xml
 
       - name: run flaky redis tests
         if: inputs.run-flaky
         continue-on-error: true
+        timeout-minutes: 15
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --flaky
+          --tags cionly --timeout 10m --flaky
           --run TestRedis --packages './arbnode/... ./pubsub/... ./system_tests/...'
           --test_redis redis://localhost:6379/0
           --junitfile test-results/junit-flaky-redis.xml
@@ -241,17 +244,19 @@ jobs:
       - name: run flaky tests (hash state scheme, MEL)
         if: inputs.run-flaky-mel
         continue-on-error: true
+        timeout-minutes: 30
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash --flaky --test_mel
+          --tags cionly --timeout 25m --test_state_scheme hash --flaky --test_mel
           --junitfile test-results/junit-flaky-mel-hash.xml
 
       - name: run flaky tests (path state scheme, MEL)
         if: inputs.run-flaky-mel
         continue-on-error: true
+        timeout-minutes: 30
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme path --flaky --test_mel
+          --tags cionly --timeout 25m --test_state_scheme path --flaky --test_mel
           --junitfile test-results/junit-flaky-mel-path.xml
 
       # --------------------- CHALLENGE MODES ---------------------
