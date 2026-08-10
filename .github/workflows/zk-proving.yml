@@ -20,7 +20,7 @@ jobs:
     name: Run tests for ZK-related components and pipelines
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.code_changed == 'true'
-    runs-on: ocl-32cpu-128ram
+    runs-on: ocl-32cpu-128ram-dind
     timeout-minutes: 60
     defaults:
       run:
