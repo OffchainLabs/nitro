@@ -342,7 +342,7 @@ func TestBlockRecordSimple(t *testing.T) {
 	time.Sleep(time.Millisecond * 100)
 }
 
-func TestBlockValidatorSimpleOnchainUpgradeArbOs(t *testing.T) {
+func TestBlockValidatorSimpleOnchainUpgradeArbOsFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:  "onchain",
 		workloadLoops: 1,
@@ -352,7 +352,7 @@ func TestBlockValidatorSimpleOnchainUpgradeArbOs(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleOnchain(t *testing.T) {
+func TestBlockValidatorSimpleOnchainFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:  "onchain",
 		workloadLoops: 1,
@@ -392,7 +392,7 @@ func TestBlockValidatorSimpleOnchainWithPublishedMachine(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleOnchainWithRedisStreams(t *testing.T) {
+func TestBlockValidatorSimpleOnchainWithRedisStreamsFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:    "onchain",
 		workloadLoops:   1,
@@ -403,7 +403,7 @@ func TestBlockValidatorSimpleOnchainWithRedisStreams(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleLocalAnyTrust(t *testing.T) {
+func TestBlockValidatorSimpleLocalAnyTrustFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:  "files",
 		workloadLoops: 1,
@@ -422,9 +422,9 @@ func TestBlockValidatorSimpleJITOnchain(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-// TestBlockValidatorReferenceDAWithProver tests the block validator with prover
+// TestBlockValidatorReferenceDAWithProverFlaky tests the block validator with prover
 // with the embedded reference DA
-func TestBlockValidatorReferenceDAWithProver(t *testing.T) {
+func TestBlockValidatorReferenceDAWithProverFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:  "referenceda",
 		workloadLoops: 1,
