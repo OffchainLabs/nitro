@@ -98,8 +98,12 @@ record-blocks: nitro-deps
 build: # Build the SP1 workspace; replay artifacts go to $(OUTPUT_DIR).
 build: brotli
 	@mkdir -p $(OUTPUT_DIR)
+	@# Rebuild replay.wasm without running `./scripts/remove_reference_types.sh`.
+	@cd $(TOP) && GOOS=wasip1 GOARCH=wasm go build -o $(OUTPUT_DIR)/replay.wasm $(TOP)/cmd/replay/...
 	@cargo build --locked --release
-	@cargo run --locked --release -p replay-builder -- --output-folder $(OUTPUT_DIR)
+	@cargo run --locked --release -p replay-builder -- \
+		--replay-wasm $(OUTPUT_DIR)/replay.wasm \
+		--output-folder $(OUTPUT_DIR)
 	@cp $(CURDIR)/target/release/replay-runner $(OUTPUT_DIR)
 
 .PHONY: run
