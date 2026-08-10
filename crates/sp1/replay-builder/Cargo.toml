@@ -17,6 +17,7 @@ path = "main.rs"
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 sp1-sdk = { workspace = true }
 
 [build-dependencies]
