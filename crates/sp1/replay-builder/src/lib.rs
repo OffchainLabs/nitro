@@ -6,26 +6,16 @@ use std::collections::HashMap;
 use anyhow::{Context, ensure};
 use wasmparser::{BinaryReader, Name, NameSectionReader, Parser, Payload, TypeRef};
 
-/// Upper bound on the size of the emitted mapping. The real replay.wasm has
-/// tens of thousands of functions; a span beyond this indicates a corrupt
-/// name section, which would otherwise make the builder allocate gigabytes.
+/// Sanity bound on the mapping size; a larger span means a corrupt name
+/// section (real replay.wasm has ~15k functions).
 const MAX_FUNCTIONS: usize = 10_000_000;
 
-/// Extracts the original function names from the wasm module's custom `name`
-/// section.
+/// Extracts function names from the wasm custom `name` section, indexed by
+/// wasmer's `LocalFunctionIndex` (imports dropped, indices shifted down by
+/// the import count, unnamed functions `None`). The guest reads this mapping
+/// as JSON to register profiler symbols.
 ///
-/// The name section indexes the wasm *function index space*, where imported
-/// functions occupy the lowest indices; the replay guest looks names up by
-/// wasmer's `LocalFunctionIndex`, which counts *defined* functions only. The
-/// returned vector is therefore indexed by local function index: import names
-/// are dropped and the remaining indices are shifted down by the number of
-/// imported functions. Functions without a name are `None`. The guest
-/// consumes this mapping (serialized as JSON) to register profiler symbols
-/// for wasmer-compiled code.
-///
-/// Errors on malformed wasm and on modules without any local function names:
-/// the only expected input is replay.wasm, which is always built with a name
-/// section, so a missing one indicates a broken build.
+/// Errors on malformed wasm and when no local function has a name.
 pub fn extract_function_names(wasm: &[u8]) -> anyhow::Result<Vec<Option<String>>> {
     let mut name_mapping = HashMap::new();
     let mut num_func_imports: u32 = 0;
@@ -59,8 +49,7 @@ pub fn extract_function_names(wasm: &[u8]) -> anyhow::Result<Vec<Option<String>>
         }
     }
 
-    // Translate from the function index space to the local function index
-    // space: drop import names, shift the rest down by the import count.
+    // Function index space -> local function index space.
     let max_local = name_mapping
         .keys()
         .filter(|&&index| index >= num_func_imports)
@@ -91,9 +80,8 @@ mod tests {
 
     use super::*;
 
-    /// Builds a minimal wasm module with `num_imports` imported functions
-    /// whose custom `name` section names the given function-space indices
-    /// (which must be ascending).
+    /// Minimal module with `num_imports` imported functions and the given
+    /// (ascending) function-space names.
     fn wasm_module(num_imports: u32, names: &[(u32, &str)]) -> Vec<u8> {
         let mut module = Module::new();
 
@@ -132,17 +120,11 @@ mod tests {
 
     #[test]
     fn keeps_gaps_for_unnamed_locals() {
-        // No imports: function-space indices are local indices. Unnamed
-        // locals keep their slots so the guest's local-index lookups stay
-        // aligned.
         let wasm = wasm_module(0, &[(1, "b"), (3, "d")]);
         let names = extract_function_names(&wasm).unwrap();
         assert_eq!(names, owned(&[None, Some("b"), None, Some("d")]));
     }
 
-    /// Imported functions occupy the lowest function-space indices; the
-    /// mapping is shifted down by the import count so it aligns with
-    /// wasmer's local function index space.
     #[test]
     fn shifts_out_imports() {
         let wasm = wasm_module(2, &[(2, "first_local"), (3, "second_local")]);
@@ -150,8 +132,6 @@ mod tests {
         assert_eq!(names, owned(&[Some("first_local"), Some("second_local")]));
     }
 
-    /// Names attached to imports are dropped: imports are not part of the
-    /// local function index space the guest indexes with.
     #[test]
     fn drops_import_names() {
         let wasm = wasm_module(2, &[(0, "imported"), (2, "local")]);
@@ -169,7 +149,6 @@ mod tests {
         );
     }
 
-    /// A name section that only names imports leaves the local space empty.
     #[test]
     fn errors_with_only_import_names() {
         let wasm = wasm_module(2, &[(0, "imported")]);
@@ -186,8 +165,6 @@ mod tests {
         assert!(err.to_string().contains("parse wasm payload"), "{err:#}");
     }
 
-    /// Garbage inside an otherwise valid `name` custom section must error,
-    /// not be skipped.
     #[test]
     fn errors_on_malformed_name_section() {
         let mut module = Module::new();
@@ -199,8 +176,6 @@ mod tests {
         assert!(err.to_string().contains("parse name subsection"), "{err:#}");
     }
 
-    /// A corrupt index would otherwise size the output vector into the
-    /// gigabytes; the span guard turns that into an error.
     #[test]
     fn errors_on_degenerate_index_span() {
         let wasm = wasm_module(0, &[(0, "a"), (u32::MAX - 1, "corrupt")]);
@@ -208,8 +183,7 @@ mod tests {
         assert!(err.to_string().contains("corrupt name section"), "{err:#}");
     }
 
-    /// The guest deserializes the mapping from JSON; unnamed slots must
-    /// round-trip as `null`, names as plain strings.
+    /// Pins the JSON the guest deserializes: names as strings, gaps as null.
     #[test]
     fn json_wire_shape() {
         let wasm = wasm_module(0, &[(0, "foo"), (2, "bar")]);

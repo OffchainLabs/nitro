@@ -35,10 +35,8 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Extracts the original function names from replay.wasm and writes them to
-/// `function_names.json`. They are lost in wasmer's compiled output, and the
-/// guest will consume this mapping to register profiler symbols for
-/// debugging & profiling.
+/// Writes replay.wasm's function names (lost in wasmer's compiled output) to
+/// `function_names.json` for the guest's profiler symbols.
 fn write_function_names(replay_wasm: &Path, output_folder: &Path) -> anyhow::Result<()> {
     let wasm = fs::read(replay_wasm)
         .with_context(|| format!("read replay.wasm from {}", replay_wasm.display()))?;
