@@ -33,7 +33,7 @@ var simulateTests = []systest.Scenario{
 const push0ContractAddr = "0x9930da85e75d753ca1b704ee53ebff948174384a"
 
 func testRunSimulateV1Push0(env *systest.Env) {
-	l2rpc := env.L2.Stack.Attach()
+	l2rpc := env.L2.Client.Client()
 
 	// Make sure the same works for eth_call before testing eth_simulateV1.
 	env.Require(l2rpc.CallContext(env.Ctx, nil, "eth_call", map[string]any{

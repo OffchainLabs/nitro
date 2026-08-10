@@ -31,10 +31,13 @@ var estimationTests = []systest.Scenario{
 	systest.Test(testRunBlobBasefeeReverts),
 	systest.Test(testRunDisableL1Charging),
 	systest.Test(testRunComponentEstimate),
-	systest.Test(testEstimationWithRPCGasLimit(params.TxGas, false), systest.Named("GasEstimationWithRPCGasLimit"),
-		systest.WithMultiNode(), systest.WithFollowerExecConfigOverride(func(cfg *gethexec.Config) { cfg.RPC.RPCGasCap = params.TxGas })),
-	systest.Test(testEstimationWithRPCGasLimit(params.TxGas-1, true), systest.Named("GasEstimationWithRPCGasLimitTooLow"),
-		systest.WithMultiNode(), systest.WithFollowerExecConfigOverride(func(cfg *gethexec.Config) { cfg.RPC.RPCGasCap = params.TxGas - 1 })),
+	rpcGasLimitTest("GasEstimationWithRPCGasLimit", params.TxGas, false),
+	rpcGasLimitTest("GasEstimationWithRPCGasLimitTooLow", params.TxGas-1, true),
+}
+
+func rpcGasLimitTest(name string, gasCap uint64, wantErr bool) systest.Scenario {
+	return systest.Test(testEstimationWithRPCGasLimit(gasCap, wantErr), systest.Named(name),
+		systest.WithMultiNode(), systest.WithFollowerExecConfigOverride(func(cfg *gethexec.Config) { cfg.RPC.RPCGasCap = gasCap }))
 }
 
 func testRunDeploy(env *systest.Env) {
@@ -49,7 +52,7 @@ func testRunDeploy(env *systest.Env) {
 	env.Require(err, "failed to call Increment()")
 	env.L2.EnsureTxSucceeded(tx)
 
-	counter, err := simple.Counter(&bind.CallOpts{})
+	counter, err := simple.Counter(&bind.CallOpts{Context: env.Ctx})
 	env.Require(err, "failed to get counter")
 	env.Equal(uint64(1), counter, "unexpected counter value")
 }
@@ -135,8 +138,7 @@ func testRunComponentEstimate(env *systest.Env) {
 		"estimate %d too far from used %d", l2Estimate, l2Used)
 }
 
-// testEstimationWithRPCGasLimit pins RPC.RPCGasCap on the follower: estimation
-// against it fails when the cap is below intrinsic gas.
+// Estimation fails when the follower's RPCGasCap is below intrinsic gas.
 func testEstimationWithRPCGasLimit(gasCap uint64, wantErr bool) systest.Scenario {
 	return func(env *systest.Env) {
 		env.WaitForFollowersSync()
@@ -180,7 +182,7 @@ func testRunEstimate(env *systest.Env) {
 		env.L2.TransferBalance("Owner", "Owner", common.Big0)
 
 		// check if the price has equilibrated
-		_, _, _, _, _, setPrice, err := arbGasInfo.GetPricesInWei(&bind.CallOpts{})
+		_, _, _, _, _, setPrice, err := arbGasInfo.GetPricesInWei(&bind.CallOpts{Context: env.Ctx})
 		env.Require(err, "could not get L2 gas price")
 		if gasPrice.Cmp(setPrice) == 0 {
 			equilibrated = true
@@ -208,21 +210,21 @@ func testRunEstimate(env *systest.Env) {
 	env.Require(err, "failed to call Increment()")
 	env.L2.EnsureTxSucceeded(tx)
 
-	counter, err := simple.Counter(&bind.CallOpts{})
+	counter, err := simple.Counter(&bind.CallOpts{Context: env.Ctx})
 	env.Require(err, "failed to get counter")
 	env.Equal(uint64(1), counter, "unexpected counter value")
 }
 
-// testRunBlockDifficulty pins block difficulty to 1 at the matrix cell's ArbOS version.
 func testRunBlockDifficulty(env *systest.Env) {
 	auth := env.L2.TransactOpts("Owner")
-	_, _, simple, err := localgen.DeploySimple(&auth, env.L2.Client)
+	_, deployTx, simple, err := localgen.DeploySimple(&auth, env.L2.Client)
 	env.Require(err, "could not deploy contract")
+	env.L2.EnsureTxSucceeded(deployTx)
 
 	tx, err := simple.StoreDifficulty(&auth)
 	env.Require(err)
 	env.L2.EnsureTxSucceeded(tx)
-	difficulty, err := simple.GetBlockDifficulty(&bind.CallOpts{})
+	difficulty, err := simple.GetBlockDifficulty(&bind.CallOpts{Context: env.Ctx})
 	env.Require(err)
 	env.EqualBig(common.Big1, difficulty, "unexpected block difficulty")
 }

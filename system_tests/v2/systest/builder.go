@@ -106,6 +106,9 @@ func (b *builder) validate() {
 	if b.validates() && b.stateScheme.IsSome() && b.stateScheme.Unwrap() != validationScheme {
 		panic(fmt.Sprintf("systest: validation requires %s state scheme; conflicts with WithStateScheme(%s)", validationScheme, b.stateScheme.Unwrap()))
 	}
+	if len(b.followerExecOverrides) > 0 && b.topology != TopologyMultiNode && b.topology != TopologyStakingValidation {
+		panic("systest: WithFollowerExecConfigOverride requires a topology with a follower node")
+	}
 }
 
 // validates reports whether any node in this test runs block validation:

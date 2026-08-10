@@ -17,3 +17,5 @@ func TestMain(m *testing.M) {
 func TestEstimation(t *testing.T) { systest.RunGroup(t, estimationTests) }
 
 func TestMultigas(t *testing.T) { systest.RunGroup(t, multigasTests) }
+
+func TestTipCollection(t *testing.T) { systest.RunGroup(t, tipCollectionTests) }

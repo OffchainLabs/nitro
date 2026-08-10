@@ -15,3 +15,5 @@ func TestMain(m *testing.M) {
 }
 
 func TestSimulate(t *testing.T) { systest.RunGroup(t, simulateTests) }
+
+func TestRecreateState(t *testing.T) { systest.RunGroup(t, recreateStateTests) }

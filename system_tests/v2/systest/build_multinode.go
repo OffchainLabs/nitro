@@ -40,12 +40,12 @@ func buildFollowerNode(t *testing.T, ctx context.Context, spec Spec, overrides o
 	t.Helper()
 
 	nodeConfig, chainConfig, execCfg, stackCfg := seedConfigs(t, spec, overrides, arbnode.ConfigDefaultL1NonSequencerTest())
-	// The follower must not sequence its own txs; with ForwardingTarget "null"
-	// sends to it fail loudly instead of silently forking the chain.
-	execCfg.Sequencer.Enable = false
 	for _, f := range overrides.FollowerExec {
 		f(execCfg)
 	}
+	// The follower must not sequence its own txs; with ForwardingTarget "null"
+	// sends to it fail loudly instead of silently forking the chain.
+	execCfg.Sequencer.Enable = false
 
 	var validatorTxOpts *bind.TransactOpts
 	if spec.Topology == TopologyStakingValidation {

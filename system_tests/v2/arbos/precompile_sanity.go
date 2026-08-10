@@ -95,8 +95,9 @@ func testRunCustomSolidityErrors(env *systest.Env) {
 
 func testRunPrecompileErrorGasLeft(env *systest.Env) {
 	auth := env.L2.TransactOpts("Faucet")
-	_, _, simple, err := localgen.DeploySimple(&auth, env.L2.Client)
+	_, deployTx, simple, err := localgen.DeploySimple(&auth, env.L2.Client)
 	env.Require(err)
+	env.L2.EnsureTxSucceeded(deployTx)
 
 	assertNotAllGasConsumed := func(to common.Address, input []byte) {
 		gas, err := simple.CheckGasUsed(&bind.CallOpts{Context: env.Ctx}, to, input)
@@ -122,17 +123,17 @@ func testRunPrecompileErrorGasLeft(env *systest.Env) {
 func testRunPurePrecompileMethodCalls(env *systest.Env) {
 	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, env.L2.Client)
 	env.Require(err, "could not deploy ArbSys contract")
-	chainId, err := arbSys.ArbChainID(&bind.CallOpts{})
+	chainId, err := arbSys.ArbChainID(&bind.CallOpts{Context: env.Ctx})
 	env.Require(err, "failed to get the ChainID")
 	env.Equal(chaininfo.ArbitrumDevTestChainConfig().ChainID.Uint64(), chainId.Uint64(), "wrong ChainID")
 
-	arbosVersion := params.ArbosVersion_31
+	arbosVersion := env.Spec.ArbOSVersion.Unwrap()
 	expectedArbosVersion := 55 + arbosVersion // Nitro versions start at 56
-	arbSysArbosVersion, err := arbSys.ArbOSVersion(&bind.CallOpts{})
+	arbSysArbosVersion, err := arbSys.ArbOSVersion(&bind.CallOpts{Context: env.Ctx})
 	env.Require(err)
 	env.Equal(expectedArbosVersion, arbSysArbosVersion.Uint64(), "unexpected ArbOS version")
 
-	storageGasAvailable, err := arbSys.GetStorageGasAvailable(&bind.CallOpts{})
+	storageGasAvailable, err := arbSys.GetStorageGasAvailable(&bind.CallOpts{Context: env.Ctx})
 	env.Require(err)
 	env.EqualBig(big.NewInt(0), storageGasAvailable, "unexpected storage gas available")
 }
