@@ -51,8 +51,9 @@ brotli: # Build brotli for RISC-V (SP1); artifacts go to $(BROTLI_LIB_DIR).
 	fi
 
 .PHONY: nitro-deps
-nitro-deps: # Build necessary nitro dependencies, including replay.wasm
+nitro-deps: # Build necessary nitro dependencies, including contract bindings and replay.wasm
 nitro-deps: brotli
+	@cd $(TOP) && $(MAKE) contracts
 	@cd $(TOP) && $(MAKE) test-go-deps
 
 .PHONY: record-blocks
@@ -96,7 +97,7 @@ record-blocks: nitro-deps
 
 .PHONY: build
 build: # Build the SP1 workspace; replay artifacts go to $(OUTPUT_DIR).
-build: brotli
+build: nitro-deps
 	@mkdir -p $(OUTPUT_DIR)
 	@# Rebuild replay.wasm without running `./scripts/remove_reference_types.sh`.
 	@cd $(TOP) && GOOS=wasip1 GOARCH=wasm go build -o $(OUTPUT_DIR)/replay.wasm $(TOP)/cmd/replay/...
