@@ -171,7 +171,7 @@ func TestSkippedItemsDontConsumeCapacity(t *testing.T) {
 	// A skipped weight-Max item must neither raise the required capacity nor
 	// acquire slots: capacity 1 fits because only runnable items count.
 	items := []scheduledTest{
-		{Spec: Spec{Name: "SkippedHeavy", Weight: weightMax}, SkipReason: "validation requires hash state scheme"},
+		{Spec: Spec{Name: "SkippedHeavy", Weight: weightMax}, SkipReason: "unsupported state scheme"},
 		{Spec: Spec{Name: "Light1", Weight: weightLight}},
 		{Spec: Spec{Name: "Light2", Weight: weightLight}},
 	}

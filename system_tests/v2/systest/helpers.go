@@ -19,13 +19,10 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	arbtest "github.com/offchainlabs/nitro/system_tests"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
-// Test-facing chain helpers. All take an explicit *ethclient.Client and
-// *BlockchainTestInfo so tests can vary the underlying client (in-process,
-// HTTP, WS, secondary node) without rebinding to a default.
+// Internal tx-wait plumbing shared by the chain handles and node builders.
 
 // DefaultTxWaitTimeout is the default wait-for-receipt timeout.
 const DefaultTxWaitTimeout = 30 * time.Second
@@ -50,40 +47,6 @@ func ensureTxSucceededWithin(ctx context.Context, client *ethclient.Client, tx *
 		return nil, fmt.Errorf("transaction %s: %w", tx.Hash(), err)
 	}
 	return receipt, nil
-}
-
-// EnsureTxFailed waits for tx to be mined and fails the test unless it reverted.
-func EnsureTxFailed(t testing.TB, ctx context.Context, client *ethclient.Client, tx *types.Transaction) *types.Receipt {
-	t.Helper()
-	receipt, err := waitForTxWithTimeout(ctx, client, tx.Hash(), DefaultTxWaitTimeout)
-	if err != nil {
-		t.Fatalf("wait tx %s: %v", tx.Hash(), err)
-	}
-	if receipt.Status != types.ReceiptStatusFailed {
-		t.Fatalf("transaction %s unexpectedly succeeded", tx.Hash())
-	}
-	return receipt
-}
-
-// TxReceiptWithin waits for tx's receipt with no success checks — caller
-// decides what to verify.
-func TxReceiptWithin(ctx context.Context, client *ethclient.Client, tx *types.Transaction, timeout time.Duration) (*types.Receipt, error) {
-	return waitForTxWithTimeout(ctx, client, tx.Hash(), timeout)
-}
-
-// AdvanceBlocks emits n no-op self-transfers from the Owner account through
-// client, waiting each to mine. Use to move the chain head forward.
-func AdvanceBlocks(t testing.TB, ctx context.Context, client *ethclient.Client, info *arbtest.BlockchainTestInfo, n int) {
-	t.Helper()
-	for range n {
-		tx := info.PrepareTx("Owner", "Owner", info.TransferGas, big.NewInt(0), nil)
-		if err := client.SendTransaction(ctx, tx); err != nil {
-			t.Fatalf("AdvanceBlocks send: %v", err)
-		}
-		if _, err := ensureTxSucceededWithin(ctx, client, tx, DefaultTxWaitTimeout); err != nil {
-			t.Fatalf("AdvanceBlocks: %v", err)
-		}
-	}
 }
 
 func isTxIndexing(err error) bool {

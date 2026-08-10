@@ -30,9 +30,7 @@ type scheduleParams struct {
 	MatrixStates []StateScheme
 	MatrixDBs    []DBEngine
 
-	Validate      bool
 	AllCategories bool
-	FollowerExec  string
 	// DefaultStateScheme is the ambient scheme used
 	// when neither the test nor StateScheme pins one; resolved by the params producer.
 	DefaultStateScheme containers.Option[StateScheme]

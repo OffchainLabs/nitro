@@ -19,3 +19,5 @@ func TestTransfers(t *testing.T) { systest.RunGroup(t, transferTests) }
 func TestDeployment(t *testing.T) { systest.RunGroup(t, deploymentTests) }
 
 func TestP256Verify(t *testing.T) { systest.RunGroup(t, p256VerifyTests) }
+
+func TestL1(t *testing.T) { systest.RunGroup(t, l1Tests) }

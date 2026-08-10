@@ -28,6 +28,11 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
+// newEnv seeds the runtime Env for a node build.
+func newEnv(t testing.TB, ctx context.Context, spec Spec) *Env {
+	return &Env{t: t, Ctx: ctx, Spec: spec}
+}
+
 // Env is the runtime handle passed to a Scenario.
 type Env struct {
 	t   testing.TB
@@ -55,6 +60,11 @@ func (e *Env) Require(err error, msgAndArgs ...any) {
 func (e *Env) Equal(expected, actual any, msgAndArgs ...any) {
 	e.t.Helper()
 	e.guarded(func() { require.Equal(e.t, expected, actual, msgAndArgs...) })
+}
+
+func (e *Env) True(value bool, msgAndArgs ...any) {
+	e.t.Helper()
+	e.guarded(func() { require.True(e.t, value, msgAndArgs...) })
 }
 
 func (e *Env) EqualBig(expected, actual *big.Int, msgAndArgs ...any) {
@@ -137,7 +147,7 @@ func (e *Env) AdvanceL1(n int) {
 	e.t.Helper()
 	e.requireL1()
 	for range n {
-		tx := e.L1.Info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil)
+		tx := e.L1.Info.PrepareTx("Faucet", "Faucet", e.L1.Info.TransferGas, big.NewInt(1), nil)
 		e.L1.SendTx(tx)
 		e.L1.EnsureTxSucceeded(tx)
 	}
@@ -267,6 +277,9 @@ func (e *Env) Go(fn func() error) {
 	})
 }
 
+// envWaitTimeout bounds how long env.wait() will block.
+var envWaitTimeout = 30 * time.Second
+
 // wait joins Go goroutines, aborting on ctx cancel or envWaitTimeout; reports an
 // error if any are still in flight, then marks the env dead to silence late writes.
 func (e *Env) wait(ctx context.Context) {
@@ -319,6 +332,3 @@ func suppressedAtShutdown(ctx context.Context, err error) bool {
 	return ctx != nil && ctx.Err() != nil &&
 		(errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded))
 }
-
-// envWaitTimeout bounds how long env.wait() will block.
-var envWaitTimeout = 30 * time.Second
