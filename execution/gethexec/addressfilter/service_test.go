@@ -235,7 +235,8 @@ func TestParseHashListJSON(t *testing.T) {
 			hex.EncodeToString(hashed_addr2[:]),
 		},
 	}
-	validJSON, _ := json.Marshal(validPayload)
+	validJSON, err := json.Marshal(validPayload)
+	require.NoError(t, err)
 
 	meta, hashes, err := parseHashListBytes(validJSON)
 	if err != nil {
@@ -266,7 +267,8 @@ func TestParseHashListJSON(t *testing.T) {
 		"id":     uuid.NewString(),
 		"hashes": []string{hex.EncodeToString(hashed_addr1[:])},
 	}
-	invalidSaltJSON, _ := json.Marshal(invalidSaltPayload)
+	invalidSaltJSON, err := json.Marshal(invalidSaltPayload)
+	require.NoError(t, err)
 	_, _, err = parseHashListBytes(invalidSaltJSON)
 	if err == nil {
 		t.Error("expected error for invalid salt hex")
@@ -278,7 +280,8 @@ func TestParseHashListJSON(t *testing.T) {
 		"id":     uuid.NewString(),
 		"hashes": []string{"not-hex"},
 	}
-	invalidHashJSON, _ := json.Marshal(invalidHashPayload)
+	invalidHashJSON, err := json.Marshal(invalidHashPayload)
+	require.NoError(t, err)
 	_, _, err = parseHashListBytes(invalidHashJSON)
 	if err == nil {
 		t.Error("expected error for invalid hash hex")
@@ -290,7 +293,8 @@ func TestParseHashListJSON(t *testing.T) {
 		"id":     uuid.NewString(),
 		"hashes": []string{"0123456789abcdef"},
 	}
-	wrongLenJSON, _ := json.Marshal(wrongLenPayload)
+	wrongLenJSON, err := json.Marshal(wrongLenPayload)
+	require.NoError(t, err)
 	_, _, err = parseHashListBytes(wrongLenJSON)
 	if err == nil {
 		t.Error("expected error for wrong hash length")
@@ -303,7 +307,8 @@ func TestParseHashListJSON(t *testing.T) {
 		"hashing_scheme": "sha256-stringinput",
 		"hashes":         []string{hex.EncodeToString(hashed_addr1[:])},
 	}
-	sha256JSON, _ := json.Marshal(sha256Payload)
+	sha256JSON, err := json.Marshal(sha256Payload)
+	require.NoError(t, err)
 	meta, hashes, err = parseHashListBytes(sha256JSON)
 	if err != nil {
 		t.Fatalf("failed to parse JSON with sha256-stringinput hashing_scheme: %v", err)
@@ -337,7 +342,8 @@ func TestParseHashListJSON(t *testing.T) {
 		"hashing_scheme": "Unknown",
 		"hashes":         []string{hex.EncodeToString(hashed_addr1[:])},
 	}
-	unknownSchemeJSON, _ := json.Marshal(unknownSchemePayload)
+	unknownSchemeJSON, err := json.Marshal(unknownSchemePayload)
+	require.NoError(t, err)
 	if _, _, err := parseHashListBytes(unknownSchemeJSON); err == nil {
 		t.Error("expected error for unknown hashing_scheme")
 	}
@@ -363,7 +369,8 @@ func TestParseHashListJSON(t *testing.T) {
 			"0X" + hex.EncodeToString(hashed_addr2[:]),
 		},
 	}
-	prefixedJSON, _ := json.Marshal(prefixedPayload)
+	prefixedJSON, err := json.Marshal(prefixedPayload)
+	require.NoError(t, err)
 	_, hashes, err = parseHashListBytes(prefixedJSON)
 	if err != nil {
 		t.Fatalf("failed to parse 0x-prefixed JSON: %v", err)
@@ -380,7 +387,8 @@ func TestParseHashListJSON(t *testing.T) {
 		"id":     uuid.NewString(),
 		"hashes": []string{hex.EncodeToString(hashed_addr1[:])},
 	}
-	noSchemeJSON, _ := json.Marshal(noSchemePayload)
+	noSchemeJSON, err := json.Marshal(noSchemePayload)
+	require.NoError(t, err)
 	meta, hashes, err = parseHashListBytes(noSchemeJSON)
 	if err != nil {
 		t.Fatalf("failed to parse JSON without hashing_scheme: %v", err)
@@ -390,6 +398,20 @@ func TestParseHashListJSON(t *testing.T) {
 	}
 	if meta.Scheme != HashingSchemeStringInput {
 		t.Errorf("missing scheme should default to %q, got %q", HashingSchemeStringInput, meta.Scheme)
+	}
+
+	// Test with malformed id field: must fail loudly so operators catch
+	// provider misconfiguration.
+	badIdPayload := map[string]interface{}{
+		"salt":   "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
+		"id":     "not-a-uuid",
+		"hashes": []string{hex.EncodeToString(hashed_addr1[:])},
+	}
+	badIdJSON, err := json.Marshal(badIdPayload)
+	require.NoError(t, err)
+	_, _, err = parseHashListBytes(badIdJSON)
+	if err == nil {
+		t.Error("expected error for malformed id")
 	}
 }
 

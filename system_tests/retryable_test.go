@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/gasestimator"
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/params"
@@ -266,6 +267,68 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 		Fatal(t, "Unexpected balance:", l2balance)
 	}
 	testFlatCallTracer(t, ctx, builder.L2.Client.Client())
+}
+
+// TestSubmitRetryableProcessResultGasUsed re-executes a block containing an
+// ArbitrumSubmitRetryableTx through the standard geth Process() path (used by
+// InsertChain with live tracing and by state recreation) and checks the same
+// gas invariant as core.BlockValidator.ValidateState: ProcessResult.GasUsed
+// (derived from the gas pool) must match header.GasUsed.
+func TestSubmitRetryableProcessResultGasUsed(t *testing.T) {
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	defer teardown()
+
+	user2Address := builder.L2Info.GetAddress("User2")
+	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
+
+	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	callValue := big.NewInt(1e6)
+
+	usertxoptsL1 := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+	usertxoptsL1.Value = deposit
+	l1tx, err := delayedInbox.CreateRetryableTicket(
+		&usertxoptsL1,
+		user2Address,
+		callValue,
+		big.NewInt(1e16),
+		beneficiaryAddress,
+		beneficiaryAddress,
+		arbmath.UintToBig(params.TxGas+params.TxDataNonZeroGasEIP2028*4),
+		big.NewInt(l2pricing.InitialBaseFeeWei*2),
+		[]byte{0x32, 0x42, 0x32, 0x88},
+	)
+	Require(t, err)
+
+	l1Receipt, err := builder.L1.EnsureTxSucceeded(l1tx)
+	Require(t, err)
+	if l1Receipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t, "l1Receipt indicated failure")
+	}
+
+	waitForL1DelayBlocks(t, builder)
+
+	receipt, err := builder.L2.EnsureTxSucceeded(lookupL2Tx(l1Receipt))
+	Require(t, err)
+	if receipt.GasUsed == 0 {
+		Fatal(t, "expected the submit-retryable tx to report nonzero gas")
+	}
+
+	bc := builder.L2.ExecNode.ArbInterface.BlockChain()
+	block := bc.GetBlockByHash(receipt.BlockHash)
+	if block == nil {
+		Fatal(t, "block not found:", receipt.BlockHash)
+	}
+	parent := bc.GetBlockByHash(block.ParentHash())
+	if parent == nil {
+		Fatal(t, "parent block not found:", block.ParentHash())
+	}
+	statedb, err := bc.StateAt(parent.Root())
+	Require(t, err)
+	res, err := bc.Processor().Process(ctx, block, statedb, vm.Config{})
+	Require(t, err)
+	if res.GasUsed != block.GasUsed() {
+		Fatal(t, "ProcessResult.GasUsed mismatch: header", block.GasUsed(), "processed", res.GasUsed)
+	}
 }
 
 func testSubmitRetryableEmptyEscrow(t *testing.T, arbosVersion uint64) {

@@ -25,18 +25,8 @@ type MockExternalEndpoint struct {
 	requestCount atomic.Int64
 }
 
-func NewMockExternalEndpoint(t *testing.T) (pemPath string, endpoint *MockExternalEndpoint) {
+func NewMockExternalEndpoint(t *testing.T, verifier *signertest.Verifier) *MockExternalEndpoint {
 	t.Helper()
-	leaf := signertest.DefaultLeafOptions(signertest.DefaultTestSAN)
-	pemPath, caPath := signertest.SigningFixture(t, leaf)
-	verifier, err := signertest.NewVerifier(&signertest.VerifierConfig{
-		CARootPEMFile: caPath,
-		ExpectedSAN:   leaf.URI,
-		TimestampSkew: signertest.DefaultTimestampSkew,
-	})
-	if err != nil {
-		t.Fatalf("NewVerifier: %v", err)
-	}
 	m := &MockExternalEndpoint{
 		reports: make(chan *addressfilter.FilteredTxReport, 100),
 	}
@@ -61,7 +51,7 @@ func NewMockExternalEndpoint(t *testing.T) (pemPath string, endpoint *MockExtern
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(func() { m.server.Close() })
-	return pemPath, m
+	return m
 }
 
 func (m *MockExternalEndpoint) NextReport(t *testing.T) *addressfilter.FilteredTxReport {
@@ -92,11 +82,8 @@ func (m *MockExternalEndpoint) AssertNoReport(t *testing.T, within time.Duration
 	}
 }
 
-func NewTestForwarder(t *testing.T, queueClient sqsclient.QueueClient, poisonQueueClient sqsclient.QueueClient, endpointURL string, pemPath string) *Forwarder {
+func NewTestForwarder(t *testing.T, queueClient sqsclient.QueueClient, poisonQueueClient sqsclient.QueueClient, endpointURL string, sgn *signer.Signer) *Forwarder {
 	t.Helper()
-	signerCfg := signer.DefaultConfig
-	signerCfg.PEMFile = pemPath
-	signerCfg.ReloadInterval = time.Minute
 	config := &Config{
 		Workers:            1,
 		PollInterval:       10 * time.Millisecond,
@@ -106,11 +93,6 @@ func NewTestForwarder(t *testing.T, queueClient sqsclient.QueueClient, poisonQue
 			Timeout: genericconf.HTTPClientConfigDefault.Timeout,
 		},
 		ExternalEndpointRetryableErrorSlowdown: DefaultExternalEndpointRetryableErrorSlowdownConfig,
-		Signer:                                 signerCfg,
 	}
-	fwd, err := New(config, queueClient, poisonQueueClient)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return fwd
+	return New(config, queueClient, poisonQueueClient, sgn)
 }

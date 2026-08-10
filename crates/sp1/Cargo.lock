@@ -3876,6 +3876,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "replay-builder"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.53",
+ "sp1-build",
+ "sp1-sdk",
+]
+
+[[package]]
+name = "replay-program"
+version = "0.1.0"
+dependencies = [
+ "sp1-zkvm",
+]
+
+[[package]]
+name = "replay-runner"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.53",
+ "sp1-core-executor",
+]
+
+[[package]]
 name = "reqwest"
 version = "0.12.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
