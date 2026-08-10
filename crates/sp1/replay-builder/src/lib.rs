@@ -8,7 +8,7 @@ use wasmparser::{BinaryReader, Name, NameSectionReader, Parser, Payload, TypeRef
 
 /// Sanity bound on the mapping size; a larger span means a corrupt name
 /// section (real replay.wasm has ~15k functions).
-const MAX_FUNCTIONS: usize = 10_000_000;
+const MAX_FUNCTIONS: usize = 1_000_000;
 
 /// Extracts function names from the wasm custom `name` section, indexed by
 /// wasmer's `LocalFunctionIndex` (imports dropped, indices shifted down by
