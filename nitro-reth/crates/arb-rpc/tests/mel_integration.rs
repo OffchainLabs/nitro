@@ -501,3 +501,23 @@ fn delayed_inbox_message_json_pascal_with_base64_l2msg() {
         base64::engine::general_purpose::STANDARD.encode([1, 2, 3])
     );
 }
+
+#[test]
+fn message_header_json_matches_go_shape() {
+    // baseFeeL1 must be a bare JSON number: go's big.Int rejects strings.
+    let mut d = delayed_msg(B256::ZERO, 0);
+    d.message.header.l1_base_fee = Some(U256::from(1_000_000_007u64));
+    let v = serde_json::to_value(RpcDelayedInboxMessage::from(&d)).unwrap();
+    let h = &v["Message"]["header"];
+    assert_eq!(h["baseFeeL1"], 1_000_000_007u64);
+    assert!(h["requestId"].is_string());
+
+    // Unset fields serialize as explicit null (go has no omitempty on either).
+    let mut d = delayed_msg(B256::ZERO, 0);
+    d.message.header.request_id = None;
+    d.message.header.l1_base_fee = None;
+    let v = serde_json::to_value(RpcDelayedInboxMessage::from(&d)).unwrap();
+    let h = v["Message"]["header"].as_object().unwrap();
+    assert!(h.contains_key("requestId") && h["requestId"].is_null());
+    assert!(h.contains_key("baseFeeL1") && h["baseFeeL1"].is_null());
+}
