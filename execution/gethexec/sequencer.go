@@ -10,7 +10,6 @@ import (
 	"math"
 	"math/big"
 	"runtime/debug"
-	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -1690,13 +1689,13 @@ func (s *Sequencer) reportFilterSetIDs(ctx context.Context, rpcClient *Filtering
 		log.Debug("skipping filter-set ids report: address-filter service not configured")
 		return nil
 	}
-	filterSetIDs := service.CurrentFilterSetIDs()
-	if slices.Contains(filterSetIDs, uuid.Nil) {
+	if !service.AllFilesLoaded() {
 		// When address filtering is set, the node blocks on the initial S3
 		// hash-list downloads during initialization (AddressFilterService.Initialize),
 		// so a running sequencer should always have every filter-set id loaded.
 		return errors.New("not all filter-set ids loaded yet")
 	}
+	filterSetIDs := service.CurrentFilterSetIDs()
 	_, err := rpcClient.ReportCurrentFilterSetIDs(&addressfilter.FilterSetIDsReport{
 		FilterSetIDs: filterSetIDs,
 		ChainID:      s.execEngine.ChainID().Uint64(),
