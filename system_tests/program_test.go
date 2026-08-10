@@ -614,7 +614,7 @@ func fastMathTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	validateBlocks(t, 6, jit, builder)
 }
 
-func TestProgramCalls(t *testing.T) {
+func TestProgramCallsFlaky(t *testing.T) {
 	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
 		testCalls(t, true, recorderOpt)
 	})

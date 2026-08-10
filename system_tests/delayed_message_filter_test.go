@@ -555,10 +555,10 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	require.True(t, senderBalanceAfter.Cmp(senderBalanceBefore) < 0, "sender balance should decrease due to gas consumption")
 }
 
-// TestDelayedMessageFilterResumeNotBlockedByLaterUnfinalizedMessage asserts that the filtered
+// TestDelayedMessageFilterResumeNotBlockedByLaterUnfinalizedMessageFlaky asserts that the filtered
 // message processing resumes as soon as its onchain-filter condition is met, regardless of a later
 // message's finality.
-func TestDelayedMessageFilterResumeNotBlockedByLaterUnfinalizedMessage(t *testing.T) {
+func TestDelayedMessageFilterResumeNotBlockedByLaterUnfinalizedMessageFlaky(t *testing.T) {
 	if *testflag.MelFlag {
 		// Under message extraction the delayed sequencer never records
 		// waitingForFinalizedBlock for the later message while halted on the
