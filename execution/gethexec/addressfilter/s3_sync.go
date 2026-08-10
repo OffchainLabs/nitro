@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -21,17 +22,31 @@ import (
 	"github.com/offchainlabs/nitro/util/s3syncer"
 )
 
-// Aggregate counters across all configured files; per-file counterparts are
-// registered dynamically by config-slice index in newFileMetrics.
+// Aggregate counters across all configured files; the per-file size gauge is
+// registered dynamically in newFileSizeGauge.
 var (
 	fileTooLargeCounter = metrics.NewRegisteredCounter("arb/addressfilter/file/toolarge_total", nil)
 	syncFailureCounter  = metrics.NewRegisteredCounter("arb/addressfilter/sync/failure_total", nil)
 )
 
-// newFileSizeGauge registers the size gauge of one configured file, named by
-// its index in the files config slice.
-func newFileSizeGauge(idx int) *metrics.Gauge {
-	return metrics.GetOrRegisterGauge(fmt.Sprintf("arb/addressfilter/file/%d/size", idx), nil)
+func newFileSizeGauge(fileConfig *FileConfig) *metrics.Gauge {
+	name := fmt.Sprintf("arb/addressfilter/file/%s/%s/size",
+		sanitizeMetricName(fileConfig.Bucket), sanitizeMetricName(fileConfig.ObjectKey))
+	return metrics.GetOrRegisterGauge(name, nil)
+}
+
+// sanitizeMetricName replaces characters outside [a-zA-Z0-9_] with
+// underscores, so bucket names and object keys can't inject metric-path
+// separators or characters that metrics backends reject.
+func sanitizeMetricName(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_':
+			return r
+		default:
+			return '_'
+		}
+	}, s)
 }
 
 // jsonHash is one decoded hash-list entry. It accepts two forms, each with an

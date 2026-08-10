@@ -56,14 +56,13 @@ func NewFilterService(config *Config) (*FilterService, error) {
 				"bucket", fileConfig.Bucket, "key", fileConfig.ObjectKey, "maxHashes", maxHashes)
 		}
 		hashStore := newHashStore(config.CacheSize, maxHashes)
-		// Record the index→object mapping so the per-file metric names can be decoded.
 		log.Info("address-filter file configured",
 			"index", i, "bucket", fileConfig.Bucket, "key", fileConfig.ObjectKey, "poll_interval", fileConfig.PollInterval)
 		fs := &fileSync{
 			config:    fileConfig,
 			hashStore: hashStore,
 		}
-		fs.syncMgr = NewS3SyncManager(&fs.config, hashStore, newFileSizeGauge(i))
+		fs.syncMgr = NewS3SyncManager(&fs.config, hashStore, newFileSizeGauge(&fs.config))
 		files = append(files, fs)
 		stores = append(stores, hashStore)
 	}
