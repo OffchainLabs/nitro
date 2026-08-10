@@ -11,8 +11,8 @@ use jsonrpsee::core::RpcResult;
 
 use crate::{
     mel::{
-        MelApiServer, MelProvider, RpcDelayedInboxMessage, RpcFinalizedDelayedResult,
-        RpcFindInboxBatchResult, RpcSequencerMessageResult,
+        MelApiServer, MelProvider, MelProviderError, RpcDelayedInboxMessage,
+        RpcFinalizedDelayedResult, RpcFindInboxBatchResult, RpcSequencerMessageResult,
     },
     nitro_execution::RpcL1IncomingMessage,
 };
@@ -62,9 +62,9 @@ impl MelApiServer for MelApiHandler {
     async fn get_delayed_count(&self) -> RpcResult<u64> {
         Ok(self.query.get_delayed_count().await?)
     }
-    async fn get_delayed_message(&self, index: u64) -> RpcResult<Option<RpcDelayedInboxMessage>> {
+    async fn get_delayed_message(&self, index: u64) -> RpcResult<RpcDelayedInboxMessage> {
         let msg = self.query.get_delayed_message(index).await?;
-        Ok(Some(RpcDelayedInboxMessage::from(&msg)))
+        Ok(RpcDelayedInboxMessage::from(&msg))
     }
     async fn get_delayed_message_bytes(&self, seq_num: u64) -> RpcResult<String> {
         Ok(b64(&self.query.get_delayed_message_bytes(seq_num).await?))
@@ -142,14 +142,26 @@ impl MelApiServer for MelApiHandler {
     }
 
     // MEL state queries
-    async fn get_state(&self, parent_chain_block_number: u64) -> RpcResult<Option<MelState>> {
-        Ok(self.query.state(parent_chain_block_number).await?)
+    async fn get_state(&self, parent_chain_block_number: u64) -> RpcResult<MelState> {
+        // A missing state is an error on the wire, never JSON null: the go client
+        // decodes into `*mel.State` and callers deref without a nil check.
+        Ok(self
+            .query
+            .state(parent_chain_block_number)
+            .await?
+            .ok_or_else(|| {
+                MelProviderError::NotFound(format!("state at block {parent_chain_block_number}"))
+            })?)
     }
     async fn get_head_state(&self) -> RpcResult<MelState> {
         Ok(self.query.head_state().await?)
     }
-    async fn find_message_origin_mel_state(&self, pos: u64) -> RpcResult<Option<MelState>> {
-        Ok(self.query.find_message_origin_mel_state(pos).await?)
+    async fn find_message_origin_mel_state(&self, pos: u64) -> RpcResult<MelState> {
+        Ok(self
+            .query
+            .find_message_origin_mel_state(pos)
+            .await?
+            .ok_or(MelProviderError::MessageOriginNotFound)?)
     }
 
     // Lifecycle / control

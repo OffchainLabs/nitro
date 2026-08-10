@@ -21,9 +21,23 @@ pub enum MelProviderError {
     /// A requested item (state, head) was absent.
     #[error("not found: {0}")]
     NotFound(String),
-    /// An index/seq was at or beyond the head count.
-    #[error("out of bounds: requested {requested} >= count {count}")]
-    OutOfBounds { requested: u64, count: u64 },
+    /// A delayed message index at/beyond the head `DelayedMessagesSeen` count.
+    /// The string mirrors nitro's `MessageExtractor.GetDelayedMessage`.
+    #[error(
+        "DelayedInboxMessage not available for index: {index} greater than head MEL state DelayedMessagesSeen count: {count}"
+    )]
+    DelayedMessageOutOfBounds { index: u64, count: u64 },
+    /// A batch seqNum at/beyond the head batch count. The string mirrors nitro's
+    /// `MessageExtractor.GetBatchMetadata`; "not found" is load-bearing (BOLD's
+    /// state provider substring-matches it to detect chain-catching-up).
+    #[error(
+        "batchMetadata not found for seqNum: {seq_num} greater than head MEL state batch count: {count}"
+    )]
+    BatchMetadataNotFound { seq_num: u64, count: u64 },
+    /// `FindMessageOriginMELState` found no batch containing the message.
+    /// The string is nitro's exact error (`MessageExtractor.FindMessageOriginMELState`).
+    #[error("batch containing message not found")]
+    MessageOriginNotFound,
     /// A finalized delayed message's `before_inbox_acc` did not match the caller's
     /// expected accumulator. The string is the exact Nitro sentinel (client substring-matches it).
     #[error("delayed message accumulator mismatch")]
@@ -141,10 +155,7 @@ pub trait MelProvider: Send + Sync + 'static {
     async fn get_delayed_message(&self, index: u64) -> MelProviderResult<DelayedInboxMessage> {
         let seen = self.head_state().await?.delayed_messages_seen;
         if index >= seen {
-            return Err(MelProviderError::OutOfBounds {
-                requested: index,
-                count: seen,
-            });
+            return Err(MelProviderError::DelayedMessageOutOfBounds { index, count: seen });
         }
         self.raw_delayed_message(index).await
     }
@@ -160,10 +171,7 @@ pub trait MelProvider: Send + Sync + 'static {
     async fn get_batch_metadata(&self, seq_num: u64) -> MelProviderResult<BatchMetadata> {
         let count = self.head_state().await?.batch_count;
         if seq_num >= count {
-            return Err(MelProviderError::OutOfBounds {
-                requested: seq_num,
-                count,
-            });
+            return Err(MelProviderError::BatchMetadataNotFound { seq_num, count });
         }
         self.raw_batch_metadata(seq_num).await
     }
@@ -361,7 +369,7 @@ pub trait MelApi {
     #[method(name = "getDelayedCount")]
     async fn get_delayed_count(&self) -> RpcResult<u64>;
     #[method(name = "getDelayedMessage")]
-    async fn get_delayed_message(&self, index: u64) -> RpcResult<Option<RpcDelayedInboxMessage>>;
+    async fn get_delayed_message(&self, index: u64) -> RpcResult<RpcDelayedInboxMessage>;
     #[method(name = "getDelayedMessageBytes")]
     async fn get_delayed_message_bytes(&self, seq_num: u64) -> RpcResult<String>; // base64
     #[method(name = "getDelayedAcc")]
@@ -401,11 +409,11 @@ pub trait MelApi {
 
     // MEL state queries
     #[method(name = "getState")]
-    async fn get_state(&self, parent_chain_block_number: u64) -> RpcResult<Option<MelState>>;
+    async fn get_state(&self, parent_chain_block_number: u64) -> RpcResult<MelState>;
     #[method(name = "getHeadState")]
     async fn get_head_state(&self) -> RpcResult<MelState>;
     #[method(name = "findMessageOriginMELState")]
-    async fn find_message_origin_mel_state(&self, pos: u64) -> RpcResult<Option<MelState>>;
+    async fn find_message_origin_mel_state(&self, pos: u64) -> RpcResult<MelState>;
 
     // Lifecycle / control
     #[method(name = "caughtUp")]

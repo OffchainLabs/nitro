@@ -320,7 +320,7 @@ async fn head_derived_counts_and_origin() {
     assert_eq!(h.get_batch_count().await.unwrap(), 3);
     assert_eq!(h.get_delayed_count().await.unwrap(), 5);
     assert_eq!(h.get_msg_count().await.unwrap(), 20);
-    assert!(h.find_message_origin_mel_state(0).await.unwrap().is_some());
+    assert!(h.find_message_origin_mel_state(0).await.is_ok());
 }
 
 #[tokio::test]
@@ -351,7 +351,7 @@ async fn get_delayed_message_returns_converted() {
         ..Default::default()
     };
     m.delayed.insert(0, delayed_msg(B256::repeat_byte(0x11), 5));
-    let r = handler(m).get_delayed_message(0).await.unwrap().unwrap();
+    let r = handler(m).get_delayed_message(0).await.unwrap();
     assert_eq!(r.before_inbox_acc, B256::repeat_byte(0x11));
     assert_eq!(r.parent_chain_block_number, 5);
 }
@@ -401,8 +401,10 @@ async fn get_state_present_and_absent() {
     let mut m = MockMelProvider::default();
     m.states.insert(7, mel_state(7, 0, 0, 0));
     let h = handler(m);
-    assert!(h.get_state(7).await.unwrap().is_some());
-    assert!(h.get_state(999).await.unwrap().is_none()); // absent -> JSON null
+    assert_eq!(h.get_state(7).await.unwrap().parent_chain_block_number, 7);
+    // absent -> error on the wire, never JSON null (the go client nil-derefs)
+    let err = h.get_state(999).await.unwrap_err();
+    assert_eq!(err.message(), "resource not found: state at block 999");
 }
 
 #[tokio::test]
