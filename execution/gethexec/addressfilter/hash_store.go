@@ -216,6 +216,13 @@ func (h *HashStore) Digest() string {
 	return data.digest
 }
 
+func (h *HashStore) Id() uuid.UUID {
+	data := h.data.Load()
+	data.mu.RLock()
+	defer data.mu.RUnlock()
+	return data.id
+}
+
 func (h *HashStore) Size() int {
 	data := h.data.Load()
 	data.mu.RLock()

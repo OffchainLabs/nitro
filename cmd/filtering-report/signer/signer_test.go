@@ -6,6 +6,7 @@ package signer_test
 import (
 	"bytes"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -98,5 +99,19 @@ func TestSigner_ReloadKeepsOldOnParseError(t *testing.T) {
 	}
 	if s.LeafCert() != original {
 		t.Fatal("expected credentials to be retained after parse failure")
+	}
+}
+
+func TestNewSigner_FailsOnExpiredLeaf(t *testing.T) {
+	opts := signertest.DefaultLeafOptions(signertest.DefaultTestSAN)
+	opts.NotAfter = time.Now().Add(-time.Minute)
+	pemPath, _ := signertest.SigningFixture(t, opts)
+
+	_, err := signer.NewSigner(&signer.Config{PEMFile: pemPath, ReloadInterval: testReloadInterval})
+	if err == nil {
+		t.Fatal("expected NewSigner to fail on expired leaf")
+	}
+	if !strings.Contains(err.Error(), "leaf certificate") {
+		t.Fatalf("expected leaf-certificate error, got: %v", err)
 	}
 }
