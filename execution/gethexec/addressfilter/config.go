@@ -18,11 +18,19 @@ import (
 type FileConfig struct {
 	s3syncer.Config `koanf:",squash"`
 	PollInterval    time.Duration `json:"poll-interval,omitempty" koanf:"poll-interval"`
+	// MinBytesPerHashEntry is the assumed minimum JSON size of one hash-list
+	// entry, used to size memory preallocation from max-file-size-mb. The
+	// default is the smallest entry any scheme allows (a quoted plaintext
+	// address); lists known to hold only sha256 entries can raise it to 66 (a
+	// quoted 64-hex hash) to avoid preallocating for entries the list can
+	// never contain.
+	MinBytesPerHashEntry int `json:"min-bytes-per-hash-entry,omitempty" koanf:"min-bytes-per-hash-entry"`
 }
 
 var DefaultFileConfig = FileConfig{
-	Config:       s3syncer.DefaultS3Config,
-	PollInterval: 5 * time.Minute,
+	Config:               s3syncer.DefaultS3Config,
+	PollInterval:         5 * time.Minute,
+	MinBytesPerHashEntry: minBytesPerHashEntry,
 }
 
 type Config struct {
@@ -46,7 +54,8 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 		"array of S3 hash-list file configs given as a json string, "+
 			`e.g. [{"bucket":"b","object-key":"k","region":"us-east-1","download-dir":"/data/tmp","poll-interval":300000000000}]; `+
 			"json keys match the "+prefix+".files config-file field names and time durations must be supplied as an integer number of nanoseconds; "+
-			"omitted or zero chunk-size-mb, max-retries, concurrency and poll-interval fall back to their defaults, so max-retries cannot be set to 0; "+
+			"omitted or zero chunk-size-mb, max-retries, concurrency, poll-interval and min-bytes-per-hash-entry fall back to their defaults, so max-retries cannot be set to 0; "+
+			"min-bytes-per-hash-entry sizes memory preallocation (default 42, the smallest entry any scheme allows; lists holding only sha256 entries can set 66); "+
 			`the default value "default" means not set`)
 	f.String(prefix+".static-list", DefaultConfig.StaticList,
 		"hash-list JSON document given inline as a json string, with the same schema as the S3 hash-list files, "+
@@ -81,8 +90,12 @@ func (c *FileConfig) numPreallocatedHashes() int {
 	if !c.PreallocateMemory || c.MaxFileSizeMB <= 0 {
 		return 0
 	}
+	bytesPerEntry := int64(c.MinBytesPerHashEntry)
+	if bytesPerEntry <= 0 {
+		bytesPerEntry = minBytesPerHashEntry
+	}
 	// Compute the byte count in int64; it exceeds 32 bits for multi-GB files.
-	return estimateHashCount(int64(c.MaxFileSizeMB) * bytesInMB)
+	return int(int64(c.MaxFileSizeMB) * bytesInMB / bytesPerEntry)
 }
 
 // parseFileConfigsList decodes a files-list JSON array. Each element starts from
@@ -125,6 +138,9 @@ func (c *FileConfig) applyFileDefaults() {
 	if c.PollInterval == 0 {
 		c.PollInterval = DefaultFileConfig.PollInterval
 	}
+	if c.MinBytesPerHashEntry == 0 {
+		c.MinBytesPerHashEntry = DefaultFileConfig.MinBytesPerHashEntry
+	}
 }
 
 func (c *Config) Validate() error {
@@ -152,6 +168,9 @@ func (c *Config) Validate() error {
 		}
 		if file.PollInterval <= 0 {
 			return fmt.Errorf("address-filter.files[%d] (s3://%s/%s): poll-interval must be positive", i, file.Bucket, file.ObjectKey)
+		}
+		if file.MinBytesPerHashEntry <= 0 {
+			return fmt.Errorf("address-filter.files[%d] (s3://%s/%s): min-bytes-per-hash-entry must be positive", i, file.Bucket, file.ObjectKey)
 		}
 		key := file.Bucket + "\x00" + file.ObjectKey
 		if _, dup := seen[key]; dup {

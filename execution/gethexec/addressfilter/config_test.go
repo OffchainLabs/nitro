@@ -24,17 +24,20 @@ func TestConfigNumPreallocatedHashes(t *testing.T) {
 		name     string
 		prealloc bool
 		maxMB    int
+		minBytes int
 		want     int
 	}{
-		{"disabled", false, 10, 0},
-		{"no max size", true, 0, 0},
-		{"negative max size", true, -1, 0},
-		{"one mb", true, 1, 1024 * 1024 / minBytesPerHashEntry},
-		{"ten mb", true, 10, 10 * 1024 * 1024 / minBytesPerHashEntry},
+		{"disabled", false, 10, 0, 0},
+		{"no max size", true, 0, 0, 0},
+		{"negative max size", true, -1, 0, 0},
+		{"one mb", true, 1, 0, 1024 * 1024 / minBytesPerHashEntry},
+		{"ten mb", true, 10, 0, 10 * 1024 * 1024 / minBytesPerHashEntry},
+		{"custom min bytes per entry", true, 1, 66, 1024 * 1024 / 66},
+		{"default min bytes per entry", true, 1, minBytesPerHashEntry, 1024 * 1024 / minBytesPerHashEntry},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := FileConfig{Config: s3syncer.Config{PreallocateMemory: tt.prealloc, MaxFileSizeMB: tt.maxMB}}
+			cfg := FileConfig{Config: s3syncer.Config{PreallocateMemory: tt.prealloc, MaxFileSizeMB: tt.maxMB}, MinBytesPerHashEntry: tt.minBytes}
 			if got := cfg.numPreallocatedHashes(); got != tt.want {
 				t.Errorf("numPreallocatedHashes() = %d, want %d", got, tt.want)
 			}
@@ -96,11 +99,21 @@ func TestConfigValidate(t *testing.T) {
 		cfg.Files[0].MaxRetries = 0
 		cfg.Files[0].Concurrency = 0
 		cfg.Files[0].PollInterval = 0
+		cfg.Files[0].MinBytesPerHashEntry = 0
 		require.NoError(t, cfg.Validate())
 		require.Equal(t, DefaultFileConfig.ChunkSizeMB, cfg.Files[0].ChunkSizeMB)
 		require.Equal(t, DefaultFileConfig.MaxRetries, cfg.Files[0].MaxRetries)
 		require.Equal(t, DefaultFileConfig.Concurrency, cfg.Files[0].Concurrency)
 		require.Equal(t, DefaultFileConfig.PollInterval, cfg.Files[0].PollInterval)
+		require.Equal(t, DefaultFileConfig.MinBytesPerHashEntry, cfg.Files[0].MinBytesPerHashEntry)
+	})
+
+	t.Run("negative min-bytes-per-hash-entry", func(t *testing.T) {
+		cfg := validTestConfig(t)
+		cfg.Files[0].MinBytesPerHashEntry = -1
+		err := cfg.Validate()
+		require.ErrorContains(t, err, "min-bytes-per-hash-entry must be positive")
+		require.ErrorContains(t, err, "files[0]")
 	})
 
 	t.Run("negative poll interval", func(t *testing.T) {
@@ -198,7 +211,7 @@ func TestConfigValidateFilesList(t *testing.T) {
 		cfg := DefaultConfig
 		cfg.FilesList = fmt.Sprintf(
 			`[{"bucket":"b1","object-key":"k1","region":"us-east-1","download-dir":%q},`+
-				`{"bucket":"b2","object-key":"k2","region":"us-east-1","download-dir":%q,"poll-interval":%d,"chunk-size-mb":8}]`,
+				`{"bucket":"b2","object-key":"k2","region":"us-east-1","download-dir":%q,"poll-interval":%d,"chunk-size-mb":8,"min-bytes-per-hash-entry":66}]`,
 			downloadDir, downloadDir, int64(time.Minute))
 		require.NoError(t, cfg.Validate())
 		require.Len(t, cfg.Files, 2)
@@ -208,11 +221,13 @@ func TestConfigValidateFilesList(t *testing.T) {
 		require.Equal(t, DefaultFileConfig.ChunkSizeMB, cfg.Files[0].ChunkSizeMB)
 		require.Equal(t, DefaultFileConfig.MaxRetries, cfg.Files[0].MaxRetries)
 		require.Equal(t, DefaultFileConfig.Concurrency, cfg.Files[0].Concurrency)
+		require.Equal(t, DefaultFileConfig.MinBytesPerHashEntry, cfg.Files[0].MinBytesPerHashEntry)
 		require.True(t, cfg.Files[0].PreallocateMemory)
 
 		// Explicit fields override defaults; durations are nanosecond integers.
 		require.Equal(t, time.Minute, cfg.Files[1].PollInterval)
 		require.Equal(t, 8, cfg.Files[1].ChunkSizeMB)
+		require.Equal(t, 66, cfg.Files[1].MinBytesPerHashEntry)
 	})
 
 	t.Run("conflicts with files slice", func(t *testing.T) {
