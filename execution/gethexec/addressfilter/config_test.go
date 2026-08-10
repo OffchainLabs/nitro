@@ -215,11 +215,10 @@ func TestConfigValidateFilesList(t *testing.T) {
 		require.Equal(t, 8, cfg.Files[1].ChunkSizeMB)
 	})
 
-	t.Run("files slice takes precedence over files-list", func(t *testing.T) {
+	t.Run("conflicts with files slice", func(t *testing.T) {
 		cfg := validTestConfig(t)
-		cfg.FilesList = `not even json`
-		require.NoError(t, cfg.Validate())
-		require.Len(t, cfg.Files, 1)
+		cfg.FilesList = `[{"bucket":"b1"}]`
+		require.ErrorContains(t, cfg.Validate(), "mutually exclusive")
 	})
 
 	t.Run("malformed json", func(t *testing.T) {
