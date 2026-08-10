@@ -534,6 +534,15 @@ func generateKeys(prefix []byte, numKeys int) [][]byte {
 	return keys
 }
 
+func TestWasmerSerializeVersionMatchesRust(t *testing.T) {
+	got := programs.WasmerSerializeVersion()
+	if WasmerSerializeVersion != got {
+		t.Fatalf("WasmerSerializeVersion mismatch: Go constant = %d, wasmer "+
+			"MetadataHeader::CURRENT_VERSION = %d. Update WasmerSerializeVersion in "+
+			"cmd/nitro/init/init.go to match wasmer.", WasmerSerializeVersion, got)
+	}
+}
+
 func TestPurgeIncompatibleWasmerSerializeVersionEntries(t *testing.T) {
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = t.TempDir()

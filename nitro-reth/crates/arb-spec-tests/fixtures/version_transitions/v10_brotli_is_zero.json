@@ -1,0 +1,8 @@
+{
+  "name": "v10_brotli_is_zero",
+  "description": "ArbOS v10 has brotli compression level 0",
+  "setup": {"arbos_version": 10, "chain_id": 421614},
+  "assertions": {
+    "arbos_state": {"brotli_compression_level": 0}
+  }
+}

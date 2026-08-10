@@ -50,6 +50,7 @@ import (
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/ethdb/pebble"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
@@ -343,6 +344,7 @@ type NodeBuilder struct {
 	deployReferenceDAContracts  bool
 	withReferenceDAProvider     bool
 	TrieNoAsyncFlush            bool
+	NoHistoryIndexDelay         bool
 	// If true, calls prestate tracer check AutomatedPrestateTracerTest on L2 cleanup
 	WithPrestateTracerChecks bool
 
@@ -491,6 +493,11 @@ func (b *NodeBuilder) WithProdConfirmPeriodBlocks() *NodeBuilder {
 	return b
 }
 
+func (b *NodeBuilder) WithNoHistoryIndexDelay() *NodeBuilder {
+	b.NoHistoryIndexDelay = true
+	return b
+}
+
 func (b *NodeBuilder) WithPreBoldDeployment() *NodeBuilder {
 	b.deployBold = false
 	return b
@@ -514,6 +521,30 @@ func (b *NodeBuilder) WithChainTipBlockRecorder() *NodeBuilder {
 func (b *NodeBuilder) WithLegacyBlockRecorder() *NodeBuilder {
 	b.execConfig.RecordingDatabase.Mode = gethexec.BlockRecorderModeLegacy
 	return b
+}
+
+type blockRecorderTestCase struct {
+	name         string
+	recorderMode string
+	stateScheme  string
+}
+
+func blockRecorderTestCases() []blockRecorderTestCase {
+	cases := []blockRecorderTestCase{
+		{name: gethexec.BlockRecorderModeLegacy, recorderMode: gethexec.BlockRecorderModeLegacy, stateScheme: rawdb.HashScheme},
+		{name: gethexec.BlockRecorderModeChainTip + "/" + rawdb.HashScheme, recorderMode: gethexec.BlockRecorderModeChainTip, stateScheme: rawdb.HashScheme},
+		{name: gethexec.BlockRecorderModeChainTip + "/" + rawdb.PathScheme, recorderMode: gethexec.BlockRecorderModeChainTip, stateScheme: rawdb.PathScheme},
+	}
+	if testflag.StateSchemeFlag == nil || *testflag.StateSchemeFlag == "" {
+		return cases
+	}
+	filtered := make([]blockRecorderTestCase, 0, len(cases))
+	for _, tc := range cases {
+		if tc.stateScheme == *testflag.StateSchemeFlag {
+			filtered = append(filtered, tc)
+		}
+	}
+	return filtered
 }
 
 // WithDelayBuffer sets the delay-buffer threshold, which is the number of blocks the batch-poster
@@ -746,8 +777,8 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 	if b.nodeConfig == nil {
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
 	}
-	if b.nodeConfig.ValidatorRequired() {
-		// validation currently requires hash
+	if b.nodeConfig.ValidatorRequired() && (b.execConfig == nil || b.execConfig.RecordingDatabase.Mode != gethexec.BlockRecorderModeChainTip) {
+		// Legacy validation recording currently requires hashdb.
 		b.RequireScheme(t, rawdb.HashScheme)
 	}
 	if b.defaultStateScheme == "" {
@@ -838,6 +869,7 @@ func buildOnParentChain(
 	initMessage *arbostypes.ParsedInitMessage,
 	addresses *chaininfo.RollupAddresses,
 	trieNoAsyncFlush bool,
+	noHistoryIndexDelay bool,
 ) *TestClient {
 	if parentChainTestClient == nil {
 		t.Fatal("must build parent chain before building chain")
@@ -856,7 +888,7 @@ func buildOnParentChain(
 	var consensusDB ethdb.Database
 	var blockchain *core.BlockChain
 	_, chainTestClient.Stack, executionDB, consensusDB, blockchain = createNonL1BlockChainWithStackConfig(
-		t, chainInfo, dataDir, chainConfig, arbOSInit, initMessage, stackConfig, execConfig, trieNoAsyncFlush)
+		t, chainInfo, dataDir, chainConfig, arbOSInit, initMessage, stackConfig, execConfig, trieNoAsyncFlush, noHistoryIndexDelay)
 
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
@@ -962,6 +994,7 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
 		b.l3InitMessage,
 		b.l3Addresses,
 		b.TrieNoAsyncFlush,
+		b.NoHistoryIndexDelay,
 	)
 
 	return func() {
@@ -996,6 +1029,7 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		b.initMessage,
 		b.addresses,
 		b.TrieNoAsyncFlush,
+		b.NoHistoryIndexDelay,
 	)
 
 	if b.nodeConfig.MessageExtraction.Enable {
@@ -1087,7 +1121,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	var consensusDB ethdb.Database
 	var blockchain *core.BlockChain
 	b.L2Info, b.L2.Stack, executionDB, consensusDB, blockchain = createNonL1BlockChainWithStackConfig(
-		t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, nil, b.l2StackConfig, b.execConfig, b.TrieNoAsyncFlush)
+		t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, nil, b.l2StackConfig, b.execConfig, b.TrieNoAsyncFlush, b.NoHistoryIndexDelay)
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
 	fatalErrChan := make(chan error, 10)
@@ -1171,7 +1205,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	}
 	b.L2.cleanup()
 
-	l2info, stack, executionDB, consensusDB, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, b.initMessage, b.l2StackConfig, b.execConfig, b.TrieNoAsyncFlush)
+	l2info, stack, executionDB, consensusDB, blockchain := createNonL1BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.arbOSInit, b.initMessage, b.l2StackConfig, b.execConfig, b.TrieNoAsyncFlush, b.NoHistoryIndexDelay)
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
 	feedErrChan := make(chan error, 10)
@@ -1233,6 +1267,7 @@ func build2ndNode(
 
 	addresses *chaininfo.RollupAddresses,
 	initMessage *arbostypes.ParsedInitMessage,
+	noHistoryIndexDelay bool,
 ) (*TestClient, func()) {
 	if params.nodeConfig == nil {
 		params.nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
@@ -1273,7 +1308,7 @@ func build2ndNode(
 	var cleanup func()
 	testClient := NewTestClient(ctx)
 	testClient.Client, testClient.ConsensusNode, testClient.ExecNode, cleanup, testClient.ConsensusConfigFetcher, testClient.ExecutionConfigFetcher =
-		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, firstNodeTestClient.ExecNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, parentChainTestClient.L1BlobReader, firstNodeTestClient.ConsensusNode.ParentChain, params.fatalErrChan)
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, firstNodeTestClient.ExecNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, parentChainTestClient.L1BlobReader, firstNodeTestClient.ConsensusNode.ParentChain, noHistoryIndexDelay, params.fatalErrChan)
 	testClient.cleanup = cleanup
 
 	testClient.L1BlobReader = parentChainTestClient.L1BlobReader
@@ -1306,6 +1341,7 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 
 		b.addresses,
 		b.initMessage,
+		b.NoHistoryIndexDelay,
 	)
 }
 
@@ -1338,6 +1374,7 @@ func (b *NodeBuilder) Build2ndNodeOnL3(t *testing.T, params *SecondNodeParams) (
 
 		b.l3Addresses,
 		b.l3InitMessage,
+		b.NoHistoryIndexDelay,
 	)
 }
 
@@ -2127,8 +2164,14 @@ func deployOnParentChain(
 	return addresses, initMessage
 }
 
+func PebbleExtraOptionsForTest(t *testing.T, execConfig *gethexec.Config, namespace string) *pebble.ExtraOptions {
+	persistentConfig := conf.PersistentConfigDefault
+	Require(t, persistentConfig.Pebble.ResolveWithStateScheme(execConfig.Caching.StateScheme))
+	return persistentConfig.Pebble.ExtraOptions(namespace)
+}
+
 func createNonL1BlockChainWithStackConfig(
-	t *testing.T, info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, arbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, execConfig *gethexec.Config, trieNoAsyncFlush bool,
+	t *testing.T, info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, arbOSInit *params.ArbOSInit, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, execConfig *gethexec.Config, trieNoAsyncFlush bool, noHistoryIndexDelay bool,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
 	if info == nil {
 		info = NewArbTestInfo(t, chainConfig.ChainID)
@@ -2146,19 +2189,19 @@ func createNonL1BlockChainWithStackConfig(
 
 	chainData := rawdb.NewMemoryDatabase()
 	if stack.Config().DBEngine != dbutil.MemoryDB {
-		chainData, err = stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
+		chainData, err = stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: PebbleExtraOptionsForTest(t, execConfig, "l2chaindata")})
 		Require(t, err)
 	}
 	wasmData := rawdb.NewMemoryDatabase()
 	if stack.Config().DBEngine != dbutil.MemoryDB {
-		wasmData, err = stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"), NoFreezer: true})
+		wasmData, err = stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", PebbleExtraOptions: PebbleExtraOptionsForTest(t, execConfig, "wasm"), NoFreezer: true})
 		Require(t, err)
 	}
 
 	executionDB := rawdb.WrapDatabaseWithWasm(chainData, wasmData)
 	consensusDB := rawdb.NewMemoryDatabase()
 	if stack.Config().DBEngine != dbutil.MemoryDB {
-		consensusDB, err = stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
+		consensusDB, err = stack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: PebbleExtraOptionsForTest(t, execConfig, "arbitrumdata"), NoFreezer: true})
 		Require(t, err)
 	}
 
@@ -2173,7 +2216,7 @@ func createNonL1BlockChainWithStackConfig(
 			SerializedChainConfig: serializedChainConfig,
 		}
 	}
-	coreCacheConfig := gethexec.DefaultCacheConfigTrieNoFlushFor(&execConfig.Caching, trieNoAsyncFlush)
+	coreCacheConfig := gethexec.DefaultCacheConfigWithExtraFor(&execConfig.Caching, trieNoAsyncFlush, noHistoryIndexDelay)
 	blockchain, err := gethexec.WriteOrTestBlockChain(executionDB, coreCacheConfig, initReader, chainConfig, arbOSInit, nil, initMessage, &gethexec.ConfigDefault.TxIndexer, 0, execConfig.ExposeMultiGas)
 	Require(t, err)
 
@@ -2423,6 +2466,7 @@ func Create2ndNodeWithConfig(
 	useExecutionClientOnly bool,
 	blobReader containers.Option[daprovider.BlobReader],
 	parentChain *parent.ParentChain,
+	noHistoryIndexDelay bool,
 	customFatalErrChan chan error,
 ) (*ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, func(), ConfigFetcher[arbnode.Config], ConfigFetcher[gethexec.Config]) {
 	if nodeConfig == nil {
@@ -2448,19 +2492,19 @@ func Create2ndNodeWithConfig(
 
 	chainData := rawdb.NewMemoryDatabase()
 	if chainStack.Config().DBEngine != dbutil.MemoryDB {
-		chainData, err = chainStack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
+		chainData, err = chainStack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: PebbleExtraOptionsForTest(t, execConfig, "l2chaindata")})
 		Require(t, err)
 	}
 	wasmData := rawdb.NewMemoryDatabase()
 	if chainStack.Config().DBEngine != dbutil.MemoryDB {
-		wasmData, err = chainStack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"), NoFreezer: true})
+		wasmData, err = chainStack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", PebbleExtraOptions: PebbleExtraOptionsForTest(t, execConfig, "wasm"), NoFreezer: true})
 		Require(t, err)
 	}
 	executionDB := rawdb.WrapDatabaseWithWasm(chainData, wasmData)
 
 	consensusDB := rawdb.NewMemoryDatabase()
 	if chainStack.Config().DBEngine != dbutil.MemoryDB {
-		consensusDB, err = chainStack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"), NoFreezer: true})
+		consensusDB, err = chainStack.OpenDatabaseWithOptions("arbitrumdata", node.DatabaseOptions{MetricsNamespace: "arbitrumdata/", PebbleExtraOptions: PebbleExtraOptionsForTest(t, execConfig, "arbitrumdata"), NoFreezer: true})
 		Require(t, err)
 	}
 	initReader := statetransfer.NewMemoryInitDataReader(chainInitData)
@@ -2471,7 +2515,7 @@ func Create2ndNodeWithConfig(
 
 	chainConfig := firstExec.ArbInterface.BlockChain().Config()
 
-	coreCacheConfig := gethexec.DefaultCacheConfigFor(&execConfig.Caching)
+	coreCacheConfig := gethexec.DefaultCacheConfigWithExtraFor(&execConfig.Caching, false, noHistoryIndexDelay)
 	var tracer *tracing.Hooks
 	if execConfig.VmTrace.TracerName != "" {
 		tracer, err = tracers.LiveDirectory.New(execConfig.VmTrace.TracerName, json.RawMessage(execConfig.VmTrace.JSONConfig))

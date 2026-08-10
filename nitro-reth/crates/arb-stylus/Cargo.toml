@@ -1,0 +1,38 @@
+[package]
+name = "arb-stylus"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+alloy-primitives = { workspace = true }
+arb-chainspec = { workspace = true }
+arb-primitives = { workspace = true }
+arbos = { workspace = true }
+eyre = { workspace = true }
+lazy_static = { workspace = true }
+nitro-arbutil = { workspace = true }
+nitro-brotli = { workspace = true, features = ["cc_brotli"] }
+nitro-prover = { workspace = true }
+parking_lot = { workspace = true }
+revm = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+wasmer = { workspace = true, features = ["sys", "cranelift"] }
+wasmer-compiler = { workspace = true }
+wasmer-types = { workspace = true }
+wasmparser = { workspace = true }
+
+[build-dependencies]
+cc = { workspace = true }
+
+[dev-dependencies]
+arb-context = { workspace = true }
+proptest = { workspace = true }
+wat = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,106 @@
+{
+  "name": "gate_arbwasm_98_stylus_charging_fixes",
+  "description": "ArbWasm.minInitGas() v32 method gate (arbwasm.rs:98). Below v32 the call should be rejected via check_method_version returning InsufficientArbOSVersion. Calls ArbWasm at ArbOS v31 with the minInitGas selector.",
+  "genesis": {
+    "config": {
+      "chainId": 421614,
+      "arbitrum": {
+        "InitialArbOSVersion": 31,
+        "AllowDebugPrecompiles": true,
+        "GenesisBlockNum": 0
+      }
+    }
+  },
+  "messages": [
+    {
+      "msgIdx": null,
+      "message": {
+        "header": {
+          "kind": 12,
+          "sender": "0xde70e7820f6d69ad4fde67de05b4791afd1be38d",
+          "blockNumber": 0,
+          "timestamp": 1700000000,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "EKFRFZCzP7zt478GBhQPffrp8BYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADY1ya3F3qAAAA=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "msgIdx": null,
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 1,
+          "timestamp": 1700000010,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BPhrgIQ7msoAgwehIJQAAAAAAAAAAAAAAAAAAAAAAAAAcYCEmdCzjYMM3f+gLN4Qv4gdu1oSoIU0dJRcUwNKtUBNpCgHbTR5vfS1R/OgHC2v2rwfBu/DxI7PKeJ5Y8D6KFVFM0sJipiuUpeyBc0="
+      },
+      "delayedMessagesRead": 1
+    }
+  ],
+  "expected": {
+    "blocks": [
+      {
+        "number": 1,
+        "block_hash": "0x853d004ce97fe6610559220bdaa35685b903288a49676ba120466354c9859b35",
+        "state_root": "0xd78eb3604a52cb766c1e9b2b4d8e4830a5324a18be531caa79d4c3e21f1260e5",
+        "receipts_root": "0xd7a92f3697d06225df2a55e920d2f7a04a4b78f19a42e774c4a3993e342c61bb",
+        "transactions_root": "0xead42617bfe4f744e1de53aa4673453ead51b19335cf5355c20854cdaee1faa0",
+        "gas_used": 0
+      },
+      {
+        "number": 2,
+        "block_hash": "0xeb7ff2bd747feb0bd4da897fe27bc38871cf6924b7f9f784f1d1721d713a67b6",
+        "state_root": "0x4b67be6fff9102fc191609df73a7d22b3293ef73b799e51c4cd89f1bf5d38027",
+        "receipts_root": "0x98a7630c1f81c0fb18242e7a1b0d4996641373f64141c70e2ff8fb4dc8b260df",
+        "transactions_root": "0x12fac63e2c277ea425e36f8baa94e7de406b13f15be3696db27855d5b3528353",
+        "gas_used": 0
+      }
+    ],
+    "eth_calls": [],
+    "storage": [],
+    "balances": [],
+    "txReceipts": [
+      {
+        "txHash": "0xfd8eaa5109af61f71c0dfcc202bfc56e87e12455a2fbf85a41ac0b6e45d53615",
+        "blockNumber": 1,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0x00000000000000000000000000000000000a4b05",
+        "to": "0x00000000000000000000000000000000000a4b05"
+      },
+      {
+        "txHash": "0x01daf89f4c97c493844c2c338c8d38009fbec5f41eadf9c7f81bafd2e8303d17",
+        "blockNumber": 1,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0xde70e7820f6d69ad4fde67de05b4791afd1be38d",
+        "to": "0x10a1511590b33fbcede3bf0606140f7dfae9f016"
+      },
+      {
+        "txHash": "0x3fa8a7b99db18d528292480188fb27d0e4a2f75704c61672ba2e347ee9865da6",
+        "blockNumber": 2,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 1,
+        "from": "0x00000000000000000000000000000000000a4b05",
+        "to": "0x00000000000000000000000000000000000a4b05"
+      }
+    ]
+  }
+}

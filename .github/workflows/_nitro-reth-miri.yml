@@ -22,6 +22,9 @@ jobs:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
+      - name: Init reth-referenced submodules
+        working-directory: .
+        run: git submodule update --init --depth 1 --recursive -- brotli contracts contracts-local/src/precompiles
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri

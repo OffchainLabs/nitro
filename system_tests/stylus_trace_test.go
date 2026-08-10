@@ -102,8 +102,14 @@ func intToBytes(v int) []byte {
 }
 
 func TestStylusOpcodeTraceStorage(t *testing.T) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testStylusOpcodeTraceStorage(t, recorderOpt)
+	})
+}
+
+func testStylusOpcodeTraceStorage(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	const jit = false
-	builder, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -138,8 +144,14 @@ func TestStylusOpcodeTraceStorage(t *testing.T) {
 }
 
 func TestStylusOpcodeTraceNativeKeccak(t *testing.T) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testStylusOpcodeTraceNativeKeccak(t, recorderOpt)
+	})
+}
+
+func testStylusOpcodeTraceNativeKeccak(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	const jit = false
-	builder, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -157,8 +169,14 @@ func TestStylusOpcodeTraceNativeKeccak(t *testing.T) {
 }
 
 func TestStylusOpcodeTraceMath(t *testing.T) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testStylusOpcodeTraceMath(t, recorderOpt)
+	})
+}
+
+func testStylusOpcodeTraceMath(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	const jit = false
-	builder, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -199,8 +217,14 @@ func TestStylusOpcodeTraceMath(t *testing.T) {
 }
 
 func TestStylusOpcodeTraceExit(t *testing.T) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testStylusOpcodeTraceExit(t, recorderOpt)
+	})
+}
+
+func testStylusOpcodeTraceExit(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	const jit = false
-	builder, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -225,8 +249,14 @@ func TestStylusOpcodeTraceExit(t *testing.T) {
 }
 
 func TestStylusOpcodeTraceEvmData(t *testing.T) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testStylusOpcodeTraceEvmData(t, recorderOpt)
+	})
+}
+
+func testStylusOpcodeTraceEvmData(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	const jit = false
-	builder, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -333,8 +363,14 @@ func TestStylusOpcodeTraceEvmData(t *testing.T) {
 }
 
 func TestStylusOpcodeTraceLog(t *testing.T) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testStylusOpcodeTraceLog(t, recorderOpt)
+	})
+}
+
+func testStylusOpcodeTraceLog(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	const jit = false
-	builder, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -359,8 +395,14 @@ func TestStylusOpcodeTraceLog(t *testing.T) {
 }
 
 func TestStylusOpcodeTraceReturnDataSize(t *testing.T) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testStylusOpcodeTraceReturnDataSize(t, recorderOpt)
+	})
+}
+
+func testStylusOpcodeTraceReturnDataSize(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	const jit = false
-	builder, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -375,8 +417,14 @@ func TestStylusOpcodeTraceReturnDataSize(t *testing.T) {
 }
 
 func TestStylusOpcodeTraceCall(t *testing.T) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testStylusOpcodeTraceCall(t, recorderOpt)
+	})
+}
+
+func testStylusOpcodeTraceCall(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	const jit = false
-	builder, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -410,8 +458,14 @@ func TestStylusOpcodeTraceCall(t *testing.T) {
 }
 
 func TestStylusOpcodeTraceCreate(t *testing.T) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testStylusOpcodeTraceCreate(t, recorderOpt)
+	})
+}
+
+func testStylusOpcodeTraceCreate(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	const jit = false
-	builder, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -447,8 +501,14 @@ func TestStylusOpcodeTraceCreate(t *testing.T) {
 // the Stylus trace does not contain all opcodes from the Solidity/EVM trace. Instead, this test
 // only checks that both traces contain the same basic opcodes.
 func TestStylusOpcodeTraceEquivalence(t *testing.T) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testStylusOpcodeTraceEquivalence(t, recorderOpt)
+	})
+}
+
+func testStylusOpcodeTraceEquivalence(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	const jit = false
-	builder, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -505,8 +565,14 @@ func TestStylusOpcodeTraceEquivalence(t *testing.T) {
 }
 
 func TestStylusHugeWriteResultTrace(t *testing.T) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testStylusHugeWriteResultTrace(t, recorderOpt)
+	})
+}
+
+func testStylusHugeWriteResultTrace(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	const jit = false
-	builder, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()

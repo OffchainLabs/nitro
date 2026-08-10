@@ -95,10 +95,30 @@ record-blocks: nitro-deps
 	echo "Recorded $$found blocks"
 
 .PHONY: build
-build: # Mocked system build (temporary solution until we have all the necessary crates available)
-build: nitro-deps
-	@cargo build -p stylus-compiler-runner --release
+build: # Build the SP1 workspace; replay artifacts go to $(OUTPUT_DIR).
+build: brotli
+	@mkdir -p $(OUTPUT_DIR)
+	@cargo build --locked --release
+	@cargo run --locked --release -p replay-builder -- --output-folder $(OUTPUT_DIR)
+	@cp $(CURDIR)/target/release/replay-runner $(OUTPUT_DIR)
+
+.PHONY: run
+run: # Validate a block with the SP1 replay runner.
+	$(OUTPUT_DIR)/replay-runner --program $(OUTPUT_DIR)/replay-program.elf
+
+.PHONY: clippy
+clippy: # Run clippy on the sp1 workspace crates.
+clippy: build
+	@cargo clippy --locked --workspace -- -D warnings
+
+.PHONY: stylus-compiler-compare
+stylus-compiler-compare: # Compare Stylus compilation consistency between native and SP1 execution mode.
+	@cd $(TOP) && cargo run --locked --manifest-path $(CURDIR)/Cargo.toml -p stylus-compiler-runner --release -- compare
+
+.PHONY: stylus-compiler-prove
+stylus-compiler-prove: # Generate and verify a proof of correct Stylus compilation.
+	@cd $(TOP) && cargo run --locked --manifest-path $(CURDIR)/Cargo.toml -p stylus-compiler-runner --release -- prove
 
 .PHONY: clean
 clean: # Remove all generated artifacts.
-	@rm -rf $(BROTLI_SRC_DIR) $(BROTLI_BUILD_DIR) $(BROTLI_LIB_DIR) $(OUTPUT_DIR)
+	@rm -rf $(BROTLI_SRC_DIR) $(BROTLI_BUILD_DIR) $(BROTLI_LIB_DIR) target

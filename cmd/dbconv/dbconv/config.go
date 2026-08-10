@@ -23,17 +23,18 @@ type DBConfig struct {
 
 var DBConfigDefaultDst = DBConfig{
 	DBEngine:  "pebble",
-	Handles:   conf.PersistentConfigDefault.Handles,
+	Handles:   conf.PersistentConfigDefaultNoReadCompact.Handles,
 	Cache:     2048, // 2048 MB
 	Namespace: "dstdb/",
-	Pebble:    conf.PebbleConfigDefault,
+	Pebble:    conf.PebbleConfigDefaultNoReadCompact,
 }
 
 var DBConfigDefaultSrc = DBConfig{
 	DBEngine:  "leveldb",
-	Handles:   conf.PersistentConfigDefault.Handles,
+	Handles:   conf.PersistentConfigDefaultNoReadCompact.Handles,
 	Cache:     2048, // 2048 MB
 	Namespace: "srcdb/",
+	Pebble:    conf.PebbleConfigDefaultNoReadCompact,
 }
 
 func DBConfigAddOptions(prefix string, f *pflag.FlagSet, defaultConfig *DBConfig) {
@@ -43,6 +44,10 @@ func DBConfigAddOptions(prefix string, f *pflag.FlagSet, defaultConfig *DBConfig
 	f.Int(prefix+".cache", defaultConfig.Cache, "the capacity(in megabytes) of the data caching")
 	f.String(prefix+".namespace", defaultConfig.Namespace, "metrics namespace")
 	conf.PebbleConfigAddOptions(prefix+".pebble", f, &defaultConfig.Pebble)
+}
+
+func (c *DBConfig) Validate() error {
+	return c.Pebble.Validate()
 }
 
 type DBConvConfig struct {
@@ -93,6 +98,12 @@ func (c *DBConvConfig) Validate() error {
 	}
 	if c.IdealBatchSize <= 0 {
 		return fmt.Errorf("Invalid ideal batch size: %d, has to be greater then 0", c.IdealBatchSize)
+	}
+	if err := c.Src.Validate(); err != nil {
+		return fmt.Errorf("src: %w", err)
+	}
+	if err := c.Dst.Validate(); err != nil {
+		return fmt.Errorf("dst: %w", err)
 	}
 	return nil
 }
