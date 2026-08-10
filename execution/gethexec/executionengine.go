@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"path"
 	"runtime/debug"
@@ -372,6 +373,14 @@ func NewExecutionEngine(
 		filteringReportRPCClient:       filteringReportRPCClient,
 		filteredTxFullRetryInterval:    filteredTxFullRetryInterval,
 	}
+}
+
+func (s *ExecutionEngine) GetFilteringReportRPCClient() *FilteringReportRPCClient {
+	return s.filteringReportRPCClient
+}
+
+func (s *ExecutionEngine) ChainID() *big.Int {
+	return s.bc.Config().ChainID
 }
 
 func (s *ExecutionEngine) backlogCallDataUnits() uint64 {

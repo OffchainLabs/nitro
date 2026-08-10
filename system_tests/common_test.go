@@ -269,6 +269,7 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
+	FilterSetReportingInterval:   time.Minute,
 	ExperimentalPGA:              gethexec.DefaultPGAConfig,
 }
 

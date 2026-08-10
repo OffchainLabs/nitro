@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/util/s3syncer"
@@ -122,6 +124,10 @@ func (s *FilterService) GetLoadedAt() time.Time {
 
 func (s *FilterService) GetHashStore() *HashStore {
 	return s.hashStore
+}
+
+func (s *FilterService) CurrentFilterSetID() uuid.UUID {
+	return s.hashStore.Id()
 }
 
 func (s *FilterService) GetAddressChecker() *HashedAddressChecker {

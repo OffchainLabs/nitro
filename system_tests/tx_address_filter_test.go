@@ -7,7 +7,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,6 +31,9 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
+	filteringreportapi "github.com/offchainlabs/nitro/cmd/filtering-report/api"
+	"github.com/offchainlabs/nitro/cmd/filtering-report/signer/signertest"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
@@ -35,6 +41,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/s3client"
 	"github.com/offchainlabs/nitro/util/s3syncer"
+	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
 func storeFilterHashes(t *testing.T, store *addressfilter.HashStore, id uuid.UUID, salt uuid.UUID, scheme addressfilter.HashingScheme, hashes []common.Hash, digest string) {
@@ -1348,6 +1355,146 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	if !execNode.Synced(ctx) {
 		t.Fatal("Synced should return true when both SyncMonitor is synced and filtering is ready")
 	}
+}
+
+func TestPeriodicFilterSetIDReporting(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	signingPair := signertest.NewSigningPair(t)
+
+	// Capture every POST sent to the "external provider".
+	reportCh := make(chan addressfilter.FilterSetIDReport, 16)
+	externalEndpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+			http.Error(w, "bad method", http.StatusMethodNotAllowed)
+			return
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("expected Content-Type application/json, got %s", ct)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+			http.Error(w, "read failed", http.StatusInternalServerError)
+			return
+		}
+		if err := signingPair.Verifier.VerifyHTTPRequest(r, body); err != nil {
+			t.Errorf("verifier rejected filter-set id report: %v", err)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		var report addressfilter.FilterSetIDReport
+		if err := json.Unmarshal(body, &report); err != nil {
+			t.Errorf("unmarshal body: %v", err)
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		select {
+		case reportCh <- report:
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer externalEndpoint.Close()
+
+	// Stand up the filtering-report service pointing at the external endpoint.
+	filteringReportStack := filteringreportapi.NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfig{
+		URL:     externalEndpoint.URL,
+		Timeout: 5 * time.Second,
+	}, signingPair.Signer)
+
+	// Build an active sequencer node wired to the filtering-report service.
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	builder.execConfig.Sequencer.FilterSetReportingInterval = 200 * time.Millisecond
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Inject an enabled filter service (without S3) so the sequencer has a
+	// filter-set id to report, and wire it into the sequencer via the
+	// test-only setter. Using a direct hash store Store() lets us control the
+	// id deterministically.
+	filterCfg := &addressfilter.Config{
+		S3: s3syncer.Config{
+			Config:      s3client.Config{Region: "us-east-1"},
+			Bucket:      "test-bucket",
+			ObjectKey:   "test-key",
+			DownloadDir: t.TempDir(),
+		},
+		PollInterval:              5 * time.Minute,
+		CacheSize:                 100,
+		AddressCheckerWorkerCount: 1,
+		AddressCheckerQueueSize:   10,
+	}
+	filterService, err := addressfilter.NewFilterService(filterCfg)
+	require.NoError(t, err)
+	builder.L2.ExecNode.Sequencer.SetAddressFilterServiceForTest(t, filterService)
+
+	salt, err := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
+	require.NoError(t, err)
+
+	// First id: assert we observe it at the external endpoint.
+	id1 := uuid.New()
+	storeFilterHashes(t, filterService.GetHashStore(), id1, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-1")
+
+	expectedChainID := builder.L2.ExecNode.ExecEngine.ChainID().Uint64()
+	waitForReport := func(wantID uuid.UUID) addressfilter.FilterSetIDReport {
+		t.Helper()
+		deadline := time.After(10 * time.Second)
+		for {
+			select {
+			case got := <-reportCh:
+				if got.FilterSetID == wantID {
+					return got
+				}
+				// Drop stale reports (e.g. from the previous id during rotation).
+			case <-deadline:
+				t.Fatalf("timed out waiting for report with filter-set id %s", wantID)
+			}
+		}
+	}
+
+	first := waitForReport(id1)
+	require.Equal(t, expectedChainID, first.ChainID, "chain id mismatch")
+	require.False(t, first.ReportedAt.IsZero(), "reported-at should be set")
+
+	// Rotate the filter set; the next reporting tick must pick up id2.
+	id2 := uuid.New()
+	storeFilterHashes(t, filterService.GetHashStore(), id2, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-2")
+
+	second := waitForReport(id2)
+	require.Equal(t, expectedChainID, second.ChainID, "chain id mismatch after rotation")
+	require.True(t, second.ReportedAt.After(first.ReportedAt) || second.ReportedAt.Equal(first.ReportedAt),
+		"second report's reported-at (%s) should be >= first (%s)", second.ReportedAt, first.ReportedAt)
+
+	// An inactive sequencer must not report. Pause, then wait out any tick that
+	// was already past the IsActive check before draining stale reports.
+	builder.L2.ExecNode.Sequencer.Pause()
+	time.Sleep(500 * time.Millisecond)
+	for drained := false; !drained; {
+		select {
+		case <-reportCh:
+		default:
+			drained = true
+		}
+	}
+
+	id3 := uuid.New()
+	storeFilterHashes(t, filterService.GetHashStore(), id3, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-3")
+
+	select {
+	case got := <-reportCh:
+		t.Fatalf("paused sequencer sent filter-set id report %s", got.FilterSetID)
+	case <-time.After(1 * time.Second):
+	}
+
+	// Reporting must resume once the sequencer becomes active again.
+	builder.L2.ExecNode.Sequencer.Activate()
+	third := waitForReport(id3)
+	require.Equal(t, expectedChainID, third.ChainID, "chain id mismatch after reactivation")
 }
 
 // Exercises an end-to-end filtering tx flow under the string-input hashing scheme:
