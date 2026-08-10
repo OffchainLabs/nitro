@@ -246,7 +246,7 @@ where
 
     // MEL data-provider RPC (`meldataprovider_*`), served on both the public and auth
     // modules like `nitroexecution`.
-    // TODO: wire the real MelProvider backing; None = no-op.
+    // TODO(NIT-5115): wire the real MelProvider backing; None = no-op.
     let mel_provider: Option<Arc<dyn MelProvider>> = None;
     if let Some(provider) = mel_provider {
         let mel_rpc = MelApiHandler::new(provider).into_rpc();

@@ -208,7 +208,8 @@ pub trait MelProvider: Send + Sync + 'static {
             .await
     }
 
-    /// safe/finalized -> clamp `min(head_block, tag_block)` -> state (mel.go:233).
+    /// safe/finalized -> clamp `min(head_block, tag_block)` -> state
+    /// (nitro's `MessageExtractor.getStateByRPCBlockNum`).
     async fn state_at_tag(&self, tag: L1BlockTag) -> MelProviderResult<MelState> {
         let blk = self.resolve_l1_block(tag).await?;
         let head_block = self.head_state().await?.parent_chain_block_number;
@@ -332,7 +333,7 @@ pub trait MelProvider: Send + Sync + 'static {
         })
     }
 
-    /// TODO: needs accumulator preimage recording (state.rs:16,28). Stub until then.
+    /// TODO(NIT-5119): needs accumulator preimage recording in arb-mel. Stub until then.
     async fn get_preimages_for_validation(
         &self,
         _last_validated_parent_chain_block: u64,
@@ -421,7 +422,7 @@ pub trait MelApi {
     #[method(name = "reorgTo")]
     async fn reorg_to(&self, parent_chain_block_number: u64) -> RpcResult<()>;
 
-    // TODO: needs preimage recording; wire result type TBD
+    // TODO(NIT-5119): needs preimage recording; wire result type TBD
     // #[method(name = "getPreimagesForValidation")]
     // async fn get_preimages_for_validation(&self, last_validated_parent_chain_block: u64,
     // validate_msg_extraction_till: u64) -> RpcResult<RpcGetPreimagesForValidationResult>;
