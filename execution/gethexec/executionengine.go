@@ -730,9 +730,6 @@ func (s *ExecutionEngine) ResequenceReorgedMessage(msg *arbostypes.MessageWithMe
 	if err != nil {
 		return nil, fmt.Errorf("failed to re-sequence old sequencer message removed by reorg: %w", err)
 	}
-	if len(hooks.SequencedTxes()) != len(txes) {
-		log.Error("Unexpected number of sequenced txes, some were dropped", "expected", len(txes), "got", len(hooks.SequencedTxes()))
-	}
 	return sequencedMsg, nil
 }
 
