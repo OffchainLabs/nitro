@@ -63,6 +63,10 @@ func testTwoNodesSimple(t *testing.T, daModeStr string) {
 	}
 }
 
+func TestTwoNodesSimple(t *testing.T) {
+	testTwoNodesSimple(t, "onchain")
+}
+
 func TestTwoNodesSimpleLocalAnyTrust(t *testing.T) {
 	testTwoNodesSimple(t, "files")
 }
