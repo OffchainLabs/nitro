@@ -269,7 +269,7 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
-	// Test block speeds are far below the minimum PGA round length, so force FIFO ordering.
+	// PGA only activates on collect-tips chains (ArbOS >= 60); tests below that run FIFO regardless.
 	ExperimentalPGA: gethexec.DefaultPGAConfig,
 }
 
