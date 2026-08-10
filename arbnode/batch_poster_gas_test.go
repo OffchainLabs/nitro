@@ -58,7 +58,7 @@ func TestEstimateGas(t *testing.T) {
 		name          string
 		client        *fakeRPCClient
 		expectedGas   uint64
-		expectedErr   error
+		expectedErrs  []error
 		expectedCalls []string
 	}{
 		{
@@ -70,32 +70,37 @@ func TestEstimateGas(t *testing.T) {
 		{
 			name:          "revert then successful eth_call still errors",
 			client:        &fakeRPCClient{estimateErr: revertErr},
-			expectedErr:   revertErr,
+			expectedErrs:  []error{revertErr},
 			expectedCalls: []string{"eth_estimateGas", "eth_call"},
 		},
 		{
-			name:          "revert reports the detailed eth_call error",
+			name:          "revert reports both the estimation and eth_call errors",
 			client:        &fakeRPCClient{estimateErr: revertErr, callErr: otherErr},
-			expectedErr:   otherErr,
+			expectedErrs:  []error{revertErr, otherErr},
 			expectedCalls: []string{"eth_estimateGas", "eth_call"},
 		},
 		{
 			name:          "non-revert error is returned as is",
 			client:        &fakeRPCClient{estimateErr: otherErr},
-			expectedErr:   otherErr,
+			expectedErrs:  []error{otherErr},
 			expectedCalls: []string{"eth_estimateGas"},
 		},
 		{
 			name:          "zero estimate is an error",
 			client:        &fakeRPCClient{estimate: 0},
-			expectedErr:   errZeroGasEstimate,
+			expectedErrs:  []error{errZeroGasEstimate},
 			expectedCalls: []string{"eth_estimateGas"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gas, err := estimateGas(tc.client, context.Background(), estimateGasParams{}, "latest")
-			if !errors.Is(err, tc.expectedErr) {
-				t.Fatalf("expected error %v, got %v", tc.expectedErr, err)
+			if len(tc.expectedErrs) == 0 && err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			for _, expectedErr := range tc.expectedErrs {
+				if !errors.Is(err, expectedErr) {
+					t.Fatalf("expected error %v, got %v", expectedErr, err)
+				}
 			}
 			if gas != tc.expectedGas {
 				t.Errorf("expected gas %d, got %d", tc.expectedGas, gas)
