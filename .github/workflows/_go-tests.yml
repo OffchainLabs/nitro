@@ -204,7 +204,7 @@ jobs:
       - name: run redis tests
         if: inputs.run-defaults-a
         run: >-
-          gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/...
+          gotestsum --format short-verbose -- -p 1 -run TestRedis -skip Flaky ./arbnode/... ./pubsub/... ./system_tests/...
           ${COVER:+-coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...} -- --test_redis=redis://localhost:6379/0
 
       # --------------------- FLAKY MODE --------------------------
@@ -224,6 +224,14 @@ jobs:
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
           --tags cionly --timeout 60m --test_state_scheme path --flaky
           --junitfile test-results/junit-flaky-path.xml
+
+      - name: run flaky redis tests
+        if: inputs.run-flaky
+        run: >-
+          gotestsum --format short-verbose --rerun-fails=1 --rerun-fails-max-failures=30
+          --junitfile test-results/junit-flaky-redis.xml
+          --packages './arbnode/... ./pubsub/... ./system_tests/...'
+          -- -p 1 -run 'TestRedis.*Flaky' -- --test_redis=redis://localhost:6379/0
 
       - name: run flaky tests (hash state scheme, MEL)
         if: inputs.run-flaky-mel
