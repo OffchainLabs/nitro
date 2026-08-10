@@ -154,6 +154,7 @@ func createCompleteTestNodeOnL1(
 	l2infoIn info,
 	useExternalSigner bool,
 	enableCustomDA bool,
+	execConfigOpts ...func(*gethexec.Config),
 ) (
 	l2info info, currentNode *arbnode.Node, execNode *gethexec.ExecutionNode, l2client *ethclient.Client, l2stack *node.Node,
 	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
@@ -169,7 +170,7 @@ func createCompleteTestNodeOnL1(
 	l2info, currentNode, execNode, l2client, l2stack, assertionChain, l2blockchain = createL2NodeWithRollupAddresses(
 		t, ctx, isSequencer, nodeConfig, chainConfig, l2infoIn,
 		l1info, l1client, addresses,
-		useExternalSigner, asserterOpts, signerCfg,
+		useExternalSigner, asserterOpts, signerCfg, execConfigOpts...,
 	)
 
 	return
@@ -283,6 +284,7 @@ func createL2NodeWithRollupAddresses(
 	useExternalSigner bool,
 	asserterOpts *bind.TransactOpts,
 	signerCfg *dataposterconfig.ExternalSignerConfig,
+	execConfigOpts ...func(*gethexec.Config),
 ) (
 	l2info info, currentNode *arbnode.Node, execNode *gethexec.ExecutionNode, l2client *ethclient.Client, l2stack *node.Node,
 	assertionChain *sol.AssertionChain, l2blockchain *core.BlockChain,
@@ -293,6 +295,9 @@ func createL2NodeWithRollupAddresses(
 	fatalErrChan := make(chan error, 10)
 
 	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
+	for _, opt := range execConfigOpts {
+		opt(execConfig)
+	}
 
 	Require(t, execConfig.Validate())
 	stackConfig := testhelpers.CreateStackConfigForTest("")
@@ -302,7 +307,7 @@ func createL2NodeWithRollupAddresses(
 
 	var l2executionDB ethdb.Database
 	var l2consensusDB ethdb.Database
-	l2info, l2stack, l2executionDB, l2consensusDB, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2infoIn, "", chainConfig, nil, initMessage, stackConfig, execConfig, false)
+	l2info, l2stack, l2executionDB, l2consensusDB, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2infoIn, "", chainConfig, nil, initMessage, stackConfig, execConfig, false, false)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {

@@ -1,23 +1,255 @@
-# MOCK workspace (NIT-5205): stand-in until the arbitrum-reth sources are
-# migrated here. The members mirror crate names that the ported CI invokes
-# (see .github/workflows/_nitro-reth-*.yml) so the workflows exercise real
-# build/test/lint plumbing against stub crates.
 [workspace]
 members = [
-    "bin/arb-reth",
+    "crates/arb-primitives",
+    "crates/arb-consensus/blob-client",
+    "crates/arb-chainspec",
+    "crates/arb-consensus/db",
     "crates/arb-context",
-    "crates/arb-spec-tests",
+    "crates/arb-consensus/da-provider",
+    "crates/arb-consensus/da-provider/rpc-client",
+    "crates/arb-math",
+    "crates/arb-consensus/mel",
+    "crates/arb-consensus/mel/db",
+    "crates/arb-consensus/mel/types",
+    "crates/arb-consensus/parent-chain-client",
+    "crates/arb-consensus/mel/runner",
     "crates/arb-storage",
+    "crates/arb-storage-errors",
+    "crates/arb-errors",
+    "crates/arb-evm",
+    "crates/arb-precompiles",
+    "crates/arb-node",
+    "crates/arb-payload",
+    "crates/arb-rpc",
+    "crates/arb-txpool",
+    "crates/arb-executor-tests",
+    "crates/arb-spec-tests",
+    "crates/arb-stylus",
+    "crates/arb-test-utils",
+    "crates/arb-test-harness",
+    "crates/arb-fuzz",
+    "crates/arb-bench",
+    "crates/arbos",
+    "crates/arbos-types",
+    "bin/arb-reth",
+    "bin/arb-test",
 ]
+exclude = ["brotli"]
 resolver = "3"
 
 [workspace.package]
 authors = ["0xBloctopus", "Offchain Labs"]
 edition = "2024"
 license = "BUSL-1.1"
-repository = "https://github.com/OffchainLabs/nitro-private"
+repository = "https://github.com/OffchainLabs/arbitrum-reth"
 rust-version = "1.93"
 version = "0.1.5"
+
+[workspace.dependencies]
+# Internal crates
+arb-primitives = { path = "crates/arb-primitives" }
+arb-blob-client = { path = "crates/arb-consensus/blob-client" }
+arb-chainspec = { path = "crates/arb-chainspec" }
+arb-consensus-db = { path = "crates/arb-consensus/db" }
+arb-context = { path = "crates/arb-context" }
+arb-da-provider = { path = "crates/arb-consensus/da-provider" }
+arb-da-provider-rpc-client = { path = "crates/arb-consensus/da-provider/rpc-client" }
+arb-math = { path = "crates/arb-math" }
+arb-mel = { path = "crates/arb-consensus/mel" }
+arb-mel-db = { path = "crates/arb-consensus/mel/db" }
+arb-mel-types = { path = "crates/arb-consensus/mel/types" }
+arb-parent-chain-client = { path = "crates/arb-consensus/parent-chain-client" }
+arb-mel-runner = { path = "crates/arb-consensus/mel/runner" }
+arb-storage = { path = "crates/arb-storage" }
+arb-storage-errors = { path = "crates/arb-storage-errors" }
+arb-errors = { path = "crates/arb-errors" }
+arb-evm = { path = "crates/arb-evm" }
+arb-precompiles = { path = "crates/arb-precompiles" }
+arb-node = { path = "crates/arb-node" }
+arb-payload = { path = "crates/arb-payload" }
+arb-rpc = { path = "crates/arb-rpc" }
+arb-txpool = { path = "crates/arb-txpool" }
+
+arb-stylus = { path = "crates/arb-stylus" }
+arb-executor-tests = { path = "crates/arb-executor-tests" }
+arb-test-utils = { path = "crates/arb-test-utils" }
+arb-test-harness = { path = "crates/arb-test-harness" }
+arb-spec-tests = { path = "crates/arb-spec-tests" }
+arbos = { path = "crates/arbos" }
+arbos-types = { path = "crates/arbos-types" }
+
+# Reth SDK (official)
+reth = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-chainspec = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-consensus = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-evm = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-execution-errors = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-execution-types = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-network = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-node-api = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-node-builder = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-node-core = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-node-types = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-payload-builder = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-chain-state = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-payload-builder-primitives = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-primitives = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-primitives-traits = { version = "0.1.0", default-features = false }
+reth-provider = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-revm = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-storage-api = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-storage-errors = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-trie = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-trie-common = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-db = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-db-api = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-rpc = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-rpc-api = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-rpc-builder = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-rpc-eth-api = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-rpc-eth-types = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-rpc-types-compat = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-transaction-pool = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-engine-primitives = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-engine-tree = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-payload-primitives = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-cli = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-cli-commands = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-cli-util = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-tracing = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-ethereum = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-node-ethereum = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-ethereum-cli = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-codecs = { version = "0.1.0", default-features = false }
+reth-rpc-convert = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-rpc-server-types = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-tasks = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-engine-util = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-exex = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-network-api = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-network-p2p = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-node-events = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-tokio-util = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-prune = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-stages-api = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-stages = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-static-file = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-config = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-trie-db = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-trie-parallel = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-trie-sparse = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-metrics = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+
+# Alloy
+alloy-primitives = { version = "1.5", default-features = false, features = [
+    "map-foldhash",
+] }
+alloy-consensus = { version = "1.8.2", default-features = false }
+alloy-eips = { version = "1.8.2", default-features = false }
+alloy-evm = { version = "0.30.0", features = ["rpc"] }
+alloy-rpc-types-eth = { version = "1.8.2" }
+alloy-genesis = { version = "1.8.2" }
+alloy-network = { version = "1.8.2" }
+alloy-provider = { version = "1.8.2", default-features = false }
+alloy-rlp = { version = "0.3", features = ["derive"] }
+alloy-rpc-client = { version = "1.8.2" }
+alloy-rpc-types = { version = "1.8.2" }
+alloy-rpc-types-beacon = { version = "1.8.2" }
+alloy-rpc-types-engine = { version = "1.8.2" }
+alloy-rpc-types-trace = { version = "1.8.2" }
+alloy-serde = { version = "1.8.2" }
+alloy-transport = { version = "1.8.2" }
+alloy-sol-types = { version = "1.5.6" }
+alloy-trie = { version = "0.9.4" }
+alloy-hardforks = { version = "0.4.5" }
+
+# Revm
+revm = { version = "36.0.0", features = [
+    "optional_balance_check",
+    "optional_eip3541",
+    "optional_eip3607",
+    "optional_priority_fee_check",
+    "optional_eip7623",
+    "optional_no_base_fee",
+] }
+revm-database = { version = "12.0.0" }
+revm-database-interface = { version = "10.0.0" }
+revm-state = { version = "10.0.0" }
+revm-primitives = { version = "22.1.0" }
+revm-interpreter = { version = "34.0.0" }
+revm-context = { version = "15.0.0" }
+revm-bytecode = { version = "9.0.0" }
+
+# Arb-alloy
+arb-alloy-consensus = { version = "0.1.2" }
+arb-alloy-predeploys = { version = "0.1.2" }
+
+# Common
+crossbeam-channel = { version = "0.5" }
+futures = { version = "0.3" }
+c-kzg = { version = "2.1.7" }
+thiserror = { version = "2" }
+serde = { version = "1" }
+serde_json = { version = "1" }
+tokio = { version = "1" }
+tracing = { version = "0.1" }
+rustc-hash = { version = "2.1" }
+rayon = { version = "1.11" }
+clap = { version = "4" }
+async-trait = { version = "0.1.68" }
+eyre = { version = "0.6" }
+anyhow = { version = "1" }
+derive_more = { version = "2" }
+bytes = { version = "1" }
+parking_lot = { version = "0.12" }
+lazy_static = { version = "1" }
+hex = { version = "0.4" }
+cc = { version = "1" }
+sha2 = { version = "0.11" }
+base64 = { version = "0.22" }
+jsonrpsee = { version = "0.26.0" }
+jsonrpsee-http-client = { version = "0.26.0" }
+brotli = { version = "8", default-features = false }
+wasmer = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca", default-features = false }
+wasmer-compiler = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca" }
+wasmer-types = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca" }
+axum = { version = "0.7", default-features = false }
+chrono = { version = "0.4", default-features = false }
+csv = { version = "1" }
+futures-util = { version = "0.3" }
+k256 = { version = "0.13", default-features = false }
+libc = { version = "0.2" }
+rand = { version = "0.8", default-features = false }
+rand_chacha = { version = "0.3" }
+reqwest = { version = "0.12", default-features = false }
+sysinfo = { version = "0.32", default-features = false }
+tokio-stream = { version = "0.1" }
+tracing-subscriber = { version = "0.3" }
+ureq = { version = "2", default-features = false }
+walkdir = { version = "2" }
+wat = { version = "1" }
+wiremock = { version = "0.6" }
+
+nitro-prover = { package = "prover", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b", default-features = false }
+nitro-arbutil = { package = "arbutil", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b" }
+nitro-brotli = { package = "brotli", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b" }
+
+# Transitive deps for Nitro crates
+tiny-keccak = { version = "2.0.2" }
+wasmparser = { version = "0.121" }
+
+# Test deps
+rstest = { version = "0.26" }
+proptest = { version = "1" }
+criterion = { version = "0.5" }
+tempfile = { version = "3" }
+
+# Fuzzing
+arbitrary = { version = "1" }
+libfuzzer-sys = { version = "0.4" }
+wasm-smith = { version = "0.227" }
 
 [workspace.lints.rust]
 unused_must_use = "deny"

@@ -1,0 +1,16 @@
+{
+  "name": "synthetic/stylus-log-emit/short",
+  "category": "stylus",
+  "scale": "short",
+  "arbos_version": 60,
+  "chain_id": 421614,
+  "corpus_version": "1.0.0",
+  "description": "Stylus contract emitting 4 log events (2 topics + 32 bytes data each) per call. Exercises emit_log host function + EVM log accounting.",
+  "messages": {
+    "source": "synthetic_generator",
+    "generator": "stylus_log_emit",
+    "params": { "block_count": 500, "txs_per_block": 8 }
+  },
+  "metrics": { "rolling_window_blocks": 25 },
+  "regression": { "gate": true, "tolerance_pct": 5.0, "paired_stat": "bootstrap_95ci", "bootstrap_iters": 10000 }
+}
