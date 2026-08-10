@@ -204,8 +204,11 @@ jobs:
       - name: run redis tests
         if: inputs.run-defaults-a
         run: >-
-          gotestsum --format short-verbose -- -p 1 -run TestRedis -skip Flaky ./arbnode/... ./pubsub/... ./system_tests/...
-          ${COVER:+-coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...} -- --test_redis=redis://localhost:6379/0
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m $COVER --coverprofile coverage-redis.txt
+          --run TestRedis --packages './arbnode/... ./pubsub/... ./system_tests/...'
+          --test_redis redis://localhost:6379/0
+          --junitfile test-results/junit-redis.xml
 
       # --------------------- FLAKY MODE --------------------------
 
@@ -229,10 +232,11 @@ jobs:
         if: inputs.run-flaky
         continue-on-error: true
         run: >-
-          gotestsum --format short-verbose --rerun-fails=1 --rerun-fails-max-failures=30
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m --flaky
+          --run TestRedis --packages './arbnode/... ./pubsub/... ./system_tests/...'
+          --test_redis redis://localhost:6379/0
           --junitfile test-results/junit-flaky-redis.xml
-          --packages './arbnode/... ./pubsub/... ./system_tests/...'
-          -- -p 1 -run 'TestRedis.*Flaky' -- --test_redis=redis://localhost:6379/0
 
       - name: run flaky tests (hash state scheme, MEL)
         if: inputs.run-flaky-mel
