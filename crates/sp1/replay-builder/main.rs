@@ -1,7 +1,10 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::Context;
 use clap::Parser;
@@ -26,21 +29,32 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     fs::create_dir_all(&cli.output_folder).context("create output folder")?;
+    write_function_names(&cli.replay_wasm, &cli.output_folder)?;
+    write_replay_elf(&cli.output_folder)?;
 
-    // Extract the original function names from replay.wasm. They are lost in
-    // wasmer's compiled output, and the guest will consume this mapping to
-    // register profiler symbols for debugging & profiling.
-    let wasm = fs::read(&cli.replay_wasm)
-        .with_context(|| format!("read replay.wasm from {}", cli.replay_wasm.display()))?;
+    Ok(())
+}
+
+/// Extracts the original function names from replay.wasm and writes them to
+/// `function_names.json`. They are lost in wasmer's compiled output, and the
+/// guest will consume this mapping to register profiler symbols for
+/// debugging & profiling.
+fn write_function_names(replay_wasm: &Path, output_folder: &Path) -> anyhow::Result<()> {
+    let wasm = fs::read(replay_wasm)
+        .with_context(|| format!("read replay.wasm from {}", replay_wasm.display()))?;
     let names = extract_function_names(&wasm)?;
     let names_json = serde_json::to_string_pretty(&names).context("serialize function names")?;
-    let names_output = cli.output_folder.join("function_names.json");
-    fs::write(&names_output, &names_json).context("write function_names.json")?;
-    println!("Wasm function names written to {}", names_output.display());
 
-    let output = cli.output_folder.join("replay-program.elf");
+    let output = output_folder.join("function_names.json");
+    fs::write(&output, &names_json).context("write function_names.json")?;
+    println!("Wasm function names written to {}", output.display());
+    Ok(())
+}
+
+/// Materializes the guest ELF so the runner has something to execute.
+fn write_replay_elf(output_folder: &Path) -> anyhow::Result<()> {
+    let output = output_folder.join("replay-program.elf");
     fs::write(&output, REPLAY_ELF.as_ref()).context("write replay-program.elf")?;
     println!("Replay program ELF written to {}", output.display());
-
     Ok(())
 }
