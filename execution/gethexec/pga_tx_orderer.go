@@ -49,7 +49,7 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 				log.Warn("PGA round wait interrupted; ending the block early", "err", err)
 				return txQueueItem{}, false
 			}
-			p.mempool.PushBatch(p.seq.drainValidatedTxs(statedb))
+			p.mempool.PushBatch(p.seq.drainValidatedTxs(statedb, p.baseFee))
 		}
 		item, ok := p.mempool.Pop()
 		if !ok {
@@ -59,7 +59,6 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 		// If the next tx is too big to fit in the remaining block space, we add it back to the mempool and stop sequencing.
 		// The sequencer will finalize the block and start a new one, which will have a fresh mempool and schedule.
 		if item.txSize > remainingBlockSize {
-			dataLimitedBlocksCounter.Inc(1)
 			p.mempool.Push(item)
 			return txQueueItem{}, false
 		}
@@ -73,7 +72,7 @@ func (p *pgaTxOrderer) StartBlock(statedb *state.StateDB) (hasWork bool) {
 	p.schedule = pga.NewSchedule(config.ExperimentalPGA.RoundsPerBlock, config.PGARoundLength())
 	p.mempool = pga.NewMempool[txQueueItem](config.ExperimentalPGA.RoundsPerBlock, p.baseFee)
 
-	p.mempool.PushBatch(p.seq.drainValidatedTxs(statedb))
+	p.mempool.PushBatch(p.seq.drainValidatedTxs(statedb, p.baseFee))
 
 	return p.mempool.PriorityQueueLen() > 0
 }
@@ -84,6 +83,10 @@ func (p *pgaTxOrderer) TakeRemaining() []txQueueItem {
 		return nil
 	}
 	return p.mempool.TakeRemaining()
+}
+
+func (p *pgaTxOrderer) RemainingLen() int {
+	return p.mempool.PriorityQueueLen()
 }
 
 func (p *pgaTxOrderer) OnTxInclusion(queueItem txQueueItem) {

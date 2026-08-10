@@ -446,4 +446,8 @@ func TestPgaMempoolTakeRemaining(t *testing.T) {
 	if !slices.Equal(ids, []int{itemB.id, itemC.id}) {
 		t.Fatalf("TakeRemaining ids = %v, want the two never-popped txs", ids)
 	}
+	remaining = env.mempool.TakeRemaining()
+	if len(remaining) != 0 {
+		t.Fatalf("TakeRemaining was not empty after the first call, want 0, got %d", len(remaining))
+	}
 }

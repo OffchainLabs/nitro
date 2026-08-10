@@ -1,0 +1,20 @@
+{
+  "name": "chain_owner_add_remove_size_consistency",
+  "description": "Add 3, remove 1 — size = 2, contains check correct",
+  "setup": {"arbos_version": 30, "chain_id": 412346},
+  "actions": [
+    {"type": "chain_owner_add", "owner": "0x1111111111111111111111111111111111111111"},
+    {"type": "chain_owner_add", "owner": "0x2222222222222222222222222222222222222222"},
+    {"type": "chain_owner_add", "owner": "0x3333333333333333333333333333333333333333"},
+    {"type": "chain_owner_remove", "owner": "0x2222222222222222222222222222222222222222"}
+  ],
+  "assertions": {
+    "chain_owners": {
+      "size": 2,
+      "contains": {
+        "address": "0x2222222222222222222222222222222222222222",
+        "expected": false
+      }
+    }
+  }
+}

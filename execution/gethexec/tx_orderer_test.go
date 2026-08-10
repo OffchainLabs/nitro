@@ -5,6 +5,7 @@ package gethexec
 
 import (
 	"math"
+	"math/big"
 	"slices"
 	"testing"
 	"time"
@@ -19,7 +20,7 @@ type stubOrdererSequencer struct {
 	batches [][]txQueueItem
 }
 
-func (s *stubOrdererSequencer) drainValidatedTxs(statedb *state.StateDB) []txQueueItem {
+func (s *stubOrdererSequencer) drainValidatedTxs(statedb *state.StateDB, baseFee *big.Int) []txQueueItem {
 	if s.items != nil {
 		items := s.items
 		s.items = nil

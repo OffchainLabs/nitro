@@ -1,0 +1,26 @@
+{
+  "name": "retryable_create_then_open",
+  "description": "Created retryable should be openable before timeout",
+  "setup": { "arbos_version": 30, "chain_id": 412346 },
+  "actions": [
+    {
+      "type": "retryable_create",
+      "id": "0x0000000000000000000000000000000000000000000000000000000000000042",
+      "timeout": 1000,
+      "from": "0x00000000000000000000000000000000000A11CE",
+      "to": "0x00000000000000000000000000000000C4A841E0",
+      "callvalue": "0xf4240",
+      "beneficiary": "0x00000000000000000000000000000000000B0B00",
+      "calldata_hex": "deadbeef"
+    }
+  ],
+  "assertions": {
+    "retryable": {
+      "exists": {
+        "id": "0x0000000000000000000000000000000000000000000000000000000000000042",
+        "at_time": 500,
+        "expected": true
+      }
+    }
+  }
+}

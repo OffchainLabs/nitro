@@ -114,8 +114,6 @@ type PGAConfig struct {
 	RoundsPerBlock     uint `koanf:"rounds-per-block"`
 }
 
-const minPGARoundLength = 50 * time.Millisecond
-
 // PGARoundLength returns the length of a PGA round. It is derived from the
 // block time rather than configured directly, so MaxBlockSpeed remains the
 // single source of truth.
@@ -177,12 +175,6 @@ func (c *SequencerConfig) Validate() error {
 	if c.ExperimentalPGA.RoundsPerBlock == 0 {
 		return errors.New("experimental-pga.rounds-per-block must be at least 1")
 	}
-	// Forced FIFO precludes PGA, so the round length only matters without it.
-	if c.Enable && !c.ExperimentalPGA.DangerousForceFIFO {
-		if roundLength := c.PGARoundLength(); roundLength < minPGARoundLength {
-			return fmt.Errorf("PGA round length %v (max-block-speed / experimental-pga.rounds-per-block) is below the minimum supported %v", roundLength, minPGARoundLength)
-		}
-	}
 	if c.PollInterval <= 0 {
 		return fmt.Errorf("sequencer poll-interval must be positive, got %v", c.PollInterval)
 	}
@@ -223,7 +215,7 @@ var DefaultDangerousConfig = DangerousConfig{
 
 var DefaultPGAConfig = PGAConfig{
 	DangerousForceFIFO: false,
-	RoundsPerBlock:     2,
+	RoundsPerBlock:     1,
 }
 
 func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -275,7 +267,9 @@ type txQueueItem struct {
 	isTimeboosted       bool
 	isAuctionResolution bool
 	blockStamp          uint64 // block number at which timeboosted tx was added to the txQueue
-	*pga.Priority              // embed the PGA priority so it is saved between blocks
+	// Must be a pointer: queue items get copied around, so mutations would otherwise hit a copy.
+	// Must be non-nil: bare literals nil-panic in GetPriority.
+	*pga.Priority
 }
 
 func newBaseTxQueueItem(tx *types.Transaction) txQueueItem {
@@ -444,8 +438,9 @@ func (q *synchronizedTxQueue) Len() int {
 }
 
 type pendingQueueItemsResults struct {
-	block *types.Block
-	hooks *FullSequencingHooks
+	block                *types.Block
+	hooks                *FullSequencingHooks
+	exhaustedOrdererList bool
 }
 
 var _ txOrdererSequencer = (*Sequencer)(nil)
@@ -497,9 +492,8 @@ type Sequencer struct {
 	// message sequencing.
 	sequencingState sequencingState
 
-	// The base fee and tx orderer of the block under construction,
+	// The tx orderer of the block under construction,
 	// set for the duration of createBlockWithTxOrderer; guarded by createBlockMutex.
-	baseFee        containers.Option[*big.Int]
 	blockTxOrderer containers.Option[txOrderer]
 }
 
@@ -1155,8 +1149,7 @@ func validateQueueItem(config *SequencerConfig, currentHeader *types.Header, bas
 
 // drainAndValidateQueueItems drains the queues and filters out the invalid items, returning the
 // validation failure to each dropped item's submitter.
-func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentHeader *types.Header) []txQueueItem {
-	baseFee := s.baseFee.Unwrap()
+func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentHeader *types.Header, baseFee *big.Int) []txQueueItem {
 	unvalidatedItems := s.drainQueueItems()
 	// Filter in place: unvalidatedItems is freshly allocated with no other reference.
 	queueItems := unvalidatedItems[:0]
@@ -1170,10 +1163,10 @@ func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentH
 	return queueItems
 }
 
-func (s *Sequencer) drainValidatedTxs(statedb *state.StateDB) []txQueueItem {
+func (s *Sequencer) drainValidatedTxs(statedb *state.StateDB, baseFee *big.Int) []txQueueItem {
 	// This config snapshot can lag the block creator's if a hot reload lands in between, so the
 	// drain may validate with different limits than the rest of the block; that's acceptable.
-	queueItems := s.drainAndValidateQueueItems(s.config(), s.execEngine.bc.CurrentBlock())
+	queueItems := s.drainAndValidateQueueItems(s.config(), s.execEngine.bc.CurrentBlock(), baseFee)
 	if len(queueItems) == 0 {
 		return nil
 	}
@@ -1210,15 +1203,13 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 		return nil, config.MaxBlockSpeed
 	}
 
-	var orderer txOrderer = newFIFOTxOrderer(s, s.config)
+	var orderer txOrderer = newFIFOTxOrderer(s, s.config, baseFee)
 	if collectTips && !config.ExperimentalPGA.DangerousForceFIFO {
 		orderer = NewPGATxOrderer(ctx, s, s.config, baseFee)
 	}
 
-	s.baseFee = containers.Some(baseFee)
 	s.blockTxOrderer = containers.Some(orderer)
 	defer func() {
-		s.baseFee = containers.None[*big.Int]()
 		s.blockTxOrderer = containers.None[txOrderer]()
 	}()
 
@@ -1380,8 +1371,9 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrde
 	}
 
 	s.pendingQueueItemsResults = &pendingQueueItemsResults{
-		block: block,
-		hooks: hooks,
+		block:                block,
+		hooks:                hooks,
+		exhaustedOrdererList: orderer.RemainingLen() == 0,
 	}
 
 	if madeBlock {
@@ -1470,11 +1462,13 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 
 		if madeBlock {
 			blockTxSizeHistogram.Update(blockTxSize)
-			if blockGasLimitReached {
-				gasLimitedBlocksCounter.Inc(1)
-			} else {
+			if s.pendingQueueItemsResults.exhaustedOrdererList {
 				// no transactions were skipped due to block size or gas limit
 				txExhaustedBlocksCounter.Inc(1)
+			} else if blockGasLimitReached {
+				gasLimitedBlocksCounter.Inc(1)
+			} else {
+				dataLimitedBlocksCounter.Inc(1)
 			}
 		}
 	}
