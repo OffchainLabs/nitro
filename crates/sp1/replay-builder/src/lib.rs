@@ -126,9 +126,9 @@ mod tests {
 
     #[test]
     fn shifts_out_imports() {
-        let wasm = wasm_module(2, &[(2, "first_local"), (3, "second_local")]);
+        let wasm = wasm_module(2, &[(3, "first_local"), (4, "second_local")]);
         let names = extract_function_names(&wasm).unwrap();
-        assert_eq!(names, owned(&[Some("first_local"), Some("second_local")]));
+        assert_eq!(names, owned(&[None, Some("first_local"), Some("second_local")]));
     }
 
     #[test]
