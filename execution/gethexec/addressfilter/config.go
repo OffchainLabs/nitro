@@ -4,6 +4,7 @@
 package addressfilter
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -82,23 +83,27 @@ func (c *FileConfig) numPreallocatedHashes() int {
 	return estimateHashCount(int64(c.MaxFileSizeMB) * bytesInMB)
 }
 
-// parseFilesList decodes a files-list JSON array. Each element starts from
+// parseFileConfigsList decodes a files-list JSON array. Each element starts from
 // DefaultFileConfig before unmarshaling so omitted fields keep their defaults
-// instead of Go zero values.
-func parseFilesList(list string) ([]FileConfig, error) {
+// instead of Go zero values. Unknown keys are rejected so a typo doesn't
+// silently leave a field at its default, matching the strictness of the
+// config-file path.
+func parseFileConfigsList(list string) ([]FileConfig, error) {
 	var rawEntries []json.RawMessage
 	if err := json.Unmarshal([]byte(list), &rawEntries); err != nil {
 		return nil, fmt.Errorf("failed to parse address-filter files-list string: %w", err)
 	}
-	files := make([]FileConfig, 0, len(rawEntries))
+	fileConfigs := make([]FileConfig, 0, len(rawEntries))
 	for i, raw := range rawEntries {
-		file := DefaultFileConfig
-		if err := json.Unmarshal(raw, &file); err != nil {
+		fileConfig := DefaultFileConfig
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&fileConfig); err != nil {
 			return nil, fmt.Errorf("failed to parse address-filter files-list entry %d: %w", i, err)
 		}
-		files = append(files, file)
+		fileConfigs = append(fileConfigs, fileConfig)
 	}
-	return files, nil
+	return fileConfigs, nil
 }
 
 // applyFileDefaults fills in zero-valued fields that must be positive for the
@@ -122,7 +127,7 @@ func (c *FileConfig) applyFileDefaults() {
 
 func (c *Config) Validate() error {
 	if len(c.Files) == 0 && c.FilesList != "default" {
-		files, err := parseFilesList(c.FilesList)
+		files, err := parseFileConfigsList(c.FilesList)
 		if err != nil {
 			return err
 		}

@@ -234,6 +234,17 @@ func TestConfigValidateFilesList(t *testing.T) {
 		require.ErrorContains(t, cfg.Validate(), "at least one file")
 	})
 
+	t.Run("unknown key rejected", func(t *testing.T) {
+		downloadDir := t.TempDir()
+		cfg := DefaultConfig
+		cfg.FilesList = fmt.Sprintf(
+			`[{"bucket":"b1","object-key":"k1","region":"us-east-1","download-dir":%q,"max-file-sizemb":1}]`,
+			downloadDir)
+		err := cfg.Validate()
+		require.ErrorContains(t, err, "files-list entry 0")
+		require.ErrorContains(t, err, "max-file-sizemb")
+	})
+
 	t.Run("entry validation still applies", func(t *testing.T) {
 		cfg := DefaultConfig
 		cfg.FilesList = `[{"bucket":"b1","object-key":"k1","region":"us-east-1"}]` // missing download-dir
