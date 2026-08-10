@@ -55,6 +55,7 @@ var defaultSequencerConfig = gethexec.SequencerConfig{
 	ExpectedSurplusGasPriceMode:  "CalldataPrice",
 	EnableProfiling:              false,
 	ExperimentalPGA:              gethexec.DefaultPGAConfig,
+	FilterSetReportingInterval:   time.Minute,
 }
 
 func defaultExecConfig(t *testing.T, stateScheme containers.Option[StateScheme]) *gethexec.Config {
