@@ -78,7 +78,7 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 		return fmt.Errorf("failed to reactivate program while rebuilding wasm store, expected ModuleHash: %v", moduleHash)
 	}
 
-	batch := statedb.Database().WasmStore().NewBatch()
+	batch := statedb.Database().CodeDB().WasmStore().NewBatch()
 	// WriteActivation handles all targets including cranelift entries
 	rawdb.WriteActivation(batch, moduleHash, asmMap)
 	if err := batch.Write(); err != nil {

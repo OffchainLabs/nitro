@@ -8,6 +8,17 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
+alloy-evm = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std", "map-foldhash"] }
+arb-storage-errors = { workspace = true }
+revm = { workspace = true }
+revm-database = { workspace = true }
+revm-state = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+arb-test-utils = { workspace = true }
+revm-database-interface = { workspace = true }
 
 [lints]
 workspace = true

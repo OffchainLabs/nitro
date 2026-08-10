@@ -1,0 +1,67 @@
+use std::sync::Arc;
+
+use alloy_evm::precompiles::{DynPrecompile, PrecompileInput};
+use alloy_primitives::{Address, U256};
+use alloy_sol_types::SolInterface;
+use arb_context::ArbPrecompileCtx;
+use revm::precompile::{PrecompileId, PrecompileOutput, PrecompileResult};
+
+use crate::interfaces::IArbosTest;
+
+/// ArbosTest precompile address (0x69). Burns arbitrary amounts of L2 gas.
+pub const ARBOSTEST_ADDRESS: Address = Address::new([
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x69,
+]);
+
+pub fn create_arbostest_precompile(ctx: Arc<ArbPrecompileCtx>) -> DynPrecompile {
+    DynPrecompile::new_stateful(PrecompileId::custom("arbostest"), move |input| {
+        handler(input, &ctx)
+    })
+}
+
+fn handler(input: PrecompileInput<'_>, ctx: &ArbPrecompileCtx) -> PrecompileResult {
+    let mut gas_used = 0u64;
+    let gas_limit = input.gas;
+    if !ctx.block.allow_debug_precompiles {
+        return crate::burn_all_revert(gas_limit);
+    }
+    // `burnArbGas` is `pure` (no state access) — skip the OpenArbosState SLOAD.
+    crate::init_precompile_gas_pure(&mut gas_used, ctx, input.data.len());
+
+    let call = match IArbosTest::ArbosTestCalls::abi_decode(input.data) {
+        Ok(c) => c,
+        Err(_) => return crate::burn_all_revert(gas_limit),
+    };
+
+    if let Some(r) = crate::reject_nonpayable_value(input.value, input.data, gas_limit, &[]) {
+        return r;
+    }
+
+    use IArbosTest::ArbosTestCalls;
+    let result = match call {
+        ArbosTestCalls::burnArbGas(c) => {
+            handle_burn_arb_gas(&mut gas_used, ctx, gas_limit, c.gasAmount)
+        }
+    };
+    crate::gas_check(ctx, gas_limit, gas_used, result)
+}
+
+fn handle_burn_arb_gas(
+    gas_used: &mut u64,
+    ctx: &ArbPrecompileCtx,
+    gas_limit: u64,
+    amount: U256,
+) -> PrecompileResult {
+    let Ok(to_burn) = u64::try_from(amount) else {
+        return Ok(PrecompileOutput::new_reverted(
+            *gas_used,
+            Default::default(),
+        ));
+    };
+    // Burning more than the remaining gas consumes all of it yet still
+    // succeeds; smaller amounts are charged as computation as usual.
+    let remaining = gas_limit.saturating_sub(*gas_used);
+    crate::charge_computation(gas_used, ctx, to_burn.min(remaining));
+    Ok(PrecompileOutput::new(*gas_used, Default::default()))
+}

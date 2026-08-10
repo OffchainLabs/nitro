@@ -6,14 +6,27 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
-
-[features]
-# Mirrors the real crate: spec tests that drive the arb-reth binary are
-# compiled in only when this feature is on (CI passes --features spec-binary
-# together with the ARB_SPEC_BINARY / ARB_SPEC_REQUIRE_BINARY env vars).
-spec-binary = []
+description = "JSON-fixture conformance tests for arbreth"
 
 [dependencies]
+alloy-primitives = { workspace = true, features = ["std", "serde"] }
+arb-test-harness = { workspace = true }
+arb-test-utils = { workspace = true }
+arbos = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+ureq = { workspace = true }
+walkdir = { workspace = true }
+
+[features]
+# Opt-in feature for fixtures that drive a release `arb-reth` binary
+# (set via `ARB_SPEC_BINARY`) or talk to a remote RPC node
+# (set via `ARB_SPEC_RPC_URL`). Without this feature those tests are
+# marked `#[ignore]` so `cargo test --workspace` surfaces them in the
+# `ignored` count rather than silently skipping.
+spec-binary = []
 
 [lints]
 workspace = true

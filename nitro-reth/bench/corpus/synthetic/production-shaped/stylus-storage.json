@@ -1,0 +1,21 @@
+{
+  "name": "synthetic/production-shaped/stylus-storage",
+  "category": "stylus",
+  "scale": "short",
+  "arbos_version": 60,
+  "chain_id": 421614,
+  "corpus_version": "1.0.0",
+  "description": "Stylus storage-churn workload against a 1M-account pre-warmed trie. The Stylus contract's SLOAD/SSTORE host calls hit storage at realistic trie depth, exposing host-call regressions that vanish on a fresh chain.",
+  "messages": {
+    "source": "synthetic_generator",
+    "generator": "stylus_storage_churn",
+    "params": { "block_count": 300, "txs_per_block": 8 }
+  },
+  "metrics": { "rolling_window_blocks": 15 },
+  "regression": { "gate": true, "tolerance_pct": 5.0, "paired_stat": "bootstrap_95ci", "bootstrap_iters": 10000 },
+  "prewarm": {
+    "accounts": 1000000,
+    "seed": 11400714819323198487,
+    "balance_wei": "0x0"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "surplus_grows_with_fees",
+  "description": "Adding to L1 fees available makes surplus positive",
+  "setup": {"arbos_version": 30, "chain_id": 412346},
+  "actions": [
+    {"type": "l1_pricing_add_to_fees_available", "amount": "0xde0b6b3a7640000"}
+  ],
+  "assertions": {
+    "l1_pricing": {
+      "l1_fees_available": "0xde0b6b3a7640000",
+      "surplus_at_least": "0xde0b6b3a7640000"
+    }
+  }
+}

@@ -1,0 +1,1525 @@
+//! Arbitrum EthApi wrapper with L1 gas estimation.
+//!
+//! Wraps reth's [`EthApiInner`] to override gas estimation
+//! with L1 posting cost awareness.
+
+use std::{sync::Arc, time::Duration};
+
+use alloy_primitives::{Address, B256, StorageKey, U256};
+use alloy_rpc_types_eth::{BlockId, state::StateOverride};
+use arb_storage::{
+    ARBOS_STATE_ADDRESS,
+    layout::{
+        BROTLI_COMPRESSION_LEVEL_OFFSET, CHAIN_ID_OFFSET, GENESIS_BLOCK_NUM_OFFSET,
+        L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE, root_slot, subspace_slot,
+    },
+};
+use reth_primitives_traits::{Recovered, WithEncoded};
+use reth_rpc::eth::core::EthApiInner;
+use reth_rpc_convert::{RpcConvert, RpcTxReq};
+use reth_rpc_eth_api::{
+    EthApiTypes, FromEvmError, RpcNodeCore, RpcNodeCoreExt,
+    helpers::{
+        Call, EthApiSpec, EthBlocks, EthCall, EthFees, EthSigner, EthState, EthTransactions,
+        GetBlockAccessList, LoadBlock, LoadFee, LoadPendingBlock, LoadReceipt, LoadState,
+        LoadTransaction, SpawnBlocking, Trace, estimate::EstimateCall,
+        pending_block::PendingEnvBuilder,
+    },
+};
+use reth_rpc_eth_types::{
+    EthApiError, EthStateCache, FeeHistoryCache, GasPriceOracle, PendingBlock,
+    builder::config::PendingBlockKind,
+};
+use reth_storage_api::{ProviderHeader, StateProviderFactory, TransactionsProvider};
+use reth_tasks::{
+    Runtime,
+    pool::{BlockingTaskGuard, BlockingTaskPool},
+};
+use reth_transaction_pool::{
+    AddedTransactionOutcome, PoolPooledTx, PoolTransaction, TransactionOrigin, TransactionPool,
+};
+use tracing::trace;
+
+/// Type alias matching reth's `SignersForRpc`.
+type SignersForRpc<Provider, Rpc> = parking_lot::RwLock<
+    Vec<Box<dyn EthSigner<<Provider as TransactionsProvider>::Transaction, RpcTxReq<Rpc>>>>,
+>;
+
+use arbos::{
+    l1_pricing::{
+        PRICE_PER_UNIT_OFFSET as L1_PRICE_PER_UNIT, UNITS_SINCE_OFFSET as L1_UNITS_SINCE_UPDATE,
+    },
+    l2_pricing::{BASE_FEE_WEI_OFFSET as L2_BASE_FEE, MIN_BASE_FEE_WEI_OFFSET as L2_MIN_BASE_FEE},
+};
+
+/// Non-zero calldata gas cost per byte (EIP-2028).
+const TX_DATA_NON_ZERO_GAS: u64 = 16;
+
+/// Padding applied to L1 fee estimates (110% = 11000 bips).
+const GAS_ESTIMATION_L1_PRICE_PADDING: u64 = 11000;
+
+/// Selector for `ArbGasInfo.getCurrentTxL1GasFees()`.
+const SEL_GET_CURRENT_TX_L1_FEES: &[u8] = &[0xc6, 0xf7, 0xde, 0x0e];
+
+/// Apply Arbitrum's L1→L2 address aliasing (offset by
+/// 0x1111000000000000000000000000000000001111).
+fn apply_l1_to_l2_alias(addr: Address) -> Address {
+    let mut offset = [0u8; 32];
+    offset[12] = 0x11;
+    offset[13] = 0x11;
+    offset[30] = 0x11;
+    offset[31] = 0x11;
+    let lhs = U256::from_be_slice(addr.as_slice());
+    let rhs = U256::from_be_bytes(offset);
+    let sum = lhs.wrapping_add(rhs);
+    let bytes = sum.to_be_bytes::<32>();
+    Address::from_slice(&bytes[12..32])
+}
+
+/// Selector for `ArbGasInfo.getL1PricingUnitsSinceUpdate()`.
+const SEL_GET_L1_PRICING_UNITS_SINCE_UPDATE: &[u8] = &[0xef, 0xf0, 0x13, 0x06];
+
+/// Arbitrum Eth API wrapping the standard reth EthApiInner.
+///
+/// This wrapper overrides gas estimation to add L1 posting costs.
+pub struct ArbEthApi<N: RpcNodeCore, Rpc: RpcConvert> {
+    inner: Arc<EthApiInner<N, Rpc>>,
+}
+
+impl<N: RpcNodeCore, Rpc: RpcConvert> Clone for ArbEthApi<N, Rpc> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<N: RpcNodeCore, Rpc: RpcConvert> std::fmt::Debug for ArbEthApi<N, Rpc> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ArbEthApi").finish_non_exhaustive()
+    }
+}
+
+impl<N: RpcNodeCore, Rpc: RpcConvert> ArbEthApi<N, Rpc> {
+    /// Create a new `ArbEthApi` wrapping the given inner.
+    pub fn new(inner: EthApiInner<N, Rpc>) -> Self {
+        Self {
+            inner: Arc::new(inner),
+        }
+    }
+}
+
+impl<N, Rpc> ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore<Provider: StateProviderFactory>,
+    Rpc: RpcConvert,
+{
+    /// Compute L1 posting gas for gas estimation.
+    ///
+    /// Reads L1 pricing state from ArbOS to estimate the gas needed to cover
+    /// L1 data posting costs for the given calldata length.
+    fn l1_posting_gas(&self, calldata_len: usize, at: BlockId) -> Result<u64, EthApiError> {
+        if calldata_len == 0 {
+            return Ok(0);
+        }
+
+        let state = self
+            .inner
+            .provider()
+            .state_by_block_id(at)
+            .map_err(|e| EthApiError::Internal(e.into()))?;
+
+        let l1_price_slot = subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT);
+        let l1_price = state
+            .storage(
+                ARBOS_STATE_ADDRESS,
+                StorageKey::from(B256::from(l1_price_slot.to_be_bytes::<32>())),
+            )
+            .map_err(|e| EthApiError::Internal(e.into()))?
+            .unwrap_or_default();
+
+        let basefee_slot = subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE);
+        let basefee = state
+            .storage(
+                ARBOS_STATE_ADDRESS,
+                StorageKey::from(B256::from(basefee_slot.to_be_bytes::<32>())),
+            )
+            .map_err(|e| EthApiError::Internal(e.into()))?
+            .unwrap_or_default();
+
+        if l1_price.is_zero() || basefee.is_zero() {
+            return Ok(0);
+        }
+
+        // L1 fee = l1_price * calldata_bytes * TX_DATA_NON_ZERO_GAS
+        let l1_fee = l1_price
+            .saturating_mul(U256::from(TX_DATA_NON_ZERO_GAS))
+            .saturating_mul(U256::from(calldata_len));
+
+        // Apply 110% padding for L1 price volatility.
+        let padded = l1_fee.saturating_mul(U256::from(GAS_ESTIMATION_L1_PRICE_PADDING))
+            / U256::from(10000u64);
+
+        // Use 7/8 of basefee as congestion discount for estimation.
+        let adjusted_basefee = basefee.saturating_mul(U256::from(7)) / U256::from(8);
+        let adjusted_basefee = if adjusted_basefee.is_zero() {
+            U256::from(1)
+        } else {
+            adjusted_basefee
+        };
+
+        // Convert to gas units: posting_gas = padded_fee / adjusted_basefee
+        let gas = padded / adjusted_basefee;
+        Ok(gas.try_into().unwrap_or(u64::MAX))
+    }
+}
+
+impl<N, Rpc> ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore<Provider: StateProviderFactory>,
+    EthApiError: FromEvmError<N::Evm>,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError, Evm = N::Evm>,
+    RpcTxReq<<Rpc as RpcConvert>::Network>: AsRef<alloy_rpc_types_eth::TransactionRequest>
+        + AsMut<alloy_rpc_types_eth::TransactionRequest>
+        + Clone
+        + Default,
+{
+    fn compute_eth_call_units_since_update(
+        &self,
+        request: RpcTxReq<<Rpc as RpcConvert>::Network>,
+        at: BlockId,
+    ) -> Result<alloy_primitives::Bytes, EthApiError> {
+        let inner = request.as_ref();
+        let (to, contract_creation) = match inner.to {
+            Some(alloy_primitives::TxKind::Call(addr)) => (addr, false),
+            Some(alloy_primitives::TxKind::Create) => (Address::ZERO, true),
+            None => (Address::ZERO, false),
+        };
+        let value = inner.value.unwrap_or(U256::ZERO);
+        let data: alloy_primitives::Bytes = inner.input.input().cloned().unwrap_or_default();
+
+        let state = self
+            .inner
+            .provider()
+            .state_by_block_id(at)
+            .map_err(|e| EthApiError::Internal(e.into()))?;
+        let read = |slot: U256| -> Result<U256, EthApiError> {
+            Ok(state
+                .storage(
+                    ARBOS_STATE_ADDRESS,
+                    StorageKey::from(B256::from(slot.to_be_bytes::<32>())),
+                )
+                .map_err(|e| EthApiError::Internal(e.into()))?
+                .unwrap_or_default())
+        };
+        let stored = read(subspace_slot(L1_PRICING_SUBSPACE, L1_UNITS_SINCE_UPDATE))?;
+        let chain_id_u: u64 = read(root_slot(CHAIN_ID_OFFSET))?.try_into().unwrap_or(0);
+        let brotli_level: u64 = read(root_slot(BROTLI_COMPRESSION_LEVEL_OFFSET))?
+            .try_into()
+            .unwrap_or(0);
+
+        let tx_bytes =
+            arb_precompiles::build_fake_tx_bytes(chain_id_u, to, contract_creation, value, data);
+        let raw_units = arbos::l1_pricing::poster_units_from_bytes(&tx_bytes, brotli_level);
+        let padded_units = raw_units
+            .saturating_add(arbos::l1_pricing::ESTIMATION_PADDING_UNITS)
+            .saturating_mul(10_000 + arbos::l1_pricing::ESTIMATION_PADDING_BASIS_POINTS)
+            / 10_000;
+        let total = stored.saturating_add(U256::from(padded_units));
+
+        Ok(alloy_primitives::Bytes::from(
+            total.to_be_bytes::<32>().to_vec(),
+        ))
+    }
+
+    fn compute_eth_call_current_tx_l1_fees(
+        &self,
+        request: RpcTxReq<<Rpc as RpcConvert>::Network>,
+        at: BlockId,
+    ) -> Result<alloy_primitives::Bytes, EthApiError> {
+        let inner = request.as_ref();
+        let (to, contract_creation) = match inner.to {
+            Some(alloy_primitives::TxKind::Call(addr)) => (addr, false),
+            Some(alloy_primitives::TxKind::Create) => (Address::ZERO, true),
+            None => (Address::ZERO, false),
+        };
+        let value = inner.value.unwrap_or(U256::ZERO);
+        let data: alloy_primitives::Bytes = inner.input.input().cloned().unwrap_or_default();
+
+        let state = self
+            .inner
+            .provider()
+            .state_by_block_id(at)
+            .map_err(|e| EthApiError::Internal(e.into()))?;
+        let read = |slot: U256| -> Result<U256, EthApiError> {
+            Ok(state
+                .storage(
+                    ARBOS_STATE_ADDRESS,
+                    StorageKey::from(B256::from(slot.to_be_bytes::<32>())),
+                )
+                .map_err(|e| EthApiError::Internal(e.into()))?
+                .unwrap_or_default())
+        };
+        let l1_price = read(subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
+        if l1_price.is_zero() {
+            return Ok(alloy_primitives::Bytes::from(vec![0u8; 32]));
+        }
+        let chain_id_u: u64 = read(root_slot(CHAIN_ID_OFFSET))?.try_into().unwrap_or(0);
+        let brotli_level: u64 = read(root_slot(BROTLI_COMPRESSION_LEVEL_OFFSET))?
+            .try_into()
+            .unwrap_or(0);
+
+        let tx_bytes =
+            arb_precompiles::build_fake_tx_bytes(chain_id_u, to, contract_creation, value, data);
+        let raw_units = arbos::l1_pricing::poster_units_from_bytes(&tx_bytes, brotli_level);
+        let padded_units = raw_units
+            .saturating_add(arbos::l1_pricing::ESTIMATION_PADDING_UNITS)
+            .saturating_mul(10_000 + arbos::l1_pricing::ESTIMATION_PADDING_BASIS_POINTS)
+            / 10_000;
+        let poster_fee = l1_price.saturating_mul(U256::from(padded_units));
+
+        Ok(alloy_primitives::Bytes::from(
+            poster_fee.to_be_bytes::<32>().to_vec(),
+        ))
+    }
+
+    /// Combined gas estimator matching Arbitrum's `DoEstimateGas`: the
+    /// binary search operates on total gas (L2 compute + L1 poster) so the
+    /// 64/63 optimistic multiplier and 0.015 error ratio apply to the
+    /// combined figure. Each simulation passes `total − l1_gas` as the L2
+    /// gas limit so the poster-gas deduction is accounted for.
+    async fn estimate_arb_combined_gas(
+        &self,
+        inner_req: RpcTxReq<<Rpc as RpcConvert>::Network>,
+        gas_for_l1: u64,
+        at: BlockId,
+        state_override: Option<StateOverride>,
+    ) -> Result<u64, EthApiError>
+    where
+        RpcTxReq<<Rpc as RpcConvert>::Network>: From<alloy_rpc_types_eth::TransactionRequest>,
+    {
+        use alloy_rpc_types_eth::state::EvmOverrides;
+
+        const CALL_STIPEND: u64 = 2300;
+        const ERROR_RATIO: f64 = 0.015;
+
+        let rpc_gas_cap = self.call_gas_limit();
+
+        let simulate = async |req_gas: u64| -> Result<(u64, bool), EthApiError> {
+            let mut req = inner_req.clone();
+            req.as_mut().gas = Some(req_gas);
+            let _permit = self.acquire_owned_blocking_io().await;
+            let res = self
+                .transact_call_at(req, at, EvmOverrides::state(state_override.clone()))
+                .await?;
+            Ok((res.result.gas_used(), res.result.is_success()))
+        };
+
+        let compute_cap = rpc_gas_cap.saturating_sub(gas_for_l1).max(1);
+        let (used_compute, success_first) = simulate(compute_cap).await?;
+        if !success_first {
+            return Ok(rpc_gas_cap);
+        }
+
+        let used_total = used_compute.saturating_add(gas_for_l1);
+        let mut lo = used_total.saturating_sub(1);
+        let mut hi = rpc_gas_cap.max(used_total);
+
+        let optimistic = used_total.saturating_add(CALL_STIPEND).saturating_mul(64) / 63;
+        if optimistic < hi {
+            let compute_limit = optimistic.saturating_sub(gas_for_l1);
+            let (_, ok) = simulate(compute_limit).await?;
+            if ok {
+                hi = optimistic;
+            } else {
+                lo = optimistic;
+            }
+        }
+
+        while lo + 1 < hi {
+            let ratio = (hi - lo) as f64 / hi as f64;
+            if ratio < ERROR_RATIO {
+                break;
+            }
+            let mut mid = lo + (hi - lo) / 2;
+            let two_lo = lo.saturating_mul(2);
+            if mid > two_lo {
+                mid = two_lo;
+            }
+            let compute_limit = mid.saturating_sub(gas_for_l1);
+            let (_, ok) = simulate(compute_limit).await?;
+            if ok {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+
+        Ok(hi)
+    }
+
+    /// Gas estimate for `NodeInterface.estimateRetryableTicket` —
+    /// `submit_intrinsic + auto_redeem_gas`.
+    async fn estimate_retryable_ticket_gas(
+        &self,
+        input: &alloy_primitives::Bytes,
+        at: BlockId,
+        state_override: Option<StateOverride>,
+    ) -> Result<U256, EthApiError>
+    where
+        RpcTxReq<<Rpc as RpcConvert>::Network>: From<alloy_rpc_types_eth::TransactionRequest>,
+    {
+        use alloy_primitives::{Bytes, TxKind};
+        use alloy_rpc_types_eth::TransactionRequest;
+
+        // ABI decode: selector(4) + 7 heads(32 each) + bytes tail.
+        // sender, deposit, to, l2CallValue, excessFeeRefundAddr,
+        // callValueRefundAddr, <bytes data offset>.
+        const HEAD_LEN: usize = 4 + 32 * 7;
+        if input.len() < HEAD_LEN {
+            return Err(EthApiError::InvalidParams(
+                "estimateRetryableTicket: calldata too short".into(),
+            ));
+        }
+        let sender = Address::from_slice(&input[4 + 12..4 + 32]);
+        let _deposit = U256::from_be_slice(&input[36..68]);
+        let to_word = &input[68..100];
+        let to = Address::from_slice(&to_word[12..32]);
+        let l2_call_value = U256::from_be_slice(&input[100..132]);
+        let _excess_fee_refund = Address::from_slice(&input[132 + 12..132 + 32]);
+        let _call_value_refund = Address::from_slice(&input[164 + 12..164 + 32]);
+        let data_offset: usize =
+            U256::from_be_slice(&input[196..228])
+                .try_into()
+                .map_err(|_| {
+                    EthApiError::InvalidParams(
+                        "estimateRetryableTicket: invalid data offset".into(),
+                    )
+                })?;
+        let abi_body = &input[4..];
+        let data: Bytes = if data_offset + 32 <= abi_body.len() {
+            let len: usize = U256::from_be_slice(&abi_body[data_offset..data_offset + 32])
+                .try_into()
+                .map_err(|_| {
+                    EthApiError::InvalidParams(
+                        "estimateRetryableTicket: data length too large".into(),
+                    )
+                })?;
+            if data_offset + 32 + len > abi_body.len() {
+                return Err(EthApiError::InvalidParams(
+                    "estimateRetryableTicket: data out of bounds".into(),
+                ));
+            }
+            Bytes::copy_from_slice(&abi_body[data_offset + 32..data_offset + 32 + len])
+        } else {
+            Bytes::new()
+        };
+
+        // `to == zero` means the retryable is a contract-create — map
+        // that to TxKind::Create for the estimate request.
+        let kind = if to == Address::ZERO {
+            TxKind::Create
+        } else {
+            TxKind::Call(to)
+        };
+        let data_ref = data.clone();
+        let equivalent = TransactionRequest {
+            from: Some(sender),
+            to: Some(kind),
+            value: Some(l2_call_value),
+            input: data.into(),
+            ..Default::default()
+        };
+        let equivalent_req: RpcTxReq<<Rpc as RpcConvert>::Network> = equivalent.into();
+
+        // Binary-search the auto-redeem gas via the standard eth
+        // estimation machinery. The equivalent call has the exact
+        // same state transitions as what the auto-redeem runs, so
+        // its gas result is the auto-redeem's gas 1:1.
+        let redeem_gas =
+            EstimateCall::estimate_gas_at(self, equivalent_req, at, state_override).await?;
+
+        // Submit-retryable intrinsic gas matches the default
+        // IntrinsicGas for ArbitrumSubmitRetryableTx: 21,000 tx base +
+        // EIP-2028 calldata (16 × non-zero + 4 × zero). ArbOS's
+        // state-transition overhead for retryable creation, escrow,
+        // and auto-redeem scheduling is charged inside the auto-redeem
+        // itself and is therefore already captured by `redeem_gas`.
+        let (zeros, non_zeros) =
+            data_ref.iter().fold(
+                (0u64, 0u64),
+                |(z, nz), &b| if b == 0 { (z + 1, nz) } else { (z, nz + 1) },
+            );
+        let calldata_gas = zeros
+            .saturating_mul(4)
+            .saturating_add(non_zeros.saturating_mul(16));
+        let submit_intrinsic = 21_000u64.saturating_add(calldata_gas);
+
+        Ok(redeem_gas.saturating_add(U256::from(submit_intrinsic)))
+    }
+
+    /// `eth_call` of `NodeInterface.estimateRetryableTicket(...)`:
+    /// synthesize the ArbitrumSubmitRetryableTx that corresponds to this
+    /// call and return its EIP-2718 envelope hash (the ticket ID).
+    async fn simulate_retryable_ticket_call(
+        &self,
+        input: &alloy_primitives::Bytes,
+        at: BlockId,
+        _overrides: alloy_rpc_types_eth::state::EvmOverrides,
+    ) -> Result<alloy_primitives::Bytes, EthApiError>
+    where
+        RpcTxReq<<Rpc as RpcConvert>::Network>: From<alloy_rpc_types_eth::TransactionRequest>,
+    {
+        use alloy_primitives::{Bytes, keccak256};
+        use arb_alloy_consensus::{ArbTxEnvelope, tx::ArbSubmitRetryableTx};
+
+        const HEAD_LEN: usize = 4 + 32 * 7;
+        if input.len() < HEAD_LEN {
+            return Err(EthApiError::InvalidParams(
+                "estimateRetryableTicket: calldata too short".into(),
+            ));
+        }
+        let sender = Address::from_slice(&input[4 + 12..4 + 32]);
+        let deposit = U256::from_be_slice(&input[36..68]);
+        let to = Address::from_slice(&input[68 + 12..100]);
+        let l2_call_value = U256::from_be_slice(&input[100..132]);
+        let excess_fee_refund = Address::from_slice(&input[132 + 12..164]);
+        let call_value_refund = Address::from_slice(&input[164 + 12..196]);
+        let data_offset: usize =
+            U256::from_be_slice(&input[196..228])
+                .try_into()
+                .map_err(|_| {
+                    EthApiError::InvalidParams(
+                        "estimateRetryableTicket: invalid data offset".into(),
+                    )
+                })?;
+        let abi_body = &input[4..];
+        let data: Bytes = if data_offset + 32 <= abi_body.len() {
+            let len: usize = U256::from_be_slice(&abi_body[data_offset..data_offset + 32])
+                .try_into()
+                .map_err(|_| {
+                    EthApiError::InvalidParams(
+                        "estimateRetryableTicket: data length too large".into(),
+                    )
+                })?;
+            if data_offset + 32 + len > abi_body.len() {
+                return Err(EthApiError::InvalidParams(
+                    "estimateRetryableTicket: data out of bounds".into(),
+                ));
+            }
+            Bytes::copy_from_slice(&abi_body[data_offset + 32..data_offset + 32 + len])
+        } else {
+            Bytes::new()
+        };
+
+        let l1_base_fee = {
+            let state = self
+                .inner
+                .provider()
+                .state_by_block_id(at)
+                .map_err(|e| EthApiError::Internal(e.into()))?;
+            let slot = subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT);
+            state
+                .storage(
+                    ARBOS_STATE_ADDRESS,
+                    StorageKey::from(B256::from(slot.to_be_bytes::<32>())),
+                )
+                .map_err(|e| EthApiError::Internal(e.into()))?
+                .unwrap_or_default()
+        };
+
+        let aliased_from = apply_l1_to_l2_alias(sender);
+        let max_submission_fee =
+            arbos::retryables::retryable_submission_fee(data.len(), l1_base_fee);
+        let retry_to = if to == Address::ZERO { None } else { Some(to) };
+
+        let gas_cap = self.inner.gas_cap();
+        let gas = gas_cap;
+
+        let tx = ArbSubmitRetryableTx {
+            chain_id: U256::ZERO,
+            request_id: B256::ZERO,
+            from: aliased_from,
+            l1_base_fee,
+            deposit_value: deposit,
+            gas_fee_cap: U256::ZERO,
+            gas,
+            retry_to,
+            retry_value: l2_call_value,
+            beneficiary: call_value_refund,
+            max_submission_fee,
+            fee_refund_addr: excess_fee_refund,
+            retry_data: data,
+        };
+        let envelope = ArbTxEnvelope::SubmitRetryable(tx);
+        let encoded = envelope.encode_typed();
+        let hash = keccak256(&encoded);
+        Ok(alloy_primitives::Bytes::from(hash.0.to_vec()))
+    }
+
+    /// Handle `eth_call` dispatch of
+    /// `NodeInterfaceDebug.getRetryable(bytes32 ticketId)` — reads the
+    /// retryable record from storage and returns the 7-tuple
+    /// `(timeout, from, to, value, beneficiary, tries, data)`.
+    async fn get_retryable_abi(
+        &self,
+        input: &alloy_primitives::Bytes,
+        at: BlockId,
+    ) -> Result<alloy_primitives::Bytes, EthApiError> {
+        use arb_storage::layout::{ROOT_STORAGE_KEY, derive_subspace_key, map_slot};
+        use arbos::retryables::{
+            BENEFICIARY_OFFSET, CALLDATA_KEY, CALLVALUE_OFFSET, FROM_OFFSET, NUM_TRIES_OFFSET,
+            TIMEOUT_OFFSET, TO_OFFSET,
+        };
+
+        if input.len() < 4 + 32 {
+            return Err(EthApiError::InvalidParams(
+                "getRetryable: expected bytes32 ticket".into(),
+            ));
+        }
+        let ticket = B256::from_slice(&input[4..36]);
+
+        let state = self
+            .inner
+            .provider()
+            .state_by_block_id(at)
+            .map_err(|e| EthApiError::Internal(e.into()))?;
+        let load = |slot: U256| -> Result<U256, EthApiError> {
+            let k = StorageKey::from(B256::from(slot.to_be_bytes::<32>()));
+            Ok(state
+                .storage(ARBOS_STATE_ADDRESS, k)
+                .map_err(|e| EthApiError::Internal(e.into()))?
+                .unwrap_or(U256::ZERO))
+        };
+
+        let retryables_key =
+            derive_subspace_key(ROOT_STORAGE_KEY, arb_storage::layout::RETRYABLES_SUBSPACE);
+        let r_key = derive_subspace_key(retryables_key.as_slice(), ticket.as_slice());
+
+        let timeout: u64 = load(map_slot(r_key.as_slice(), TIMEOUT_OFFSET))?
+            .try_into()
+            .unwrap_or(0);
+        if timeout == 0 {
+            return Err(EthApiError::InvalidParams(format!(
+                "no retryable with id 0x{ticket:x}"
+            )));
+        }
+        let from_word = load(map_slot(r_key.as_slice(), FROM_OFFSET))?;
+        let from = Address::from_slice(&from_word.to_be_bytes::<32>()[12..]);
+        let to_word = load(map_slot(r_key.as_slice(), TO_OFFSET))?;
+        let to_bytes: [u8; 32] = to_word.to_be_bytes();
+        // StorageBackedAddressOrNil uses all-ones in the high 12 bytes
+        // to encode Nil; actual encoding varies, so just take low 20
+        // bytes and let callers treat zero as nil.
+        let to = Address::from_slice(&to_bytes[12..]);
+        let value = load(map_slot(r_key.as_slice(), CALLVALUE_OFFSET))?;
+        let beneficiary_word = load(map_slot(r_key.as_slice(), BENEFICIARY_OFFSET))?;
+        let beneficiary = Address::from_slice(&beneficiary_word.to_be_bytes::<32>()[12..]);
+        let tries: u64 = load(map_slot(r_key.as_slice(), NUM_TRIES_OFFSET))?
+            .try_into()
+            .unwrap_or(0);
+
+        // Calldata lives under its own subspace with StorageBackedBytes
+        // layout: slot 0 = size, slot 1+ = chunks. We read the size,
+        // then each 32-byte chunk, and truncate.
+        let cd_key = derive_subspace_key(r_key.as_slice(), CALLDATA_KEY);
+        let size: usize = load(map_slot(cd_key.as_slice(), 0))?
+            .try_into()
+            .unwrap_or(0);
+        let chunks = size.div_ceil(32);
+        let mut data = Vec::with_capacity(size);
+        for i in 0..chunks {
+            let chunk = load(map_slot(cd_key.as_slice(), 1 + i as u64))?;
+            data.extend_from_slice(&chunk.to_be_bytes::<32>());
+        }
+        data.truncate(size);
+
+        // ABI-encode the 7-tuple:
+        //   head (7 × 32):
+        //     timeout, from, to, value, beneficiary, tries, data_offset
+        //   tail: data_len, data_bytes (padded to 32)
+        let mut out = vec![0u8; 7 * 32];
+        U256::from(timeout)
+            .to_be_bytes::<32>()
+            .iter()
+            .enumerate()
+            .for_each(|(i, b)| out[i] = *b);
+        out[32 + 12..32 + 32].copy_from_slice(from.as_slice());
+        out[64 + 12..64 + 32].copy_from_slice(to.as_slice());
+        out[96..128].copy_from_slice(&value.to_be_bytes::<32>());
+        out[128 + 12..128 + 32].copy_from_slice(beneficiary.as_slice());
+        U256::from(tries)
+            .to_be_bytes::<32>()
+            .iter()
+            .enumerate()
+            .for_each(|(i, b)| out[160 + i] = *b);
+        // data offset = 0xe0 (7 × 32).
+        U256::from(7u64 * 32)
+            .to_be_bytes::<32>()
+            .iter()
+            .enumerate()
+            .for_each(|(i, b)| out[192 + i] = *b);
+        // Tail.
+        let padded_len = size.div_ceil(32) * 32;
+        let mut tail = vec![0u8; 32 + padded_len];
+        U256::from(size as u64)
+            .to_be_bytes::<32>()
+            .iter()
+            .enumerate()
+            .for_each(|(i, b)| tail[i] = *b);
+        tail[32..32 + size].copy_from_slice(&data);
+        out.extend_from_slice(&tail);
+        Ok(alloy_primitives::Bytes::from(out))
+    }
+
+    /// Handle `eth_call` dispatch of
+    /// `NodeInterface.constructOutboxProof(size, leaf)`. Scans ArbSys
+    /// (0x64) L2ToL1Tx / SendMerkleUpdate event logs over the chain up
+    /// to `at` to resolve every node hash the proof walk needs, then
+    /// feeds the map to `outbox_proof::finalize_proof`.
+    async fn construct_outbox_proof(
+        &self,
+        input: &alloy_primitives::Bytes,
+        at: BlockId,
+    ) -> Result<alloy_primitives::Bytes, EthApiError>
+    where
+        N: RpcNodeCore<
+            Provider: reth_provider::BlockReaderIdExt + reth_storage_api::ReceiptProvider,
+        >,
+    {
+        use std::collections::HashMap;
+
+        use alloy_consensus::TxReceipt;
+        use arb_precompiles::arbsys::{
+            ARBSYS_ADDRESS, l2_to_l1_tx_topic, send_merkle_update_topic,
+        };
+        use reth_provider::{BlockNumReader, ReceiptProvider};
+
+        use crate::outbox_proof::{LevelAndLeaf, encode_outbox_proof, finalize_proof, plan_proof};
+
+        if input.len() < 4 + 64 {
+            return Err(EthApiError::InvalidParams(
+                "constructOutboxProof: expected (uint64 size, uint64 leaf)".into(),
+            ));
+        }
+        let size: u64 = U256::from_be_slice(&input[4..36])
+            .try_into()
+            .unwrap_or(u64::MAX);
+        let leaf: u64 = U256::from_be_slice(&input[36..68])
+            .try_into()
+            .unwrap_or(u64::MAX);
+
+        let plan = plan_proof(size, leaf).ok_or_else(|| {
+            EthApiError::InvalidParams(format!("constructOutboxProof: leaf {leaf} ≥ size {size}"))
+        })?;
+
+        // Resolve `at` to a concrete block number upper-bound. If
+        // `latest` or missing, use the chain tip.
+        let provider = self.inner.provider();
+        let tip = provider
+            .best_block_number()
+            .map_err(|e| EthApiError::Internal(e.into()))?;
+        let upper = match at {
+            BlockId::Number(alloy_rpc_types_eth::BlockNumberOrTag::Number(n)) => n.min(tip),
+            _ => tip,
+        };
+
+        // Scan receipts over [0..=upper] for ArbSys merkle + L2ToL1Tx
+        // logs. Topic layout for both events: topic[3] = position (a
+        // LevelAndLeaf packed as uint256), topic[1..3] carry the hash
+        // depending on which event variant.
+        let merkle_topic = send_merkle_update_topic();
+        let l2tol1_topic = l2_to_l1_tx_topic();
+
+        // Position → hash map. Keyed by the 32-byte position bytes.
+        let mut positions: HashMap<[u8; 32], B256> = HashMap::new();
+
+        let receipts_per_block = provider
+            .receipts_by_block_range(0..=upper)
+            .map_err(|e| EthApiError::Internal(e.into()))?;
+
+        for block_receipts in receipts_per_block {
+            for receipt in block_receipts {
+                for log in receipt.logs() {
+                    if log.address != ARBSYS_ADDRESS {
+                        continue;
+                    }
+                    let topics = log.data.topics();
+                    if topics.len() < 4 {
+                        continue;
+                    }
+                    let kind = topics[0];
+                    let is_merkle = kind == merkle_topic;
+                    let is_l2tol1 = kind == l2tol1_topic;
+                    if !is_merkle && !is_l2tol1 {
+                        continue;
+                    }
+                    // position encoded in topic[3]; hash in topic[2]
+                    // for both events (hash is an indexed arg).
+                    let pos: [u8; 32] = topics[3].0;
+                    let hash: B256 = topics[2];
+                    positions.insert(pos, hash);
+                }
+            }
+        }
+
+        let lookup = |p: LevelAndLeaf| -> Option<B256> {
+            let topic = p.as_topic();
+            positions.get(&topic.0).copied()
+        };
+
+        let (send, root, proof) = finalize_proof(&plan, leaf, lookup)
+            .map_err(|e| EthApiError::InvalidParams(format!("constructOutboxProof: {e}")))?;
+
+        Ok(encode_outbox_proof(send, root, &proof))
+    }
+}
+
+// ---- Trait delegations (matching reth's EthApi bounds exactly) ----
+
+impl<N, Rpc> EthApiTypes for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore,
+    Rpc: RpcConvert<Error = EthApiError>,
+{
+    type Error = EthApiError;
+    type NetworkTypes = Rpc::Network;
+    type RpcConvert = Rpc;
+
+    fn converter(&self) -> &Self::RpcConvert {
+        self.inner.converter()
+    }
+}
+
+impl<N, Rpc> RpcNodeCore for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore,
+    Rpc: RpcConvert,
+{
+    type Primitives = N::Primitives;
+    type Provider = N::Provider;
+    type Pool = N::Pool;
+    type Evm = N::Evm;
+    type Network = N::Network;
+
+    #[inline]
+    fn pool(&self) -> &Self::Pool {
+        self.inner.pool()
+    }
+
+    #[inline]
+    fn evm_config(&self) -> &Self::Evm {
+        self.inner.evm_config()
+    }
+
+    #[inline]
+    fn network(&self) -> &Self::Network {
+        self.inner.network()
+    }
+
+    #[inline]
+    fn provider(&self) -> &Self::Provider {
+        self.inner.provider()
+    }
+}
+
+impl<N, Rpc> RpcNodeCoreExt for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore,
+    Rpc: RpcConvert,
+{
+    #[inline]
+    fn cache(&self) -> &EthStateCache<N::Primitives> {
+        self.inner.cache()
+    }
+}
+
+impl<N, Rpc> EthApiSpec for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError>,
+{
+    fn starting_block(&self) -> U256 {
+        self.inner.starting_block()
+    }
+}
+
+impl<N, Rpc> SpawnBlocking for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore,
+    Rpc: RpcConvert<Error = EthApiError>,
+{
+    #[inline]
+    fn io_task_spawner(&self) -> &Runtime {
+        self.inner.task_spawner()
+    }
+
+    #[inline]
+    fn tracing_task_pool(&self) -> &BlockingTaskPool {
+        self.inner.blocking_task_pool()
+    }
+
+    #[inline]
+    fn tracing_task_guard(&self) -> &BlockingTaskGuard {
+        self.inner.blocking_task_guard()
+    }
+
+    #[inline]
+    fn blocking_io_task_guard(&self) -> &Arc<tokio::sync::Semaphore> {
+        self.inner.blocking_io_request_semaphore()
+    }
+}
+
+impl<N, Rpc> LoadFee for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore,
+    EthApiError: FromEvmError<N::Evm>,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError>,
+{
+    fn gas_oracle(&self) -> &GasPriceOracle<Self::Provider> {
+        self.inner.gas_oracle()
+    }
+
+    fn fee_history_cache(&self) -> &FeeHistoryCache<ProviderHeader<N::Provider>> {
+        self.inner.fee_history_cache()
+    }
+}
+
+impl<N, Rpc> LoadState for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore,
+    Rpc: RpcConvert<Primitives = N::Primitives>,
+    Self: LoadPendingBlock,
+{
+}
+
+impl<N, Rpc> EthState for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError>,
+    Self: LoadPendingBlock,
+{
+    fn max_proof_window(&self) -> u64 {
+        self.inner.eth_proof_window()
+    }
+}
+
+impl<N, Rpc> EthFees for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore,
+    EthApiError: FromEvmError<N::Evm>,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError>,
+{
+    /// `eth_gasPrice` returns just the latest base fee — there is no
+    /// priority-fee market on this chain.
+    fn gas_price(&self) -> impl std::future::Future<Output = Result<U256, Self::Error>> + Send
+    where
+        Self: reth_rpc_eth_api::helpers::LoadBlock,
+    {
+        use alloy_consensus::BlockHeader;
+        use reth_storage_api::{BlockNumReader, HeaderProvider};
+        async move {
+            let best = self
+                .provider()
+                .best_block_number()
+                .map_err(|e| EthApiError::Internal(e.into()))?;
+            let header_opt = HeaderProvider::sealed_header(self.provider(), best)
+                .map_err(|e| EthApiError::Internal(e.into()))?;
+            let base_fee = match header_opt {
+                Some(sealed) => sealed.header().base_fee_per_gas().unwrap_or_default(),
+                None => 0,
+            };
+            Ok(U256::from(base_fee))
+        }
+    }
+
+    #[allow(clippy::manual_async_fn)]
+    fn suggested_priority_fee(
+        &self,
+    ) -> impl std::future::Future<Output = Result<U256, Self::Error>> + Send
+    where
+        Self: 'static,
+    {
+        async move { Ok(U256::ZERO) }
+    }
+}
+
+impl<N, Rpc> Trace for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore,
+    EthApiError: FromEvmError<N::Evm>,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError, Evm = N::Evm>,
+{
+}
+
+impl<N, Rpc> GetBlockAccessList for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore,
+    EthApiError: FromEvmError<N::Evm>,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError, Evm = N::Evm>,
+{
+    /// `eth_getBlockAccessList*` is unsupported on Arbitrum for now.
+    ///
+    /// reth's default implementation reconstructs the access list by replaying
+    /// the block over a `State` whose BAL recorder is fed only through
+    /// `DatabaseCommit::commit`. The Arbitrum executor applies mints, burns,
+    /// nonce bumps, and fee distribution by writing `state.cache.accounts`
+    /// directly, so those balance changes bypass
+    /// the recorder and the default would return an access list silently
+    /// missing them for every block. Return an explicit error instead of
+    /// incomplete data until the executor feeds the BAL builder.
+    async fn get_block_access_list(
+        &self,
+        _block_id: BlockId,
+    ) -> Result<Option<alloy_eips::eip7928::BlockAccessList>, Self::Error> {
+        Err(EthApiError::Unsupported(
+            "eth_getBlockAccessList is not supported on Arbitrum",
+        ))
+    }
+}
+
+impl<N, Rpc> LoadPendingBlock for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore,
+    EthApiError: FromEvmError<N::Evm>,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError>,
+{
+    fn pending_block(&self) -> &tokio::sync::Mutex<Option<PendingBlock<N::Primitives>>> {
+        self.inner.pending_block()
+    }
+
+    fn pending_env_builder(&self) -> &dyn PendingEnvBuilder<N::Evm> {
+        self.inner.pending_env_builder()
+    }
+
+    fn pending_block_kind(&self) -> PendingBlockKind {
+        self.inner.pending_block_kind()
+    }
+}
+
+impl<N, Rpc> LoadBlock for ArbEthApi<N, Rpc>
+where
+    Self: LoadPendingBlock,
+    N: RpcNodeCore,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError>,
+{
+}
+
+impl<N, Rpc> LoadTransaction for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore,
+    EthApiError: FromEvmError<N::Evm>,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError>,
+{
+}
+
+impl<N, Rpc> EthBlocks for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore,
+    EthApiError: FromEvmError<N::Evm>,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError>,
+{
+}
+
+impl<N, Rpc> EthTransactions for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore,
+    EthApiError: FromEvmError<N::Evm>,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError>,
+{
+    fn signers(&self) -> &SignersForRpc<Self::Provider, Self::NetworkTypes> {
+        self.inner.signers()
+    }
+
+    fn send_raw_transaction_sync_timeout(&self) -> Duration {
+        self.inner.send_raw_transaction_sync_timeout()
+    }
+
+    async fn send_transaction(
+        &self,
+        origin: TransactionOrigin,
+        tx: WithEncoded<Recovered<PoolPooledTx<Self::Pool>>>,
+    ) -> Result<B256, Self::Error> {
+        let (_tx_bytes, recovered) = tx.split();
+        let pool_transaction = <Self::Pool as TransactionPool>::Transaction::from_pooled(recovered);
+
+        let AddedTransactionOutcome { hash, .. } = self
+            .inner
+            .add_pool_transaction(origin, pool_transaction)
+            .await?;
+
+        Ok(hash)
+    }
+}
+
+impl<N, Rpc> LoadReceipt for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore<Primitives = arb_primitives::ArbPrimitives>,
+    EthApiError: FromEvmError<N::Evm>,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError>,
+    Self::Error: reth_rpc_eth_types::error::FromEthApiError,
+{
+    /// Override to use `convert_receipts_with_block` so every single-tx
+    /// receipt fetch (e.g. `eth_getTransactionReceipt`) includes the
+    /// Arbitrum `l1BlockNumber` field sourced from the block's mix_hash.
+    ///
+    /// Reth's default impl uses `convert_receipts` (no-block path), which
+    /// our `ArbReceiptConverter` populates with `l1_block_number = None`.
+    /// That breaks Arbitrum spec (bridges, indexers, explorers all expect
+    /// `l1BlockNumber` on every receipt).
+    fn build_transaction_receipt(
+        &self,
+        tx: reth_primitives_traits::Recovered<reth_storage_api::ProviderTx<Self::Provider>>,
+        meta: alloy_consensus::transaction::TransactionMeta,
+        receipt: reth_storage_api::ProviderReceipt<Self::Provider>,
+        all_receipts: Option<
+            std::sync::Arc<Vec<reth_storage_api::ProviderReceipt<Self::Provider>>>,
+        >,
+    ) -> impl std::future::Future<
+        Output = Result<reth_rpc_eth_api::RpcReceipt<Self::NetworkTypes>, Self::Error>,
+    > + Send {
+        use alloy_consensus::TxReceipt;
+        use reth_rpc_convert::transaction::ConvertReceiptInput;
+        use reth_rpc_eth_api::RpcNodeCoreExt;
+        use reth_rpc_eth_types::{
+            EthApiError, error::FromEthApiError, utils::calculate_gas_used_and_next_log_index,
+        };
+        async move {
+            let hash = meta.block_hash;
+            let all_receipts = match all_receipts {
+                Some(receipts) => receipts,
+                None => self
+                    .cache()
+                    .get_receipts(hash)
+                    .await
+                    .map_err(<Self::Error as FromEthApiError>::from_eth_err)?
+                    .ok_or_else(|| {
+                        <Self::Error as FromEthApiError>::from_eth_err(EthApiError::HeaderNotFound(
+                            hash.into(),
+                        ))
+                    })?,
+            };
+
+            let (gas_used, next_log_index) =
+                calculate_gas_used_and_next_log_index(meta.index, &all_receipts);
+
+            let block = self
+                .cache()
+                .get_recovered_block(hash)
+                .await
+                .map_err(<Self::Error as FromEthApiError>::from_eth_err)?;
+
+            let input = ConvertReceiptInput {
+                tx: tx.as_recovered_ref(),
+                gas_used: receipt.cumulative_gas_used() - gas_used,
+                receipt,
+                next_log_index,
+                meta,
+            };
+
+            let result = match block {
+                Some(sealed_block_with_senders) => self.converter().convert_receipts_with_block(
+                    vec![input],
+                    sealed_block_with_senders.sealed_block(),
+                )?,
+                None => self.converter().convert_receipts(vec![input])?,
+            };
+            Ok(result.into_iter().next().expect("one receipt in, one out"))
+        }
+    }
+}
+
+// ---- Gas estimation override ----
+
+impl<N, Rpc> Call for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore,
+    EthApiError: FromEvmError<N::Evm>,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError, Evm = N::Evm>,
+{
+    #[inline]
+    fn call_gas_limit(&self) -> u64 {
+        self.inner.gas_cap()
+    }
+
+    #[inline]
+    fn max_simulate_blocks(&self) -> u64 {
+        self.inner.max_simulate_blocks()
+    }
+
+    #[inline]
+    fn evm_memory_limit(&self) -> u64 {
+        self.inner.evm_memory_limit()
+    }
+}
+
+impl<N, Rpc> EstimateCall for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore,
+    EthApiError: FromEvmError<N::Evm>,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError, Evm = N::Evm>,
+{
+    // Uses default binary search. L1 posting gas is added in EthCall below.
+}
+
+impl<N, Rpc> EthCall for ArbEthApi<N, Rpc>
+where
+    N: RpcNodeCore<
+            Provider: StateProviderFactory + reth_provider::BlockReaderIdExt + Clone,
+            Primitives = arb_primitives::ArbPrimitives,
+        >,
+    EthApiError: FromEvmError<N::Evm>,
+    Rpc: RpcConvert<Primitives = N::Primitives, Error = EthApiError, Evm = N::Evm>,
+    RpcTxReq<<Rpc as RpcConvert>::Network>: AsRef<alloy_rpc_types_eth::TransactionRequest>
+        + AsMut<alloy_rpc_types_eth::TransactionRequest>
+        + Clone
+        + Default
+        + From<alloy_rpc_types_eth::TransactionRequest>,
+{
+    /// Override gas estimation to add L1 posting costs.
+    ///
+    /// Also intercepts `estimateRetryableTicket` calls to the
+    /// NodeInterface (0xc8): client calls
+    /// `eth_estimateGas({to:0xc8, data: estimateRetryableTicket(...)})`
+    /// and expects back the gas for the retryable submission. We parse
+    /// the ABI args, build an equivalent transaction request targeting
+    /// the retry_to with retry_value + retry_data, run the standard
+    /// estimation on that, and add the submit-retryable overhead.
+    #[allow(clippy::manual_async_fn)]
+    fn estimate_gas_at(
+        &self,
+        request: RpcTxReq<<Self::RpcConvert as RpcConvert>::Network>,
+        at: BlockId,
+        state_override: Option<StateOverride>,
+    ) -> impl std::future::Future<Output = Result<U256, Self::Error>> + Send {
+        async move {
+            use alloy_primitives::TxKind;
+
+            use crate::nodeinterface_rpc::NODE_INTERFACE_ADDRESS;
+
+            let inner = request.as_ref();
+            let target: Option<Address> = match inner.to {
+                Some(TxKind::Call(addr)) => Some(addr),
+                _ => None,
+            };
+            let input_bytes: Option<alloy_primitives::Bytes> = inner.input.input().cloned();
+
+            // Intercept estimateRetryableTicket on NodeInterface (0xc8).
+            //
+            // ABI: estimateRetryableTicket(
+            //   address sender, uint256 deposit, address to,
+            //   uint256 l2CallValue, address excessFeeRefundAddress,
+            //   address callValueRefundAddress, bytes data)
+            //
+            // selector: 0xc3dc5879
+            if target == Some(NODE_INTERFACE_ADDRESS)
+                && let Some(ref buf) = input_bytes
+                && buf.len() >= 4
+                && buf[..4] == [0xc3, 0xdc, 0x58, 0x79]
+            {
+                return self
+                    .estimate_retryable_ticket_gas(buf, at, state_override)
+                    .await;
+            }
+
+            // Extract calldata length before request is consumed by the binary search.
+            let calldata_len = input_bytes.as_ref().map(|b| b.len()).unwrap_or(0);
+
+            // Run the standard binary search to find compute gas.
+            let compute_gas =
+                EstimateCall::estimate_gas_at(self, request, at, state_override).await?;
+
+            // Add L1 posting gas.
+            let l1_gas = self.l1_posting_gas(calldata_len, at)?;
+
+            if l1_gas > 0 {
+                trace!(target: "rpc::eth::estimate", %compute_gas, l1_gas, "Adding L1 posting gas to estimate");
+            }
+
+            Ok(compute_gas.saturating_add(U256::from(l1_gas)))
+        }
+    }
+
+    /// Intercept `eth_call` to the NodeInterface (0xc8) virtual contract
+    /// for methods that need chain history or nested EVM calls. Methods
+    /// that can be resolved at the precompile layer (with zero / empty
+    /// fallbacks) are delegated to the default EVM path.
+    #[allow(clippy::manual_async_fn)]
+    fn call(
+        &self,
+        request: RpcTxReq<<Self::RpcConvert as RpcConvert>::Network>,
+        block_number: Option<BlockId>,
+        overrides: alloy_rpc_types_eth::state::EvmOverrides,
+    ) -> impl std::future::Future<Output = Result<alloy_primitives::Bytes, Self::Error>> + Send
+    {
+        async move {
+            use alloy_primitives::{Address, TxKind};
+
+            use crate::nodeinterface_rpc::{
+                NODE_INTERFACE_ADDRESS, SEL_BLOCK_L1_NUM, SEL_FIND_BATCH_CONTAINING_BLOCK,
+                SEL_GAS_ESTIMATE_COMPONENTS, SEL_GAS_ESTIMATE_L1_COMPONENT,
+                SEL_GET_L1_CONFIRMATIONS, SEL_L2_BLOCK_RANGE_FOR_L1,
+                SEL_LEGACY_LOOKUP_MESSAGE_BATCH_PROOF, SEL_NITRO_GENESIS_BLOCK,
+                encode_gas_estimate_components, encode_l2_block_range, encode_legacy_lookup_empty,
+                encode_u64_word, unpack_mix_hash,
+            };
+
+            // Only intercept calls targeting the NodeInterface or
+            // NodeInterfaceDebug addresses.
+            let target: Option<Address> = match request.as_ref().to {
+                Some(TxKind::Call(addr)) => Some(addr),
+                _ => None,
+            };
+            let is_ni = target == Some(NODE_INTERFACE_ADDRESS);
+            let is_ni_debug = target == Some(arb_precompiles::NODE_INTERFACE_DEBUG_ADDRESS);
+
+            // ArbGasInfo.getCurrentTxL1GasFees needs the poster fee for
+            // this eth_call. The precompile can't see the outer message,
+            // so compute the poster fee from the request envelope using
+            // the same fake-tx + brotli + (units+256)*1.01 formula.
+            if target == Some(arb_precompiles::ARBGASINFO_ADDRESS) {
+                let input_bytes = request.as_ref().input.input().cloned().unwrap_or_default();
+                if input_bytes.len() == 4 && input_bytes.as_ref() == SEL_GET_CURRENT_TX_L1_FEES {
+                    return self.compute_eth_call_current_tx_l1_fees(
+                        request,
+                        block_number.unwrap_or_default(),
+                    );
+                }
+                if input_bytes.len() == 4
+                    && input_bytes.as_ref() == SEL_GET_L1_PRICING_UNITS_SINCE_UPDATE
+                {
+                    return self.compute_eth_call_units_since_update(
+                        request,
+                        block_number.unwrap_or_default(),
+                    );
+                }
+            }
+
+            if !is_ni && !is_ni_debug {
+                let _permit = self.acquire_owned_blocking_io().await;
+                let res = self
+                    .transact_call_at(request, block_number.unwrap_or_default(), overrides)
+                    .await?;
+                return <Self::Error as reth_rpc_eth_types::error::api::FromEvmError<N::Evm>>::ensure_success(res.result);
+            }
+
+            // NodeInterfaceDebug (0xc9) has one method: getRetryable(bytes32).
+            if is_ni_debug {
+                let at = block_number.unwrap_or_default();
+                let data: alloy_primitives::Bytes =
+                    request.as_ref().input.input().cloned().unwrap_or_default();
+                return self.get_retryable_abi(&data, at).await;
+            }
+
+            // Parse selector.
+            let input_bytes = request.as_ref().input.input().cloned().unwrap_or_default();
+            if input_bytes.len() < 4 {
+                // Fall back to EVM (which will revert with our precompile).
+                let _permit = self.acquire_owned_blocking_io().await;
+                let res = self
+                    .transact_call_at(request, block_number.unwrap_or_default(), overrides)
+                    .await?;
+                return <Self::Error as reth_rpc_eth_types::error::api::FromEvmError<N::Evm>>::ensure_success(res.result);
+            }
+            let selector: [u8; 4] = [
+                input_bytes[0],
+                input_bytes[1],
+                input_bytes[2],
+                input_bytes[3],
+            ];
+            let at = block_number.unwrap_or_default();
+
+            match selector {
+                SEL_GAS_ESTIMATE_COMPONENTS | SEL_GAS_ESTIMATE_L1_COMPONENT => {
+                    use alloy_rpc_types_eth::TransactionRequest;
+
+                    let (inner_to, inner_creation, inner_data) =
+                        arb_precompiles::decode_estimate_args(&input_bytes).ok_or_else(|| {
+                            EthApiError::InvalidParams(
+                                "gasEstimateComponents: malformed calldata".into(),
+                            )
+                        })?;
+
+                    let (l1_price, basefee, min_basefee, chain_id_u, brotli_level) = {
+                        let state = self
+                            .inner
+                            .provider()
+                            .state_by_block_id(at)
+                            .map_err(|e| EthApiError::Internal(e.into()))?;
+                        let read = |slot: U256| -> Result<U256, EthApiError> {
+                            Ok(state
+                                .storage(
+                                    ARBOS_STATE_ADDRESS,
+                                    StorageKey::from(B256::from(slot.to_be_bytes::<32>())),
+                                )
+                                .map_err(|e| EthApiError::Internal(e.into()))?
+                                .unwrap_or_default())
+                        };
+                        let l1_price = read(subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT))?;
+                        let basefee = read(subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE))?;
+                        let min_basefee =
+                            read(subspace_slot(L2_PRICING_SUBSPACE, L2_MIN_BASE_FEE))?;
+                        let chain_id_u: u64 =
+                            read(root_slot(CHAIN_ID_OFFSET))?.try_into().unwrap_or(0);
+                        let brotli_level: u64 = read(root_slot(BROTLI_COMPRESSION_LEVEL_OFFSET))?
+                            .try_into()
+                            .unwrap_or(0);
+                        (l1_price, basefee, min_basefee, chain_id_u, brotli_level)
+                    };
+
+                    let gas_for_l1 = arb_precompiles::compute_l1_gas_for_estimate(
+                        chain_id_u,
+                        inner_to,
+                        inner_creation,
+                        U256::ZERO,
+                        inner_data.clone(),
+                        l1_price,
+                        basefee,
+                        min_basefee,
+                        brotli_level,
+                    );
+
+                    if selector == SEL_GAS_ESTIMATE_L1_COMPONENT {
+                        let mut out = vec![0u8; 96];
+                        out[24..32].copy_from_slice(&gas_for_l1.to_be_bytes());
+                        out[32..64].copy_from_slice(&basefee.to_be_bytes::<32>());
+                        out[64..96].copy_from_slice(&l1_price.to_be_bytes::<32>());
+                        return Ok(alloy_primitives::Bytes::from(out));
+                    }
+
+                    let kind = if inner_creation {
+                        TxKind::Create
+                    } else {
+                        TxKind::Call(inner_to)
+                    };
+                    let from = request.as_ref().from.unwrap_or(Address::ZERO);
+                    let inner_request = TransactionRequest {
+                        from: Some(from),
+                        to: Some(kind),
+                        value: Some(U256::ZERO),
+                        input: inner_data.into(),
+                        ..Default::default()
+                    };
+                    let inner_req: RpcTxReq<<Rpc as RpcConvert>::Network> = inner_request.into();
+
+                    let total = self
+                        .estimate_arb_combined_gas(inner_req, gas_for_l1, at, overrides.state)
+                        .await?;
+
+                    Ok(encode_gas_estimate_components(
+                        total, gas_for_l1, basefee, l1_price,
+                    ))
+                }
+
+                SEL_L2_BLOCK_RANGE_FOR_L1 => {
+                    use reth_provider::{BlockNumReader, BlockReaderIdExt};
+
+                    if input_bytes.len() < 4 + 32 {
+                        return Err(EthApiError::InvalidParams(
+                            "l2BlockRangeForL1: missing uint64 arg".into(),
+                        ));
+                    }
+                    let target_l1: u64 = U256::from_be_slice(&input_bytes[4..36])
+                        .try_into()
+                        .unwrap_or(u64::MAX);
+
+                    let provider = self.inner.provider().clone();
+                    let best = provider
+                        .best_block_number()
+                        .map_err(|e| EthApiError::Internal(e.into()))?;
+
+                    let mix_hash_of = move |n: u64| -> Option<B256> {
+                        use alloy_consensus::BlockHeader;
+                        provider
+                            .sealed_header_by_number_or_tag(
+                                alloy_rpc_types_eth::BlockNumberOrTag::Number(n),
+                            )
+                            .ok()
+                            .flatten()
+                            .and_then(|h| h.header().mix_hash())
+                    };
+
+                    match crate::nodeinterface_rpc::find_l2_block_range(
+                        target_l1,
+                        best,
+                        mix_hash_of,
+                    ) {
+                        Some((first, last)) => Ok(encode_l2_block_range(first, last)),
+                        None => Err(EthApiError::InvalidParams(format!(
+                            "l2BlockRangeForL1: no L2 blocks found for L1 block {target_l1}"
+                        ))),
+                    }
+                }
+
+                // estimateRetryableTicket via eth_call.
+                [0xc3, 0xdc, 0x58, 0x79] => {
+                    self.simulate_retryable_ticket_call(&input_bytes, at, overrides)
+                        .await
+                }
+
+                // constructOutboxProof(uint64 size, uint64 leaf): scan
+                // ArbSys SendMerkleUpdate / L2ToL1Tx events, build a
+                // position → hash map, run the outbox-proof algorithm.
+                [0x42, 0x69, 0x63, 0x50] => self.construct_outbox_proof(&input_bytes, at).await,
+
+                SEL_NITRO_GENESIS_BLOCK => {
+                    let state = self
+                        .inner
+                        .provider()
+                        .state_by_block_id(at)
+                        .map_err(|e| EthApiError::Internal(e.into()))?;
+                    let genesis: u64 = state
+                        .storage(
+                            ARBOS_STATE_ADDRESS,
+                            StorageKey::from(B256::from(
+                                root_slot(GENESIS_BLOCK_NUM_OFFSET).to_be_bytes::<32>(),
+                            )),
+                        )
+                        .map_err(|e| EthApiError::Internal(e.into()))?
+                        .unwrap_or_default()
+                        .try_into()
+                        .unwrap_or(0);
+                    Ok(encode_u64_word(genesis))
+                }
+
+                SEL_BLOCK_L1_NUM => {
+                    use alloy_consensus::BlockHeader;
+                    use reth_provider::BlockReaderIdExt;
+                    if input_bytes.len() < 4 + 32 {
+                        return Err(EthApiError::InvalidParams(
+                            "blockL1Num: missing uint64 arg".into(),
+                        ));
+                    }
+                    let l2_block: u64 = U256::from_be_slice(&input_bytes[4..36])
+                        .try_into()
+                        .unwrap_or(u64::MAX);
+                    let l1_block = self
+                        .inner
+                        .provider()
+                        .sealed_header_by_number_or_tag(
+                            alloy_rpc_types_eth::BlockNumberOrTag::Number(l2_block),
+                        )
+                        .ok()
+                        .flatten()
+                        .and_then(|h| h.header().mix_hash())
+                        .map(|mix| unpack_mix_hash(mix).1)
+                        .unwrap_or(0);
+                    Ok(encode_u64_word(l1_block))
+                }
+
+                SEL_GET_L1_CONFIRMATIONS | SEL_FIND_BATCH_CONTAINING_BLOCK => {
+                    Ok(encode_u64_word(0))
+                }
+
+                SEL_LEGACY_LOOKUP_MESSAGE_BATCH_PROOF => Ok(encode_legacy_lookup_empty()),
+
+                _ => {
+                    // Delegate to EVM (precompile returns zero / reverts).
+                    let _permit = self.acquire_owned_blocking_io().await;
+                    let res = self.transact_call_at(request, at, overrides).await?;
+                    <Self::Error as reth_rpc_eth_types::error::api::FromEvmError<N::Evm>>::ensure_success(res.result)
+                }
+            }
+        }
+    }
+}

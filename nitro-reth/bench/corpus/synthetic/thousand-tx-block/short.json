@@ -1,0 +1,26 @@
+{
+  "name": "synthetic/thousand-tx-block/short",
+  "category": "thousand-tx-block",
+  "scale": "short",
+  "arbos_version": 60,
+  "chain_id": 421614,
+  "corpus_version": "1.0.0",
+  "description": "Stress: dense 1000-tx blocks. Catches per-block accounting overhead regressions.",
+  "messages": {
+    "source": "synthetic_generator",
+    "generator": "thousand_tx_block",
+    "params": {
+      "block_count": 200,
+      "txs_per_block": 1000
+    }
+  },
+  "metrics": {
+    "rolling_window_blocks": 50
+  },
+  "regression": {
+    "gate": true,
+    "tolerance_pct": 5.0,
+    "paired_stat": "bootstrap_95ci",
+    "bootstrap_iters": 10000
+  }
+}

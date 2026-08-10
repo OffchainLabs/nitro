@@ -49,9 +49,23 @@ type Options struct {
 	useRedisStreams bool
 	wasmRootDir     string
 	arbosVersion    uint64 // sets InitialArbOSVersion, overwrites any other operation setting it like upgradeArbOs worload
+	recorderMode    string
+	stateScheme     string
 }
 
 func testBlockValidatorSimple(t *testing.T, opts Options) {
+	if opts.recorderMode == "" {
+		for _, tc := range blockRecorderTestCases() {
+			opts := opts
+			opts.recorderMode = tc.recorderMode
+			opts.stateScheme = tc.stateScheme
+			t.Run(tc.name, func(t *testing.T) {
+				testBlockValidatorSimple(t, opts)
+			})
+		}
+		return
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -70,8 +84,8 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder = builder.WithWasmRootDir(opts.wasmRootDir)
-	// For now PathDB is not supported when using block validation
-	builder.RequireScheme(t, rawdb.HashScheme)
+	builder.execConfig.RecordingDatabase.Mode = opts.recorderMode
+	builder.RequireScheme(t, opts.stateScheme)
 
 	builder.nodeConfig = l1NodeConfigA
 	builder.chainConfig = chainConfig
@@ -118,7 +132,11 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 
 	AddValNode(t, ctx, validatorConfig, !opts.arbitrator, redisURL, opts.wasmRootDir)
 
-	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
+	validatorExecConfig := *builder.execConfig
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{
+		nodeConfig: validatorConfig,
+		execConfig: &validatorExecConfig,
+	})
 	defer cleanupB()
 	builder.L2Info.GenerateAccount("User2")
 
@@ -268,20 +286,32 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	if !testClientB.ConsensusNode.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlock.NumberU64()), timeout) {
 		Fatal(t, "did not validate all blocks")
 	}
-	gethExec := testClientB.ExecNode
-	legacyRecorder, ok := gethExec.Recorder.(*gethexec.BlockRecorder)
-	if !ok {
-		Fatal(t, "expected legacy block recorder")
-	}
-	legacyRecorder.TrimAllPrepared(t)
-	finalRefCount := legacyRecorder.RecordingDBReferenceCount()
-	lastBlockNow, err := testClientB.Client.BlockByNumber(ctx, nil)
-	Require(t, err)
-	// up to 3 extra references: awaiting validation, recently valid, lastValidatedHeader
-	largestRefCount := lastBlockNow.NumberU64() - lastBlock.NumberU64() + 3
-	// #nosec G115
-	if finalRefCount < 0 || finalRefCount > int64(largestRefCount) {
-		Fatal(t, "unexpected refcount:", finalRefCount)
+	switch opts.recorderMode {
+	case gethexec.BlockRecorderModeLegacy:
+		legacyRecorder, ok := testClientB.ExecNode.Recorder.(*gethexec.BlockRecorder)
+		if !ok {
+			Fatal(t, "expected legacy block recorder")
+		}
+		legacyRecorder.TrimAllPrepared(t)
+		finalRefCount := legacyRecorder.RecordingDBReferenceCount()
+		lastBlockNow, err := testClientB.Client.BlockByNumber(ctx, nil)
+		Require(t, err)
+		// up to 3 extra references: awaiting validation, recently valid, lastValidatedHeader
+		largestRefCount := lastBlockNow.NumberU64() - lastBlock.NumberU64() + 3
+		// #nosec G115
+		if finalRefCount < 0 || finalRefCount > int64(largestRefCount) {
+			Fatal(t, "unexpected refcount:", finalRefCount)
+		}
+	case gethexec.BlockRecorderModeChainTip:
+		tipRecorder, ok := testClientB.ExecNode.Recorder.(*gethexec.ChainTipBlockRecorder)
+		if !ok {
+			Fatal(t, "expected chain-tip block recorder")
+		}
+		if tipRecorder.ServedTipRecordings() == 0 {
+			Fatal(t, "expected chain-tip block recorder to serve validation recordings")
+		}
+	default:
+		Fatal(t, "unknown recorder mode:", opts.recorderMode)
 	}
 }
 
