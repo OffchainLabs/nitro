@@ -102,6 +102,38 @@ mod tests {
         );
     }
 
+    /// Imported functions occupy the lowest indices; when only local
+    /// functions are named (the common toolchain output), the mapping starts
+    /// at the first local function and imports never appear in it.
+    #[test]
+    fn skips_unnamed_imports_via_rebase() {
+        use wasm_encoder::{EntityType, ImportSection, TypeSection};
+
+        let mut types = TypeSection::new();
+        types.ty().function([], []);
+        let mut imports = ImportSection::new();
+        // Two imported functions: indices 0 and 1. Locals start at 2.
+        imports.import("env", "a", EntityType::Function(0));
+        imports.import("env", "b", EntityType::Function(0));
+
+        let mut name_map = NameMap::new();
+        name_map.append(2, "first_local");
+        name_map.append(3, "second_local");
+        let mut names = NameSection::new();
+        names.functions(&name_map);
+
+        let mut module = Module::new();
+        module.section(&types);
+        module.section(&imports);
+        module.section(&names);
+
+        let extracted = extract_function_names(&module.finish()).unwrap();
+        assert_eq!(
+            extracted,
+            [Some("first_local".to_owned()), Some("second_local".to_owned())]
+        );
+    }
+
     #[test]
     fn errors_without_name_section() {
         let wasm = Module::new().finish();
