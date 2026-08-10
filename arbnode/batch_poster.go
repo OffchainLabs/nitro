@@ -1283,9 +1283,6 @@ type OverrideAccount struct {
 
 type StateOverride map[common.Address]OverrideAccount
 
-// errZeroGasEstimate is returned when a parent chain reports an estimate of zero
-// gas. No transaction we send can run on zero gas, so rather than posting one that
-// is guaranteed to fail we treat it as an estimation failure.
 var errZeroGasEstimate = errors.New("parent chain returned a gas estimate of zero")
 
 func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams, blockHex string) (uint64, error) {
