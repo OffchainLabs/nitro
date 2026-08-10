@@ -51,24 +51,14 @@ pub struct DelayedInboxMessage {
 }
 
 impl DelayedInboxMessage {
-    /// RLP commitment hash fed into the MEL delayed-inbox accumulator.
-    pub fn rlp_hash(&self) -> B256 {
-        keccak256(alloy_rlp::encode(self))
-    }
-
-    /// The delayed-inbox accumulator value after this message, byte-compatible
-    /// with nitro's `DelayedInboxMessage.AfterInboxAcc()` and with the on-chain
-    /// `Bridge`/`Inbox` accumulator.
+    /// Per-message commitment hash, byte-compatible with nitro's
+    /// `DelayedInboxMessage.Hash()` and the on-chain `Messages.messageHash`:
+    /// keccak256 of the ABI-packed header fields (`kind || poster || blockNumber
+    /// || timestamp || requestId || baseFeeL1`) together with `keccak256(l2_msg)`.
     ///
-    /// Hashes the message header fields together with `keccak256(l2_msg)` into a
-    /// per-message commitment, then chains it onto [`Self::before_inbox_acc`]:
-    /// `keccak256(before_inbox_acc || commitment)`. This is the value returned by
-    /// the `meldataprovider_getDelayedAcc` RPC.
-    ///
-    /// Distinct from the RLP-based [`Self::rlp_hash`] (nitro's `Hash()`) that the MEL
-    /// state's `delayed_message_inbox_acc` chain uses. The two accumulators are
-    /// not interchangeable.
-    pub fn after_inbox_acc(&self) -> B256 {
+    /// This is the leaf hash for both the MEL state's delayed inbox/outbox
+    /// accumulator chain and the on-chain `Bridge`/`Inbox` accumulator.
+    pub fn abi_hash(&self) -> B256 {
         let header = &self.message.header;
         let mut hasher = Keccak256::new();
         hasher.update([header.kind]);
@@ -78,11 +68,17 @@ impl DelayedInboxMessage {
         hasher.update(header.request_id.unwrap_or_default().as_slice());
         hasher.update(header.l1_base_fee.unwrap_or_default().to_be_bytes::<32>());
         hasher.update(keccak256(&self.message.l2_msg).as_slice());
-        let inner = hasher.finalize();
+        hasher.finalize()
+    }
 
+    /// The delayed-inbox accumulator value after this message, byte-compatible
+    /// with nitro's `DelayedInboxMessage.AfterInboxAcc()` and with the on-chain
+    /// `Bridge`/`Inbox` accumulator: `keccak256(before_inbox_acc || abi_hash())`.
+    /// This is the value returned by the `meldataprovider_getDelayedAcc` RPC.
+    pub fn after_inbox_acc(&self) -> B256 {
         let mut chain = Keccak256::new();
         chain.update(self.before_inbox_acc.as_slice());
-        chain.update(inner.as_slice());
+        chain.update(self.abi_hash().as_slice());
         chain.finalize()
     }
 }
@@ -165,6 +161,7 @@ mod tests {
         chain[..32].copy_from_slice(B256::repeat_byte(0xAB).as_slice());
         chain[32..].copy_from_slice(inner.as_slice());
 
+        assert_eq!(msg.abi_hash(), inner);
         assert_eq!(msg.after_inbox_acc(), keccak256(chain));
     }
 
