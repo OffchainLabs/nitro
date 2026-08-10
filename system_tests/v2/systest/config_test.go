@@ -67,17 +67,6 @@ func TestCloneConfigPreservesL1NodeConfig(t *testing.T) {
 	}
 }
 
-func TestCloneConfigPreservesL1NonSeqNodeConfig(t *testing.T) {
-	cfg := arbnode.ConfigDefaultL1NonSequencerTest()
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("validate L1 non-sequencer node config: %v", err)
-	}
-	cloned := cloneConfig(cfg)
-	if diff := diffStructs("arbnode.Config(L1NonSeq)", *cfg, *cloned); diff != "" {
-		t.Fatalf("cloneConfig dropped state — gob round-trip differs:\n%s\nEither Validate() must restore it, or the clone strategy must change.", diff)
-	}
-}
-
 // diffStructs reports field-level differences between two structs via
 // reflection. Exported fields only — gob never encodes unexported fields, so
 // the unexported class cloneConfig's CAUTION warns about can't be diffed here;

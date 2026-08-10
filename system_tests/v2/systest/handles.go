@@ -187,6 +187,7 @@ type L1Handle struct {
 
 // EnsureTxSucceeded waits for tx to succeed, then until its block is safe so
 // later reads observe its state (the simulated parent chain mines instantly).
+// Methods promoted from ChainHandle skip this wait (no virtual dispatch).
 func (h *L1Handle) EnsureTxSucceeded(tx *types.Transaction) *types.Receipt {
 	h.e.t.Helper()
 	receipt := h.ChainHandle.EnsureTxSucceeded(tx)
