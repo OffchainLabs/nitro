@@ -269,6 +269,7 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
+	FilterSetReportingInterval:   time.Minute,
 	// PGA only activates on collect-tips chains (ArbOS >= 60); tests below that run FIFO regardless.
 	ExperimentalPGA: gethexec.DefaultPGAConfig,
 }
