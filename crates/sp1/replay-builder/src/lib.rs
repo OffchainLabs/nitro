@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use anyhow::{Context, ensure};
+use anyhow::{Context, ensure, Result};
 use wasmparser::{BinaryReader, Name, NameSectionReader, Parser, Payload, TypeRef};
 
 /// Sanity bound on the mapping size; a larger span means a corrupt name
@@ -12,11 +12,10 @@ const MAX_FUNCTIONS: usize = 1_000_000;
 
 /// Extracts function names from the wasm custom `name` section, indexed by
 /// wasmer's `LocalFunctionIndex` (imports dropped, indices shifted down by
-/// the import count, unnamed functions `None`). The guest reads this mapping
-/// as JSON to register profiler symbols.
+/// the import count, unnamed functions `None`).
 ///
 /// Errors on malformed wasm and when no local function has a name.
-pub fn extract_function_names(wasm: &[u8]) -> anyhow::Result<Vec<Option<String>>> {
+pub fn extract_function_names(wasm: &[u8]) -> Result<Vec<Option<String>>> {
     let mut name_mapping = HashMap::new();
     let mut num_func_imports: u32 = 0;
     for payload in Parser::new(0).parse_all(wasm) {
@@ -181,14 +180,5 @@ mod tests {
         let wasm = wasm_module(0, &[(0, "a"), (u32::MAX - 1, "corrupt")]);
         let err = extract_function_names(&wasm).unwrap_err();
         assert!(err.to_string().contains("corrupt name section"), "{err:#}");
-    }
-
-    /// Pins the JSON the guest deserializes: names as strings, gaps as null.
-    #[test]
-    fn json_wire_shape() {
-        let wasm = wasm_module(0, &[(0, "foo"), (2, "bar")]);
-        let names = extract_function_names(&wasm).unwrap();
-        let json = serde_json::to_string(&names).unwrap();
-        assert_eq!(json, r#"["foo",null,"bar"]"#);
     }
 }
