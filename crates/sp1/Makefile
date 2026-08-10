@@ -110,6 +110,11 @@ build: brotli
 run: # Validate a block with the SP1 replay runner.
 	$(OUTPUT_DIR)/replay-runner --program $(OUTPUT_DIR)/replay-program.elf
 
+.PHONY: test
+test: # Run the sp1 workspace unit tests.
+test: build
+	@cargo test --locked --release
+
 .PHONY: clippy
 clippy: # Run clippy on the sp1 workspace crates.
 clippy: build
