@@ -22,7 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
-// ChainHandle is the client+info surface shared by every layer (L1, L2, followers).
+// ChainHandle is the client+info surface shared by every layer (L1, L2).
 type ChainHandle struct {
 	// Default in-process client (via stack.Attach). Always populated.
 	Client *ethclient.Client

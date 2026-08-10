@@ -34,14 +34,10 @@ const (
 
 // specWeight projects a topology onto a scheduler-slot cost.
 func specWeight(topology Topology) weight {
-	w := weightLight
-	switch topology {
-	case TopologyL1L2:
-		w = weightMedium
-	case TopologyMultiNode:
-		w = weightHeavy
+	if topology == TopologyL1L2 {
+		return weightMedium
 	}
-	return w
+	return weightLight
 }
 
 // StateScheme is the geth trie storage backend.
@@ -83,9 +79,8 @@ func (e DBEngine) Valid() bool {
 type Topology int
 
 const (
-	TopologyL2Only    Topology = iota // L2-only sequencer, no parent chain
-	TopologyL1L2                      // L1 + sequencer L2 (batch posting + inbox reading)
-	TopologyMultiNode                 // L1 + sequencer L2 + non-sequencer follower L2
+	TopologyL2Only Topology = iota // L2-only sequencer, no parent chain
+	TopologyL1L2                   // L1 + sequencer L2 (batch posting + inbox reading)
 )
 
 // Spec is the resolved per-variant config. Scenarios receive it by value on

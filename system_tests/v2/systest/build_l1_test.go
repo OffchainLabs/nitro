@@ -29,17 +29,6 @@ func TestWithL1(t *testing.T) {
 	}
 }
 
-func TestTopologyOptions(t *testing.T) {
-	b := newBuilder()
-	WithMultiNode()(b)
-	if b.topology != TopologyMultiNode {
-		t.Fatalf("topology = %v, want TopologyMultiNode", b.topology)
-	}
-	if w := specWeight(b.topology); w != weightHeavy {
-		t.Fatalf("weight = %d, want weightHeavy (%d)", w, weightHeavy)
-	}
-}
-
 func TestTopologyConflictPanics(t *testing.T) {
 	cases := []struct {
 		name string
@@ -47,9 +36,6 @@ func TestTopologyConflictPanics(t *testing.T) {
 		want string
 	}{
 		{"WithL1 twice", []TestOption{WithL1(), WithL1()}, "WithL1 applied twice"},
-		{"WithMultiNode twice", []TestOption{WithMultiNode(), WithMultiNode()}, "WithMultiNode applied twice"},
-		{"WithL1 then WithMultiNode", []TestOption{WithL1(), WithMultiNode()}, "conflicts with another topology"},
-		{"WithMultiNode then WithL1", []TestOption{WithMultiNode(), WithL1()}, "conflicts with another topology"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

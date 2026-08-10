@@ -322,14 +322,6 @@ func WithL1() TestOption {
 	}
 }
 
-// WithMultiNode builds an L1 + sequencer L2 plus a non-sequencer L2 syncing
-// via L1 (env.L2Followers).
-func WithMultiNode() TestOption {
-	return func(b *builder) {
-		setTopology(b, TopologyMultiNode, "WithMultiNode")
-	}
-}
-
 // setTopology pins the node layout, rejecting a second topology option.
 func setTopology(b *builder, topo Topology, name string) {
 	if b.topology == topo {
@@ -343,7 +335,7 @@ func setTopology(b *builder, topo Topology, name string) {
 
 // Compose collapses multiple TestOptions into one — used to define presets:
 //
-//	var Challenge = Compose(WithCategory("challenge"), WithMultiNode())
+//	var Challenge = Compose(WithCategory("challenge"), WithL1())
 func Compose(opts ...TestOption) TestOption {
 	return func(b *builder) {
 		for _, o := range opts {
