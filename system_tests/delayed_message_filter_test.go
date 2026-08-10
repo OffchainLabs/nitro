@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
@@ -288,6 +289,21 @@ func verifyCascadingRedeemFiltered(t *testing.T, ctx context.Context, builder *N
 	}
 	require.Equal(t, 0, redeemCount, "no redeem should exist - submission was filtered on retry")
 
+	blockNumber := rpc.BlockNumber(submissionReceipt.BlockNumber.Int64())
+	receipts, err := builder.L2.Client.BlockReceipts(ctx, rpc.BlockNumberOrHash{BlockNumber: &blockNumber})
+	Require(t, err)
+	redeemCount = 0
+	var gasFromReceipts uint64
+	for _, receipt := range receipts {
+		if receipt.Type == types.ArbitrumRetryTxType {
+			redeemCount++
+		}
+		gasFromReceipts += receipt.GasUsed
+	}
+	require.Equal(t, 0, redeemCount, "no receipt for redeem should exist")
+
+	blockGas := block.GasUsed()
+	require.Equal(t, blockGas, gasFromReceipts, "gas from receipts doesn't match gas used in the block")
 	return submissionReceipt
 }
 

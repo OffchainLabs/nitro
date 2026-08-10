@@ -37,6 +37,16 @@ import (
 	"github.com/offchainlabs/nitro/util/s3syncer"
 )
 
+func storeFilterHashes(t *testing.T, store *addressfilter.HashStore, id uuid.UUID, salt uuid.UUID, scheme addressfilter.HashingScheme, hashes []common.Hash, digest string) {
+	t.Helper()
+	require.NoError(t, store.Store(digest, len(hashes), func(addHash func(common.Hash)) (*addressfilter.ListMeta, error) {
+		for _, h := range hashes {
+			addHash(h)
+		}
+		return &addressfilter.ListMeta{ID: id, Salt: salt, Scheme: scheme}, nil
+	}))
+}
+
 func isFilteredError(err error) bool {
 	if err == nil {
 		return false
@@ -1305,9 +1315,10 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	// Create a filter service with valid config but without loaded rules
 	filterCfg := &addressfilter.Config{
 		S3: s3syncer.Config{
-			Config:    s3client.Config{Region: "us-east-1"},
-			Bucket:    "test-bucket",
-			ObjectKey: "test-key",
+			Config:      s3client.Config{Region: "us-east-1"},
+			Bucket:      "test-bucket",
+			ObjectKey:   "test-key",
+			DownloadDir: t.TempDir(),
 		},
 		PollInterval:              5 * time.Minute,
 		CacheSize:                 100,
@@ -1328,7 +1339,7 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	}
 
 	// Store hashes to the hashstore so FilteringReady returns true
-	filterService.GetHashStore().Store(uuid.New(), testFilterSalt, addressfilter.HashingSchemeStringInput, nil, "test-digest")
+	storeFilterHashes(t, filterService.GetHashStore(), uuid.New(), testFilterSalt, addressfilter.HashingSchemeStringInput, nil, "test-digest")
 
 	if !execNode.Sequencer.FilteringReady() {
 		t.Fatal("FilteringReady should be true after filter rules are loaded")
@@ -1453,7 +1464,7 @@ func TestGenerateAddressHashesFixtureScript(t *testing.T) {
 
 			// The generated file loads and filters via the production HashStore.
 			store := addressfilter.NewHashStore(100)
-			store.Store(uuid.New(), salt, scheme, hashes, "test")
+			storeFilterHashes(t, store, uuid.New(), salt, scheme, hashes, "test")
 			for _, a := range addrs {
 				if restricted, _ := store.IsRestricted(a); !restricted {
 					t.Fatalf("addr %s should be restricted under %s", a.Hex(), scheme)

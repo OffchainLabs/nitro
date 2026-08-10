@@ -185,6 +185,8 @@ CBROTLI_WASM_BUILD_ARGS ?=-d
 
 # user targets
 
+.DEFAULT_GOAL := build
+
 ##@ Setup
 
 .PHONY: init-submodules ## Initialize private submodules.

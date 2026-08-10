@@ -1,0 +1,533 @@
+use alloy_primitives::{Address, B256, U256};
+use arb_chainspec::arbos_version;
+use arb_storage::{StorageBackend, StorageError};
+
+use crate::{
+    arbos_state::{ArbosState, ArbosStateError},
+    blockhash::BlockhashesError,
+    burn::Burner,
+    types::{BatchDataStats, legacy_cost_for_stats},
+    util::BalanceError,
+};
+
+/// Standard Ethereum base transaction gas.
+const TX_GAS: u64 = 21_000;
+
+/// Errors raised while decoding or applying an ArbOS internal transaction.
+#[derive(thiserror::Error, Debug)]
+pub enum InternalTxDecodeError {
+    /// The raw calldata was shorter than the ABI layout requires.
+    #[error("internal tx data too short: expected at least {expected} bytes, got {got}")]
+    Length {
+        /// Minimum number of bytes the ABI expects.
+        expected: usize,
+        /// Number of bytes actually supplied.
+        got: usize,
+    },
+
+    /// A `uint256` field did not fit in `u64`.
+    #[error("internal tx field `{field}` does not fit in u64")]
+    U256Overflow {
+        /// Name of the offending ABI field.
+        field: &'static str,
+    },
+
+    /// The 4-byte selector did not match any known internal tx method.
+    #[error("unknown internal tx selector: {selector:02x?}")]
+    UnknownSelector {
+        /// The unrecognized 4-byte selector.
+        selector: [u8; 4],
+    },
+
+    /// Reading the L1 block number from the ring buffer failed.
+    #[error(transparent)]
+    Blockhashes(#[from] BlockhashesError),
+
+    /// An ArbOS upgrade step failed (e.g. unsupported scheduled version).
+    #[error(transparent)]
+    ArbosState(#[from] ArbosStateError),
+
+    /// A bare storage failure surfaced from a typed accessor.
+    #[error(transparent)]
+    Storage(#[from] StorageError),
+}
+
+// ---------------------------------------------------------------------------
+// Method selectors (keccak256 of ABI signatures)
+// ---------------------------------------------------------------------------
+
+/// startBlock(uint256,uint64,uint64,uint64)
+pub const INTERNAL_TX_START_BLOCK_METHOD_ID: [u8; 4] = [0x6b, 0xf6, 0xa4, 0x2d];
+
+/// batchPostingReport(uint256,address,uint64,uint64,uint256)
+pub const INTERNAL_TX_BATCH_POSTING_REPORT_METHOD_ID: [u8; 4] = [0xb6, 0x69, 0x37, 0x71];
+
+/// batchPostingReportV2(uint256,address,uint64,uint64,uint64,uint64,uint256)
+pub const INTERNAL_TX_BATCH_POSTING_REPORT_V2_METHOD_ID: [u8; 4] = [0x99, 0x98, 0x26, 0x9e];
+
+// ---------------------------------------------------------------------------
+// Well-known system addresses
+// ---------------------------------------------------------------------------
+
+pub const ARB_RETRYABLE_TX_ADDRESS: Address = {
+    let mut bytes = [0u8; 20];
+    bytes[18] = 0x00;
+    bytes[19] = 0x6e;
+    Address::new(bytes)
+};
+
+pub const ARB_SYS_ADDRESS: Address = {
+    let mut bytes = [0u8; 20];
+    bytes[19] = 0x64;
+    Address::new(bytes)
+};
+
+/// Additional tokens in the calldata for floor gas accounting.
+///
+/// Raw batch has a 40-byte header (5 uint64s) that doesn't come from calldata.
+/// The addSequencerL2BatchFromOrigin call has a selector + 5 additional fields.
+/// Token count: 4*4 (selector) + 4*24 (uint64 padding) + 4*12+12 (address) = 172
+pub const FLOOR_GAS_ADDITIONAL_TOKENS: u64 = 172;
+
+// ---------------------------------------------------------------------------
+// L1 block info
+// ---------------------------------------------------------------------------
+
+/// L1 block info passed to internal transactions.
+#[derive(Debug, Clone)]
+pub struct L1Info {
+    pub poster: Address,
+    pub l1_block_number: u64,
+    pub l1_timestamp: u64,
+}
+
+impl L1Info {
+    pub fn new(poster: Address, l1_block_number: u64, l1_timestamp: u64) -> Self {
+        Self {
+            poster,
+            l1_block_number,
+            l1_timestamp,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Event IDs
+// ---------------------------------------------------------------------------
+
+pub const L2_TO_L1_TRANSACTION_EVENT_ID: B256 = {
+    let bytes: [u8; 32] = [
+        0x5b, 0xaa, 0xa8, 0x7d, 0xb3, 0x86, 0x36, 0x5b, 0x5c, 0x16, 0x1b, 0xe3, 0x77, 0xbc, 0x3d,
+        0x8e, 0x31, 0x7e, 0x8d, 0x98, 0xd7, 0x1a, 0x3c, 0xa7, 0xed, 0x7d, 0x55, 0x53, 0x40, 0xc8,
+        0xf7, 0x67,
+    ];
+    B256::new(bytes)
+};
+
+pub const L2_TO_L1_TX_EVENT_ID: B256 = {
+    let bytes: [u8; 32] = [
+        0x3e, 0x7a, 0xaf, 0xa7, 0x7d, 0xbf, 0x18, 0x6b, 0x7f, 0xd4, 0x88, 0x00, 0x6b, 0xef, 0xf8,
+        0x93, 0x74, 0x4c, 0xaa, 0x3c, 0x4f, 0x6f, 0x29, 0x9e, 0x8a, 0x70, 0x9f, 0xa2, 0x08, 0x73,
+        0x74, 0xfc,
+    ];
+    B256::new(bytes)
+};
+
+pub const REDEEM_SCHEDULED_EVENT_ID: B256 = {
+    let bytes: [u8; 32] = [
+        0x5c, 0xcd, 0x00, 0x95, 0x02, 0x50, 0x9c, 0xf2, 0x87, 0x62, 0xc6, 0x78, 0x58, 0x99, 0x4d,
+        0x85, 0xb1, 0x63, 0xbb, 0x6e, 0x45, 0x1f, 0x5e, 0x9d, 0xf7, 0xc5, 0xe1, 0x8c, 0x9c, 0x2e,
+        0x12, 0x3e,
+    ];
+    B256::new(bytes)
+};
+
+// ---------------------------------------------------------------------------
+// Decoded internal tx data
+// ---------------------------------------------------------------------------
+
+/// Decoded startBlock(uint256 l1BaseFee, uint64 l1BlockNumber, uint64 l2BlockNumber, uint64
+/// timePassed)
+#[derive(Debug, Clone)]
+pub struct StartBlockData {
+    pub l1_base_fee: U256,
+    pub l1_block_number: u64,
+    pub l2_block_number: u64,
+    pub time_passed: u64,
+}
+
+/// Decoded batchPostingReport(uint256, address, uint64, uint64, uint256)
+#[derive(Debug, Clone)]
+pub struct BatchPostingReportData {
+    pub batch_timestamp: u64,
+    pub batch_poster: Address,
+    pub batch_data_gas: u64,
+    pub l1_base_fee: U256,
+}
+
+/// Decoded batchPostingReportV2(uint256, address, uint64, uint64, uint64, uint64, uint256)
+#[derive(Debug, Clone)]
+pub struct BatchPostingReportV2Data {
+    pub batch_timestamp: u64,
+    pub batch_poster: Address,
+    pub batch_calldata_length: u64,
+    pub batch_calldata_non_zeros: u64,
+    pub batch_extra_gas: u64,
+    pub l1_base_fee: U256,
+}
+
+// ---------------------------------------------------------------------------
+// ABI encoding
+// ---------------------------------------------------------------------------
+
+/// Creates the ABI-encoded data for a startBlock internal transaction.
+pub fn encode_start_block(
+    l1_base_fee: U256,
+    l1_block_number: u64,
+    l2_block_number: u64,
+    time_passed: u64,
+) -> Vec<u8> {
+    let mut data = Vec::with_capacity(4 + 32 * 4);
+    data.extend_from_slice(&INTERNAL_TX_START_BLOCK_METHOD_ID);
+    data.extend_from_slice(&l1_base_fee.to_be_bytes::<32>());
+    data.extend_from_slice(&B256::left_padding_from(&l1_block_number.to_be_bytes()).0);
+    data.extend_from_slice(&B256::left_padding_from(&l2_block_number.to_be_bytes()).0);
+    data.extend_from_slice(&B256::left_padding_from(&time_passed.to_be_bytes()).0);
+    data
+}
+
+/// Creates the ABI-encoded data for a batchPostingReport internal transaction (v1).
+///
+/// ABI: batchPostingReport(uint256 timestamp, address poster, bytes32 dataHash,
+///                          uint256 batchNum, uint256 l1BaseFee)
+pub fn encode_batch_posting_report(
+    batch_timestamp: u64,
+    batch_poster: Address,
+    batch_number: u64,
+    batch_data_gas: u64,
+    l1_base_fee: U256,
+) -> Vec<u8> {
+    let mut data = Vec::with_capacity(4 + 32 * 5);
+    data.extend_from_slice(&INTERNAL_TX_BATCH_POSTING_REPORT_METHOD_ID);
+    data.extend_from_slice(&B256::left_padding_from(&batch_timestamp.to_be_bytes()).0);
+    data.extend_from_slice(&B256::left_padding_from(batch_poster.as_slice()).0);
+    data.extend_from_slice(&B256::left_padding_from(&batch_number.to_be_bytes()).0);
+    data.extend_from_slice(&B256::left_padding_from(&batch_data_gas.to_be_bytes()).0);
+    data.extend_from_slice(&l1_base_fee.to_be_bytes::<32>());
+    data
+}
+
+/// Creates the ABI-encoded data for a batchPostingReportV2 internal transaction.
+pub fn encode_batch_posting_report_v2(
+    batch_timestamp: u64,
+    batch_poster: Address,
+    batch_number: u64,
+    batch_calldata_length: u64,
+    batch_calldata_non_zeros: u64,
+    batch_extra_gas: u64,
+    l1_base_fee: U256,
+) -> Vec<u8> {
+    let mut data = Vec::with_capacity(4 + 32 * 7);
+    data.extend_from_slice(&INTERNAL_TX_BATCH_POSTING_REPORT_V2_METHOD_ID);
+    data.extend_from_slice(&B256::left_padding_from(&batch_timestamp.to_be_bytes()).0);
+    data.extend_from_slice(&B256::left_padding_from(batch_poster.as_slice()).0);
+    data.extend_from_slice(&B256::left_padding_from(&batch_number.to_be_bytes()).0);
+    data.extend_from_slice(&B256::left_padding_from(&batch_calldata_length.to_be_bytes()).0);
+    data.extend_from_slice(&B256::left_padding_from(&batch_calldata_non_zeros.to_be_bytes()).0);
+    data.extend_from_slice(&B256::left_padding_from(&batch_extra_gas.to_be_bytes()).0);
+    data.extend_from_slice(&l1_base_fee.to_be_bytes::<32>());
+    data
+}
+
+// ---------------------------------------------------------------------------
+// ABI decoding
+// ---------------------------------------------------------------------------
+
+/// Decode startBlock data from raw internal tx bytes.
+pub fn decode_start_block_data(data: &[u8]) -> Result<StartBlockData, InternalTxDecodeError> {
+    const EXPECTED: usize = 4 + 32 * 4;
+    if data.len() < EXPECTED {
+        return Err(InternalTxDecodeError::Length {
+            expected: EXPECTED,
+            got: data.len(),
+        });
+    }
+    let args = &data[4..];
+    let l1_block_number = u256_to_u64(&args[32..64], "l1_block_number")?;
+    let l2_block_number = u256_to_u64(&args[64..96], "l2_block_number")?;
+    let time_passed = u256_to_u64(&args[96..128], "time_passed")?;
+    Ok(StartBlockData {
+        l1_base_fee: U256::from_be_slice(&args[0..32]),
+        l1_block_number,
+        l2_block_number,
+        time_passed,
+    })
+}
+
+fn u256_to_u64(slice: &[u8], field: &'static str) -> Result<u64, InternalTxDecodeError> {
+    U256::from_be_slice(slice)
+        .try_into()
+        .map_err(|_| InternalTxDecodeError::U256Overflow { field })
+}
+
+fn decode_batch_posting_report(
+    data: &[u8],
+) -> Result<BatchPostingReportData, InternalTxDecodeError> {
+    // 5 ABI words: uint256, address, uint64, uint64, uint256
+    const EXPECTED: usize = 4 + 32 * 5;
+    if data.len() < EXPECTED {
+        return Err(InternalTxDecodeError::Length {
+            expected: EXPECTED,
+            got: data.len(),
+        });
+    }
+    let args = &data[4..];
+    Ok(BatchPostingReportData {
+        batch_timestamp: u256_to_u64(&args[0..32], "batch_timestamp")?,
+        batch_poster: Address::from_slice(&args[44..64]),
+        batch_data_gas: u256_to_u64(&args[96..128], "batch_data_gas")?,
+        l1_base_fee: U256::from_be_slice(&args[128..160]),
+    })
+}
+
+fn decode_batch_posting_report_v2(
+    data: &[u8],
+) -> Result<BatchPostingReportV2Data, InternalTxDecodeError> {
+    // 7 ABI words: uint256, address, uint64, uint64, uint64, uint64, uint256
+    const EXPECTED: usize = 4 + 32 * 7;
+    if data.len() < EXPECTED {
+        return Err(InternalTxDecodeError::Length {
+            expected: EXPECTED,
+            got: data.len(),
+        });
+    }
+    let args = &data[4..];
+    Ok(BatchPostingReportV2Data {
+        batch_timestamp: u256_to_u64(&args[0..32], "batch_timestamp")?,
+        batch_poster: Address::from_slice(&args[44..64]),
+        batch_calldata_length: u256_to_u64(&args[96..128], "batch_calldata_length")?,
+        batch_calldata_non_zeros: u256_to_u64(&args[128..160], "batch_calldata_non_zeros")?,
+        batch_extra_gas: u256_to_u64(&args[160..192], "batch_extra_gas")?,
+        l1_base_fee: U256::from_be_slice(&args[192..224]),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Dispatch
+// ---------------------------------------------------------------------------
+
+/// Context needed by the internal transaction dispatch from the block executor.
+pub struct InternalTxContext {
+    pub block_number: u64,
+    pub current_time: u64,
+    pub prev_hash: B256,
+}
+
+/// Apply an internal transaction update to ArbOS state.
+///
+/// Dispatches on the 4-byte method selector to handle:
+/// - StartBlock: records L1 block hashes, reaps expired retryables, updates L2 pricing, and checks
+///   for ArbOS upgrades.
+/// - BatchPostingReport (v1 and v2): updates L1 pricing based on batch poster spending.
+pub fn apply_internal_tx_update<D: revm::Database, B: Burner, F, G, C>(
+    backend: &mut C,
+    data: &[u8],
+    state: &mut ArbosState<'_, D, B>,
+    ctx: &InternalTxContext,
+    mut transfer_fn: F,
+    mut balance_of: G,
+) -> Result<(), InternalTxDecodeError>
+where
+    F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
+    G: FnMut(Address) -> U256,
+    C: StorageBackend,
+{
+    let Some(selector) = data.first_chunk::<4>().copied() else {
+        return Err(InternalTxDecodeError::Length {
+            expected: 4,
+            got: data.len(),
+        });
+    };
+
+    match selector {
+        INTERNAL_TX_START_BLOCK_METHOD_ID => {
+            let inputs = decode_start_block_data(data)?;
+            apply_start_block(
+                backend,
+                inputs,
+                state,
+                ctx,
+                &mut transfer_fn,
+                &mut balance_of,
+            )
+        }
+        INTERNAL_TX_BATCH_POSTING_REPORT_METHOD_ID => {
+            let inputs = decode_batch_posting_report(data)?;
+            apply_batch_posting_report(backend, inputs, state, ctx, &mut transfer_fn)
+        }
+        INTERNAL_TX_BATCH_POSTING_REPORT_V2_METHOD_ID => {
+            let inputs = decode_batch_posting_report_v2(data)?;
+            apply_batch_posting_report_v2(backend, inputs, state, ctx, &mut transfer_fn)
+        }
+        _ => Err(InternalTxDecodeError::UnknownSelector { selector }),
+    }
+}
+
+fn apply_start_block<D: revm::Database, B: Burner, F, G, C>(
+    backend: &mut C,
+    inputs: StartBlockData,
+    state: &mut ArbosState<'_, D, B>,
+    ctx: &InternalTxContext,
+    transfer_fn: &mut F,
+    balance_of: &mut G,
+) -> Result<(), InternalTxDecodeError>
+where
+    F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
+    G: FnMut(Address) -> U256,
+    C: StorageBackend,
+{
+    let arbos_version = state.arbos_version();
+
+    let mut l1_block_number = inputs.l1_block_number;
+    let mut time_passed = inputs.time_passed;
+
+    if arbos_version < arbos_version::ARBOS_VERSION_3 {
+        time_passed = inputs.l2_block_number;
+    }
+
+    if arbos_version < arbos_version::ARBOS_VERSION_8 {
+        l1_block_number = l1_block_number.saturating_add(1);
+    }
+
+    let old_l1_block_number = state.blockhashes.l1_block_number(backend)?;
+
+    if l1_block_number > old_l1_block_number {
+        state.blockhashes.record_new_l1_block(
+            backend,
+            l1_block_number - 1,
+            ctx.prev_hash,
+            arbos_version,
+        )?;
+    }
+
+    let _ = state.retryable_state.try_to_reap_one_retryable(
+        backend,
+        ctx.current_time,
+        &mut *transfer_fn,
+        &mut *balance_of,
+    );
+    let _ = state.retryable_state.try_to_reap_one_retryable(
+        backend,
+        ctx.current_time,
+        &mut *transfer_fn,
+        &mut *balance_of,
+    );
+
+    let _ = state
+        .l2_pricing_state
+        .update_pricing_model(backend, time_passed, arbos_version);
+
+    state.upgrade_arbos_version_if_necessary(backend, ctx.current_time)?;
+
+    Ok(())
+}
+
+fn apply_batch_posting_report<D: revm::Database, B: Burner, F, C>(
+    backend: &mut C,
+    inputs: BatchPostingReportData,
+    state: &mut ArbosState<'_, D, B>,
+    ctx: &InternalTxContext,
+    transfer_fn: &mut F,
+) -> Result<(), InternalTxDecodeError>
+where
+    F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
+    C: StorageBackend,
+{
+    let per_batch_gas = state
+        .l1_pricing_state
+        .per_batch_gas_cost(backend)
+        .unwrap_or(0);
+
+    let batch_data_gas_i64 = i64::try_from(inputs.batch_data_gas).unwrap_or(i64::MAX);
+    let gas_spent_signed = per_batch_gas.saturating_add(batch_data_gas_i64);
+    let gas_spent = gas_spent_signed.max(0) as u64;
+    let wei_spent = inputs.l1_base_fee.saturating_mul(U256::from(gas_spent));
+
+    if let Err(e) = state.l1_pricing_state.update_for_batch_poster_spending(
+        backend,
+        inputs.batch_timestamp,
+        ctx.current_time,
+        inputs.batch_poster,
+        wei_spent,
+        inputs.l1_base_fee,
+        &mut *transfer_fn,
+    ) {
+        tracing::warn!(error = ?e, "L1 pricing update failed for batch posting report");
+    }
+
+    Ok(())
+}
+
+fn apply_batch_posting_report_v2<D: revm::Database, B: Burner, F, C>(
+    backend: &mut C,
+    inputs: BatchPostingReportV2Data,
+    state: &mut ArbosState<'_, D, B>,
+    ctx: &InternalTxContext,
+    transfer_fn: &mut F,
+) -> Result<(), InternalTxDecodeError>
+where
+    F: FnMut(Address, Address, U256) -> Result<(), BalanceError>,
+    C: StorageBackend,
+{
+    let arbos_version = state.arbos_version();
+
+    let mut gas_spent = legacy_cost_for_stats(&BatchDataStats {
+        length: inputs.batch_calldata_length,
+        non_zeros: inputs.batch_calldata_non_zeros,
+    });
+
+    gas_spent = gas_spent.saturating_add(inputs.batch_extra_gas);
+
+    let per_batch_gas = state
+        .l1_pricing_state
+        .per_batch_gas_cost(backend)
+        .unwrap_or(0);
+
+    gas_spent = gas_spent.saturating_add(per_batch_gas.max(0) as u64);
+
+    if arbos_version >= arbos_version::ARBOS_VERSION_50 {
+        let gas_floor_per_token = state
+            .l1_pricing_state
+            .parent_gas_floor_per_token(backend)
+            .unwrap_or(0);
+
+        let total_tokens = inputs
+            .batch_calldata_length
+            .saturating_add(inputs.batch_calldata_non_zeros.saturating_mul(3))
+            .saturating_add(FLOOR_GAS_ADDITIONAL_TOKENS);
+
+        let floor_gas_spent = gas_floor_per_token
+            .saturating_mul(total_tokens)
+            .saturating_add(TX_GAS);
+
+        if floor_gas_spent > gas_spent {
+            gas_spent = floor_gas_spent;
+        }
+    }
+
+    let wei_spent = inputs.l1_base_fee.saturating_mul(U256::from(gas_spent));
+
+    if let Err(e) = state.l1_pricing_state.update_for_batch_poster_spending(
+        backend,
+        inputs.batch_timestamp,
+        ctx.current_time,
+        inputs.batch_poster,
+        wei_spent,
+        inputs.l1_base_fee,
+        &mut *transfer_fn,
+    ) {
+        tracing::warn!(error = ?e, "L1 pricing update failed for batch posting report v2");
+    }
+
+    Ok(())
+}

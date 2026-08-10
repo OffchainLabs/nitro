@@ -1,0 +1,192 @@
+{
+  "name": "submit_then_cancel",
+  "description": "Submit a retryable that fails to auto-redeem, then the beneficiary cancels via ArbRetryableTx.cancel(bytes32). The ticket is deleted, the Canceled event is emitted, and the escrowed callValue is returned to the beneficiary. Mirrors Nitro system_tests/retryable_test.go::TestKeepaliveAndCancelRetryable (cancel half). Exercises handle_cancel in arb-precompiles/src/arbretryabletx.rs:556.",
+  "genesis": {
+    "config": {
+      "chainId": 421614,
+      "arbitrum": {
+        "InitialArbOSVersion": 32,
+        "AllowDebugPrecompiles": true,
+        "GenesisBlockNum": 0
+      }
+    }
+  },
+  "messages": [
+    {
+      "msgIdx": null,
+      "message": {
+        "header": {
+          "kind": 12,
+          "sender": "0x000000000000000000000000000000000000a4b1",
+          "blockNumber": 0,
+          "timestamp": 1700000000,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "EKFRFZCzP7zt478GBhQPffrp8BYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADY1ya3F3qAAAA=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "msgIdx": null,
+      "message": {
+        "header": {
+          "kind": 9,
+          "sender": "0x000000000000000000000000000000000000aaaa",
+          "blockNumber": 0,
+          "timestamp": 1700000010,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000002",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA41+pMaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHGv1JjQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAdGpSiAAAAAAAAAAAAAAAAAAQoVEVkLM/vO3jvwYGFA99+unwFgAAAAAAAAAAAAAAABChURWQsz+87eO/BgYUD3366fAWAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUggAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAO5rKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "delayedMessagesRead": 2
+    },
+    {
+      "msgIdx": null,
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1700000020,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4joMGbu6AgIQ7msoAgwehIJQAAAAAAAAAAAAAAAAAAAAAAAAAboCkxNJS9au7XKp92oUOYJMt4JNOsfnQ9ZaVBQ92HcZORD5QMKVpwICgoLfSkj3lsvvgyr2KFWlkShVJ5KrxRHWJqzCdTECEauigRu/tgo87yaSl/sRYMZ6zqpEQTy1mI4NzPwJhVQ3gXZs="
+      },
+      "delayedMessagesRead": 2
+    }
+  ],
+  "expected": {
+    "blocks": [
+      {
+        "number": 1,
+        "block_hash": "0xe9221255ebb1895eca911c7e69bf7cdd20a7deaa7554fcbc99233b11c1d4484d",
+        "state_root": "0x3bffda17a1bdaa76b283d07f32a16b35fd4c7495b33319a2dadacfbdc14593e1",
+        "receipts_root": "0xd7a92f3697d06225df2a55e920d2f7a04a4b78f19a42e774c4a3993e342c61bb",
+        "transactions_root": "0x1a8fbd4ec94e3116edd6ecb02ba77a044c919cc7065f8f7ff24169a79bf6a497",
+        "gas_used": 0
+      },
+      {
+        "number": 2,
+        "block_hash": "0x7443bed62eeac60127d356010f75010e369c182abec22dd9b39fea5b4011bd80",
+        "state_root": "0x479cc9f1d4113dbe7bfc0e5f794567633e45f75de6fbccd851d125be05824071",
+        "receipts_root": "0x2ab7b5113499c796dd66d322dbd0f6ad2fa6dc8da0633fc5b88d93c8f0b18da2",
+        "transactions_root": "0x8df5c8c165409f2caeb485b265699c4b6ade990c5353e238af5256e3e893b1a6",
+        "gas_used": 42000
+      },
+      {
+        "number": 3,
+        "block_hash": "0x72e01ff05ebd44b1f694051e9e6672fb06fe8673d2e0c980472851d6ff44992f",
+        "state_root": "0x26b0e3e40b463601d0cc9376619bb763be80a1b8148207ca5ee1975bc1f7ec22",
+        "receipts_root": "0x98a7630c1f81c0fb18242e7a1b0d4996641373f64141c70e2ff8fb4dc8b260df",
+        "transactions_root": "0x3547ba56c421a25fd0c197f2fc34823ee6dbc72adef7526f5c588e232cb26ab6",
+        "gas_used": 0
+      }
+    ],
+    "eth_calls": [],
+    "storage": [],
+    "balances": [],
+    "txReceipts": [
+      {
+        "txHash": "0xfd8eaa5109af61f71c0dfcc202bfc56e87e12455a2fbf85a41ac0b6e45d53615",
+        "blockNumber": 1,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0x00000000000000000000000000000000000a4b05",
+        "to": "0x00000000000000000000000000000000000a4b05"
+      },
+      {
+        "txHash": "0x5ae47a8fabab7bb3540d0683e65097b5c70dd2c99248324d0dfebba5af253831",
+        "blockNumber": 1,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0x000000000000000000000000000000000000a4b1",
+        "to": "0x10a1511590b33fbcede3bf0606140f7dfae9f016"
+      },
+      {
+        "txHash": "0xed86a4705f894ce31bec86b77464db8d900fb16439f9c5e3ccb940035f10d87f",
+        "blockNumber": 2,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0x00000000000000000000000000000000000a4b05",
+        "to": "0x00000000000000000000000000000000000a4b05"
+      },
+      {
+        "txHash": "0x76018503b115d11e6a71246f10091c987a9dfb7f60364574f3e0a08d6517be9c",
+        "blockNumber": 2,
+        "status": 1,
+        "gasUsed": 21000,
+        "cumulativeGasUsed": 21000,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0x000000000000000000000000000000000000aaaa",
+        "to": "0x000000000000000000000000000000000000006e",
+        "logs": [
+          {
+            "address": "0x000000000000000000000000000000000000006e",
+            "topics": [
+              "0x7c793cced5743dc5f531bbe2bfb5a9fa3f40adef29231e6ab165c08a29e3dd89",
+              "0x76018503b115d11e6a71246f10091c987a9dfb7f60364574f3e0a08d6517be9c"
+            ],
+            "data": "0x",
+            "blockNumber": 2,
+            "txHash": "0x76018503b115d11e6a71246f10091c987a9dfb7f60364574f3e0a08d6517be9c",
+            "logIndex": 0
+          },
+          {
+            "address": "0x000000000000000000000000000000000000006e",
+            "topics": [
+              "0x5ccd009502509cf28762c67858994d85b163bb6e451f5e9df7c5e18c9c2e123e",
+              "0x76018503b115d11e6a71246f10091c987a9dfb7f60364574f3e0a08d6517be9c",
+              "0xe61874c92ebb2c4bdf42b0186256ee2b0dbd39a0f34fe2e5e9092ca0f8c40605",
+              "0x0000000000000000000000000000000000000000000000000000000000000000"
+            ],
+            "data": "0x000000000000000000000000000000000000000000000000000000000000520800000000000000000000000010a1511590b33fbcede3bf0606140f7dfae9f01600000000000000000000000000000000000000000000000000037bd9baaab0000000000000000000000000000000000000000000000000000000000000000000",
+            "blockNumber": 2,
+            "txHash": "0x76018503b115d11e6a71246f10091c987a9dfb7f60364574f3e0a08d6517be9c",
+            "logIndex": 1
+          }
+        ]
+      },
+      {
+        "txHash": "0xe61874c92ebb2c4bdf42b0186256ee2b0dbd39a0f34fe2e5e9092ca0f8c40605",
+        "blockNumber": 2,
+        "status": 1,
+        "gasUsed": 21000,
+        "cumulativeGasUsed": 42000,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0x000000000000000000000000000000000000aaaa",
+        "to": "0x00000000000000000000000000000000000000bb"
+      },
+      {
+        "txHash": "0xfd40d4814e45226bbe928e4e401a0a7d6d1e0c848bd8d75a8263c96e30c66cbb",
+        "blockNumber": 3,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0x00000000000000000000000000000000000a4b05",
+        "to": "0x00000000000000000000000000000000000a4b05"
+      }
+    ]
+  }
+}

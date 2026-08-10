@@ -1,0 +1,16 @@
+{
+  "name": "synthetic/stylus-host-fanout/short",
+  "category": "stylus",
+  "scale": "short",
+  "arbos_version": 60,
+  "chain_id": 421614,
+  "corpus_version": "1.0.0",
+  "description": "Stylus contract calling 7 distinct host functions in a tight loop (block_number, block_timestamp, msg_sender, msg_value, contract_address, evm_gas_left, evm_ink_left). Exercises host-function dispatch overhead.",
+  "messages": {
+    "source": "synthetic_generator",
+    "generator": "stylus_host_fanout",
+    "params": { "block_count": 500, "txs_per_block": 8 }
+  },
+  "metrics": { "rolling_window_blocks": 25 },
+  "regression": { "gate": true, "tolerance_pct": 5.0, "paired_stat": "bootstrap_95ci", "bootstrap_iters": 10000 }
+}
