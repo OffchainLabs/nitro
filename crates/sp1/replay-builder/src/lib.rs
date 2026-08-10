@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use anyhow::{Context, ensure, Result};
+use anyhow::{Context, Result, ensure};
 use wasmparser::{BinaryReader, Name, NameSectionReader, Parser, Payload, TypeRef};
 
 /// Sanity bound on the mapping size; a larger span means a corrupt name
@@ -128,7 +128,10 @@ mod tests {
     fn shifts_out_imports() {
         let wasm = wasm_module(2, &[(3, "first_local"), (4, "second_local")]);
         let names = extract_function_names(&wasm).unwrap();
-        assert_eq!(names, owned(&[None, Some("first_local"), Some("second_local")]));
+        assert_eq!(
+            names,
+            owned(&[None, Some("first_local"), Some("second_local")])
+        );
     }
 
     #[test]
