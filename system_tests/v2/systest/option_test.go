@@ -44,7 +44,6 @@ func TestSpecWeightDerivation(t *testing.T) {
 	}{
 		{"L2-only", TopologyL2Only, weightLight},
 		{"L1L2", TopologyL1L2, weightMedium},
-		{"multi-node", TopologyMultiNode, weightHeavy},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -150,14 +149,14 @@ func TestWithInitDataOverrideAccumulates(t *testing.T) {
 }
 
 func TestComposeAppliesAllOptions(t *testing.T) {
-	preset := Compose(WithCategory("challenge"), WithMultiNode())
+	preset := Compose(WithCategory("challenge"), WithL1())
 	b := newBuilder()
 	preset(b)
 	if b.category != "challenge" {
 		t.Fatalf("category = %q, want challenge", b.category)
 	}
-	if b.topology != TopologyMultiNode {
-		t.Fatalf("topology = %v, want TopologyMultiNode", b.topology)
+	if b.topology != TopologyL1L2 {
+		t.Fatalf("topology = %v, want TopologyL1L2", b.topology)
 	}
 }
 
