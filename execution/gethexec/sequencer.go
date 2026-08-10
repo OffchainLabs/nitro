@@ -267,7 +267,9 @@ type txQueueItem struct {
 	isTimeboosted       bool
 	isAuctionResolution bool
 	blockStamp          uint64 // block number at which timeboosted tx was added to the txQueue
-	*pga.Priority              // embed the PGA priority so it is saved between blocks
+	// Must be a pointer: queue items get copied around, so mutations would otherwise hit a copy.
+	// Must be non-nil: bare literals nil-panic in GetPriority.
+	*pga.Priority
 }
 
 func newBaseTxQueueItem(tx *types.Transaction) txQueueItem {
