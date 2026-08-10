@@ -27,8 +27,7 @@ pub struct MelState {
     pub batch_posting_target_address: Address,
     pub delayed_message_posting_target_address: Address,
     pub parent_chain_block_hash: B256,
-    #[serde(rename = "ParentChainPreviousBlockHash")]
-    pub parent_chain_prev_block_hash: B256,
+    pub parent_chain_previous_block_hash: B256,
     pub batch_count: u64,
     pub msg_count: u64,
     pub local_msg_accumulator: B256, /* starts at zero hash for each clone; updated only by
