@@ -39,14 +39,10 @@ func Run(t *testing.T) {
 		t.Skip("dry run: no tests executed")
 	}
 
-	skipped, validated := scheduleStats(items)
+	skipped := scheduleStats(items)
 	t.Logf("scheduled %d test runs (%d skipped)", len(items)-skipped, skipped)
 
-	if sp.Validate && validated == 0 {
-		t.Fatalf("systest: validation requested but 0 of %d scheduled runs validate", len(items)-skipped)
-	}
-
-	base := capacityFor(sp)
+	base := configuredCapacity()
 	capacity := poolCapacity(base, items)
 	if capacity > base {
 		t.Logf("systest: capacity %d raised to %d to fit the heaviest scheduled test", base, capacity)
@@ -54,8 +50,7 @@ func Run(t *testing.T) {
 	runPool(t, capacity, items, runOne)
 }
 
-// RunTestMain is the shared TestMain body: runs the package's tests, then
-// tears down process-wide resources (the shared valnode).
+// RunTestMain is the shared TestMain body.
 func RunTestMain(m *testing.M) {
 	code := m.Run()
 	os.Exit(code)
@@ -70,7 +65,7 @@ func RunScenario(t *testing.T, scenario Scenario) {
 // RunGroup is the IDE entry point: it schedules the registered tests through
 // the same schedule the runner uses, then runs those matching the given
 // scenario funcs. Filters, pins, and category gating are ignored; registered
-// options (matrix, WithValidation, …) are honored; dedupes by func.
+// options (matrix, …) are honored; dedupes by func.
 func RunGroup(t *testing.T, scenarios []Scenario) {
 	if os.Getenv("CI") != "" {
 		t.Skip("IDE wrapper: covered by TestRunner on CI")
@@ -108,13 +103,13 @@ func groupSchedule(items []scheduledTest, scenarios []Scenario) (matched []sched
 	return matched, missing
 }
 
-func scheduleStats(items []scheduledTest) (skipped, validated int) {
+func scheduleStats(items []scheduledTest) (skipped int) {
 	for _, it := range items {
 		if it.SkipReason != "" {
 			skipped++
 		}
 	}
-	return skipped, validated
+	return skipped
 }
 
 // poolCapacity floors base to the heaviest scheduled weight to avoid deadlock.

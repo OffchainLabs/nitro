@@ -4,7 +4,9 @@
 package systest
 
 import (
+	"fmt"
 	"math/big"
+	"time"
 
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -101,13 +103,48 @@ func (c *ChainHandle) SendTx(tx *types.Transaction) {
 	c.e.Require(c.Client.SendTransaction(c.e.Ctx, tx), "%s send tx", c.name)
 }
 
-// SendWaitTxs sends count value-transfer txs from->to and waits for each.
-func (c *ChainHandle) SendWaitTxs(from, to string, count int, value *big.Int) []*types.Receipt {
+// EnsureTxFailed waits for tx to be mined and fails the test unless it reverted.
+func (c *ChainHandle) EnsureTxFailed(tx *types.Transaction) *types.Receipt {
 	c.e.t.Helper()
-	receipts := make([]*types.Receipt, 0, count)
-	for range count {
-		tx := c.Info.PrepareTx(from, to, c.Info.TransferGas, value, nil)
-		c.e.Require(c.Client.SendTransaction(c.e.Ctx, tx), "%s SendWaitTxs send", c.name)
+	receipt, err := waitForTxWithTimeout(c.e.Ctx, c.Client, tx.Hash(), DefaultTxWaitTimeout)
+	c.e.Require(err, "%s EnsureTxFailed wait tx %s", c.name, tx.Hash())
+	if receipt.Status != types.ReceiptStatusFailed {
+		c.e.Require(fmt.Errorf("%s transaction %s unexpectedly succeeded", c.name, tx.Hash()))
+	}
+	return receipt
+}
+
+// WaitForTx waits for tx's receipt with no success checks.
+func (c *ChainHandle) WaitForTx(tx *types.Transaction, timeout time.Duration) (*types.Receipt, error) {
+	return waitForTxWithTimeout(c.e.Ctx, c.Client, tx.Hash(), timeout)
+}
+
+// AdvanceBlocks emits n no-op Faucet self-transfers, waiting each to mine.
+func (c *ChainHandle) AdvanceBlocks(n int) {
+	c.e.t.Helper()
+	for range n {
+		tx := c.Info.PrepareTx("Faucet", "Faucet", c.Info.TransferGas, common.Big1, nil)
+		c.SendTx(tx)
+		c.EnsureTxSucceeded(tx)
+	}
+}
+
+// TransferBalance sends amount from->to and waits for success.
+func (c *ChainHandle) TransferBalance(from, to string, amount *big.Int) (*types.Transaction, *types.Receipt) {
+	c.e.t.Helper()
+	tx := c.Info.PrepareTx(from, to, c.Info.TransferGas, amount, nil)
+	c.SendTx(tx)
+	return tx, c.EnsureTxSucceeded(tx)
+}
+
+// SendWaitTestTransactions submits all txs, then waits for each.
+func (c *ChainHandle) SendWaitTestTransactions(txs []*types.Transaction) []*types.Receipt {
+	c.e.t.Helper()
+	receipts := make([]*types.Receipt, 0, len(txs))
+	for _, tx := range txs {
+		c.SendTx(tx)
+	}
+	for _, tx := range txs {
 		receipts = append(receipts, c.EnsureTxSucceeded(tx))
 	}
 	return receipts
@@ -131,8 +168,6 @@ type L2Handle struct {
 	// Consensus is the L2 consensus node. Exposed so scenarios can reach the
 	// parent-chain data source (batch counts/metadata) on L1 topologies.
 	Consensus *arbnode.Node
-
-	cleanup func()
 }
 
 // L1Handle is the live parent-chain client plus low-level escape hatches for

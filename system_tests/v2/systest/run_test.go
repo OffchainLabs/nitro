@@ -290,8 +290,8 @@ func TestRunOneAbortedRunCtxStopsWaitFast(t *testing.T) {
 }
 
 // TestRunOnePostHookSeesLiveCtx guards the LIFO teardown order: post-hooks must
-// run before cancel(), since validateToHead waits on env.Ctx. A future reorder
-// (cancel before hooks) would silently break validation.
+// run before cancel(), since hooks poll on env.Ctx. A future reorder
+// (cancel before hooks) would silently break them.
 func TestRunOnePostHookSeesLiveCtx(t *testing.T) {
 	rt := &recordingT{}
 	hookRan := false

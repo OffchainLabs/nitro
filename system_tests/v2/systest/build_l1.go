@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -32,13 +33,11 @@ import (
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
-	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	arbtest "github.com/offchainlabs/nitro/system_tests"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
-	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
 // defaultL1Accounts are funded at L1 genesis: RollupOwner deploys the rollup,
@@ -52,19 +51,19 @@ const maxL1DataSize = 117964
 // simulatedParentChainID matches geth's DeveloperGenesisBlock chain id (1337).
 var simulatedParentChainID = big.NewInt(1337)
 
+// sequencerCredentials derives the batch-poster transactor and feed data signer
+// from the funded Sequencer account on the parent chain.
+func sequencerCredentials(ctx context.Context, parentInfo *arbtest.BlockchainTestInfo) (*bind.TransactOpts, signature.DataSignerFunc) {
+	opts := parentInfo.GetDefaultTransactOpts("Sequencer", ctx)
+	return &opts, signature.DataSignerFromPrivateKey(parentInfo.GetInfoWithPrivKey("Sequencer").PrivateKey)
+}
+
 // buildL1L2Node brings up an L1 parent chain, deploys the rollup, and starts a
 // sequencer L2 wired to it. Returns Env (with L1 populated) and cleanup.
 func buildL1L2Node(t *testing.T, ctx context.Context, spec Spec, overrides overrides) (*Env, func()) {
-	return buildL1Stack(t, ctx, spec, overrides, false)
-}
-
-// buildL1Stack builds the L1 + sequencer L2. disableValidatorWhitelist opens the
-// rollup's validator whitelist at deploy (for the full-stack staker).
-func buildL1Stack(t *testing.T, ctx context.Context, spec Spec, overrides overrides, disableValidatorWhitelist bool) (*Env, func()) {
 	t.Helper()
 
-	nodeConfig := cloneConfig(arbnode.ConfigDefaultL1Test())
-	chainConfig, execCfg, stackCfg := seedConfigs(t, spec, overrides, nodeConfig)
+	nodeConfig, chainConfig, execCfg, stackCfg := seedConfigs(t, spec, overrides, arbnode.ConfigDefaultL1Test())
 
 	var rb rollbackGuard
 	defer rb.run()
@@ -76,53 +75,34 @@ func buildL1Stack(t *testing.T, ctx context.Context, spec Spec, overrides overri
 	}
 	rb.stage(closeL1Chain)
 
-	locator, err := server_common.NewMachineLocator("")
-	if err != nil {
-		t.Fatalf("NewMachineLocator: %v", err)
-	}
-	wasmModuleRoot := locator.LatestWasmModuleRoot()
+	wasmModuleRoot := latestWasmModuleRoot(t)
 	if wasmModuleRoot == (common.Hash{}) {
 		t.Fatalf("no wasm module root found under target/machines; run `make build-replay-env`")
 	}
 
-	addresses, initMsg := deployL1Rollup(t, ctx, l1Info, l1Client, chainConfig, wasmModuleRoot, disableValidatorWhitelist)
+	addresses, initMsg := deployRollup(t, ctx, l1Info, l1Client, chainConfig, wasmModuleRoot)
 
-	// This reader's poll loop is never started here; the consensus node builds
-	// and owns its own started reader.
 	nodeFetcher := newConfigFetcher(nodeConfig)
-	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
-	if err != nil {
-		t.Fatalf("NewArbSys: %v", err)
-	}
-	l1Reader, err := headerreader.New(ctx, l1Client, func() *headerreader.Config {
+	// l1Reader's poll loop is never started here; the consensus node builds and
+	// owns its own started reader.
+	l1Reader := newL1Reader(t, ctx, l1Client, func() *headerreader.Config {
 		return &nodeFetcher.Get().ParentChainReader
-	}, arbSys)
-	if err != nil {
-		t.Fatalf("headerreader.New: %v", err)
-	}
+	})
 	parentChain := parent.NewParentChainWithConfig(ctx, simulatedParentChainID, l1Reader,
 		func() *parent.Config { return &parent.TestConfig })
 
-	e := &Env{
-		t:    t,
-		Ctx:  ctx,
-		Spec: spec,
-	}
-	l2Handle, nodeCleanup := buildGenericNode(t, ctx, e, spec, overrides, "l2",
-		nodeConfig, chainConfig, execCfg, stackCfg,
-		initMsg, nil,
-		l1Client, l1Info, parentChain, addresses,
-		l1BlobReader, wasmModuleRoot)
-	// Stop the L2 node (joins fatalCh senders) before closing the L1 it reads.
-	fullCleanup := func() {
-		nodeCleanup()
-		closeL1Chain()
-	}
-	rb.stage(fullCleanup)
+	l2Info, stack, executionDB, consensusDB, blockchain := createBlockChain(
+		t, chainConfig, stackCfg, execCfg, initMsg, spec.arbOSInit, overrides.InitData)
+	rb.stage(func() { blockchain.Stop(); closeStack("l2", stack); closeL1Chain() })
 
-	if !spec.SkipChainOwner {
-		becomeChainOwner(t, ctx, l2Handle.Client, l2Handle.Info)
-	}
+	execNode, fatalCh := newExecNode(t, ctx, "l2", stack, executionDB, blockchain, execCfg, l1Client, parentChain)
+	seqTxOpts, dataSigner := sequencerCredentials(ctx, l1Info)
+	consensusNode := newConsensusNode(t, ctx, "l2", stack, execNode, consensusDB, nodeConfig, blockchain.Config(),
+		l1Client, addresses, nil, seqTxOpts, dataSigner, fatalCh, l1BlobReader, wasmModuleRoot, parentChain)
+
+	e := newEnv(t, ctx, spec)
+	l2Handle, fullCleanup := startNode(t, ctx, &rb, e, "l2", l2Info, stack, execNode, consensusNode, fatalCh, closeL1Chain)
+	becomeChainOwner(t, ctx, spec, l2Handle.Client, l2Info)
 
 	l1Handle := &L1Handle{
 		ChainHandle: ChainHandle{Client: l1Client, Info: l1Info, e: e, name: "l1"},
@@ -140,8 +120,22 @@ func buildL1Stack(t *testing.T, ctx context.Context, spec Spec, overrides overri
 	return e, fullCleanup
 }
 
+// newL1Reader builds a parent-chain header reader over l1Client.
+func newL1Reader(t *testing.T, ctx context.Context, l1Client *ethclient.Client, cfg func() *headerreader.Config) *headerreader.HeaderReader {
+	t.Helper()
+	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
+	if err != nil {
+		t.Fatalf("NewArbSys: %v", err)
+	}
+	l1Reader, err := headerreader.New(ctx, l1Client, cfg, arbSys)
+	if err != nil {
+		t.Fatalf("headerreader.New: %v", err)
+	}
+	return l1Reader
+}
+
 // createL1Chain starts a geth devnet (PoS via SimulatedBeacon) funding the
-// rollup accounts at genesis. Mirrors v1 createTestL1BlockChain.
+// rollup accounts at genesis.
 func createL1Chain(t *testing.T) (*arbtest.BlockchainTestInfo, *ethclient.Client, *eth.Ethereum, *node.Node, containers.Option[daprovider.BlobReader]) {
 	t.Helper()
 
@@ -226,46 +220,37 @@ func createL1Chain(t *testing.T) (*arbtest.BlockchainTestInfo, *ethclient.Client
 	return l1Info, l1Client, l1Backend, stack, containers.Some[daprovider.BlobReader](simBeacon)
 }
 
-// deployL1Rollup deploys the legacy (non-BOLD) rollup contracts and returns the
-// rollup addresses plus the parsed init message read back from the L1 inbox.
-// Mirrors the legacy branch of v1 deployOnParentChain.
-func deployL1Rollup(
+// deployRollup deploys the legacy (non-BOLD) rollup contracts and returns the
+// rollup addresses plus the parsed init message read back from the parent chain's inbox.
+func deployRollup(
 	t *testing.T,
 	ctx context.Context,
-	l1Info *arbtest.BlockchainTestInfo,
-	l1Client *ethclient.Client,
+	parentInfo *arbtest.BlockchainTestInfo,
+	parentClient *ethclient.Client,
 	chainConfig *params.ChainConfig,
 	wasmModuleRoot common.Hash,
-	disableValidatorWhitelist bool,
 ) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
 	t.Helper()
 
-	rollupOwnerOpts := l1Info.GetDefaultTransactOpts("RollupOwner", ctx)
+	rollupOwnerOpts := parentInfo.GetDefaultTransactOpts("RollupOwner", ctx)
 	serializedChainConfig, err := json.Marshal(chainConfig)
 	if err != nil {
 		t.Fatalf("marshal chainConfig: %v", err)
 	}
 
-	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
-	if err != nil {
-		t.Fatalf("NewArbSys: %v", err)
-	}
 	readerCfg := headerreader.TestConfig
-	l1Reader, err := headerreader.New(ctx, l1Client, func() *headerreader.Config { return &readerCfg }, arbSys)
-	if err != nil {
-		t.Fatalf("deploy headerreader.New: %v", err)
-	}
-	l1Reader.Start(ctx)
-	defer l1Reader.StopAndWait()
+	reader := newL1Reader(t, ctx, parentClient, func() *headerreader.Config { return &readerCfg })
+	reader.Start(ctx)
+	defer reader.StopAndWait()
 
 	addresses, err := deploy.DeployLegacyOnParentChain(
 		ctx,
-		l1Reader,
+		reader,
 		&rollupOwnerOpts,
-		[]common.Address{l1Info.GetAddress("Sequencer")},
-		l1Info.GetAddress("RollupOwner"),
+		[]common.Address{parentInfo.GetAddress("Sequencer")},
+		parentInfo.GetAddress("RollupOwner"),
 		0,
-		deploy.GenerateLegacyRollupConfig(false, wasmModuleRoot, l1Info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
+		deploy.GenerateLegacyRollupConfig(false, wasmModuleRoot, parentInfo.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
 		common.Address{},
 		big.NewInt(maxL1DataSize),
 		true,
@@ -274,46 +259,14 @@ func deployL1Rollup(
 		t.Fatalf("DeployLegacyOnParentChain: %v", err)
 	}
 
-	l1Info.SetContract("Bridge", addresses.Bridge)
-	l1Info.SetContract("SequencerInbox", addresses.SequencerInbox)
-	l1Info.SetContract("Inbox", addresses.Inbox)
-	l1Info.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
+	parentInfo.SetContract("Bridge", addresses.Bridge)
+	parentInfo.SetContract("SequencerInbox", addresses.SequencerInbox)
+	parentInfo.SetContract("Inbox", addresses.Inbox)
+	parentInfo.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
 
-	// Open the validator whitelist and drop the min assertion period for the staker.
-	if disableValidatorWhitelist {
-		executeRollupAdmin(t, ctx, l1Info, l1Client, l1Reader, addresses, "setValidatorWhitelistDisabled", true)
-		executeRollupAdmin(t, ctx, l1Info, l1Client, l1Reader, addresses, "setMinimumAssertionPeriod", big.NewInt(1))
-	}
-
-	initMsg, err := nitroinit.GetConsensusParsedInitMsg(ctx, true, chainConfig.ChainID, l1Client, addresses, chainConfig)
+	initMsg, err := nitroinit.GetConsensusParsedInitMsg(ctx, true, chainConfig.ChainID, parentClient, addresses, chainConfig)
 	if err != nil {
 		t.Fatalf("GetConsensusParsedInitMsg: %v", err)
 	}
 	return addresses, initMsg
-}
-
-// executeRollupAdmin calls a RollupAdminLogic method through the UpgradeExecutor
-// (which owns rollup admin), signed by RollupOwner, and waits for inclusion.
-func executeRollupAdmin(t *testing.T, ctx context.Context, l1Info *arbtest.BlockchainTestInfo, l1Client *ethclient.Client, l1Reader *headerreader.HeaderReader, addresses *chaininfo.RollupAddresses, method string, args ...any) {
-	t.Helper()
-	rollupABI, err := rollup_legacy_gen.RollupAdminLogicMetaData.GetAbi()
-	if err != nil {
-		t.Fatalf("rollup admin abi: %v", err)
-	}
-	calldata, err := rollupABI.Pack(method, args...)
-	if err != nil {
-		t.Fatalf("pack %s: %v", method, err)
-	}
-	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(addresses.UpgradeExecutor, l1Client)
-	if err != nil {
-		t.Fatalf("NewUpgradeExecutor: %v", err)
-	}
-	ownerOpts := l1Info.GetDefaultTransactOpts("RollupOwner", ctx)
-	tx, err := upgradeExecutor.ExecuteCall(&ownerOpts, addresses.Rollup, calldata)
-	if err != nil {
-		t.Fatalf("%s: %v", method, err)
-	}
-	if _, err := l1Reader.WaitForTxApproval(ctx, tx); err != nil {
-		t.Fatalf("%s tx: %v", method, err)
-	}
 }
