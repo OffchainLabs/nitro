@@ -19,6 +19,7 @@ anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sp1-sdk = { workspace = true }
+wasmparser = { workspace = true }
 
 [build-dependencies]
 sp1-build = { workspace = true }
