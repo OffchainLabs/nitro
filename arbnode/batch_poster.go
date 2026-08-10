@@ -1297,16 +1297,14 @@ func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimat
 	return uint64(gas), nil
 }
 
-// detailedEstimateGasError enriches an eth_estimateGas revert with the reason
-// reported by eth_call for the same arguments. The returned error is always
-// non-nil: eth_call is only a source of detail here, so if it unexpectedly
-// succeeds we still report the original estimation failure.
+// detailedEstimateGasError enriches a reverted eth_estimateGas error with the
+// reason reported by eth_call. It always returns a non-nil error.
 func detailedEstimateGasError(ctx context.Context, client rpc.ClientInterface, estimateErr error, callArgs ...interface{}) error {
 	if !headerreader.IsExecutionReverted(estimateErr) {
 		return estimateErr
 	}
 	if callErr := client.CallContext(ctx, nil, "eth_call", callArgs...); callErr != nil {
-		return callErr
+		return fmt.Errorf("%w (eth_call reported: %w)", estimateErr, callErr)
 	}
 	return estimateErr
 }
