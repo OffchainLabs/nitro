@@ -1008,20 +1008,8 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem, latestState *state.
 	arbosVersion := types.DeserializeHeaderExtraInformation(latestHeader).ArbOSFormatVersion
 	signer := types.MakeSigner(bc.Config(), nextHeaderNumber, latestHeader.Time, arbosVersion)
 	outputQueueItems := make([]txQueueItem, 0, len(queueItems))
-	var nextQueueItem *txQueueItem
-	var queueItemsIdx int
 	pendingNonces := make(map[common.Address]uint64)
-	for {
-		var queueItem txQueueItem
-		if nextQueueItem != nil {
-			queueItem = *nextQueueItem
-			nextQueueItem = nil
-		} else if queueItemsIdx < len(queueItems) {
-			queueItem = queueItems[queueItemsIdx]
-			queueItemsIdx++
-		} else {
-			break
-		}
+	for _, queueItem := range queueItems {
 		tx := queueItem.tx
 		sender, err := types.Sender(signer, tx)
 		if err != nil {
@@ -1036,17 +1024,11 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem, latestState *state.
 		txNonce := tx.Nonce()
 		if txNonce == pendingNonce {
 			pendingNonces[sender] = txNonce + 1
-			nextKey := addressAndNonce{sender, txNonce + 1}
-			revivingFailure, exists := s.nonceFailures.Take(nextKey)
-			if exists {
-				// This tx was the predecessor to one that had failed its nonce check
-				// Re-enqueue the tx whose nonce should now be correct, unless it expired
-				err := revivingFailure.queueItem.ctx.Err()
-				if err != nil {
-					revivingFailure.queueItem.returnResult(err)
-				} else {
-					nextQueueItem = &revivingFailure.queueItem
-				}
+			if txNonce > stateNonce {
+				// The predecessor is in this batch, park the successor so PostTxFilter can revive it
+				// the moment the predecessor lands
+				s.nonceFailures.Add(NonceError{sender, txNonce, stateNonce}, queueItem)
+				continue
 			}
 		} else if txNonce < stateNonce || txNonce > pendingNonce {
 			// It's impossible for this tx to succeed so far,
