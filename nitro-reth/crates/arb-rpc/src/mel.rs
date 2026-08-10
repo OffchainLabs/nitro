@@ -114,11 +114,11 @@ pub trait MelProvider: Send + Sync + 'static {
     async fn head_state(&self) -> MelProviderResult<MelState>;
     async fn state(&self, parent_chain_block_number: u64) -> MelProviderResult<Option<MelState>>;
     async fn raw_delayed_message(&self, index: u64) -> MelProviderResult<DelayedInboxMessage>;
-    async fn raw_batch_metadata(&self, seq: u64) -> MelProviderResult<BatchMetadata>;
+    async fn raw_batch_metadata(&self, seq_num: u64) -> MelProviderResult<BatchMetadata>;
     async fn resolve_l1_block(&self, tag: L1BlockTag) -> MelProviderResult<u64>;
     async fn sequencer_message_bytes_for_parent_block(
         &self,
-        seq: u64,
+        seq_num: u64,
         parent_chain_block: u64,
     ) -> MelProviderResult<(Vec<u8>, B256)>;
     async fn find_message_origin_mel_state(&self, pos: u64) -> MelProviderResult<Option<MelState>>;
@@ -149,35 +149,35 @@ pub trait MelProvider: Send + Sync + 'static {
         self.raw_delayed_message(index).await
     }
 
-    async fn get_delayed_message_bytes(&self, index: u64) -> MelProviderResult<Vec<u8>> {
-        Ok(self.get_delayed_message(index).await?.message.serialize())
+    async fn get_delayed_message_bytes(&self, seq_num: u64) -> MelProviderResult<Vec<u8>> {
+        Ok(self.get_delayed_message(seq_num).await?.message.serialize())
     }
 
-    async fn get_delayed_acc(&self, seq: u64) -> MelProviderResult<B256> {
-        Ok(self.get_delayed_message(seq).await?.after_inbox_acc())
+    async fn get_delayed_acc(&self, seq_num: u64) -> MelProviderResult<B256> {
+        Ok(self.get_delayed_message(seq_num).await?.after_inbox_acc())
     }
 
-    async fn get_batch_metadata(&self, seq: u64) -> MelProviderResult<BatchMetadata> {
+    async fn get_batch_metadata(&self, seq_num: u64) -> MelProviderResult<BatchMetadata> {
         let count = self.head_state().await?.batch_count;
-        if seq >= count {
+        if seq_num >= count {
             return Err(MelProviderError::OutOfBounds {
-                requested: seq,
+                requested: seq_num,
                 count,
             });
         }
-        self.raw_batch_metadata(seq).await
+        self.raw_batch_metadata(seq_num).await
     }
 
-    async fn get_batch_acc(&self, seq: u64) -> MelProviderResult<B256> {
-        Ok(self.get_batch_metadata(seq).await?.accumulator)
+    async fn get_batch_acc(&self, seq_num: u64) -> MelProviderResult<B256> {
+        Ok(self.get_batch_metadata(seq_num).await?.accumulator)
     }
 
-    async fn get_batch_message_count(&self, seq: u64) -> MelProviderResult<u64> {
-        Ok(self.get_batch_metadata(seq).await?.message_count)
+    async fn get_batch_message_count(&self, seq_num: u64) -> MelProviderResult<u64> {
+        Ok(self.get_batch_metadata(seq_num).await?.message_count)
     }
 
-    async fn get_batch_parent_chain_block(&self, seq: u64) -> MelProviderResult<u64> {
-        Ok(self.get_batch_metadata(seq).await?.parent_chain_block)
+    async fn get_batch_parent_chain_block(&self, seq_num: u64) -> MelProviderResult<u64> {
+        Ok(self.get_batch_metadata(seq_num).await?.parent_chain_block)
     }
 
     async fn find_parent_chain_block_containing_delayed(
@@ -191,9 +191,12 @@ pub trait MelProvider: Send + Sync + 'static {
         Ok(true)
     }
 
-    async fn get_sequencer_message_bytes(&self, seq: u64) -> MelProviderResult<(Vec<u8>, B256)> {
-        let meta = self.get_batch_metadata(seq).await?;
-        self.sequencer_message_bytes_for_parent_block(seq, meta.parent_chain_block)
+    async fn get_sequencer_message_bytes(
+        &self,
+        seq_num: u64,
+    ) -> MelProviderResult<(Vec<u8>, B256)> {
+        let meta = self.get_batch_metadata(seq_num).await?;
+        self.sequencer_message_bytes_for_parent_block(seq_num, meta.parent_chain_block)
             .await
     }
 
