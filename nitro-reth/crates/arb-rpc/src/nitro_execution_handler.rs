@@ -200,7 +200,7 @@ where
     ) -> RpcResult<RpcMessageResult> {
         let block_num = self.message_index_to_block_number(msg_idx);
         let kind = message.message.header.kind;
-        info!(target: "nitroexecution", msg_idx, block_num, kind, "digestMessage called");
+        debug!(target: "nitroexecution", msg_idx, block_num, kind, "digestMessage called");
 
         // Handle init message (Kind=11) — cache params, return genesis block.
         // The Init message does NOT produce a block. Its params are applied

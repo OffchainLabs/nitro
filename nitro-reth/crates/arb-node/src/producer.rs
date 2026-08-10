@@ -47,7 +47,7 @@ use revm::database::{BundleState, StateBuilder};
 use revm_database::states::bundle_state::BundleRetention;
 use tracing::{debug, info, warn};
 
-use crate::genesis;
+use crate::{genesis, progress::ProducerEvent};
 
 /// Trait to access the in-memory canonical state from a provider.
 ///
@@ -172,6 +172,7 @@ pub struct ArbBlockProducer<Provider> {
     /// or rollback so a stale chain view never feeds an SLOAD.
     cached_overlay: Mutex<Option<CachedOverlay>>,
     cached_prestate: Mutex<Option<CachedPrestate>>,
+    progress_tx: tokio::sync::mpsc::UnboundedSender<ProducerEvent>,
     metrics: ArbBlockProducerMetrics,
 }
 
@@ -196,20 +197,21 @@ impl<Provider> ArbBlockProducer<Provider>
 where
     Provider: BlockNumReader,
 {
-    pub fn new(
+    pub(crate) fn new(
         provider: Provider,
         chain_spec: Arc<ChainSpec>,
         evm_config: ArbEvmConfig,
         in_memory_state: CanonicalInMemoryState<ArbPrimitives>,
         flush_interval: u64,
-    ) -> Self {
-        let head = provider.last_block_number().unwrap_or(0);
-        Self {
+        head_block: u64,
+    ) -> (Self, tokio::sync::mpsc::UnboundedReceiver<ProducerEvent>) {
+        let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel();
+        let producer = Self {
             provider,
             chain_spec,
             evm_config,
             in_memory_state,
-            head_block_num: AtomicU64::new(head),
+            head_block_num: AtomicU64::new(head_block),
             blocks_since_flush: AtomicU64::new(0),
             scheduler: Mutex::new(FlushScheduler::new(flush_interval)),
             accumulated_trie_input: Mutex::new(Arc::new(TrieInputSorted::default())),
@@ -219,10 +221,12 @@ where
             cached_init: Mutex::new(None),
             finality: Mutex::new(FinalityMarkers::default()),
             validated_watcher: Mutex::new(None),
+            progress_tx,
             cached_overlay: Mutex::new(None),
             cached_prestate: Mutex::new(None),
             metrics: ArbBlockProducerMetrics::default(),
-        }
+        };
+        (producer, progress_rx)
     }
 
     fn get_or_build_overlay(
@@ -390,7 +394,7 @@ where
             .head_state()
             .map(|s| s.chain().count())
             .unwrap_or(0) as u64;
-        info!(
+        debug!(
             target: "block_producer",
             flushed = result.count,
             last_block = result.last_num_hash.number,
@@ -400,6 +404,20 @@ where
             chain_len_unflushed,
             "block flush"
         );
+        let persisted = ProducerEvent::BlocksPersisted {
+            last_block: result.last_num_hash.number,
+            flushed_blocks: result.count as u64,
+            commit_latency_ms,
+            dirty_pages_mb,
+            flush_interval: flush_interval_current,
+            chain_len_unflushed,
+        };
+        if self.progress_tx.send(persisted).is_err() {
+            warn!(
+                target: "block_producer",
+                "progress reporter stopped, dropping persisted blocks event"
+            );
+        }
         true
     }
 
@@ -1195,7 +1213,7 @@ where
             self.start_async_flush();
         }
 
-        info!(
+        debug!(
             target: "block_producer",
             block_num = l2_block_number,
             ?block_hash,
@@ -1205,6 +1223,17 @@ where
             gas_used,
             "Produced block"
         );
+        let produced = ProducerEvent::BlockProduced {
+            number: l2_block_number,
+            transactions: num_txs as u64,
+            gas: gas_used,
+        };
+        if self.progress_tx.send(produced).is_err() {
+            warn!(
+                target: "block_producer",
+                "progress reporter stopped, dropping produced block event"
+            );
+        }
 
         Ok(ProducedBlock {
             block_hash,
