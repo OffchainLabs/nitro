@@ -202,7 +202,7 @@ func NodeConfigAddOptions(f *pflag.FlagSet) {
 	f.String("log-level", NodeConfigDefault.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", NodeConfigDefault.LogType, "log type (plaintext or json)")
 	genericconf.FileLoggingConfigAddOptions("file-logging", f)
-	conf.PersistentConfigAddOptions("persistent", f)
+	conf.PersistentConfigAddOptions("persistent", f, NodeConfigDefault.Persistent)
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
@@ -312,7 +312,9 @@ func ParseNodeWithVersion(ctx context.Context, args []string, version nitroversi
 	if err := resolveGenesisJsonFileDirectory(&nodeConfig); err != nil {
 		return nil, nil, err
 	}
-
+	if err = nodeConfig.Persistent.Pebble.ResolveWithStateScheme(nodeConfig.Execution.Caching.StateScheme); err != nil {
+		return nil, nil, err
+	}
 	err = nodeConfig.Validate()
 	if err != nil {
 		return nil, nil, err

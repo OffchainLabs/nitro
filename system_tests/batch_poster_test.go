@@ -221,7 +221,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	}
 }
 
-func TestRedisBatchPosterHandoff(t *testing.T) {
+func TestRedisBatchPosterHandoffFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	srv := externalsignertest.NewServer(t)
@@ -688,7 +688,7 @@ func TestParentChainNonEIP7623(t *testing.T) {
 	}
 }
 
-func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
+func TestBatchPosterWithDelayProofsAndBacklogFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

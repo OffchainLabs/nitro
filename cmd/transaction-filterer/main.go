@@ -74,6 +74,7 @@ var IPCConfigDefault = genericconf.IPCConfig{
 
 var DefaultTransactionFiltererConfig = TransactionFiltererConfig{
 	Conf:          genericconf.ConfConfigDefault,
+	Persistent:    conf.PersistentConfigDefaultNoReadCompact,
 	LogLevel:      "INFO",
 	LogType:       "plaintext",
 	Metrics:       false,
@@ -90,7 +91,7 @@ var DefaultTransactionFiltererConfig = TransactionFiltererConfig{
 
 func addFlags(f *pflag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
-	conf.PersistentConfigAddOptions("persistent", f)
+	conf.PersistentConfigAddOptions("persistent", f, DefaultTransactionFiltererConfig.Persistent)
 
 	genericconf.FileLoggingConfigAddOptions("file-logging", f)
 	f.String("log-level", DefaultTransactionFiltererConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")

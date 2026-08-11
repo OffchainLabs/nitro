@@ -1,0 +1,15 @@
+[package]
+name = "arb-chainspec"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+reth-chainspec = { workspace = true }
+revm = { workspace = true }
+
+[lints]
+workspace = true

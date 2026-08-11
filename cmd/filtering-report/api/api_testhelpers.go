@@ -8,17 +8,19 @@ import (
 
 	"github.com/ethereum/go-ethereum/node"
 
+	"github.com/offchainlabs/nitro/cmd/filtering-report/signer"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
-func NewTestStack(t *testing.T, queueClient sqsclient.QueueClient) *node.Node {
+func NewTestStack(t *testing.T, queueClient sqsclient.QueueClient, filterSetReporterConfig *genericconf.HTTPClientConfig, sgn *signer.Signer) *node.Node {
 	t.Helper()
 	stackConfig := DefaultStackConfig
 	stackConfig.HTTPHost = "127.0.0.1"
 	stackConfig.HTTPPort = 0
 	stackConfig.WSHost = "127.0.0.1"
 	stackConfig.WSPort = 0
-	stack, err := NewStack(&stackConfig, queueClient)
+	stack, err := NewStack(&stackConfig, queueClient, filterSetReporterConfig, sgn)
 	if err != nil {
 		t.Fatal(err)
 	}

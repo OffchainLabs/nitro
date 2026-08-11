@@ -56,8 +56,8 @@ func TestApiClosuresMultiGas_GetBytes32(t *testing.T) {
 func buildAddPagesTestHandler(t *testing.T, coinbase common.Address, runCtx *core.MessageRunContext, maxPages, pageLimit uint16, arbosVersion uint64) (RequestHandler, vm.StateDB, *MemoryModel) {
 	t.Helper()
 	db := state.NewDatabaseForTesting()
-	db.SetArbNodeConfig(&ArbNodeConfig{MaxOpenPages: maxPages})
 	statedb, _ := state.New(types.EmptyRootHash, db)
+	statedb.Database().CodeDB().SetArbNodeConfig(&ArbNodeConfig{MaxOpenPages: maxPages})
 	evm := vm.NewEVM(vm.BlockContext{Coinbase: coinbase, ArbOSVersion: arbosVersion}, statedb, params.TestChainConfig, vm.Config{})
 	caller := common.Address{}
 	acting := common.Address{1}
@@ -263,8 +263,8 @@ func TestAddPages_WrongConfigTypeFailsOpen(t *testing.T) {
 	// Stuff a value of the wrong concrete type through the any slot. The type
 	// assertion in addPages (raw.(*ArbNodeConfig)) will fail, triggering the
 	// fail-open branch.
-	db.SetArbNodeConfig("not a *ArbNodeConfig")
 	statedb, _ := state.New(types.EmptyRootHash, db)
+	statedb.Database().CodeDB().SetArbNodeConfig("not a *ArbNodeConfig")
 	evm := vm.NewEVM(vm.BlockContext{}, statedb, params.TestChainConfig, vm.Config{})
 	caller := common.Address{}
 	acting := common.Address{1}
@@ -380,10 +380,10 @@ func TestAddPages_StylusPageLimit_ArbOS59_Zero_Disabled(t *testing.T) {
 func buildEnforceTestArgs(t *testing.T, maxPages uint16, setConfig bool, arbosVersion uint64) (*vm.EVM, vm.StateDB) {
 	t.Helper()
 	db := state.NewDatabaseForTesting()
-	if setConfig {
-		db.SetArbNodeConfig(&ArbNodeConfig{MaxOpenPages: maxPages})
-	}
 	statedb, _ := state.New(types.EmptyRootHash, db)
+	if setConfig {
+		statedb.Database().CodeDB().SetArbNodeConfig(&ArbNodeConfig{MaxOpenPages: maxPages})
+	}
 	evm := vm.NewEVM(vm.BlockContext{ArbOSVersion: arbosVersion}, statedb, params.TestChainConfig, vm.Config{})
 	return evm, statedb
 }
@@ -397,8 +397,8 @@ func TestEnforce_NilConfig_ReturnsZero(t *testing.T) {
 
 func TestEnforce_WrongConfigType_ReturnsZero(t *testing.T) {
 	db := state.NewDatabaseForTesting()
-	db.SetArbNodeConfig("not a *ArbNodeConfig")
 	statedb, _ := state.New(types.EmptyRootHash, db)
+	statedb.Database().CodeDB().SetArbNodeConfig("not a *ArbNodeConfig")
 	evm := vm.NewEVM(vm.BlockContext{}, statedb, params.TestChainConfig, vm.Config{})
 	penalty := enforceStylusPageLimit(evm, statedb, core.NewMessageEthcallContext(), 200, common.Address{1}, nil, pageLimitCallProgram)
 	require.Equal(t, uint64(0), penalty, "wrong config type should fail open")

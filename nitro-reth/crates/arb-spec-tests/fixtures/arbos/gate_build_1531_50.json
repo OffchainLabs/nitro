@@ -1,0 +1,106 @@
+{
+  "name": "gate_build_1531_50",
+  "description": "ArbOS<v50 max_compute uses per_block_gas_limit, v50+ uses per_tx_gas_limit (build.rs:1531). At ArbOS v40 the legacy branch fires. Deposit + simple unsigned-user tx produces a tx subject to compute-hold gas computation.",
+  "genesis": {
+    "config": {
+      "chainId": 421614,
+      "arbitrum": {
+        "InitialArbOSVersion": 40,
+        "AllowDebugPrecompiles": true,
+        "GenesisBlockNum": 0
+      }
+    }
+  },
+  "messages": [
+    {
+      "msgIdx": null,
+      "message": {
+        "header": {
+          "kind": 12,
+          "sender": "0xde70e7820f6d69ad4fde67de05b4791afd1be38d",
+          "blockNumber": 0,
+          "timestamp": 1700000000,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "EKFRFZCzP7zt478GBhQPffrp8BYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADY1ya3F3qAAAA=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "msgIdx": null,
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 1,
+          "timestamp": 1700000010,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4aYMGbu6AgIQ7msoAglIIlAAAAAAAAAAAAAAAAAAAAAAAAAC7AYDAAaDidVFHFNfojvFNOuoLIo0yS+ltJbFupUFP9+kwpDQrdKB1C9KCExjNc2wY0pq2IDwz+bTgrHi1bdvGxpyqTz+ksg=="
+      },
+      "delayedMessagesRead": 1
+    }
+  ],
+  "expected": {
+    "blocks": [
+      {
+        "number": 1,
+        "block_hash": "0x0d31b22b8b65dca470450066d58e4bbcc2386f137b0f78065440948a0081ea15",
+        "state_root": "0xad1063076cd02dda9d83403f8c6706ac7c58a57d81510b9e0d4f1c8ec3f71c30",
+        "receipts_root": "0xd7a92f3697d06225df2a55e920d2f7a04a4b78f19a42e774c4a3993e342c61bb",
+        "transactions_root": "0xead42617bfe4f744e1de53aa4673453ead51b19335cf5355c20854cdaee1faa0",
+        "gas_used": 0
+      },
+      {
+        "number": 2,
+        "block_hash": "0x2610387ff7d230174e1d693f9abc5161bd0df86167a83357f5bdba702fdfead2",
+        "state_root": "0x79f54e4ea404f51c8edacc00ece4653745881b15cd42567035644446601e6947",
+        "receipts_root": "0x98a7630c1f81c0fb18242e7a1b0d4996641373f64141c70e2ff8fb4dc8b260df",
+        "transactions_root": "0x12fac63e2c277ea425e36f8baa94e7de406b13f15be3696db27855d5b3528353",
+        "gas_used": 0
+      }
+    ],
+    "eth_calls": [],
+    "storage": [],
+    "balances": [],
+    "txReceipts": [
+      {
+        "txHash": "0xfd8eaa5109af61f71c0dfcc202bfc56e87e12455a2fbf85a41ac0b6e45d53615",
+        "blockNumber": 1,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0x00000000000000000000000000000000000a4b05",
+        "to": "0x00000000000000000000000000000000000a4b05"
+      },
+      {
+        "txHash": "0x01daf89f4c97c493844c2c338c8d38009fbec5f41eadf9c7f81bafd2e8303d17",
+        "blockNumber": 1,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0xde70e7820f6d69ad4fde67de05b4791afd1be38d",
+        "to": "0x10a1511590b33fbcede3bf0606140f7dfae9f016"
+      },
+      {
+        "txHash": "0x3fa8a7b99db18d528292480188fb27d0e4a2f75704c61672ba2e347ee9865da6",
+        "blockNumber": 2,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 1,
+        "from": "0x00000000000000000000000000000000000a4b05",
+        "to": "0x00000000000000000000000000000000000a4b05"
+      }
+    ]
+  }
+}

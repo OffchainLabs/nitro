@@ -8,7 +8,9 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 
 	"github.com/google/uuid"
 
@@ -17,7 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/util/s3syncer"
-	"github.com/offchainlabs/nitro/util/warmbuffer"
 )
 
 var (
@@ -49,67 +50,18 @@ func (h *jsonHash) UnmarshalText(text []byte) error {
 	return err
 }
 
-// hashArray decodes a JSON array of hex hashes directly into its backing slice, reusing the capacity when preallocated
-// and growing otherwise.
-type hashArray []common.Hash
-
-func (a *hashArray) UnmarshalJSON(b []byte) error {
-	if bytes.Equal(b, []byte("null")) {
-		return nil
-	}
-	dec := json.NewDecoder(bytes.NewReader(b))
-	tok, err := dec.Token()
-	if err != nil {
-		return err
-	}
-	if d, ok := tok.(json.Delim); !ok || d != '[' {
-		return fmt.Errorf("hashes: expected JSON array")
-	}
-	dst := (*a)[:0]
-	for dec.More() {
-		i := len(dst)
-		dst = append(dst, common.Hash{})
-		if err := dec.Decode((*jsonHash)(&dst[i])); err != nil {
-			return fmt.Errorf("hashes[%d]: %w", i, err)
-		}
-	}
-	*a = dst
-	return nil
-}
-
-// hashListPayload represents the JSON structure of the hash list file used for unmarshalling.
-type hashListPayload struct {
-	Id            string    `json:"id"`
-	Salt          string    `json:"salt"`
-	HashingScheme string    `json:"hashing_scheme,omitempty"`
-	Hashes        hashArray `json:"hashes"`
-}
-
-type parsedPayload struct {
-	Id     uuid.UUID
-	Salt   uuid.UUID
-	Scheme HashingScheme
-	Hashes []common.Hash
-}
-
 type S3SyncManager struct {
 	Syncer    *s3syncer.Syncer
 	hashStore *HashStore
-	// hashesBacking is the preallocated slice the JSON hashes decode into, reused
-	// across reloads; nil when preallocation is disabled.
-	hashesBacking []common.Hash
 }
 
 func NewS3SyncManager(config *Config, hashStore *HashStore) *S3SyncManager {
 	manager := &S3SyncManager{
 		hashStore: hashStore,
 	}
-	if maxHashes := config.S3.NumPreallocatedHashes(); maxHashes > 0 {
-		manager.hashesBacking = warmbuffer.MakeWarmArray[common.Hash](maxHashes)
-	}
 	syncer := s3syncer.NewSyncer(
 		&config.S3,
-		manager.handleHashListData,
+		manager.handleHashListStream,
 		fileSizeGauge,
 	)
 
@@ -121,53 +73,169 @@ func (s *S3SyncManager) Initialize(ctx context.Context) error {
 	return s.Syncer.Initialize(ctx)
 }
 
-// handleHashListData parses the downloaded JSON data and loads it into the hashStore.
-func (s *S3SyncManager) handleHashListData(data []byte, digest string) error {
-	parsedData, err := parseHashListJSONInto(data, s.hashesBacking)
+// handleHashListStream parses the hash list JSON from the stream, loading the
+// hashes into the hashStore as they decode; the new list is published only if
+// the whole document parses and validates.
+func (s *S3SyncManager) handleHashListStream(r io.Reader, size int64, digest string) error {
+	var listMeta *ListMeta
+	fill := func(addHash func(common.Hash)) (*ListMeta, error) {
+		var err error
+		listMeta, err = parseHashListStream(r, addHash)
+		return listMeta, err
+	}
+	err := s.hashStore.Store(digest, estimateHashCount(size), fill)
 	if err != nil {
 		return fmt.Errorf("failed to parse hash list: %w", err)
 	}
 
-	s.hashStore.Store(parsedData.Id, parsedData.Salt, parsedData.Scheme, parsedData.Hashes, digest)
-	log.Info("loaded restricted addr list", "filterSetID", parsedData.Id, "hash_count", len(parsedData.Hashes), "etag", digest, "size_bytes", len(data), "scheme", parsedData.Scheme)
+	log.Info("loaded restricted addr list", "filterSetID", listMeta.ID, "hash_count", s.hashStore.Size(), "etag", digest, "size_bytes", size, "scheme", listMeta.Scheme)
 	return nil
 }
 
-// parseHashListJSONInto parses the JSON hash list file. When backing is non-nil
-// the hashes decode into it (reused across reloads); otherwise a new slice grows.
-// Expected format: {"id":"uuid-string-representation", "salt": "uuid-string-representation", "hashing_scheme": "<sha256-stringinput|sha256-rawbytesinput>", "hashes": ["0xhex1", "0xhex2", ...]}
-func parseHashListJSONInto(data []byte, backing []common.Hash) (*parsedPayload, error) {
-	var payload hashListPayload
-	if backing != nil {
-		payload.Hashes = hashArray(backing[:0])
+// decodeStringToken decodes the next token, requiring a JSON string.
+func decodeStringToken(dec *json.Decoder, key string) (string, error) {
+	tok, err := dec.Token()
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", key, err)
 	}
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return nil, fmt.Errorf("JSON unmarshal failed: %w", err)
+	s, ok := tok.(string)
+	if !ok {
+		return "", fmt.Errorf("%s: expected JSON string, got %v", key, tok)
+	}
+	return s, nil
+}
+
+// decodeHashesArray streams the elements of the "hashes" array (or a JSON null)
+// into addHash, one at a time, never holding more than one element in memory.
+func decodeHashesArray(dec *json.Decoder, addHash func(common.Hash)) error {
+	tok, err := dec.Token()
+	if err != nil {
+		return fmt.Errorf("hashes: %w", err)
+	}
+	if tok == nil {
+		return nil // JSON null: same as an empty array
+	}
+	if d, ok := tok.(json.Delim); !ok || d != '[' {
+		return errors.New("hashes: expected JSON array")
+	}
+	for i := 0; dec.More(); i++ {
+		var h jsonHash
+		if err := dec.Decode(&h); err != nil {
+			return fmt.Errorf("hashes[%d]: %w", i, err)
+		}
+		addHash(common.Hash(h))
+	}
+	if _, err := dec.Token(); err != nil { // consume the closing ']'
+		return fmt.Errorf("hashes: %w", err)
+	}
+	return nil
+}
+
+// skipJSONValue consumes the next JSON value without buffering it: scalars are
+// a single token, and composites are skipped by tracking delimiter depth (the
+// decoder itself validates delimiter matching).
+func skipJSONValue(dec *json.Decoder) error {
+	depth := 0
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		if d, ok := tok.(json.Delim); ok {
+			switch d {
+			case '{', '[':
+				depth++
+			case '}', ']':
+				depth--
+			}
+		}
+		if depth == 0 {
+			return nil
+		}
+	}
+}
+
+// parseHashListStream parses the hash list JSON document from r, streaming each
+// decoded hash to addHash, so the document is never buffered in memory. Fields may
+// appear in any order; the metadata is validated and returned once the whole
+// document has been consumed. Unknown fields are ignored.
+// Expected format: {"id":"uuid-string-representation", "salt": "uuid-string-representation", "hashing_scheme": "<sha256-stringinput|sha256-rawbytesinput>", "hashes": ["0xhex1", "0xhex2", ...]}
+func parseHashListStream(r io.Reader, addHash func(common.Hash)) (*ListMeta, error) {
+	dec := json.NewDecoder(r)
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, fmt.Errorf("JSON parse failed: %w", err)
+	}
+	if d, ok := tok.(json.Delim); !ok || d != '{' {
+		return nil, fmt.Errorf("expected JSON object, got %v", tok)
 	}
 
-	scheme := HashingScheme(payload.HashingScheme)
+	var idStr, saltStr, schemeStr string
+	seenHashes := false
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return nil, fmt.Errorf("JSON parse failed: %w", err)
+		}
+		key, ok := keyTok.(string)
+		if !ok {
+			return nil, fmt.Errorf("expected object key, got %v", keyTok)
+		}
+		switch key {
+		case "id":
+			idStr, err = decodeStringToken(dec, key)
+		case "salt":
+			saltStr, err = decodeStringToken(dec, key)
+		case "hashing_scheme":
+			schemeStr, err = decodeStringToken(dec, key)
+		case "hashes":
+			// A duplicate would stream both arrays into addHash; reject it instead of
+			// silently unioning them.
+			if seenHashes {
+				return nil, errors.New("duplicate hashes field")
+			}
+			seenHashes = true
+			err = decodeHashesArray(dec, addHash)
+		default:
+			err = skipJSONValue(dec)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	if _, err := dec.Token(); err != nil { // consume the closing '}'
+		return nil, fmt.Errorf("JSON parse failed: %w", err)
+	}
+	switch tok, err := dec.Token(); {
+	case errors.Is(err, io.EOF): // expected: the document consumed the whole stream
+	case err != nil:
+		return nil, fmt.Errorf("unexpected content after JSON document: %w", err)
+	default:
+		return nil, fmt.Errorf("unexpected content after JSON document: token %v", tok)
+	}
+
+	scheme := HashingScheme(schemeStr)
 	switch scheme {
 	case "":
 		scheme = HashingSchemeStringInput
 	case HashingSchemeStringInput, HashingSchemeRawBytesInput:
 	default:
-		return nil, fmt.Errorf("unknown hashing_scheme %q", payload.HashingScheme)
+		return nil, fmt.Errorf("unknown hashing_scheme %q", schemeStr)
 	}
 
-	salt, err := uuid.Parse(payload.Salt)
+	salt, err := uuid.Parse(saltStr)
 	if err != nil {
 		return nil, err
 	}
 
-	id, err := uuid.Parse(payload.Id)
+	id, err := uuid.Parse(idStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid filter set ID UUID: %w", err)
 	}
 
-	return &parsedPayload{
-		Id:     id,
+	return &ListMeta{
+		ID:     id,
 		Salt:   salt,
 		Scheme: scheme,
-		Hashes: []common.Hash(payload.Hashes),
 	}, nil
 }

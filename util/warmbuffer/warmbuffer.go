@@ -13,31 +13,6 @@
 // the process lifetime.
 package warmbuffer
 
-import (
-	"os"
-	"unsafe"
-)
-
-// MakeWarmArray allocates a []T of length n and faults its backing memory by writing one element per OS page.
-func MakeWarmArray[T any](n int) []T {
-	a := make([]T, n)
-	var zero T
-	elemSize := int(unsafe.Sizeof(zero))
-	if elemSize == 0 {
-		return a // zero-size elements occupy no memory
-	}
-	stride := max(os.Getpagesize()/elemSize, 1)
-	for i := 0; i < len(a); i += stride {
-		a[i] = zero
-	}
-	return a
-}
-
-// MakeWarmBuffer allocates a byte buffer of the given size with every page faulted.
-func MakeWarmBuffer(size int) []byte {
-	return MakeWarmArray[byte](size)
-}
-
 // MakeWarmMap allocates a map presized for capacity entries, inserts that many distinct keys to fault and commit its
 // bucket memory, then clears it. The builtin clear empties the map while keeping the buckets allocated, so the returned
 // map is empty, usable, and already backed by committed memory. nextKey must return a distinct key on each call.
