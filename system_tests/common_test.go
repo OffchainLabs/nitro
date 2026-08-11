@@ -1046,6 +1046,12 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		Require(t, err)
 		b.L2Info.GetInfoWithPrivKey("Owner").Nonce.Store(onChainNonce)
 
+		// Seam letting a test observe the sampled nonce and advance the chain
+		// before it is used, to reproduce NIT-5360 deterministically.
+		if testAfterOwnerNonceRead != nil {
+			testAfterOwnerNonceRead(t, b, onChainNonce)
+		}
+
 		debugAuth := b.L2Info.GetDefaultTransactOpts("Owner", b.ctx)
 		debugAuth.Nonce = new(big.Int).SetUint64(onChainNonce)
 
