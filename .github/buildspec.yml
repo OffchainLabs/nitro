@@ -28,7 +28,7 @@ phases:
           export GITHUB_TOKEN
           GITHUB_TOKEN=$(printf '%s' "$TOKEN_RESPONSE" | jq -r '.token // empty')
           if [ -z "$GITHUB_TOKEN" ]; then
-            redacted=$(printf '%s' "$TOKEN_RESPONSE" | sed -E 's/(ghs_|ghu_)[A-Za-z0-9]+/\1REDACTED/g')
+            redacted=$(printf '%s' "$TOKEN_RESPONSE" | sed -E 's/(ghs_|ghu_)[A-Za-z0-9._-]+/\1REDACTED/g')
             echo "ERROR: installation token missing from response: ${redacted}" >&2
             exit 1
           fi
@@ -80,7 +80,7 @@ phases:
           export GITHUB_TOKEN
           GITHUB_TOKEN=$(printf '%s' "$TOKEN_RESPONSE" | jq -r '.token // empty')
           if [ -z "$GITHUB_TOKEN" ]; then
-            redacted=$(printf '%s' "$TOKEN_RESPONSE" | sed -E 's/(ghs_|ghu_)[A-Za-z0-9]+/\1REDACTED/g')
+            redacted=$(printf '%s' "$TOKEN_RESPONSE" | sed -E 's/(ghs_|ghu_)[A-Za-z0-9._-]+/\1REDACTED/g')
             echo "ERROR: installation token missing from response: ${redacted}" >&2
             exit 1
           fi
