@@ -74,7 +74,7 @@ func mainImpl() error {
 	return errors.New("select one of --deposit-gwei or --bid-gwei")
 }
 
-func parseBidderClientArgs(ctx context.Context, args []string) (*timeboost.BidderClientConfig, error) {
+func parseBidderClientArgs(_ctx context.Context, args []string) (*timeboost.BidderClientConfig, error) {
 	f := pflag.NewFlagSet("", pflag.ContinueOnError)
 
 	timeboost.BidderClientConfigAddOptions(f)
