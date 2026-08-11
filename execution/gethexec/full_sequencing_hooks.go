@@ -62,8 +62,7 @@ func MakeSequencingHooks(
 
 // makeZeroTxSizeSequencingHooks creates hooks that include all transactions in
 // a block regardless of size: every queue item has tx size zero and the size
-// limit is explicitly unlimited, so the limit check in NextTxToSequence can
-// never trip.
+// limit is explicitly unlimited, so the fetcher's size check can never trip.
 func makeZeroTxSizeSequencingHooks(
 	txes types.Transactions,
 	txFilter arbos.TxFilter,
@@ -153,7 +152,7 @@ func (s *FullSequencingHooks) TxAccepted(header *types.Header, tx *types.Transac
 }
 
 // NextTxToSequence returns the next transaction to be included in the block, or nil if there are no more transactions to include.
-// It will skip transactions that would cause the total size of included transactions to exceed maxSequencedTxsSize.
+// The fetcher decides how to handle a tx too big for the remaining size budget.
 func (s *FullSequencingHooks) NextTxToSequence(statedb *state.StateDB) (*types.Transaction, *arbitrum_types.ConditionalOptions, error) {
 	// This is not supposed to happen, if so we have a bug
 	if n := len(s.sequencedTxs); n > 0 && errors.Is(s.sequencedTxs[n-1].err, txNotFinalized) {

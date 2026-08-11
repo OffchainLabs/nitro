@@ -100,6 +100,7 @@ type SequencerConfig struct {
 	Timeboost                    timeboost.Config `koanf:"timeboost"`
 	ExperimentalPGA              PGAConfig        `koanf:"experimental-pga"`
 	Dangerous                    DangerousConfig  `koanf:"dangerous"`
+	FilterSetReportingInterval   time.Duration    `koanf:"filter-set-reporting-interval"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
 }
@@ -172,6 +173,9 @@ func (c *SequencerConfig) Validate() error {
 			}
 		}
 	}
+	if c.FilterSetReportingInterval <= 0 {
+		return fmt.Errorf("filter-set-reporting-interval must be positive, got %s", c.FilterSetReportingInterval)
+	}
 	if c.ExperimentalPGA.RoundsPerBlock == 0 {
 		return errors.New("experimental-pga.rounds-per-block must be at least 1")
 	}
@@ -207,6 +211,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	Timeboost:                    timeboost.DefaultConfig,
 	ExperimentalPGA:              DefaultPGAConfig,
 	Dangerous:                    DefaultDangerousConfig,
+	FilterSetReportingInterval:   time.Minute,
 }
 
 var DefaultDangerousConfig = DangerousConfig{
@@ -240,6 +245,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
+	f.Duration(prefix+".filter-set-reporting-interval", DefaultSequencerConfig.FilterSetReportingInterval, "interval at which the active sequencer reports its current address-filter set id to the filtering-report service")
 }
 
 func DangerousAddOptions(prefix string, f *pflag.FlagSet) {
@@ -484,8 +490,10 @@ type Sequencer struct {
 
 	pendingDelayedMsgCommit bool
 
-	eventFilter              *eventfilter.EventFilter
-	addressFilterService     *addressfilter.FilterService
+	eventFilter *eventfilter.EventFilter
+	// Set once at construction; atomic only so the test-only setter can swap
+	// it while background readers (e.g. the filter-set reporting loop) run.
+	addressFilterService     atomic.Pointer[addressfilter.FilterService]
 	pendingFilteredTxReports []addressfilter.FilteredTxReport
 
 	// sequencingState tracks turn alternation between regular tx and delayed
@@ -529,8 +537,8 @@ func NewSequencer(
 		parentChain:                       parentChain,
 		timeboostAuctionResolutionTxQueue: make(chan txQueueItem, 10), // There should never be more than 1 outstanding auction resolutions
 		eventFilter:                       eventFilter,
-		addressFilterService:              addressFilterService,
 	}
+	s.addressFilterService.Store(addressFilterService)
 	s.nonceFailures = newNonceFailureCache(
 		config.NonceCacheSize,
 		func() time.Duration { return configFetcher().NonceFailureCacheExpiry },
@@ -541,10 +549,11 @@ func NewSequencer(
 }
 
 func (s *Sequencer) FilteringReady() bool {
-	if s.addressFilterService == nil {
+	service := s.addressFilterService.Load()
+	if service == nil {
 		return true
 	}
-	return !s.addressFilterService.GetLoadedAt().IsZero()
+	return !service.GetLoadedAt().IsZero()
 }
 
 func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.Header, filteredAddresses []filter.FilteredAddressRecord, positionInBlock int) {
@@ -1008,20 +1017,8 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem, latestState *state.
 	arbosVersion := types.DeserializeHeaderExtraInformation(latestHeader).ArbOSFormatVersion
 	signer := types.MakeSigner(bc.Config(), nextHeaderNumber, latestHeader.Time, arbosVersion)
 	outputQueueItems := make([]txQueueItem, 0, len(queueItems))
-	var nextQueueItem *txQueueItem
-	var queueItemsIdx int
 	pendingNonces := make(map[common.Address]uint64)
-	for {
-		var queueItem txQueueItem
-		if nextQueueItem != nil {
-			queueItem = *nextQueueItem
-			nextQueueItem = nil
-		} else if queueItemsIdx < len(queueItems) {
-			queueItem = queueItems[queueItemsIdx]
-			queueItemsIdx++
-		} else {
-			break
-		}
+	for _, queueItem := range queueItems {
 		tx := queueItem.tx
 		sender, err := types.Sender(signer, tx)
 		if err != nil {
@@ -1036,17 +1033,11 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem, latestState *state.
 		txNonce := tx.Nonce()
 		if txNonce == pendingNonce {
 			pendingNonces[sender] = txNonce + 1
-			nextKey := addressAndNonce{sender, txNonce + 1}
-			revivingFailure, exists := s.nonceFailures.Take(nextKey)
-			if exists {
-				// This tx was the predecessor to one that had failed its nonce check
-				// Re-enqueue the tx whose nonce should now be correct, unless it expired
-				err := revivingFailure.queueItem.ctx.Err()
-				if err != nil {
-					revivingFailure.queueItem.returnResult(err)
-				} else {
-					nextQueueItem = &revivingFailure.queueItem
-				}
+			if txNonce > stateNonce {
+				// The predecessor is in this batch, park the successor so PostTxFilter can revive it
+				// the moment the predecessor lands
+				s.nonceFailures.Add(NonceError{sender, txNonce, stateNonce}, queueItem)
+				continue
 			}
 		} else if txNonce < stateNonce || txNonce > pendingNonce {
 			// It's impossible for this tx to succeed so far,
@@ -1711,7 +1702,50 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 	s.CallIteratively(s.backgroundForwarder)
 
+	s.startFilterSetReporting()
+
 	return nil
+}
+
+func (s *Sequencer) reportFilterSetID(ctx context.Context, rpcClient *FilteringReportRPCClient) error {
+	service := s.addressFilterService.Load()
+	if service == nil {
+		log.Debug("skipping filter-set id report: address-filter service not configured")
+		return nil
+	}
+	filterSetID := service.CurrentFilterSetID()
+	if filterSetID == uuid.Nil {
+		// When address filtering is set, the node blocks on the initial S3
+		// hash-list download during initialization (AddressFilterService.Initialize),
+		// so a running sequencer should always have a filter-set id loaded.
+		return errors.New("no filter-set id loaded yet")
+	}
+	_, err := rpcClient.ReportCurrentFilterSetID(&addressfilter.FilterSetIDReport{
+		FilterSetID: filterSetID,
+		ChainID:     s.execEngine.ChainID().Uint64(),
+		ReportedAt:  time.Now().UTC(),
+	}).Await(ctx)
+	return err
+}
+
+func (s *Sequencer) startFilterSetReporting() {
+	rpcClient := s.execEngine.GetFilteringReportRPCClient()
+	if rpcClient == nil {
+		return
+	}
+	if s.addressFilterService.Load() == nil {
+		log.Warn("filtering report RPC client is configured but address filtering is not")
+	}
+	interval := s.config().FilterSetReportingInterval
+	s.CallIteratively(func(ctx context.Context) time.Duration {
+		if !s.IsActive() {
+			return interval
+		}
+		if err := s.reportFilterSetID(ctx, rpcClient); err != nil {
+			log.Warn("failed to report current filter-set id", "err", err)
+		}
+		return interval
+	})
 }
 
 func (s *Sequencer) hasPendingRegularTxs() bool {
@@ -1860,5 +1894,5 @@ func (s *Sequencer) DispatchPendingFilteredTxReportsForTest(t *testing.T) {
 
 func (s *Sequencer) SetAddressFilterServiceForTest(t *testing.T, service *addressfilter.FilterService) {
 	t.Helper()
-	s.addressFilterService = service
+	s.addressFilterService.Store(service)
 }

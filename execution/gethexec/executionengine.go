@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"path"
 	"runtime/debug"
@@ -374,6 +375,14 @@ func NewExecutionEngine(
 	}
 }
 
+func (s *ExecutionEngine) GetFilteringReportRPCClient() *FilteringReportRPCClient {
+	return s.filteringReportRPCClient
+}
+
+func (s *ExecutionEngine) ChainID() *big.Int {
+	return s.bc.Config().ChainID
+}
+
 func (s *ExecutionEngine) backlogCallDataUnits() uint64 {
 	s.cachedL1PriceData.mutex.RLock()
 	defer s.cachedL1PriceData.mutex.RUnlock()
@@ -729,9 +738,6 @@ func (s *ExecutionEngine) ResequenceReorgedMessage(msg *arbostypes.MessageWithMe
 	sequencedMsg, _, err := s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks)
 	if err != nil {
 		return nil, fmt.Errorf("failed to re-sequence old sequencer message removed by reorg: %w", err)
-	}
-	if len(hooks.SequencedTxes()) != len(txes) {
-		log.Error("Unexpected number of sequenced txes, some were dropped", "expected", len(txes), "got", len(hooks.SequencedTxes()))
 	}
 	return sequencedMsg, nil
 }

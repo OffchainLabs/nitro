@@ -269,7 +269,8 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
-	// Test block speeds are far below the minimum PGA round length, so force FIFO ordering.
+	FilterSetReportingInterval:   time.Minute,
+	// PGA only activates on collect-tips chains (ArbOS >= 60); tests below that run FIFO regardless.
 	ExperimentalPGA: gethexec.DefaultPGAConfig,
 }
 
@@ -1040,7 +1041,7 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 	if b.takeOwnership && hasOwnerAccount {
 		// Sync the Owner nonce tracker with the actual on-chain state.
 		// This avoids nonce races when BuildL2OnL1 is called multiple times
-		// (e.g., in TestAnyTrustRekey where the L2 is rebuilt on the same L1).
+		// (e.g., in TestAnyTrustRekeyFlaky where the L2 is rebuilt on the same L1).
 		ownerAddr := b.L2Info.GetAddress("Owner")
 		onChainNonce, err := b.L2.Client.PendingNonceAt(b.ctx, ownerAddr)
 		Require(t, err)

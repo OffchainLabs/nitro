@@ -95,6 +95,90 @@ func TestPGAHappyPath(t *testing.T) {
 	assertTipsDescendByTxIndex(t, receipts, tips)
 }
 
+// TestPGASameSenderNonceChain submits a sender's consecutive-nonce pair with inverted tips: the
+// higher-tipped follow-up must not outbid its own predecessor, in either queue order.
+func TestPGASameSenderNonceChain(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_60)
+	// The queue-length gauge below is process-global; run alone so no other node writes to it.
+	builder.parallelise = false
+	builder.execConfig.Sequencer.MaxBlockSpeed = 100 * time.Millisecond
+	builder.execConfig.Sequencer.ExperimentalPGA.DangerousForceFIFO = false
+	builder.execConfig.Sequencer.ExperimentalPGA.RoundsPerBlock = 2
+	// Keep the parked follow-up alive while the paused sequencer holds the burst.
+	builder.execConfig.Sequencer.NonceFailureCacheExpiry = time.Minute
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// PGA only activates on a collect-tips chain.
+	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), builder.L2.Client)
+	Require(t, err)
+	ownerAuth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	tx, err := arbOwner.SetCollectTips(&ownerAuth, true)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	name := "PgaNonceChainer"
+	builder.L2Info.GenerateAccount(name)
+	builder.L2.TransferBalance(t, "Faucet", name, big.NewInt(1e18), builder.L2Info)
+
+	for burst, reversed := range []bool{false, true} {
+		tips := []int64{5, 50}
+		txs := signPGABurst(t, builder, []string{name, name}, tips)
+		submitted := txs
+		if reversed {
+			submitted = []*types.Transaction{txs[1], txs[0]}
+		}
+
+		// A paused sequencer parks the pair in its queue, so both drain into the same auction.
+		sequencer := builder.L2.ExecNode.Sequencer
+		sequencer.Pause()
+		waitForExactQueuedTxs(t, 0, 5*time.Second)
+
+		// Submissions block until sequenced, so the burst needs concurrent senders.
+		var wg sync.WaitGroup
+		sendErrs := make([]error, len(submitted))
+		for i, tx := range submitted {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sendErrs[i] = builder.L2.Client.SendTransaction(ctx, tx)
+			}()
+			// Wait for each tx to reach the queue before sending the next, pinning the order.
+			waitForExactQueuedTxs(t, i+1, 5*time.Second)
+		}
+		sequencer.Activate()
+		wg.Wait()
+
+		receipts := make([]*types.Receipt, len(txs))
+		for i, tx := range txs {
+			Require(t, sendErrs[i])
+			receipt, err := builder.L2.EnsureTxSucceeded(tx)
+			Require(t, err)
+			receipts[i] = receipt
+		}
+
+		predecessor, followUp := receipts[0], receipts[1]
+		if predecessor.BlockNumber.Cmp(followUp.BlockNumber) != 0 {
+			Fatal(t, "nonce chain split across blocks", "burst", burst, "inclusions", formatPGAInclusions(receipts, tips))
+		}
+		if predecessor.TransactionIndex >= followUp.TransactionIndex {
+			Fatal(t, "follow-up sequenced before its predecessor", "burst", burst, "inclusions", formatPGAInclusions(receipts, tips))
+		}
+		// Each tx pays its own tip.
+		blockBaseFee := builder.L2.GetBaseFeeAt(t, predecessor.BlockNumber)
+		for i, receipt := range receipts {
+			want := new(big.Int).Add(blockBaseFee, big.NewInt(tips[i]))
+			if receipt.EffectiveGasPrice.Cmp(want) != 0 {
+				Fatal(t, "tx paid wrong price", "burst", burst, "tip", tips[i], "want", want, "got", receipt.EffectiveGasPrice)
+			}
+		}
+	}
+}
+
 // signPGABurst signs one self-transfer per account, one per tip.
 func signPGABurst(t *testing.T, builder *NodeBuilder, names []string, tips []int64) []*types.Transaction {
 	t.Helper()
@@ -138,6 +222,24 @@ func waitForQueuedTxs(t *testing.T, want int, timeout time.Duration) {
 	deadline := time.Now().Add(timeout)
 	for {
 		if got := gauge.Snapshot().Value(); got >= int64(want) {
+			return
+		}
+		if time.Now().After(deadline) {
+			Fatal(t, "timed out waiting for queued txs", "metric", sequencerQueueLengthMetric,
+				"want", want, "got", gauge.Snapshot().Value())
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
+// waitForExactQueuedTxs waits until the sequencer's queue holds exactly want txs, so a stale
+// gauge value from earlier activity can't end the wait early.
+func waitForExactQueuedTxs(t *testing.T, want int, timeout time.Duration) {
+	t.Helper()
+	gauge := sequencerQueueLengthGauge(t)
+	deadline := time.Now().Add(timeout)
+	for {
+		if got := gauge.Snapshot().Value(); got == int64(want) {
 			return
 		}
 		if time.Now().After(deadline) {

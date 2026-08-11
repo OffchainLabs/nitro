@@ -135,3 +135,27 @@ func SigningFixture(t *testing.T, opts LeafOptions) (pemPath, caPath string) {
 	dir := t.TempDir()
 	return WriteCombinedPEM(t, dir, leafPriv, leafDER), WriteCAPEMFile(t, dir, pki.CACertPEM())
 }
+
+type SigningPair struct {
+	Signer   *signer.Signer
+	Verifier *Verifier
+}
+
+func NewSigningPair(t *testing.T) *SigningPair {
+	t.Helper()
+	leaf := DefaultLeafOptions(DefaultTestSAN)
+	pemPath, caPath := SigningFixture(t, leaf)
+	sgn, err := signer.NewSigner(&signer.Config{PEMFile: pemPath, ReloadInterval: time.Minute})
+	if err != nil {
+		t.Fatalf("NewSigner: %v", err)
+	}
+	verifier, err := NewVerifier(&VerifierConfig{
+		CARootPEMFile: caPath,
+		ExpectedSAN:   leaf.URI,
+		TimestampSkew: DefaultTimestampSkew,
+	})
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+	return &SigningPair{Signer: sgn, Verifier: verifier}
+}
