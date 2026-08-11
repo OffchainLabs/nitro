@@ -17,6 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/nitroversion"
 	"github.com/offchainlabs/nitro/timeboost"
 )
 
@@ -33,6 +34,7 @@ func mainImpl() int {
 	defer cancelFunc()
 
 	args := os.Args[1:]
+	nitroVersion := nitroversion.Current()
 	nodeConfig, err := parseAuctioneerArgs(ctx, args)
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
@@ -46,8 +48,7 @@ func mainImpl() int {
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
-	versionInfo := confighelpers.GetVersion()
-	stackConf.Version = versionInfo.WithoutV()
+	stackConf.Version = nitroVersion.GethVersion()
 
 	err = genericconf.InitLog(nodeConfig.LogType, nodeConfig.LogLevel, &nodeConfig.FileLogging, genericconf.DefaultPathResolver(nodeConfig.Persistent.LogDir))
 	if err != nil {
@@ -84,7 +85,7 @@ func mainImpl() int {
 	}
 
 	if nodeConfig.AuctioneerServer.Enable {
-		log.Info("Running Arbitrum express lane auctioneer", "revision", versionInfo.RawVersion, "vcs.time", versionInfo.Timestamp)
+		log.Info("Running Arbitrum express lane auctioneer", "version", nitroVersion)
 		auctioneer, err := timeboost.NewAuctioneerServer(
 			ctx,
 			func() *timeboost.AuctioneerServerConfig { return &liveNodeConfig.Get().AuctioneerServer },
@@ -95,7 +96,7 @@ func mainImpl() int {
 		}
 		auctioneer.Start(ctx)
 	} else if nodeConfig.BidValidator.Enable {
-		log.Info("Running Arbitrum express lane bid validator", "revision", versionInfo.RawVersion, "vcs.time", versionInfo.Timestamp)
+		log.Info("Running Arbitrum express lane bid validator", "version", nitroVersion)
 		stack, err := node.New(&stackConf)
 		if err != nil {
 			pflag.Usage()

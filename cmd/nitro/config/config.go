@@ -29,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/nitroversion"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
@@ -220,11 +221,18 @@ func NodeConfigAddOptions(f *pflag.FlagSet) {
 }
 
 func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, error) {
+	return ParseNodeWithVersion(ctx, args, nitroversion.Current())
+}
+
+// ParseNodeWithVersion parses a node configuration against an explicitly
+// supplied Nitro version. Tests can use this without mutating process-global
+// version state.
+func ParseNodeWithVersion(ctx context.Context, args []string, version nitroversion.Version) (*NodeConfig, *genericconf.WalletConfig, error) {
 	f := pflag.NewFlagSet("", pflag.ContinueOnError)
 
 	NodeConfigAddOptions(f)
 
-	k, err := confighelpers.BeginCommonParse(f, args)
+	k, err := confighelpers.BeginCommonParseWithVersion(f, args, version)
 	if err != nil {
 		return nil, nil, err
 	}

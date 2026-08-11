@@ -54,6 +54,7 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeinterface"
 	"github.com/offchainlabs/nitro/execution_consensus"
+	"github.com/offchainlabs/nitro/nitroversion"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -146,6 +147,7 @@ func mainImpl() int {
 	defer cancelFunc()
 
 	args := os.Args[1:]
+	nitroVersion := nitroversion.Current()
 	nodeConfig, l2DevWallet, err := config.ParseNode(ctx, args)
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
@@ -162,8 +164,7 @@ func mainImpl() int {
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
-	versionInfo := confighelpers.GetVersion()
-	stackConf.Version = versionInfo.WithoutV()
+	stackConf.Version = nitroVersion.GethVersion()
 
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
 		filename := genericconf.DefaultPathResolver(nodeConfig.Persistent.GlobalConfig)("jwtsecret")
@@ -179,7 +180,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	log.Info("Running Arbitrum nitro node", "revision", versionInfo.RawVersion, "vcs.time", versionInfo.Timestamp)
+	log.Info("Running Arbitrum nitro node", "version", nitroVersion)
 	log.Info("Resources detected", "GOMAXPROCS", nitroutil.GoMaxProcs())
 
 	if nodeConfig.Execution.LegacyZeroBaseFeeUntil != 0 {

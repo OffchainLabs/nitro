@@ -4,15 +4,13 @@ package nitroversionalerter
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/spf13/pflag"
-	"golang.org/x/mod/semver"
 
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/nitroversion"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -47,33 +45,26 @@ func ClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 type Client struct {
 	stopwaiter.StopWaiter
-	Cfg             *ClientConfig
-	Connection      *rpcclient.RpcClient
-	NodeVersion     string
-	NodeVersionTime time.Time
+	Cfg         *ClientConfig
+	Connection  *rpcclient.RpcClient
+	NodeVersion nitroversion.Version
 }
 
 func NewClient(ctx context.Context, cfg *ClientConfig) (*Client, error) {
-	versionInfo := confighelpers.GetVersion()
-	nodeVersion, err := versionInfo.ComparableVersion()
-	if err != nil {
-		log.Warn("node version is not comparable semver, skipping version alerter", "nodeVersion", versionInfo.RawVersion, "nodeVersionDate", versionInfo.Timestamp, "err", err)
+	nodeVersion := nitroversion.Current()
+	if !nodeVersion.IsTagged() {
+		log.Warn("node version is not a tagged release, skipping version alerter", "version", nodeVersion)
 		return nil, nil
-	}
-	nodeVersionTime, err := time.Parse(time.RFC3339, versionInfo.Timestamp)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing nodeVersionDate: %s into time: %w", versionInfo.Timestamp, err)
 	}
 	connectionConfigFetcher := func() *rpcclient.ClientConfig { return &cfg.Connection }
 	connection := rpcclient.NewRpcClient(connectionConfigFetcher, nil)
-	if err = connection.Start(ctx); err != nil {
+	if err := connection.Start(ctx); err != nil {
 		return nil, err
 	}
 	return &Client{
-		Cfg:             cfg,
-		Connection:      connection,
-		NodeVersion:     nodeVersion,
-		NodeVersionTime: nodeVersionTime,
+		Cfg:         cfg,
+		Connection:  connection,
+		NodeVersion: nodeVersion,
 	}, nil
 }
 
@@ -91,17 +82,25 @@ func (c *Client) LogUpgradeMsgIfNecessary(ctx context.Context) time.Duration {
 	if res.UpgradeDeadline == "" || (res.NodeVersion == "" && res.NodeVersionDate == "") {
 		return c.Cfg.PingInterval
 	}
+
 	var needLogging bool
-	if res.NodeVersion != "" && semver.Compare(c.NodeVersion, res.NodeVersion) < 0 { // node is not up to date
-		needLogging = true
+	if res.NodeVersion != "" {
+		targetVersion, err := nitroversion.ParseCanonicalVersion(res.NodeVersion)
+		if err != nil {
+			log.Error("Cannot parse NodeVersion returned by arb_getMinRequiredNitroVersion into canonical version", "version", res.NodeVersion, "err", err)
+			return c.Cfg.PingInterval
+		}
+		if c.NodeVersion.IsVersionOlderThan(targetVersion) { // node is not up to date
+			needLogging = true
+		}
 	}
 	if res.NodeVersionDate != "" {
 		minRequiredVersionTime, err := time.Parse(time.RFC3339, res.NodeVersionDate)
 		if err != nil {
-			log.Error("Cannot parse NodeVersionDate returned by arb_getMinRequiredNitroVersion into time", "err", err)
+			log.Error("Cannot parse NodeVersionDate returned by arb_getMinRequiredNitroVersion into time", "timestamp", res.NodeVersionDate, "err", err)
 			return c.Cfg.PingInterval
 		}
-		if c.NodeVersionTime.Compare(minRequiredVersionTime) < 0 { // node is not up to date
+		if c.NodeVersion.IsCommitTimestampOlderThan(minRequiredVersionTime) { // node is not up to date
 			needLogging = true
 		}
 	}
@@ -127,7 +126,7 @@ func (c *Client) LogUpgradeMsgIfNecessary(ctx context.Context) time.Duration {
 	}
 	logLevel("Node version or date is below the minimum requirement, please upgrade",
 		"requiredVersion", res.NodeVersion, "requiredNodeVersionDate", res.NodeVersionDate, "upgradeDeadline", res.UpgradeDeadline,
-		"currentNodeVersion", c.NodeVersion, "currentNodeVersionDate", c.NodeVersionTime,
+		"currentNodeVersion", c.NodeVersion,
 	)
 	return c.Cfg.PingInterval
 }

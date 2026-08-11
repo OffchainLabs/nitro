@@ -15,16 +15,24 @@ else
 endif
 
 
-ifneq ($(origin NITRO_VERSION),undefined)
- GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.version=$(NITRO_VERSION)
+ifneq ($(origin NITRO_TAG),undefined)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/nitroversion.tag=$(NITRO_TAG)
+endif
+
+ifneq ($(origin NITRO_BRANCH),undefined)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/nitroversion.branch=$(NITRO_BRANCH)
+endif
+
+ifneq ($(origin NITRO_COMMIT),undefined)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/nitroversion.commit=$(NITRO_COMMIT)
 endif
 
 ifneq ($(origin NITRO_DATETIME),undefined)
- GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.datetime=$(NITRO_DATETIME)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/nitroversion.datetime=$(NITRO_DATETIME)
 endif
 
 ifneq ($(origin NITRO_MODIFIED),undefined)
- GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.modified=$(NITRO_MODIFIED)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/nitroversion.modified=$(NITRO_MODIFIED)
 endif
 
 # Stripped-binary build (STRIP=1): adds -s -w to Go ldflags, -trimpath to go

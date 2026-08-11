@@ -22,13 +22,7 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"github.com/spf13/pflag"
 
-	"github.com/offchainlabs/nitro/cmd/genericconf"
-)
-
-var (
-	version  = ""
-	datetime = ""
-	modified = ""
+	"github.com/offchainlabs/nitro/nitroversion"
 )
 
 func ApplyOverrides(f *pflag.FlagSet, k *koanf.Koanf) error {
@@ -173,18 +167,15 @@ func loadS3Variables(k *koanf.Koanf) error {
 
 var ErrVersion = errors.New("configuration: version requested")
 
-func GetVersion() genericconf.VersionInfo {
-	return genericconf.GetVersion(version, datetime, modified)
-}
-
 func PrintErrorAndExit(err error, usage func(string)) {
-	versionInfo := GetVersion()
-	fmt.Printf("Version: %v, time: %v\n", versionInfo.RawVersion, versionInfo.Timestamp)
+	fmt.Println(nitroversion.Current())
 	if err != nil && errors.Is(err, ErrVersion) {
 		// Already printed version, just exit
 		os.Exit(0)
 	}
-	usage(os.Args[0])
+	if !errors.Is(err, nitroversion.ErrInvalidVersionRange) && !errors.Is(err, nitroversion.ErrUnsupportedVersion) {
+		usage(os.Args[0])
+	}
 	if err != nil && !errors.Is(err, pflag.ErrHelp) {
 		fmt.Printf("\nFatal configuration error: %s\n", err.Error())
 		os.Exit(1)
@@ -216,6 +207,13 @@ func devFlagArgs() []string {
 }
 
 func BeginCommonParse(f *pflag.FlagSet, args []string) (*koanf.Koanf, error) {
+	return BeginCommonParseWithVersion(f, args, nitroversion.Current())
+}
+
+// BeginCommonParseWithVersion parses common configuration using an explicitly
+// supplied Nitro version. Tests can use this without mutating process-global
+// version state.
+func BeginCommonParseWithVersion(f *pflag.FlagSet, args []string, version nitroversion.Version) (*koanf.Koanf, error) {
 	var expandedArgs []string
 	for _, arg := range args {
 		if arg == "--version" || arg == "-v" {
@@ -246,7 +244,22 @@ func BeginCommonParse(f *pflag.FlagSet, args []string) (*koanf.Koanf, error) {
 	// field is interpreted, so that a configuration written for a different
 	// nitro version reports that rather than surfacing later as EndCommonParse's
 	// "has invalid keys".
-	if err := CheckVersionRange(k.String("conf.min-version"), k.String("conf.max-version")); err != nil {
+	var minVersion, maxVersion nitroversion.CanonicalVersion
+	if value := k.String("conf.min-version"); value != "" {
+		parsed, err := nitroversion.ParseCanonicalVersion(value)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid conf.min-version %q, expected a semantic version such as v3.9.0: %v", nitroversion.ErrInvalidVersionRange, value, err)
+		}
+		minVersion = parsed
+	}
+	if value := k.String("conf.max-version"); value != "" {
+		parsed, err := nitroversion.ParseCanonicalVersion(value)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid conf.max-version %q, expected a semantic version such as v3.9.0: %v", nitroversion.ErrInvalidVersionRange, value, err)
+		}
+		maxVersion = parsed
+	}
+	if err := version.CheckVersionBounds(minVersion, maxVersion); err != nil {
 		return nil, err
 	}
 

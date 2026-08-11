@@ -39,6 +39,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/nitroversion"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -291,6 +292,7 @@ func mainImpl() int {
 	defer cancelFunc()
 
 	args := os.Args[1:]
+	nitroVersion := nitroversion.Current()
 	expressLaneProxyConfig, err := parseExpressLaneProxyArgs(ctx, args)
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
@@ -304,8 +306,7 @@ func mainImpl() int {
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
-	versionInfo := confighelpers.GetVersion()
-	stackConf.Version = versionInfo.WithoutV()
+	stackConf.Version = nitroVersion.GethVersion()
 
 	err = genericconf.InitLog(expressLaneProxyConfig.LogType, expressLaneProxyConfig.LogLevel, &expressLaneProxyConfig.FileLogging, genericconf.DefaultPathResolver(expressLaneProxyConfig.Persistent.LogDir))
 	if err != nil {
@@ -334,7 +335,7 @@ func mainImpl() int {
 
 	fatalErrChan := make(chan error, 10)
 
-	log.Info("Running Arbitrum Express Lane Proxy", "revision", versionInfo.RawVersion, "vcs.time", versionInfo.Timestamp)
+	log.Info("Running Arbitrum Express Lane Proxy", "version", nitroVersion)
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		pflag.Usage()

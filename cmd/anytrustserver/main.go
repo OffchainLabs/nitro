@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
+	"github.com/offchainlabs/nitro/nitroversion"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
@@ -178,6 +179,7 @@ func (c *L1ReaderCloser) String() string {
 func startup() error {
 	// Some different defaults to AnyTrust config in a node.
 	anytrust.DefaultConfig.Enable = true
+	nitroVersion := nitroversion.Current()
 
 	serverConfig, err := parseAnyTrustServer(os.Args[1:])
 	if err != nil {
@@ -249,10 +251,9 @@ func startup() error {
 		anyTrustLifecycleManager.Register(&L1ReaderCloser{l1Reader})
 	}
 
-	versionInfo := confighelpers.GetVersion()
 	var rpcServer *http.Server
 	if serverConfig.EnableRPC {
-		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort, "revision", versionInfo.RawVersion, "vcs.time", versionInfo.Timestamp)
+		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort, "version", nitroVersion)
 
 		rpcServer, err = anytrust.StartRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, serverConfig.RPCServerBodyLimit, daReader, daWriter, daHealthChecker, signatureVerifier)
 		if err != nil {
@@ -262,7 +263,7 @@ func startup() error {
 
 	var restServer *anytrust.RestfulServer
 	if serverConfig.EnableREST {
-		log.Info("Starting REST server", "addr", serverConfig.RESTAddr, "port", serverConfig.RESTPort, "revision", versionInfo.RawVersion, "vcs.time", versionInfo.Timestamp)
+		log.Info("Starting REST server", "addr", serverConfig.RESTAddr, "port", serverConfig.RESTPort, "version", nitroVersion)
 
 		restServer, err = anytrust.NewRestfulServer(serverConfig.RESTAddr, serverConfig.RESTPort, serverConfig.RESTServerTimeouts, daReader, daHealthChecker)
 		if err != nil {
