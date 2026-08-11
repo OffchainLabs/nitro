@@ -67,6 +67,15 @@ arbreth-bench curate --input raw.json --out staging
 - **Rolling windows** — `metrics::rolling::build_windows()` for long-run flush /
   pruner / fragmentation visibility.
 
+### Metric attribution
+
+`cpu_ns` and `rss_bytes` describe the process that executes the workload:
+`InProcessRunner` measures itself, `SubprocessRunner` measures the spawned
+`arb-reth` node. The node's RSS is read on all platforms; its CPU time comes
+from its per-process CPU clock, which is Linux-only. When that clock can't be
+read, the runner logs a warning and reports `cpu_ns` as 0 rather than falling
+back to the harness's own CPU time.
+
 ## Manifest schema
 
 ```json
