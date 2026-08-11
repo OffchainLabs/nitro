@@ -1255,6 +1255,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-mel-node"
+version = "0.1.5"
+dependencies = [
+ "alloy-eips",
+ "alloy-primitives",
+ "alloy-provider",
+ "arb-consensus-db",
+ "arb-da-provider",
+ "arb-mel-db",
+ "arb-mel-runner",
+ "arb-mel-types",
+ "arb-parent-chain-client",
+ "arbos-types",
+ "async-trait",
+ "clap 4.5.60",
+ "eyre",
+ "humantime",
+ "tokio",
+ "tracing",
+ "tracing-subscriber 0.3.23",
+]
+
+[[package]]
 name = "arb-mel-runner"
 version = "0.1.5"
 dependencies = [
