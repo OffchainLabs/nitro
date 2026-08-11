@@ -4,6 +4,7 @@
 package confighelpers
 
 import (
+	stdjson "encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -21,6 +22,8 @@ import (
 	"github.com/knadh/koanf/providers/s3"
 	"github.com/mitchellh/mapstructure"
 	"github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/core"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 )
@@ -251,6 +254,7 @@ func EndCommonParse(k *koanf.Koanf, config interface{}) error {
 
 		// Default values
 		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			genesisDecodeHookFunc(),
 			stringToSliceDurationHookFunc(","),
 			mapstructure.StringToTimeDurationHookFunc()),
 		Metadata:         nil,
@@ -263,6 +267,45 @@ func EndCommonParse(k *koanf.Koanf, config interface{}) error {
 	}
 
 	return nil
+}
+
+// genesisDecodeHookFunc decodes a config subtree into core.Genesis. The
+// genesis format relies on encoding/json custom unmarshalers (hex-encoded
+// strings, an address-keyed alloc map, big.Int balances) that mapstructure
+// never invokes, so the subtree is round-tripped through JSON and handed to
+// geth's own parser. A plain JSON string is also accepted so the genesis can
+// be supplied via an environment variable or --conf.string.
+func genesisDecodeHookFunc() mapstructure.DecodeHookFunc {
+	return func(
+		f reflect.Type,
+		t reflect.Type,
+		data interface{}) (interface{}, error) {
+		if t != reflect.TypeOf(core.Genesis{}) {
+			return data, nil
+		}
+		var raw []byte
+		switch f.Kind() {
+		case reflect.Map:
+			var err error
+			raw, err = stdjson.Marshal(data)
+			if err != nil {
+				return nil, fmt.Errorf("error re-encoding genesis config: %w", err)
+			}
+		case reflect.String:
+			s, _ := data.(string)
+			if s == "" {
+				return core.Genesis{}, nil
+			}
+			raw = []byte(s)
+		default:
+			return data, nil
+		}
+		var gen core.Genesis
+		if err := gen.UnmarshalJSON(raw); err != nil {
+			return nil, fmt.Errorf("error parsing genesis config: %w", err)
+		}
+		return gen, nil
+	}
 }
 
 func stringToSliceDurationHookFunc(sep string) mapstructure.DecodeHookFunc {

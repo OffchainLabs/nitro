@@ -233,9 +233,9 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	l2ChainName := k.String("chain.name")
 	l2ChainInfoFiles := k.Strings("chain.info-files")
 	l2ChainInfoJson := k.String("chain.info-json")
-	l2GenesisJsonFile := k.String("init.genesis-json-file")
+	l2GenesisConfigured := k.String("init.genesis-json-file") != "" || k.Get("init.genesis") != nil
 	// #nosec G115
-	err = applyChainParameters(k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2GenesisJsonFile)
+	err = applyChainParameters(k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2GenesisConfigured)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -315,8 +315,25 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 }
 
 func resolveGenesisJsonFileDirectory(nodeConfig *NodeConfig) error {
-	if nodeConfig.Init.GenesisJsonFile != "" || nodeConfig.Chain.ID == 0 || nodeConfig.Init.GenesisJsonFileDirectory == "" {
+	nodeConfig.Init.GenesisMode = strings.ToLower(nodeConfig.Init.GenesisMode)
+	genesisMode := nodeConfig.Init.GenesisMode
+	switch genesisMode {
+	case conf.GenesisModeInline, conf.GenesisModeFile:
+		// an explicitly selected source disables the directory lookup
 		return nil
+	case conf.GenesisModeDirectory:
+		// forced lookup, overriding any configured genesis-json-file;
+		// an empty genesis-json-file-directory is rejected by Validate
+		if nodeConfig.Init.GenesisJsonFileDirectory == "" {
+			return nil
+		}
+		if nodeConfig.Chain.ID == 0 {
+			return fmt.Errorf("init.genesis-mode is %q but chain id is not set", conf.GenesisModeDirectory)
+		}
+	default:
+		if nodeConfig.Init.GenesisJsonFile != "" || nodeConfig.Init.HasInlineGenesis() || nodeConfig.Chain.ID == 0 || nodeConfig.Init.GenesisJsonFileDirectory == "" {
+			return nil
+		}
 	}
 	files, err := os.ReadDir(nodeConfig.Init.GenesisJsonFileDirectory)
 	if err != nil {
@@ -328,15 +345,21 @@ func resolveGenesisJsonFileDirectory(nodeConfig *NodeConfig) error {
 			continue
 		}
 		fullPath := filepath.Join(nodeConfig.Init.GenesisJsonFileDirectory, file.Name())
+		if nodeConfig.Init.GenesisJsonFile != "" && nodeConfig.Init.GenesisJsonFile != fullPath {
+			log.Warn("init.genesis-mode is \"directory\", ignoring configured init.genesis-json-file", "ignored", nodeConfig.Init.GenesisJsonFile, "used", fullPath)
+		}
 		nodeConfig.Init.GenesisJsonFile = fullPath
 		nodeConfig.Init.Empty = false
 		log.Info("found genesis json file for chain id from genesis json file directory", "file", fullPath, "chainId", nodeConfig.Chain.ID)
-		break
+		return nil
+	}
+	if genesisMode == conf.GenesisModeDirectory {
+		return fmt.Errorf("init.genesis-mode is %q but no genesis json file for chain id %d was found in directory %s", conf.GenesisModeDirectory, nodeConfig.Chain.ID, nodeConfig.Init.GenesisJsonFileDirectory)
 	}
 	return nil
 }
 
-func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2GenesisJsonFile string) error {
+func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2GenesisConfigured bool) error {
 	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return err
@@ -382,7 +405,7 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	} else if chainInfo.ChainConfig.ArbitrumChainParams.DataAvailabilityCommittee {
 		chainDefaults["node.da.anytrust.enable"] = true
 	}
-	if !chainInfo.HasGenesisState && l2GenesisJsonFile == "" {
+	if !chainInfo.HasGenesisState && !l2GenesisConfigured {
 		chainDefaults["init.empty"] = true
 	}
 	if parentChainIsArbitrum {

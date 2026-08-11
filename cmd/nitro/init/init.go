@@ -846,46 +846,19 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
 	}
 
-	genesisJsonFile := config.Init.GenesisJsonFile
-	if genesisJsonFile == "" && initDataReader != nil {
-		genesisJsonFile, err = GetGenesisFileNameFromDirectory(config.Init.GenesisJsonFileDirectory, config.Chain.ID)
-		if err != nil {
-			log.Error("error getting genesis json file from directory", "err", err)
-		}
+	gen, err := resolveGenesisDocument(&config.Init, config.Chain.ID, initDataReader != nil)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
-	if genesisJsonFile != "" {
+	if gen != nil {
 		if initDataReader != nil {
 			return nil, nil, nil, errors.New("multiple init methods supplied")
 		}
-		genesisJson, err := os.ReadFile(genesisJsonFile)
+		initDataReader, chainConfig, genesisArbOSInit, err = initDataFromGenesis(gen, config.Chain.ID)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		var gen core.Genesis
-		if err := json.Unmarshal(genesisJson, &gen); err != nil {
-			return nil, nil, nil, err
-		}
-		var accounts []statetransfer.AccountInitializationInfo
-		for address, account := range gen.Alloc {
-			accounts = append(accounts, statetransfer.AccountInitializationInfo{
-				Addr:       address,
-				EthBalance: account.Balance,
-				Nonce:      account.Nonce,
-				ContractInfo: &statetransfer.AccountInitContractInfo{
-					Code:            account.Code,
-					ContractStorage: account.Storage,
-				},
-			})
-		}
-		initDataReader = statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{
-			Accounts: accounts,
-		})
-		chainConfig, err = gen.GetConfig()
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		genesisArbOSInit = gen.ArbOSInit
 	} else {
 		if initDataReader == nil {
 			chainConfig = gethexec.TryReadStoredChainConfig(executionDB)
@@ -911,6 +884,96 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 	}
 
 	return initDataReader, chainConfig, genesisArbOSInit, nil
+}
+
+// resolveGenesisDocument picks the genesis document to init from, honoring
+// init.genesis-mode. With the default (empty) mode the first configured
+// source wins, in the order: genesis (inline), genesis-json-file,
+// genesis-json-file-directory. Returns nil when no document is configured.
+func resolveGenesisDocument(initConfig *conf.InitConfig, chainId uint64, otherInitMethodSupplied bool) (*core.Genesis, error) {
+	readGenesisFile := func(genesisJsonFile string) (*core.Genesis, error) {
+		genesisJson, err := os.ReadFile(genesisJsonFile)
+		if err != nil {
+			return nil, err
+		}
+		var gen core.Genesis
+		if err := json.Unmarshal(genesisJson, &gen); err != nil {
+			return nil, err
+		}
+		return &gen, nil
+	}
+	inlineGenesis := func() *core.Genesis {
+		// use a copy: reading the chain config caches it inside the struct
+		// and must not mutate the live config, which is compared field by
+		// field on hot reload
+		gen := initConfig.Genesis
+		return &gen
+	}
+	switch initConfig.GenesisMode {
+	case conf.GenesisModeInline:
+		return inlineGenesis(), nil
+	case conf.GenesisModeFile:
+		return readGenesisFile(initConfig.GenesisJsonFile)
+	case conf.GenesisModeDirectory:
+		// normally already resolved into GenesisJsonFile at config parse time
+		genesisJsonFile := initConfig.GenesisJsonFile
+		if genesisJsonFile == "" {
+			var err error
+			genesisJsonFile, err = GetGenesisFileNameFromDirectory(initConfig.GenesisJsonFileDirectory, chainId)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return readGenesisFile(genesisJsonFile)
+	}
+	if initConfig.HasInlineGenesis() {
+		if initConfig.GenesisJsonFile != "" {
+			log.Warn("both init.genesis and init.genesis-json-file are configured, using init.genesis; set init.genesis-mode to choose explicitly", "ignoredFile", initConfig.GenesisJsonFile)
+		}
+		return inlineGenesis(), nil
+	}
+	if initConfig.GenesisJsonFile != "" {
+		return readGenesisFile(initConfig.GenesisJsonFile)
+	}
+	if otherInitMethodSupplied && initConfig.GenesisJsonFileDirectory != "" {
+		// lookup kept so that a directory match while another init method is
+		// supplied is reported as "multiple init methods supplied"
+		genesisJsonFile, err := GetGenesisFileNameFromDirectory(initConfig.GenesisJsonFileDirectory, chainId)
+		if err != nil {
+			log.Error("error getting genesis json file from directory", "err", err)
+			return nil, nil
+		}
+		return readGenesisFile(genesisJsonFile)
+	}
+	return nil, nil
+}
+
+// initDataFromGenesis converts a genesis document into init data and the
+// chain config it carries, verifying that it targets the configured chain.
+func initDataFromGenesis(gen *core.Genesis, chainId uint64) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, error) {
+	chainConfig, _, err := cmd_util.ReadChainConfig(gen)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if chainConfig.ChainID == nil || !chainConfig.ChainID.IsUint64() || chainConfig.ChainID.Uint64() != chainId {
+		return nil, nil, nil, fmt.Errorf("genesis chain id %v does not match configured chain id %d", chainConfig.ChainID, chainId)
+	}
+	var accounts []statetransfer.AccountInitializationInfo
+	for address, account := range gen.Alloc {
+		accounts = append(accounts, statetransfer.AccountInitializationInfo{
+			Addr:       address,
+			EthBalance: account.Balance,
+			Nonce:      account.Nonce,
+			ContractInfo: &statetransfer.AccountInitContractInfo{
+				Code:            account.Code,
+				ContractStorage: account.Storage,
+			},
+		})
+	}
+	initDataReader := statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{
+		Accounts: accounts,
+	})
+	return initDataReader, chainConfig, gen.ArbOSInit, nil
 }
 
 func GetGenesisFileNameFromDirectory(genesisFileDirectory string, chainId uint64) (string, error) {
