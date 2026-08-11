@@ -143,7 +143,8 @@ func (s *FullSequencingHooks) TxAccepted(header *types.Header, tx *types.Transac
 	if s.transactionFeedServer == nil {
 		return
 	}
-	msg, err := transactionfeed.BuildFeedMessage(header, tx, receipt)
+	queueItem := s.sequencedTxs[len(s.sequencedTxs)-1].queueItem
+	msg, err := transactionfeed.BuildFeedMessage(header, tx, receipt, queueItem.GetPGARound())
 	if err != nil {
 		log.Error("Transaction feed: failed to build message", "block", header.Number, "err", err)
 		return

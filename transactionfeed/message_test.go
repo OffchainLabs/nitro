@@ -4,6 +4,7 @@
 package transactionfeed
 
 import (
+	"encoding/json"
 	"math/big"
 	"strings"
 	"testing"
@@ -33,7 +34,7 @@ func TestBuildFeedMessageNilInputs(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			msg, err := BuildFeedMessage(tc.header, tc.tx, tc.receipt)
+			msg, err := BuildFeedMessage(tc.header, tc.tx, tc.receipt, 0)
 			if err == nil {
 				t.Fatalf("expected error, got nil (msg=%v)", msg)
 			}
@@ -52,7 +53,7 @@ func TestBuildFeedMessageHappyPath(t *testing.T) {
 	header := &types.Header{Number: big.NewInt(1), BaseFee: big.NewInt(1)}
 	receipt := &types.Receipt{Status: types.ReceiptStatusSuccessful, EffectiveGasPrice: big.NewInt(1)}
 
-	msg, err := BuildFeedMessage(header, tx, receipt)
+	msg, err := BuildFeedMessage(header, tx, receipt, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -64,5 +65,26 @@ func TestBuildFeedMessageHappyPath(t *testing.T) {
 	}
 	if msg.Transaction.BlockNumber != header.Number.Uint64() {
 		t.Fatalf("block number mismatch: got %d want %d", msg.Transaction.BlockNumber, header.Number.Uint64())
+	}
+}
+
+func TestBuildFeedMessagePGARoundHandling(t *testing.T) {
+	tx := types.NewTx(&types.DynamicFeeTx{})
+	header := &types.Header{Number: big.NewInt(1), BaseFee: big.NewInt(1)}
+	receipt := &types.Receipt{Status: types.ReceiptStatusSuccessful, EffectiveGasPrice: big.NewInt(1)}
+
+	for pgaRound, expected := range []bool{false, true} {
+		msg, err := BuildFeedMessage(header, tx, receipt, uint64(pgaRound))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		encoded, err := json.Marshal(msg)
+		if err != nil {
+			t.Fatalf("unexpected error marshalling message to JSON: %v", err)
+		}
+
+		if got := strings.Contains(string(encoded), "pga_round"); got != expected {
+			t.Fatalf("pga_round present = %v, want %v; JSON: %s", got, expected, encoded)
+		}
 	}
 }

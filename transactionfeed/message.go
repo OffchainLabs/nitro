@@ -24,7 +24,7 @@ const (
 type TransactionFeedMessage struct {
 	Version     TransactionFeedMessageVersion `json:"version"`
 	TimestampMs uint64                        `json:"timestamp_ms"`
-	PGARound    uint64                        `json:"pga_round"`
+	PGARound    uint64                        `json:"pga_round,omitzero"`
 	Transaction IncludedTransaction           `json:"transaction"`
 }
 
@@ -53,7 +53,7 @@ type Log struct {
 	Data    string   `json:"data"`
 }
 
-func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *types.Receipt) (*TransactionFeedMessage, error) {
+func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *types.Receipt, pgaRound uint64) (*TransactionFeedMessage, error) {
 	if tx == nil {
 		return nil, errors.New("nil transaction")
 	}
@@ -96,7 +96,7 @@ func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *type
 
 	return &TransactionFeedMessage{
 		Version:     TransactionFeedV1,
-		PGARound:    0, // TODO: placeholder until we connect with PGA round logic
+		PGARound:    pgaRound,
 		TimestampMs: arbmath.SaturatingUCast[uint64](time.Now().UnixMilli()),
 		Transaction: IncludedTransaction{
 			BlockNumber: header.Number.Uint64(),

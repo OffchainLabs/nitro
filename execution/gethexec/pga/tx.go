@@ -31,6 +31,7 @@ type Tx interface {
 type Priority struct {
 	boost          uint64 // accumulated PGA anti-starvation boost
 	cachedPriority uint64 // PGA priority of the tx
+	pgaRound       uint64 // PGA round in which the tx was sequenced
 }
 
 func (p *Priority) SetPriority(value uint64) {
@@ -38,8 +39,16 @@ func (p *Priority) SetPriority(value uint64) {
 	p.cachedPriority = arbmath.SaturatingUAdd(value, p.boost)
 }
 
+func (p *Priority) SetPGARound(round uint64) {
+	p.pgaRound = round
+}
+
 func (p *Priority) GetPriority() uint64 {
 	return p.cachedPriority
+}
+
+func (p *Priority) GetPGARound() uint64 {
+	return p.pgaRound
 }
 
 func (p *Priority) ResetBoost() {

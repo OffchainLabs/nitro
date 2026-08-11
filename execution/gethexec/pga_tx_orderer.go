@@ -63,13 +63,15 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 			return txQueueItem{}, false
 		}
 
+		item.SetPGARound(p.schedule.Round())
+
 		return item, true
 	}
 }
 
 func (p *pgaTxOrderer) StartBlock(statedb *state.StateDB) (hasWork bool) {
 	config := p.configFetcher()
-	p.schedule = pga.NewSchedule(config.ExperimentalPGA.RoundsPerBlock, config.PGARoundLength())
+	p.schedule = pga.NewSchedule(uint64(config.ExperimentalPGA.RoundsPerBlock), config.PGARoundLength())
 	p.mempool = pga.NewMempool[txQueueItem](config.ExperimentalPGA.RoundsPerBlock, p.baseFee)
 
 	p.mempool.PushBatch(p.seq.drainValidatedTxs(statedb, p.baseFee))
