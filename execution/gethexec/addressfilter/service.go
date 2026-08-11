@@ -46,10 +46,10 @@ func NewFilterService(config *Config) (*FilterService, error) {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
-	files := make([]*fileSync, 0, len(config.Files))
-	stores := make([]*HashStore, 0, len(config.Files))
-	for i := range config.Files {
-		fileConfig := config.Files[i]
+	files := make([]*fileSync, 0, len(config.resolvedFiles))
+	stores := make([]*HashStore, 0, len(config.resolvedFiles))
+	for i := range config.resolvedFiles {
+		fileConfig := config.resolvedFiles[i]
 		maxHashes := fileConfig.numPreallocatedHashes()
 		if maxHashes > 0 {
 			log.Info("address-filter preallocating memory for hash list",

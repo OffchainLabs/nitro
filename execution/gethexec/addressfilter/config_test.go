@@ -77,14 +77,14 @@ func TestConfigValidate(t *testing.T) {
 		cfg := DefaultConfig
 		cfg.StaticList = "{}"
 		require.NoError(t, cfg.Validate())
-		require.Empty(t, cfg.Files)
+		require.Empty(t, cfg.resolvedFiles)
 	})
 
 	t.Run("static list plus files", func(t *testing.T) {
 		cfg := validTestConfig(t)
 		cfg.StaticList = "{}"
 		require.NoError(t, cfg.Validate())
-		require.Len(t, cfg.Files, 1)
+		require.Len(t, cfg.resolvedFiles, 1)
 	})
 
 	t.Run("valid multiple files", func(t *testing.T) {
@@ -101,11 +101,14 @@ func TestConfigValidate(t *testing.T) {
 		cfg.Files[0].PollInterval = 0
 		cfg.Files[0].MinBytesPerHashEntry = 0
 		require.NoError(t, cfg.Validate())
-		require.Equal(t, DefaultFileConfig.ChunkSizeMB, cfg.Files[0].ChunkSizeMB)
-		require.Equal(t, DefaultFileConfig.MaxRetries, cfg.Files[0].MaxRetries)
-		require.Equal(t, DefaultFileConfig.Concurrency, cfg.Files[0].Concurrency)
-		require.Equal(t, DefaultFileConfig.PollInterval, cfg.Files[0].PollInterval)
-		require.Equal(t, DefaultFileConfig.MinBytesPerHashEntry, cfg.Files[0].MinBytesPerHashEntry)
+		require.Equal(t, DefaultFileConfig.ChunkSizeMB, cfg.resolvedFiles[0].ChunkSizeMB)
+		require.Equal(t, DefaultFileConfig.MaxRetries, cfg.resolvedFiles[0].MaxRetries)
+		require.Equal(t, DefaultFileConfig.Concurrency, cfg.resolvedFiles[0].Concurrency)
+		require.Equal(t, DefaultFileConfig.PollInterval, cfg.resolvedFiles[0].PollInterval)
+		require.Equal(t, DefaultFileConfig.MinBytesPerHashEntry, cfg.resolvedFiles[0].MinBytesPerHashEntry)
+		// Validate derives the effective config without mutating its inputs.
+		require.Zero(t, cfg.Files[0].ChunkSizeMB)
+		require.Zero(t, cfg.Files[0].PollInterval)
 	})
 
 	t.Run("negative min-bytes-per-hash-entry", func(t *testing.T) {
@@ -214,20 +217,20 @@ func TestConfigValidateFilesList(t *testing.T) {
 				`{"bucket":"b2","object-key":"k2","region":"us-east-1","download-dir":%q,"poll-interval":%d,"chunk-size-mb":8,"min-bytes-per-hash-entry":66}]`,
 			downloadDir, downloadDir, int64(time.Minute))
 		require.NoError(t, cfg.Validate())
-		require.Len(t, cfg.Files, 2)
+		require.Len(t, cfg.resolvedFiles, 2)
 
 		// Omitted fields keep their defaults.
-		require.Equal(t, DefaultFileConfig.PollInterval, cfg.Files[0].PollInterval)
-		require.Equal(t, DefaultFileConfig.ChunkSizeMB, cfg.Files[0].ChunkSizeMB)
-		require.Equal(t, DefaultFileConfig.MaxRetries, cfg.Files[0].MaxRetries)
-		require.Equal(t, DefaultFileConfig.Concurrency, cfg.Files[0].Concurrency)
-		require.Equal(t, DefaultFileConfig.MinBytesPerHashEntry, cfg.Files[0].MinBytesPerHashEntry)
-		require.True(t, cfg.Files[0].PreallocateMemory)
+		require.Equal(t, DefaultFileConfig.PollInterval, cfg.resolvedFiles[0].PollInterval)
+		require.Equal(t, DefaultFileConfig.ChunkSizeMB, cfg.resolvedFiles[0].ChunkSizeMB)
+		require.Equal(t, DefaultFileConfig.MaxRetries, cfg.resolvedFiles[0].MaxRetries)
+		require.Equal(t, DefaultFileConfig.Concurrency, cfg.resolvedFiles[0].Concurrency)
+		require.Equal(t, DefaultFileConfig.MinBytesPerHashEntry, cfg.resolvedFiles[0].MinBytesPerHashEntry)
+		require.True(t, cfg.resolvedFiles[0].PreallocateMemory)
 
-		// Explicit fields override defaults; durations are nanosecond integers.
-		require.Equal(t, time.Minute, cfg.Files[1].PollInterval)
-		require.Equal(t, 8, cfg.Files[1].ChunkSizeMB)
-		require.Equal(t, 66, cfg.Files[1].MinBytesPerHashEntry)
+		// Explicit fields override defaults.
+		require.Equal(t, time.Minute, cfg.resolvedFiles[1].PollInterval)
+		require.Equal(t, 8, cfg.resolvedFiles[1].ChunkSizeMB)
+		require.Equal(t, 66, cfg.resolvedFiles[1].MinBytesPerHashEntry)
 	})
 
 	t.Run("conflicts with files slice", func(t *testing.T) {

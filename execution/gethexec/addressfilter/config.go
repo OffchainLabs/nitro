@@ -40,6 +40,10 @@ type Config struct {
 	CacheSize                 int          `koanf:"cache-size"`
 	AddressCheckerWorkerCount int          `koanf:"address-checker-worker-count"`
 	AddressCheckerQueueSize   int          `koanf:"address-checker-queue-size"`
+
+	// resolvedFiles is the effective file list derived by Validate from Files
+	// or FilesList, with per-file defaults applied.
+	resolvedFiles []FileConfig
 }
 
 var DefaultConfig = Config{
@@ -144,24 +148,26 @@ func (c *FileConfig) applyFileDefaults() {
 }
 
 func (c *Config) Validate() error {
+	resolvedFiles := make([]FileConfig, len(c.Files))
+	copy(resolvedFiles, c.Files)
 	if c.FilesList != "default" {
 		if len(c.Files) > 0 {
 			return errors.New("address-filter: files and files-list are mutually exclusive; configure only one")
 		}
-		files, err := parseFileConfigsList(c.FilesList)
+		parsed, err := parseFileConfigsList(c.FilesList)
 		if err != nil {
 			return err
 		}
-		c.Files = files
+		resolvedFiles = parsed
 	}
 
-	if len(c.Files) == 0 && c.StaticList == "" {
+	if len(resolvedFiles) == 0 && c.StaticList == "" {
 		return errors.New("address-filter: at least one file must be configured via files or files-list, or a static list via static-list")
 	}
 
-	seen := make(map[string]struct{}, len(c.Files))
-	for i := range c.Files {
-		file := &c.Files[i]
+	seen := make(map[string]struct{}, len(resolvedFiles))
+	for i := range resolvedFiles {
+		file := &resolvedFiles[i]
 		file.applyFileDefaults()
 		if err := file.Config.Validate(); err != nil {
 			return fmt.Errorf("address-filter.files[%d] (s3://%s/%s): %w", i, file.Bucket, file.ObjectKey, err)
@@ -178,6 +184,7 @@ func (c *Config) Validate() error {
 		}
 		seen[key] = struct{}{}
 	}
+	c.resolvedFiles = resolvedFiles
 
 	if c.CacheSize <= 0 {
 		return errors.New("address-filter.cache-size must be positive")
