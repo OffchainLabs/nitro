@@ -248,14 +248,14 @@ func BeginCommonParseWithVersion(f *pflag.FlagSet, args []string, version nitrov
 	if value := k.String("conf.min-version"); value != "" {
 		parsed, err := nitroversion.ParseCanonicalVersion(value)
 		if err != nil {
-			return nil, fmt.Errorf("%w: invalid conf.min-version %q, expected a semantic version such as v3.9.0: %v", nitroversion.ErrInvalidVersionRange, value, err)
+			return nil, fmt.Errorf("%w: invalid conf.min-version %q, expected a semantic version such as v3.9.0: %w", nitroversion.ErrInvalidVersionRange, value, err)
 		}
 		minVersion = parsed
 	}
 	if value := k.String("conf.max-version"); value != "" {
 		parsed, err := nitroversion.ParseCanonicalVersion(value)
 		if err != nil {
-			return nil, fmt.Errorf("%w: invalid conf.max-version %q, expected a semantic version such as v3.9.0: %v", nitroversion.ErrInvalidVersionRange, value, err)
+			return nil, fmt.Errorf("%w: invalid conf.max-version %q, expected a semantic version such as v3.9.0: %w", nitroversion.ErrInvalidVersionRange, value, err)
 		}
 		maxVersion = parsed
 	}
