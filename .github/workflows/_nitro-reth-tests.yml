@@ -34,3 +34,11 @@ jobs:
     if: github.event_name == 'pull_request'
     uses: ./.github/workflows/_nitro-reth-dependencies.yml
     secrets: inherit
+
+  bench-pr:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/_nitro-reth-bench-pr.yml
+    secrets: inherit
+    permissions:
+      contents: read
+      pull-requests: write

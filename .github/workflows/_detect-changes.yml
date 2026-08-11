@@ -69,6 +69,11 @@ jobs:
               - 'nitro-reth/**'
               - '.github/workflows/_nitro-reth*.yml'
               - '.github/workflows/_detect-changes.yml'
+              # Root submodules that nitro-reth symlinks into its tree, so
+              # pin bumps also run the reth suite.
+              - 'brotli'
+              - 'contracts'
+              - 'contracts-local/src/precompiles'
               # Root configs that nitro-reth builds inherit (no local copies),
               # so toolchain/format bumps also run the reth suite.
               - 'rust-toolchain.toml'

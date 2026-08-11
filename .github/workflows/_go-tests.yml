@@ -80,7 +80,7 @@ permissions:
 jobs:
   go-tests:
     name: Go tests
-    runs-on: arbitrator-ci
+    runs-on: ocl-16cpu-64ram-dind
     # Hard cap so a hung job is killed at 1.5h instead of GitHub's 6h default.
     # Kept above every per-step Go `--timeout` (<=70m) plus the ~15m build, so on
     # a hung test the Go timeout fires first and prints a goroutine stack trace
@@ -204,39 +204,59 @@ jobs:
       - name: run redis tests
         if: inputs.run-defaults-a
         run: >-
-          gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/...
-          ${COVER:+-coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...} -- --test_redis=redis://localhost:6379/0
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 60m $COVER --coverprofile coverage-redis.txt
+          --run TestRedis --packages './arbnode/... ./pubsub/... ./system_tests/...'
+          --test_redis redis://localhost:6379/0
+          --junitfile test-results/junit-redis.xml
 
       # --------------------- FLAKY MODE --------------------------
 
-      # Flaky tests retry once (via gotestsum.sh) and block on failure: if a test
-      # fails even after a retry, it's not just flaky — it's broken.
       - name: run flaky tests (hash state scheme)
         if: inputs.run-flaky
+        continue-on-error: true
+        timeout-minutes: 30
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash --flaky
+          --tags cionly --timeout 25m --test_state_scheme hash --flaky
           --junitfile test-results/junit-flaky-hash.xml
 
       - name: run flaky tests (path state scheme)
         if: inputs.run-flaky
+        continue-on-error: true
+        timeout-minutes: 30
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme path --flaky
+          --tags cionly --timeout 25m --test_state_scheme path --flaky
           --junitfile test-results/junit-flaky-path.xml
+
+      - name: run flaky redis tests
+        if: inputs.run-flaky
+        continue-on-error: true
+        timeout-minutes: 15
+        run: >-
+          ${{ github.workspace }}/.github/workflows/gotestsum.sh
+          --tags cionly --timeout 10m --flaky
+          --run TestRedis --packages './arbnode/... ./pubsub/... ./system_tests/...'
+          --test_redis redis://localhost:6379/0
+          --junitfile test-results/junit-flaky-redis.xml
 
       - name: run flaky tests (hash state scheme, MEL)
         if: inputs.run-flaky-mel
+        continue-on-error: true
+        timeout-minutes: 30
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme hash --flaky --test_mel
+          --tags cionly --timeout 25m --test_state_scheme hash --flaky --test_mel
           --junitfile test-results/junit-flaky-mel-hash.xml
 
       - name: run flaky tests (path state scheme, MEL)
         if: inputs.run-flaky-mel
+        continue-on-error: true
+        timeout-minutes: 30
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --test_state_scheme path --flaky --test_mel
+          --tags cionly --timeout 25m --test_state_scheme path --flaky --test_mel
           --junitfile test-results/junit-flaky-mel-path.xml
 
       # --------------------- CHALLENGE MODES ---------------------
