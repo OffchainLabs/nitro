@@ -29,7 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode/db/schema"
-	melrunner "github.com/offchainlabs/nitro/arbnode/mel/runner"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -567,7 +567,7 @@ func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostyp
 		if message.DelayedMessagesRead != 0 && s.batchDataProvider != nil {
 			localParentChainBlockNumber, err := s.batchDataProvider.FindParentChainBlockContainingDelayed(ctx, message.DelayedMessagesRead-1)
 			if err != nil {
-				if errors.Is(err, melrunner.ErrFindDelayedNotImplementedByMEL) {
+				if errors.Is(err, mel.ErrFindDelayedNotImplementedByMEL) {
 					log.Debug("MEL: using BatchMetadata fallback for parent chain block number", "idx", message.DelayedMessagesRead-1)
 				} else {
 					log.Warn("Failed to fetch parent chain block number for delayed message. Will fall back to BatchMetadata", "idx", message.DelayedMessagesRead-1, "err", err)

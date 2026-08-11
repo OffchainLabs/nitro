@@ -28,7 +28,6 @@ import (
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
-	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -100,6 +99,9 @@ type ParentChainReader interface {
 	FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
 }
 
+// MessageExtractor is the in-process ("native") implementation of mel.MELNative.
+var _ mel.MELNative = (*MessageExtractor)(nil)
+
 // Defines a message extraction service for a Nitro node which reads parent chain
 // blocks one by one to transform them into messages for the execution layer.
 type MessageExtractor struct {
@@ -120,8 +122,6 @@ type MessageExtractor struct {
 	reorgEventsNotifier      chan uint64
 	seqBatchCounter          SequencerBatchCountFetcher
 	l1Reader                 *headerreader.HeaderReader
-
-	blockValidator *staker.BlockValidator // TODO: remove post MEL block validation
 }
 
 // Creates a message extractor instance with the specified parameters,
@@ -258,13 +258,6 @@ func (m *MessageExtractor) getStateByRPCBlockNum(ctx context.Context, blockNum r
 	return state, nil
 }
 
-func (m *MessageExtractor) SetBlockValidator(blockValidator *staker.BlockValidator) {
-	if m.Started() {
-		panic("cannot set block validator after start")
-	}
-	m.blockValidator = blockValidator
-}
-
 func (m *MessageExtractor) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
 	state, err := m.getStateByRPCBlockNum(ctx, rpc.SafeBlockNumber)
 	if err != nil {
@@ -395,10 +388,8 @@ func (m *MessageExtractor) GetDelayedCount() (uint64, error) {
 // batchpostingreport- but this should never be possible as ExtractMessages function would fill in the cost data during extraction.
 // Returns an error so the caller falls back to BatchMetadata lookup. This error is expected when MEL is active.
 func (m *MessageExtractor) FindParentChainBlockContainingDelayed(context.Context, uint64) (uint64, error) {
-	return 0, ErrFindDelayedNotImplementedByMEL
+	return 0, mel.ErrFindDelayedNotImplementedByMEL
 }
-
-var ErrFindDelayedNotImplementedByMEL = errors.New("FindParentChainBlockContainingDelayed is not implemented by MEL as batch gas cost data is already filled in during extraction")
 
 func (m *MessageExtractor) GetBatchMetadata(seqNum uint64) (mel.BatchMetadata, error) {
 	headState, err := m.melDB.GetHeadMelState()
@@ -487,8 +478,10 @@ func (m *MessageExtractor) GetSequencerMessageBytesForParentBlock(ctx context.Co
 	return nil, common.Hash{}, fmt.Errorf("sequencer batch %v not found in L1 block %v (found batches %v)", seqNum, parentChainBlock, seenBatches)
 }
 
-// ReorgTo, when reorgEventsNotifier is set, should only be called after the readers of the channel are started as this is a blocking operation. To be only
-// called during init when reorging to a message batch
+// ReorgTo, when reorgEventsNotifier is set, sends into it (a blocking send). In native mode the
+// caller must ensure the channel's reader is started first; the notifier is buffered (see
+// arbnode.createNodeImpl) so an init-time reorg does not wedge on a reader that starts later.
+// To be only called during init when reorging to a message batch.
 func (m *MessageExtractor) ReorgTo(parentChainBlockNumber uint64) error {
 	dbBatch := m.melDB.db.NewBatch()
 	if err := m.melDB.setHeadMelStateBlockNum(dbBatch, parentChainBlockNumber); err != nil {

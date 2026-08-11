@@ -80,9 +80,6 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 				return m.config.RetryInterval, ctx.Err()
 			}
 		}
-		if m.blockValidator != nil {
-			m.blockValidator.ReorgToBatchCount(preState.BatchCount)
-		}
 	}
 	// Conditionally prefetch headers and logs for upcoming block/s
 	if err = m.logsAndHeadersPreFetcher.fetch(ctx, preState); err != nil {

@@ -396,9 +396,11 @@ func NewBlockValidator(
 		}
 	}
 	ret.streamer = streamer
-	ret.inboxTracker = inbox
 	streamer.SetBlockValidator(ret)
-	inbox.SetBlockValidator(ret)
+	// inbox is not registered here: it may be MEL, which cannot implement
+	// BlockValidatorRegistrer. The caller registers the block validator with whichever
+	// inbox source it built (see arbnode.createNodeImpl).
+	ret.inboxTracker = inbox
 	if config().MemoryFreeLimit != "" {
 		limitchecker, err := resourcemanager.NewCgroupsMemoryLimitCheckerIfSupported(config().memoryFreeLimit)
 		if err != nil {
