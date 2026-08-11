@@ -4,8 +4,6 @@
 package addressfilter
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -17,14 +15,14 @@ import (
 
 type FileConfig struct {
 	s3syncer.Config `koanf:",squash"`
-	PollInterval    time.Duration `json:"poll-interval,omitempty" koanf:"poll-interval"`
+	PollInterval    time.Duration `koanf:"poll-interval"`
 	// MinBytesPerHashEntry is the assumed minimum JSON size of one hash-list
 	// entry, used to size memory preallocation from max-file-size-mb. The
 	// default is the smallest entry any scheme allows (a quoted plaintext
 	// address); lists known to hold only sha256 entries can raise it to 66 (a
 	// quoted 64-hex hash) to avoid preallocating for entries the list can
 	// never contain.
-	MinBytesPerHashEntry int `json:"min-bytes-per-hash-entry,omitempty" koanf:"min-bytes-per-hash-entry"`
+	MinBytesPerHashEntry int `koanf:"min-bytes-per-hash-entry"`
 }
 
 var DefaultFileConfig = FileConfig{
@@ -34,33 +32,22 @@ var DefaultFileConfig = FileConfig{
 }
 
 type Config struct {
+	// Files has no dedicated command-line flag (pflag cannot express an array
+	// of structs); configure it in a config file or via --conf.string.
 	Files                     []FileConfig `koanf:"files"`
-	FilesList                 string       `koanf:"files-list"`
 	StaticList                string       `koanf:"static-list"`
 	CacheSize                 int          `koanf:"cache-size"`
 	AddressCheckerWorkerCount int          `koanf:"address-checker-worker-count"`
 	AddressCheckerQueueSize   int          `koanf:"address-checker-queue-size"`
-
-	// resolvedFiles is the effective file list derived by Validate from Files
-	// or FilesList, with per-file defaults applied.
-	resolvedFiles []FileConfig
 }
 
 var DefaultConfig = Config{
-	FilesList:                 "default",
 	CacheSize:                 10000,
 	AddressCheckerWorkerCount: 4,
 	AddressCheckerQueueSize:   8192,
 }
 
 func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.String(prefix+".files-list", DefaultConfig.FilesList,
-		"array of S3 hash-list file configs given as a json string, "+
-			`e.g. [{"bucket":"b","object-key":"k","region":"us-east-1","download-dir":"/data/tmp","poll-interval":300000000000}]; `+
-			"json keys match the "+prefix+".files config-file field names and time durations must be supplied as an integer number of nanoseconds; "+
-			"omitted or zero chunk-size-mb, max-retries, concurrency, poll-interval and min-bytes-per-hash-entry fall back to their defaults, so max-retries cannot be set to 0; "+
-			"min-bytes-per-hash-entry sizes memory preallocation (default 42, the smallest entry any scheme allows; lists holding only sha256 entries can set 66); "+
-			`the default value "default" means not set`)
 	f.String(prefix+".static-list", DefaultConfig.StaticList,
 		"hash-list JSON document given inline as a json string, with the same schema as the S3 hash-list files, "+
 			`e.g. {"id":"<uuid>","salt":"<uuid>","hashing_scheme":"sha256-stringinput|sha256-rawbytesinput|plaintext","hashes":["0x...."]}; `+
@@ -102,73 +89,38 @@ func (c *FileConfig) numPreallocatedHashes() int {
 	return int(int64(c.MaxFileSizeMB) * bytesInMB / bytesPerEntry)
 }
 
-// parseFileConfigsList decodes a files-list JSON array. Each element starts from
-// DefaultFileConfig before unmarshaling so omitted fields keep their defaults
-// instead of Go zero values. Unknown keys are rejected so a typo doesn't
-// silently leave a field at its default, matching the strictness of the
-// config-file path.
-func parseFileConfigsList(list string) ([]FileConfig, error) {
-	var rawEntries []json.RawMessage
-	if err := json.Unmarshal([]byte(list), &rawEntries); err != nil {
-		return nil, fmt.Errorf("failed to parse address-filter files-list string: %w", err)
+// withDefaults returns a copy with zero-valued fields that must be positive
+// for the syncer to work filled in. Koanf doesn't apply per-element defaults
+// when decoding into the Files slice (flag defaults exist only for scalar
+// keys), so a zero here means the field was omitted.
+func (c *FileConfig) withDefaults() FileConfig {
+	file := *c
+	if file.ChunkSizeMB == 0 {
+		file.ChunkSizeMB = DefaultFileConfig.ChunkSizeMB
 	}
-	fileConfigs := make([]FileConfig, 0, len(rawEntries))
-	for i, raw := range rawEntries {
-		fileConfig := DefaultFileConfig
-		dec := json.NewDecoder(bytes.NewReader(raw))
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&fileConfig); err != nil {
-			return nil, fmt.Errorf("failed to parse address-filter files-list entry %d: %w", i, err)
-		}
-		fileConfigs = append(fileConfigs, fileConfig)
+	if file.MaxRetries == 0 {
+		file.MaxRetries = DefaultFileConfig.MaxRetries
 	}
-	return fileConfigs, nil
-}
-
-// applyFileDefaults fills in zero-valued fields that must be positive for the
-// syncer to work. Config sources that decode into the Files slice (koanf
-// config files) don't apply per-element defaults, so a zero here means the
-// field was omitted.
-func (c *FileConfig) applyFileDefaults() {
-	if c.ChunkSizeMB == 0 {
-		c.ChunkSizeMB = DefaultFileConfig.ChunkSizeMB
+	if file.Concurrency == 0 {
+		file.Concurrency = DefaultFileConfig.Concurrency
 	}
-	if c.MaxRetries == 0 {
-		c.MaxRetries = DefaultFileConfig.MaxRetries
+	if file.PollInterval == 0 {
+		file.PollInterval = DefaultFileConfig.PollInterval
 	}
-	if c.Concurrency == 0 {
-		c.Concurrency = DefaultFileConfig.Concurrency
+	if file.MinBytesPerHashEntry == 0 {
+		file.MinBytesPerHashEntry = DefaultFileConfig.MinBytesPerHashEntry
 	}
-	if c.PollInterval == 0 {
-		c.PollInterval = DefaultFileConfig.PollInterval
-	}
-	if c.MinBytesPerHashEntry == 0 {
-		c.MinBytesPerHashEntry = DefaultFileConfig.MinBytesPerHashEntry
-	}
+	return file
 }
 
 func (c *Config) Validate() error {
-	resolvedFiles := make([]FileConfig, len(c.Files))
-	copy(resolvedFiles, c.Files)
-	if c.FilesList != "default" {
-		if len(c.Files) > 0 {
-			return errors.New("address-filter: files and files-list are mutually exclusive; configure only one")
-		}
-		parsed, err := parseFileConfigsList(c.FilesList)
-		if err != nil {
-			return err
-		}
-		resolvedFiles = parsed
+	if len(c.Files) == 0 && c.StaticList == "" {
+		return errors.New("address-filter: at least one file must be configured via files, or a static list via static-list")
 	}
 
-	if len(resolvedFiles) == 0 && c.StaticList == "" {
-		return errors.New("address-filter: at least one file must be configured via files or files-list, or a static list via static-list")
-	}
-
-	seen := make(map[string]struct{}, len(resolvedFiles))
-	for i := range resolvedFiles {
-		file := &resolvedFiles[i]
-		file.applyFileDefaults()
+	seen := make(map[string]struct{}, len(c.Files))
+	for i := range c.Files {
+		file := c.Files[i].withDefaults()
 		if err := file.Config.Validate(); err != nil {
 			return fmt.Errorf("address-filter.files[%d] (s3://%s/%s): %w", i, file.Bucket, file.ObjectKey, err)
 		}
@@ -184,7 +136,6 @@ func (c *Config) Validate() error {
 		}
 		seen[key] = struct{}{}
 	}
-	c.resolvedFiles = resolvedFiles
 
 	if c.CacheSize <= 0 {
 		return errors.New("address-filter.cache-size must be positive")

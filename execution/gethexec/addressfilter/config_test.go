@@ -4,8 +4,6 @@
 package addressfilter
 
 import (
-	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -64,7 +62,7 @@ func validTestConfig(t *testing.T) Config {
 
 func TestConfigValidate(t *testing.T) {
 	t.Run("empty config", func(t *testing.T) {
-		emptyConfig := Config{FilesList: "default"}
+		emptyConfig := Config{}
 		require.ErrorContains(t, emptyConfig.Validate(), "at least one file")
 	})
 
@@ -77,14 +75,12 @@ func TestConfigValidate(t *testing.T) {
 		cfg := DefaultConfig
 		cfg.StaticList = "{}"
 		require.NoError(t, cfg.Validate())
-		require.Empty(t, cfg.resolvedFiles)
 	})
 
 	t.Run("static list plus files", func(t *testing.T) {
 		cfg := validTestConfig(t)
 		cfg.StaticList = "{}"
 		require.NoError(t, cfg.Validate())
-		require.Len(t, cfg.resolvedFiles, 1)
 	})
 
 	t.Run("valid multiple files", func(t *testing.T) {
@@ -93,7 +89,7 @@ func TestConfigValidate(t *testing.T) {
 		require.NoError(t, cfg.Validate())
 	})
 
-	t.Run("zero fields normalized to defaults", func(t *testing.T) {
+	t.Run("zero fields accepted via defaults", func(t *testing.T) {
 		cfg := validTestConfig(t)
 		cfg.Files[0].ChunkSizeMB = 0
 		cfg.Files[0].MaxRetries = 0
@@ -101,12 +97,7 @@ func TestConfigValidate(t *testing.T) {
 		cfg.Files[0].PollInterval = 0
 		cfg.Files[0].MinBytesPerHashEntry = 0
 		require.NoError(t, cfg.Validate())
-		require.Equal(t, DefaultFileConfig.ChunkSizeMB, cfg.resolvedFiles[0].ChunkSizeMB)
-		require.Equal(t, DefaultFileConfig.MaxRetries, cfg.resolvedFiles[0].MaxRetries)
-		require.Equal(t, DefaultFileConfig.Concurrency, cfg.resolvedFiles[0].Concurrency)
-		require.Equal(t, DefaultFileConfig.PollInterval, cfg.resolvedFiles[0].PollInterval)
-		require.Equal(t, DefaultFileConfig.MinBytesPerHashEntry, cfg.resolvedFiles[0].MinBytesPerHashEntry)
-		// Validate derives the effective config without mutating its inputs.
+		// Validate checks defaulted copies without mutating its inputs.
 		require.Zero(t, cfg.Files[0].ChunkSizeMB)
 		require.Zero(t, cfg.Files[0].PollInterval)
 	})
@@ -208,65 +199,31 @@ func TestConfigKoanfFilesDecoding(t *testing.T) {
 	require.Equal(t, 100, cfg.CacheSize)
 }
 
-func TestConfigValidateFilesList(t *testing.T) {
-	t.Run("parses entries and preserves defaults", func(t *testing.T) {
-		downloadDir := t.TempDir()
-		cfg := DefaultConfig
-		cfg.FilesList = fmt.Sprintf(
-			`[{"bucket":"b1","object-key":"k1","region":"us-east-1","download-dir":%q},`+
-				`{"bucket":"b2","object-key":"k2","region":"us-east-1","download-dir":%q,"poll-interval":%d,"chunk-size-mb":8,"min-bytes-per-hash-entry":66}]`,
-			downloadDir, downloadDir, int64(time.Minute))
-		require.NoError(t, cfg.Validate())
-		require.Len(t, cfg.resolvedFiles, 2)
-
-		// Omitted fields keep their defaults.
-		require.Equal(t, DefaultFileConfig.PollInterval, cfg.resolvedFiles[0].PollInterval)
-		require.Equal(t, DefaultFileConfig.ChunkSizeMB, cfg.resolvedFiles[0].ChunkSizeMB)
-		require.Equal(t, DefaultFileConfig.MaxRetries, cfg.resolvedFiles[0].MaxRetries)
-		require.Equal(t, DefaultFileConfig.Concurrency, cfg.resolvedFiles[0].Concurrency)
-		require.Equal(t, DefaultFileConfig.MinBytesPerHashEntry, cfg.resolvedFiles[0].MinBytesPerHashEntry)
-		require.True(t, cfg.resolvedFiles[0].PreallocateMemory)
-
-		// Explicit fields override defaults.
-		require.Equal(t, time.Minute, cfg.resolvedFiles[1].PollInterval)
-		require.Equal(t, 8, cfg.resolvedFiles[1].ChunkSizeMB)
-		require.Equal(t, 66, cfg.resolvedFiles[1].MinBytesPerHashEntry)
+func TestFileConfigWithDefaults(t *testing.T) {
+	t.Run("zero fields backfilled", func(t *testing.T) {
+		var file FileConfig
+		got := file.withDefaults()
+		require.Equal(t, DefaultFileConfig.ChunkSizeMB, got.ChunkSizeMB)
+		require.Equal(t, DefaultFileConfig.MaxRetries, got.MaxRetries)
+		require.Equal(t, DefaultFileConfig.Concurrency, got.Concurrency)
+		require.Equal(t, DefaultFileConfig.PollInterval, got.PollInterval)
+		require.Equal(t, DefaultFileConfig.MinBytesPerHashEntry, got.MinBytesPerHashEntry)
+		// The receiver is left untouched.
+		require.Zero(t, file.ChunkSizeMB)
+		require.Zero(t, file.PollInterval)
 	})
 
-	t.Run("conflicts with files slice", func(t *testing.T) {
-		cfg := validTestConfig(t)
-		cfg.FilesList = `[{"bucket":"b1"}]`
-		require.ErrorContains(t, cfg.Validate(), "mutually exclusive")
-	})
-
-	t.Run("malformed json", func(t *testing.T) {
-		cfg := DefaultConfig
-		cfg.FilesList = `{"bucket":"b"}` // object, not array
-		require.ErrorContains(t, cfg.Validate(), "failed to parse address-filter files-list")
-	})
-
-	t.Run("empty array", func(t *testing.T) {
-		cfg := DefaultConfig
-		cfg.FilesList = `[]`
-		require.ErrorContains(t, cfg.Validate(), "at least one file")
-	})
-
-	t.Run("unknown key rejected", func(t *testing.T) {
-		downloadDir := t.TempDir()
-		cfg := DefaultConfig
-		cfg.FilesList = fmt.Sprintf(
-			`[{"bucket":"b1","object-key":"k1","region":"us-east-1","download-dir":%q,"max-file-sizemb":1}]`,
-			downloadDir)
-		err := cfg.Validate()
-		require.ErrorContains(t, err, "files-list entry 0")
-		require.ErrorContains(t, err, "max-file-sizemb")
-	})
-
-	t.Run("entry validation still applies", func(t *testing.T) {
-		cfg := DefaultConfig
-		cfg.FilesList = `[{"bucket":"b1","object-key":"k1","region":"us-east-1"}]` // missing download-dir
-		err := cfg.Validate()
-		require.ErrorContains(t, err, "files[0]")
-		require.True(t, strings.Contains(err.Error(), "download-dir"))
+	t.Run("explicit fields preserved", func(t *testing.T) {
+		file := FileConfig{
+			Config:               s3syncer.Config{ChunkSizeMB: 8, MaxRetries: 7, Concurrency: 2},
+			PollInterval:         time.Minute,
+			MinBytesPerHashEntry: 66,
+		}
+		got := file.withDefaults()
+		require.Equal(t, 8, got.ChunkSizeMB)
+		require.Equal(t, 7, got.MaxRetries)
+		require.Equal(t, 2, got.Concurrency)
+		require.Equal(t, time.Minute, got.PollInterval)
+		require.Equal(t, 66, got.MinBytesPerHashEntry)
 	})
 }

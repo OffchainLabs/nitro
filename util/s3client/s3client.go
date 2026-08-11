@@ -16,10 +16,10 @@ import (
 
 // Config holds the base S3 connection configuration.
 type Config struct {
-	AccessKey string `json:"access-key,omitempty" koanf:"access-key"`
-	SecretKey string `json:"secret-key,omitempty" koanf:"secret-key"`
-	Region    string `json:"region,omitempty" koanf:"region"`
-	Endpoint  string `json:"endpoint,omitempty" koanf:"endpoint"`
+	AccessKey string `koanf:"access-key"`
+	SecretKey string `koanf:"secret-key"`
+	Region    string `koanf:"region"`
+	Endpoint  string `koanf:"endpoint"`
 }
 
 var DefaultConfig = Config{}
