@@ -1320,6 +1320,7 @@ dependencies = [
  "reth-engine-util",
  "reth-ethereum-cli",
  "reth-evm",
+ "reth-execution-cache",
  "reth-execution-types",
  "reth-exex",
  "reth-metrics",

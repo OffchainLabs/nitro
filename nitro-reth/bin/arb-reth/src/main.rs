@@ -18,7 +18,6 @@ use arb_node::{
 };
 use clap::Parser;
 use reth::{CliRunner, cli::Cli};
-use reth_engine_tree::tree::TreeConfig;
 use reth_tracing::{RethTracer, Tracer};
 use tracing::info;
 
@@ -47,7 +46,7 @@ fn main() {
         async move |builder, _| {
             info!(target: "reth::cli", "Launching arb-reth node");
             let node = builder.node(ArbNode::default());
-            let engine_tree_config = TreeConfig::default();
+            let engine_tree_config = node.config().engine.tree_config();
             let launcher = ArbEngineLauncher::new(
                 node.task_executor().clone(),
                 node.config().datadir(),

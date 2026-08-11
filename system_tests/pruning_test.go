@@ -36,19 +36,19 @@ func countStateEntries(db ethdb.Iteratee) int {
 	return entries
 }
 
-func TestPruningDBSizeReductionFullModeWithoutParallelStorageTraversal(t *testing.T) {
+func TestPruningDBSizeReductionFullModeWithoutParallelStorageTraversalFlaky(t *testing.T) {
 	runPruningDBSizeReductionTest(t, "full", false)
 }
 
-func TestPruningDBSizeReductionFullModeWithParallelStorageTraversal(t *testing.T) {
+func TestPruningDBSizeReductionFullModeWithParallelStorageTraversalFlaky(t *testing.T) {
 	runPruningDBSizeReductionTest(t, "full", true)
 }
 
-func TestPruningDBSizeReductionMinimalModeWithoutParallelStorageTraversal(t *testing.T) {
+func TestPruningDBSizeReductionMinimalModeWithoutParallelStorageTraversalFlaky(t *testing.T) {
 	runPruningDBSizeReductionTest(t, "minimal", false)
 }
 
-func TestPruningDBSizeReductionMinimalModeWithParallelStorageTraversal(t *testing.T) {
+func TestPruningDBSizeReductionMinimalModeWithParallelStorageTraversalFlaky(t *testing.T) {
 	runPruningDBSizeReductionTest(t, "minimal", true)
 }
 
