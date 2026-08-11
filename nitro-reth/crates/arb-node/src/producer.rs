@@ -34,6 +34,7 @@ use parking_lot::Mutex;
 use reth_chain_state::{CanonicalInMemoryState, ExecutedBlock, NewCanonicalChain};
 use reth_chainspec::ChainSpec;
 use reth_evm::ConfigureEvm;
+use reth_execution_cache::{CachedStateMetrics, CachedStateProvider, ExecutionCache};
 use reth_metrics::{
     Metrics,
     metrics::{self, Counter, Gauge, Histogram},
@@ -167,10 +168,8 @@ pub struct ArbBlockProducer<Provider> {
     /// the `arb_getValidatedBlock` RPC handler can read it without
     /// holding a strong reference to the producer.
     validated_watcher: Mutex<Option<Arc<parking_lot::RwLock<alloy_primitives::B256>>>>,
-    /// Cached coalesced storage overlay for the current in-memory chain.
-    /// Extended in place after each block produced; invalidated on flush
-    /// or rollback so a stale chain view never feeds an SLOAD.
-    cached_overlay: Mutex<Option<CachedOverlay>>,
+    cross_block_cache_size: usize,
+    cached_execution: Mutex<Option<CachedExecution>>,
     cached_prestate: Mutex<Option<CachedPrestate>>,
     metrics: ArbBlockProducerMetrics,
 }
@@ -182,9 +181,9 @@ struct FinalityMarkers {
     validated: Option<alloy_primitives::B256>,
 }
 
-struct CachedOverlay {
+struct CachedExecution {
     parent_hash: B256,
-    overlay: Arc<crate::coalesced_state::CoalescedOverlay>,
+    cache: ExecutionCache,
 }
 
 struct CachedPrestate {
@@ -202,6 +201,7 @@ where
         evm_config: ArbEvmConfig,
         in_memory_state: CanonicalInMemoryState<ArbPrimitives>,
         flush_interval: u64,
+        cross_block_cache_size: usize,
     ) -> Self {
         let head = provider.last_block_number().unwrap_or(0);
         Self {
@@ -219,51 +219,41 @@ where
             cached_init: Mutex::new(None),
             finality: Mutex::new(FinalityMarkers::default()),
             validated_watcher: Mutex::new(None),
-            cached_overlay: Mutex::new(None),
+            cross_block_cache_size,
+            cached_execution: Mutex::new(None),
             cached_prestate: Mutex::new(None),
             metrics: ArbBlockProducerMetrics::default(),
         }
     }
 
-    fn get_or_build_overlay(
-        &self,
-        parent_hash: B256,
-        head_state: &reth_chain_state::BlockState<ArbPrimitives>,
-    ) -> Arc<crate::coalesced_state::CoalescedOverlay> {
-        let mut cache = self.cached_overlay.lock();
-        if let Some(c) = cache.as_ref()
-            && c.parent_hash == parent_hash
+    fn get_or_create_execution_cache(&self, parent_hash: B256) -> ExecutionCache {
+        let mut guard = self.cached_execution.lock();
+        if let Some(cached) = guard.as_ref()
+            && cached.parent_hash == parent_hash
         {
-            return c.overlay.clone();
+            return cached.cache.clone();
         }
-        let overlay = Arc::new(crate::coalesced_state::CoalescedOverlay::from_chain(
-            head_state,
-        ));
-        *cache = Some(CachedOverlay {
+        let cache = ExecutionCache::new(self.cross_block_cache_size);
+        *guard = Some(CachedExecution {
             parent_hash,
-            overlay: overlay.clone(),
+            cache: cache.clone(),
         });
-        overlay
+        cache
     }
 
-    fn extend_cached_overlay(&self, new_block_hash: B256, bundle: &BundleState) {
-        let mut cache = self.cached_overlay.lock();
-        let mut overlay = match cache.take() {
-            Some(c) => match Arc::try_unwrap(c.overlay) {
-                Ok(o) => o,
-                Err(arc) => (*arc).clone(),
-            },
-            None => crate::coalesced_state::CoalescedOverlay::default(),
-        };
-        overlay.extend_with_block(bundle);
-        *cache = Some(CachedOverlay {
-            parent_hash: new_block_hash,
-            overlay: Arc::new(overlay),
-        });
+    fn advance_execution_cache(&self, new_block_hash: B256, bundle: &BundleState) {
+        let mut guard = self.cached_execution.lock();
+        if let Some(cached) = guard.as_mut() {
+            if cached.cache.insert_state(bundle).is_err() {
+                *guard = None;
+            } else {
+                cached.parent_hash = new_block_hash;
+            }
+        }
     }
 
-    fn invalidate_cached_overlay(&self) {
-        *self.cached_overlay.lock() = None;
+    fn invalidate_execution_cache(&self) {
+        *self.cached_execution.lock() = None;
     }
 
     fn get_or_build_prestate(
@@ -373,7 +363,6 @@ where
             .remove_persisted_blocks(result.last_num_hash);
         *self.flushing_trie_input.lock() = None;
         self.pending_flush.store(false, Ordering::SeqCst);
-        self.invalidate_cached_overlay();
         self.invalidate_cached_prestate();
         let commit_latency_ms = result.duration.as_millis() as u64;
         self.metrics
@@ -494,21 +483,12 @@ where
             .state_by_block_hash(parent_header.hash())
             .map_err(|e| BlockProducerError::StateAccess(e.to_string()))?;
 
-        let state_provider: StateProviderBox = match self
-            .in_memory_state
-            .state_by_hash(parent_header.hash())
-        {
-            Some(head_state) => {
-                let overlay = self.get_or_build_overlay(parent_header.hash(), &head_state);
-                if overlay.is_empty() {
-                    raw_state_provider
-                } else {
-                    crate::coalesced_state::CoalescedStateProvider::new(raw_state_provider, overlay)
-                        .boxed()
-                }
-            }
-            _ => raw_state_provider,
-        };
+        let execution_cache = self.get_or_create_execution_cache(parent_header.hash());
+        let state_provider: StateProviderBox = Box::new(CachedStateProvider::new_prewarm(
+            raw_state_provider,
+            execution_cache,
+            CachedStateMetrics::default(),
+        ));
 
         // Read the L2 baseFee from the parent's committed state.
         let l2_base_fee = {
@@ -1140,7 +1120,7 @@ where
         let sealed = reth_primitives_traits::SealedBlock::seal_slow(block);
         let block_hash = sealed.hash();
 
-        self.extend_cached_overlay(block_hash, &bundle);
+        self.advance_execution_cache(block_hash, &bundle);
         self.extend_cached_prestate(block_hash, &bundle);
 
         // Buffer block in memory for batched persistence.
@@ -1376,7 +1356,7 @@ where
                 });
         }
 
-        self.invalidate_cached_overlay();
+        self.invalidate_execution_cache();
         self.invalidate_cached_prestate();
 
         // Anchor the canonical head at the rolled-back block so RPC

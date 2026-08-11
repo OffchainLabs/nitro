@@ -18,10 +18,10 @@ use prover::{
     value::Value,
 };
 use serde::{Deserialize, Serialize};
-use structopt::StructOpt;
+use clap::Parser;
 
-#[derive(StructOpt)]
-#[structopt(name = "wasm-testsuite")]
+#[derive(Parser)]
+#[command(name = "wasm-testsuite")]
 struct Opts {
     json: PathBuf,
 }
@@ -168,7 +168,7 @@ fn pretty_print_values(prefix: &str, values: Vec<Value>) {
 }
 
 fn main() -> eyre::Result<()> {
-    let opts = Opts::from_args();
+    let opts = Opts::parse();
     println!("test {:?}", opts.json);
 
     let mut path = PathBuf::from("tests/");
