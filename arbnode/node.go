@@ -97,9 +97,9 @@ type Config struct {
 	ConsensusExecutionSyncer ConsensusExecutionSyncerConfig `koanf:"consensus-execution-syncer"`
 	RPCServer                rpcserver.Config               `koanf:"rpc-server"`
 	ExecutionRPCClient       rpcclient.ClientConfig         `koanf:"execution-rpc-client" reload:"hot"`
-	// MELRPCClient, when its URL is set, makes this node consume MEL from a remote provider
-	// over the "meldataprovider" namespace instead of running native message extraction. Extracted
-	// messages are delivered to this node by the provider via the "nitromelconsumer" sink.
+	// MELRPCClient, when its URL is set, makes this node consume MEL from a remote provider over
+	// "meldataprovider" instead of running native extraction; the provider delivers extracted
+	// messages back via the "nitromelconsumer" sink.
 	MELRPCClient         rpcclient.ClientConfig           `koanf:"mel-rpc-client" reload:"hot"`
 	VersionAlerterServer nitroversionalerter.ServerConfig `koanf:"version-alerter-server" reload:"hot"`
 }
@@ -816,9 +816,7 @@ func getInboxTrackerAndReader(
 	sequencerInbox *SequencerInbox,
 	fatalErrChan chan<- error,
 ) (*InboxTracker, *InboxReader, error) {
-	// The legacy inbox reader/tracker is disabled both when this node runs native MEL and when it
-	// consumes MEL from a remote provider over RPC (mel-rpc-client): in either case messages come
-	// from MEL, not the inbox reader, and messageExtractor/inboxReader are mutually exclusive.
+	// Disabled under native MEL and under mel-rpc-client alike: either way messages come from MEL.
 	if config.MessageExtraction.Enable || config.MELRPCClient.URL != "" {
 		log.Info("Inbox reader and tracker disabled")
 		return nil, nil, nil
@@ -981,9 +979,8 @@ func getMessageExtractor(
 	l1Reader *headerreader.HeaderReader,
 	melReorgDetector chan uint64,
 ) (mel.MELNative, error) {
-	// If configured with a remote MEL provider URL, this node consumes MEL over JSON-RPC
-	// instead of running native extraction. Validate() guarantees this is mutually exclusive
-	// with MessageExtraction.Enable, so the native-DB guard below does not apply here.
+	// Validate() guarantees this is mutually exclusive with MessageExtraction.Enable, so the
+	// native-DB guard below does not apply here.
 	if config.MELRPCClient.URL != "" {
 		melCfgFetcher := func() *rpcclient.ClientConfig { return &configFetcher.Get().MELRPCClient }
 		log.Info("Consuming MEL from remote provider over RPC", "url", config.MELRPCClient.URL)
@@ -1519,13 +1516,11 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	// melReorgDetector carries MEL reorg notifications to the local consumers that must rewind.
-	// In native mode the runner writes to it; in RPC-consumer mode the node-side melrpcserver
-	// writes to it (fed by the remote provider's ReorgedToParentChainBlock call). It is buffered
-	// because, in RPC mode, the RPC endpoint goes live at stack.Start() before Node.Start launches
-	// the reader, and because the native runner's init-time ReorgTo send is blocking.
+	// Carries MEL reorg notifications to local consumers that must rewind: written by the runner
+	// in native mode, by melrpcserver in RPC mode. Buffered because senders block and the reader
+	// only starts in Node.Start, after the RPC endpoint goes live.
 	var melReorgDetector chan uint64
-	if (config.MessageExtraction.Enable || config.MELRPCClient.URL != "") && config.BlockValidator.Enable {
+	if (config.MessageExtraction.Enable || config.MELRPCClient.URL != "") && config.ValidatorRequired() {
 		melReorgDetector = make(chan uint64, 8)
 	}
 	messageExtractor, err := getMessageExtractor(ctx, config, configFetcher, stack, l2Config, l1client, deployInfo, consensusDB, dapRegistry, sequencerInbox, l1Reader, melReorgDetector)
@@ -1533,9 +1528,7 @@ func createNodeImpl(
 		return nil, err
 	}
 	if messageExtractor != nil {
-		// Native MEL pushes to the local TransactionStreamer. For the RPC query client this call
-		// is a no-op: extracted messages arrive via the local nitromelconsumer sink, which the
-		// remote provider pushes to (registered in registerAPIs).
+		// No-op for the RPC client: messages arrive via the nitromelconsumer sink instead.
 		if err := messageExtractor.SetMessageConsumer(txStreamer); err != nil {
 			return nil, err
 		}
@@ -1573,9 +1566,8 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	// NewBlockValidator no longer registers itself with the inbox source, since that source may
-	// be MEL (which cannot implement staker.BlockValidatorRegistrer). Register the legacy tracker
-	// here; MEL rewinds the block validator via melReorgDetector instead (see Node.Start).
+	// NewBlockValidator can't self-register, as the inbox source may be MEL (which cannot implement
+	// BlockValidatorRegistrer); MEL rewinds via melReorgDetector instead, see Node.Start.
 	if inboxTracker != nil {
 		inboxTracker.SetBlockValidator(blockValidator)
 	}
@@ -1597,9 +1589,7 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	// messageExtractor is a mel.MELNative interface (a true nil interface when MEL is
-	// disabled, since getMessageExtractor returns untyped nil on that path). Only assign
-	// it into delayedMessageFetcher when non-nil so the interface stays properly nil.
+	// Only assign messageExtractor when non-nil, so delayedMessageFetcher stays a nil interface.
 	var delayedMessageFetcher DelayedMessageFetcher
 	if inboxTracker != nil {
 		delayedMessageFetcher = inboxTracker
@@ -1700,12 +1690,8 @@ func registerAPIs(currentNode *Node, stack *node.Node, genesisBlockNum uint64) {
 			Public:        config.RPCServer.Public,
 			Authenticated: config.RPCServer.Authenticated,
 		})
-		// Serve the node-side MEL RPC server for nodes that consume MEL from a remote provider:
-		// the provider pushes extracted messages into this node's TransactionStreamer and notifies
-		// it of reorgs (fed into melReorgDetector). melReorgDetector is nil when this node has
-		// nothing to rewind, in which case reorg notifications are ignored.
-		// (This node never serves the meldataprovider query namespace nor pushes MEL itself — the
-		// remote provider owns those roles.)
+		// Sink the remote provider pushes extracted messages and reorg notifications into. This
+		// node never serves the meldataprovider query namespace; the provider owns that.
 		if config.MELRPCClient.URL != "" {
 			apis = append(apis, rpc.API{
 				Namespace:     mel.ConsumerRPCNamespace,
@@ -1848,15 +1834,16 @@ func (n *Node) Start(ctx context.Context) error {
 	if err = n.TxStreamer.PopulateFeedBacklog(ctx); err != nil {
 		return fmt.Errorf("error populating feed backlog on startup: %w", err)
 	}
-	// Drain melReorgDetector into the block validator. Started before the message extractor so
-	// the (buffered) channel always has a reader: the runner's sends are blocking, so leaving it
-	// undrained would stall the extraction FSM. Drains unconditionally for that reason, even if
-	// there is no block validator to rewind.
-	// TODO: remove once the MEL validator lands and becomes the owner of melReorgDetector; it
-	// will coordinate the block validator rewind itself. Until then this replaces the direct
-	// blockValidator.ReorgToBatchCount call the MEL runner used to make: the rewind is now
-	// asynchronous with respect to extraction, which is safe because ReorgToBatchCount only
-	// flags a batch re-read under the validator's reorgMutex.
+	if n.MessageExtractor != nil {
+		err = n.MessageExtractor.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("error starting message extractor: %w", err)
+		}
+	}
+	// Drains melReorgDetector into the block validator. Must be launched after
+	// MessageExtractor.Start, or GetState races the RPC client's connection setup. Drains even
+	// with no block validator, since the runner's sends are blocking.
+	// TODO: remove once the MEL validator owns melReorgDetector and rewinds the block validator.
 	if n.melReorgDetector != nil {
 		go func() {
 			for {
@@ -1865,24 +1852,23 @@ func (n *Node) Start(ctx context.Context) error {
 					if n.BlockValidator == nil {
 						continue
 					}
+					// Never drop the event, or the validator keeps validating pre-reorg
+					// batches. Count 0 always satisfies ReorgToBatchCount's check, forcing
+					// the re-read, so it is the conservative fallback.
+					batchCount := uint64(0)
 					state, err := n.MessageExtractor.GetState(parentChainBlockNumber)
 					if err != nil {
-						log.Error("MEL reorg listener could not read state to rewind block validator",
+						log.Error("MEL reorg listener could not read state; forcing batch re-read",
 							"parentChainBlockNumber", parentChainBlockNumber, "err", err)
-						continue
+					} else {
+						batchCount = state.BatchCount
 					}
-					n.BlockValidator.ReorgToBatchCount(state.BatchCount)
+					n.BlockValidator.ReorgToBatchCount(batchCount)
 				case <-ctx.Done():
 					return
 				}
 			}
 		}()
-	}
-	if n.MessageExtractor != nil {
-		err = n.MessageExtractor.Start(ctx)
-		if err != nil {
-			return fmt.Errorf("error starting message extractor: %w", err)
-		}
 	}
 	// must init broadcast server before trying to sequence anything
 	if n.BroadcastServer != nil {

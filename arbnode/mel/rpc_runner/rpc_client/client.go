@@ -1,10 +1,9 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-// Package melrpcclient implements mel.MELNative by forwarding read/query calls to a
-// remote MEL provider over the "meldataprovider" JSON-RPC namespace. It runs on the Nitro
-// node. Extracted messages are NOT pulled here; they are pushed to the local node via
-// the nitromelconsumer sink (see melrpcserver), so this client has no message loop.
+// Package melrpcclient implements mel.MELNative by forwarding reads to a remote MEL provider over
+// the "meldataprovider" namespace. Extracted messages are not pulled here — the provider pushes
+// them into the nitromelconsumer sink — so this client has no message loop.
 package melrpcclient
 
 import (
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
@@ -33,8 +33,7 @@ type Client struct {
 	caughtUpChan chan struct{}
 }
 
-// NewClient builds a MEL query client. l1Reader is the local node's parent chain reader,
-// returned by GetL1Reader (a *headerreader.HeaderReader cannot be fetched over RPC).
+// NewClient takes the local node's parent chain reader, since it cannot be fetched over RPC.
 func NewClient(config rpcclient.ClientConfigFetcher, stack *node.Node, l1Reader *headerreader.HeaderReader) *Client {
 	return &Client{
 		client:       rpcclient.NewRpcClient(config, stack),
@@ -49,8 +48,7 @@ func (c *Client) Start(ctxIn context.Context) error {
 	if err := c.client.Start(ctx); err != nil {
 		return err
 	}
-	// Mirror the native extractor's caughtUpChan: close it once the remote provider reports
-	// (via the dedicated caughtUp RPC) that it has caught up with the parent chain.
+	// Mirrors the native extractor's caughtUpChan, driven by the provider's caughtUp RPC.
 	c.LaunchThread(c.waitForCaughtUp)
 	return nil
 }
@@ -64,7 +62,9 @@ func (c *Client) waitForCaughtUp(ctx context.Context) {
 	defer close(c.caughtUpChan)
 	for {
 		caughtUp, err := call[bool](c, ctx, "_caughtUp")
-		if err == nil && caughtUp {
+		if err != nil {
+			log.Error("meldataprovider_caughtUp failed", "err", err)
+		} else if caughtUp {
 			return
 		}
 		select {
@@ -75,8 +75,7 @@ func (c *Client) waitForCaughtUp(ctx context.Context) {
 	}
 }
 
-// callCtx returns the stopwaiter context for the synchronous (ctx-less) interface methods,
-// falling back to context.Background if the client hasn't been started yet.
+// callCtx serves the ctx-less interface methods, falling back to Background before Start.
 func (c *Client) callCtx() context.Context {
 	if ctx, err := c.GetContextSafe(); err == nil {
 		return ctx
@@ -90,8 +89,8 @@ func call[T any](c *Client, ctx context.Context, method string, args ...any) (T,
 	return res, convertError(err)
 }
 
-// convertError reconstructs the typed sentinels that consumers branch on (errors.Is),
-// since JSON-RPC flattens errors to strings. Mirrors execution/rpcclient.convertError.
+// convertError rebuilds the sentinels consumers branch on, since JSON-RPC flattens errors to
+// strings. Mirrors execution/rpcclient.convertError.
 func convertError(err error) error {
 	if err == nil {
 		return nil
@@ -195,7 +194,7 @@ func (c *Client) GetSyncProgress(ctx context.Context) (mel.MessageSyncProgress, 
 }
 
 func (c *Client) SupportsPushingFinalityData() bool {
-	// MEL always supports pushing finality data; best-effort over RPC (default false if unreachable).
+	// Always true for MEL; best-effort over RPC.
 	res, err := call[bool](c, c.callCtx(), "_supportsPushingFinalityData")
 	if err != nil {
 		return false
@@ -211,10 +210,8 @@ func (c *Client) GetHeadState() (*mel.State, error) {
 	return call[*mel.State](c, c.callCtx(), "_getHeadState")
 }
 
-// ReorgTo instructs the remote provider to reorg (node->provider). It does NOT feed the local
-// melReorgDetector: the provider is expected to call back the node's nitromelconsumer
-// ReorgedToParentChainBlock so local consumers rewind. Feeding the channel here would add a
-// second writer, and in RPC mode the node has no MEL DB to know the correct rewind target.
+// ReorgTo does not feed melReorgDetector: the provider calls back ReorgedToParentChainBlock for
+// that. Doing it here would add a second writer, and the node has no MEL DB to pick a target.
 func (c *Client) ReorgTo(parentChainBlockNumber uint64) error {
 	_, err := call[struct{}](c, c.callCtx(), "_reorgTo", parentChainBlockNumber)
 	return err
@@ -222,14 +219,12 @@ func (c *Client) ReorgTo(parentChainBlockNumber uint64) error {
 
 // --- Local (non-forwarded) MELNative methods ---
 
-// GetL1Reader returns the local node's parent chain reader (see NewClient).
+// GetL1Reader returns the local node's parent chain reader.
 func (c *Client) GetL1Reader() *headerreader.HeaderReader {
 	return c.l1Reader
 }
 
-// SetMessageConsumer is a no-op for the RPC client. On a MEL-consumer node, extracted
-// messages are delivered by the remote provider to the local nitromelconsumer sink
-// (wired to the TransactionStreamer in arbnode.registerAPIs), not pulled by this client.
+// SetMessageConsumer is a no-op: the provider pushes to the nitromelconsumer sink instead.
 func (c *Client) SetMessageConsumer(consumer mel.MessageConsumer) error {
 	if consumer == nil {
 		return errors.New("nil message consumer")

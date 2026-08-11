@@ -1,16 +1,9 @@
 // Copyright 2025-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-// Package melrpcserver is the node-side server for all provider->node MEL RPC, exposed under
-// the "nitromelconsumer" JSON-RPC namespace. It runs on the Nitro node; a remote MEL provider
-// connects as an RPC client and:
-//   - pushes the messages it extracts (PushMessages -> the node's TransactionStreamer), and
-//   - notifies the node when it reorgs (ReorgedToParentChainBlock -> the node's melReorgDetector,
-//     which local consumers read to rewind).
-//
-// This is the producer->consumer direction, mirroring how the consensus client pushes into the
-// execution server. Note: a provider that receives a node->provider ReorgTo (meldataprovider
-// namespace) must call back ReorgedToParentChainBlock here so local consumers rewind.
+// Package melrpcserver serves the provider->node side of MEL RPC on the Nitro node, under the
+// "nitromelconsumer" namespace: a remote provider connects as a client and pushes the messages it
+// extracts plus its reorg notifications. Mirrors how the consensus client pushes into execution.
 package melrpcserver
 
 import (
@@ -20,31 +13,25 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
 
-// Server wraps the local message consumer (TransactionStreamer) and the local reorg-notifier
-// channel (melReorgDetector), exposing them under mel.ConsumerRPCNamespace ("nitromelconsumer").
+// Server exposes the local message consumer and reorg-notifier channel over RPC.
 type Server struct {
 	consumer      mel.MessageConsumer
 	reorgNotifier chan<- uint64
 }
 
-// NewServer builds the node-side MEL RPC server. reorgNotifier is the node's melReorgDetector
-// channel, or nil when this node has nothing to rewind (reorg notifications are then ignored).
+// NewServer takes the node's melReorgDetector as reorgNotifier, or nil to ignore reorgs.
 func NewServer(consumer mel.MessageConsumer, reorgNotifier chan<- uint64) *Server {
 	return &Server{consumer: consumer, reorgNotifier: reorgNotifier}
 }
 
-// PushMessages forwards extracted messages to the local consumer. The consumer
-// (TransactionStreamer) is position-keyed and reorg-safe, so overlapping/re-pushed
-// ranges and parent-chain reorgs are handled there.
+// PushMessages forwards to the consumer, which is position-keyed and reorg-safe, so re-pushed
+// ranges are handled there.
 func (s *Server) PushMessages(ctx context.Context, firstMsgIdx uint64, messages []*arbostypes.MessageWithMetadata) error {
 	return s.consumer.PushMessages(ctx, firstMsgIdx, messages)
 }
 
-// ReorgedToParentChainBlock is called by the remote MEL provider when it reorgs; it feeds the
-// local melReorgDetector so the node's reorg consumers rewind. It is a no-op if this node has
-// no consumer (nil channel). The send is ctx-guarded so a shutdown/timeout cannot wedge the
-// handler; melReorgDetector is buffered on the node side to tolerate the reader starting after
-// the RPC endpoint goes live.
+// ReorgedToParentChainBlock feeds melReorgDetector so local consumers rewind. The send is
+// ctx-guarded so a shutdown cannot wedge the handler.
 func (s *Server) ReorgedToParentChainBlock(ctx context.Context, parentChainBlockNumber uint64) error {
 	if s.reorgNotifier == nil {
 		return nil // nothing on this node consumes MEL reorg notifications

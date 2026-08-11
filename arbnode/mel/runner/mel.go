@@ -478,10 +478,8 @@ func (m *MessageExtractor) GetSequencerMessageBytesForParentBlock(ctx context.Co
 	return nil, common.Hash{}, fmt.Errorf("sequencer batch %v not found in L1 block %v (found batches %v)", seqNum, parentChainBlock, seenBatches)
 }
 
-// ReorgTo, when reorgEventsNotifier is set, sends into it (a blocking send). In native mode the
-// caller must ensure the channel's reader is started first; the notifier is buffered (see
-// arbnode.createNodeImpl) so an init-time reorg does not wedge on a reader that starts later.
-// To be only called during init when reorging to a message batch.
+// ReorgTo blocks on reorgEventsNotifier when set, so its reader must be started first. Only to
+// be called during init when reorging to a message batch.
 func (m *MessageExtractor) ReorgTo(parentChainBlockNumber uint64) error {
 	dbBatch := m.melDB.db.NewBatch()
 	if err := m.melDB.setHeadMelStateBlockNum(dbBatch, parentChainBlockNumber); err != nil {
