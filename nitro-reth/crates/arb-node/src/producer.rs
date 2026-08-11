@@ -45,6 +45,7 @@ use reth_storage_api::{StateProvider, StateProviderBox};
 use reth_trie_common::{HashedPostState, TrieInputSorted};
 use revm::database::{BundleState, StateBuilder};
 use revm_database::states::bundle_state::BundleRetention;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tracing::{debug, info, warn};
 
 use crate::{genesis, progress::ProducerEvent};
@@ -172,7 +173,7 @@ pub struct ArbBlockProducer<Provider> {
     /// or rollback so a stale chain view never feeds an SLOAD.
     cached_overlay: Mutex<Option<CachedOverlay>>,
     cached_prestate: Mutex<Option<CachedPrestate>>,
-    progress_tx: tokio::sync::mpsc::UnboundedSender<ProducerEvent>,
+    progress_tx: UnboundedSender<ProducerEvent>,
     metrics: ArbBlockProducerMetrics,
 }
 
@@ -204,8 +205,8 @@ where
         in_memory_state: CanonicalInMemoryState<ArbPrimitives>,
         flush_interval: u64,
         head_block: u64,
-    ) -> (Self, tokio::sync::mpsc::UnboundedReceiver<ProducerEvent>) {
-        let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel();
+    ) -> (Self, UnboundedReceiver<ProducerEvent>) {
+        let (progress_tx, progress_rx) = unbounded_channel();
         let producer = Self {
             provider,
             chain_spec,
