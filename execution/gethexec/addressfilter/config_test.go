@@ -26,12 +26,11 @@ func TestConfigNumPreallocatedHashes(t *testing.T) {
 		want     int
 	}{
 		{"disabled", false, 10, 0, 0},
-		{"no max size", true, 0, 0, 0},
-		{"negative max size", true, -1, 0, 0},
-		{"one mb", true, 1, 0, 1024 * 1024 / minBytesPerHashEntry},
-		{"ten mb", true, 10, 0, 10 * 1024 * 1024 / minBytesPerHashEntry},
+		{"no max size", true, 0, minBytesPerHashEntry, 0},
+		{"negative max size", true, -1, minBytesPerHashEntry, 0},
 		{"custom min bytes per entry", true, 1, 66, 1024 * 1024 / 66},
 		{"default min bytes per entry", true, 1, minBytesPerHashEntry, 1024 * 1024 / minBytesPerHashEntry},
+		{"ten mb", true, 10, minBytesPerHashEntry, 10 * 1024 * 1024 / minBytesPerHashEntry},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {

@@ -76,17 +76,14 @@ func estimateHashCount(sizeBytes int64) int {
 }
 
 // numPreallocatedHashes returns how many hashes to preallocate structures for, derived from max-file-size-mb, or 0 when
-// preallocation is disabled (the toggle is off or max-file-size-mb is unset).
+// preallocation is disabled (the toggle is off or max-file-size-mb is unset). The receiver must have gone through
+// withDefaults so that MinBytesPerHashEntry is positive.
 func (c *FileConfig) numPreallocatedHashes() int {
 	if !c.PreallocateMemory || c.MaxFileSizeMB <= 0 {
 		return 0
 	}
-	bytesPerEntry := int64(c.MinBytesPerHashEntry)
-	if bytesPerEntry <= 0 {
-		bytesPerEntry = minBytesPerHashEntry
-	}
 	// Compute the byte count in int64; it exceeds 32 bits for multi-GB files.
-	return int(int64(c.MaxFileSizeMB) * bytesInMB / bytesPerEntry)
+	return int(int64(c.MaxFileSizeMB) * bytesInMB / int64(c.MinBytesPerHashEntry))
 }
 
 // withDefaults returns a copy with zero-valued fields that must be positive
