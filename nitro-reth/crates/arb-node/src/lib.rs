@@ -6,7 +6,6 @@
 pub mod addons;
 pub mod args;
 pub mod chainspec;
-pub mod coalesced_state;
 pub mod consensus;
 pub mod engine;
 pub mod error;
@@ -228,6 +227,7 @@ where
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(producer::DEFAULT_FLUSH_INTERVAL);
+    let cross_block_cache_size = ctx.config().engine.tree_config().cross_block_cache_size();
 
     let block_producer = Arc::new(ArbBlockProducer::new(
         ctx.provider().clone(),
@@ -235,6 +235,7 @@ where
         evm_config,
         in_memory_state,
         flush_interval,
+        cross_block_cache_size,
     ));
 
     let nitro_exec =

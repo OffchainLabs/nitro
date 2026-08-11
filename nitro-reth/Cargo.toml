@@ -113,6 +113,7 @@ reth-rpc-types-compat = { git = "https://github.com/paradigmxyz/reth.git", tag =
 reth-transaction-pool = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-engine-primitives = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-engine-tree = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-execution-cache = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-payload-primitives = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-cli = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-cli-commands = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
