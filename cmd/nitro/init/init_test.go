@@ -1949,6 +1949,15 @@ func TestGetInitInlineGenesisPrecedence(t *testing.T) {
 	if *chainConfig.CancunTime != 111 {
 		t.Fatalf("expected inline genesis to win with genesis-mode=inline, got CancunTime %d", *chainConfig.CancunTime)
 	}
+
+	// no inline genesis: default mode falls back to the file
+	nodeConfig.Init.GenesisMode = conf.GenesisModeDefault
+	nodeConfig.Init.Genesis = core.Genesis{}
+	_, chainConfig, _, err = GetInit(&nodeConfig, nil)
+	Require(t, err)
+	if *chainConfig.CancunTime != 222 {
+		t.Fatalf("expected fallback to genesis file when inline genesis is absent, got CancunTime %d", *chainConfig.CancunTime)
+	}
 }
 
 func TestGetInitInlineGenesisWrongChainId(t *testing.T) {

@@ -252,6 +252,22 @@ func TestInlineGenesisSkipsDirectoryDiscovery(t *testing.T) {
 	}
 }
 
+func TestGenesisFileWinsOverDirectoryDiscovery(t *testing.T) {
+	tempDir := t.TempDir()
+	Require(t, os.WriteFile(filepath.Join(tempDir, "42170.json"), []byte("{}"), 0600))
+
+	explicitFile := "/explicit/genesis.json"
+	args := strings.Split(fmt.Sprintf("--persistent.chain /tmp/data --chain.id 42170 --init.genesis-json-file %s --init.genesis-json-file-directory %s", explicitFile, tempDir), " ")
+	nodeConfig, _, err := ParseNode(context.Background(), args)
+	Require(t, err)
+	if nodeConfig.Init.GenesisJsonFile != explicitFile {
+		Fail(t, "expected explicit genesis file to win over directory discovery, got", nodeConfig.Init.GenesisJsonFile)
+	}
+	if nodeConfig.Init.Empty {
+		Fail(t, "expected configured genesis file to disable the empty init default")
+	}
+}
+
 func TestGenesisModeDirectoryForcesLookup(t *testing.T) {
 	tempDir := t.TempDir()
 	genesisFile := filepath.Join(tempDir, "42170.json")
