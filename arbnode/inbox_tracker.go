@@ -599,7 +599,6 @@ var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missi
 func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclient.Client, batches []*mel.SequencerInboxBatch) error {
 	var nextAcc common.Hash
 	var prevbatchmeta mel.BatchMetadata
-	batches = truncateBatchesForTest(batches)
 	if len(batches) == 0 {
 		return nil
 	}

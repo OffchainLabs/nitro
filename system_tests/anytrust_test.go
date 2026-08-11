@@ -26,7 +26,6 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/testhelpers"
-	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 func startLocalAnyTrustServer(
@@ -160,9 +159,6 @@ func TestAnyTrustRekeyFlaky(t *testing.T) {
 	// Restart the node on the new keyset against the new AnyTrust server running on the same disk as the first with new keys
 	builder.nodeConfig.DA.AnyTrust.RPCAggregator = aggConfigForBackend(backendConfigB)
 	builder.l2StackConfig = testhelpers.CreateStackConfigForTest(builder.dataDir)
-	if *testflag.NonceRaceReproFlag {
-		armNonceRaceRepro(t, builder)
-	}
 	cleanup := builder.BuildL2OnL1(t)
 	defer cleanup()
 
