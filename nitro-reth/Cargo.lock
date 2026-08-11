@@ -1055,7 +1055,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-rpc-types-beacon",
  "alloy-rpc-types-eth",
- "arb-da-provider-client",
+ "arb-da-provider",
  "arb-parent-chain-client",
  "async-trait",
  "c-kzg",
@@ -1100,18 +1100,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "arb-da-provider-client"
+name = "arb-da-provider"
+version = "0.1.5"
+dependencies = [
+ "alloy-primitives",
+ "async-trait",
+ "base64 0.22.1",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "arb-da-provider-rpc-client"
 version = "0.1.5"
 dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-rpc-client",
- "alloy-transport",
+ "arb-da-provider",
  "async-trait",
  "base64 0.22.1",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
  "tokio",
 ]
 
@@ -1219,10 +1229,10 @@ dependencies = [
  "alloy-rlp",
  "alloy-rpc-types-eth",
  "alloy-sol-types",
- "arb-da-provider-client",
+ "arb-da-provider",
  "arb-mel-types",
  "arb-storage-errors",
- "arbos",
+ "arbos-types",
  "async-trait",
  "brotli 8.0.2",
  "thiserror 2.0.18",
@@ -1251,7 +1261,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-rpc-types-eth",
  "alloy-sol-types",
- "arb-da-provider-client",
+ "arb-da-provider",
  "arb-mel",
  "arb-parent-chain-client",
  "arbos",
@@ -1312,6 +1322,7 @@ dependencies = [
  "reth-engine-util",
  "reth-ethereum-cli",
  "reth-evm",
+ "reth-execution-cache",
  "reth-execution-types",
  "reth-exex",
  "reth-metrics",
@@ -1596,6 +1607,7 @@ dependencies = [
  "arb-node",
  "arb-primitives",
  "arbos",
+ "arbos-types",
  "axum",
  "base64 0.22.1",
  "hex",
@@ -11063,7 +11075,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs 1.0.6",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

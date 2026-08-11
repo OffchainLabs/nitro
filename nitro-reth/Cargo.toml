@@ -1,17 +1,18 @@
 [workspace]
 members = [
     "crates/arb-primitives",
-    "crates/arb-blob-client",
+    "crates/arb-consensus/blob-client",
     "crates/arb-chainspec",
-    "crates/arb-consensus-db",
+    "crates/arb-consensus/db",
     "crates/arb-context",
-    "crates/arb-da-provider-client",
+    "crates/arb-consensus/da-provider",
+    "crates/arb-consensus/da-provider/rpc-client",
     "crates/arb-math",
-    "crates/arb-mel",
-    "crates/arb-mel-db",
-    "crates/arb-mel-types",
-    "crates/arb-parent-chain-client",
-    "crates/arb-mel-runner",
+    "crates/arb-consensus/mel",
+    "crates/arb-consensus/mel/db",
+    "crates/arb-consensus/mel/types",
+    "crates/arb-consensus/parent-chain-client",
+    "crates/arb-consensus/mel/runner",
     "crates/arb-storage",
     "crates/arb-storage-errors",
     "crates/arb-errors",
@@ -47,17 +48,18 @@ version = "0.1.5"
 [workspace.dependencies]
 # Internal crates
 arb-primitives = { path = "crates/arb-primitives" }
-arb-blob-client = { path = "crates/arb-blob-client" }
+arb-blob-client = { path = "crates/arb-consensus/blob-client" }
 arb-chainspec = { path = "crates/arb-chainspec" }
-arb-consensus-db = { path = "crates/arb-consensus-db" }
+arb-consensus-db = { path = "crates/arb-consensus/db" }
 arb-context = { path = "crates/arb-context" }
-arb-da-provider-client = { path = "crates/arb-da-provider-client" }
+arb-da-provider = { path = "crates/arb-consensus/da-provider" }
+arb-da-provider-rpc-client = { path = "crates/arb-consensus/da-provider/rpc-client" }
 arb-math = { path = "crates/arb-math" }
-arb-mel = { path = "crates/arb-mel" }
-arb-mel-db = { path = "crates/arb-mel-db" }
-arb-mel-types = { path = "crates/arb-mel-types" }
-arb-parent-chain-client = { path = "crates/arb-parent-chain-client" }
-arb-mel-runner = { path = "crates/arb-mel-runner" }
+arb-mel = { path = "crates/arb-consensus/mel" }
+arb-mel-db = { path = "crates/arb-consensus/mel/db" }
+arb-mel-types = { path = "crates/arb-consensus/mel/types" }
+arb-parent-chain-client = { path = "crates/arb-consensus/parent-chain-client" }
+arb-mel-runner = { path = "crates/arb-consensus/mel/runner" }
 arb-storage = { path = "crates/arb-storage" }
 arb-storage-errors = { path = "crates/arb-storage-errors" }
 arb-errors = { path = "crates/arb-errors" }
@@ -111,6 +113,7 @@ reth-rpc-types-compat = { git = "https://github.com/paradigmxyz/reth.git", tag =
 reth-transaction-pool = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-engine-primitives = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-engine-tree = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-execution-cache = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-payload-primitives = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-cli = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-cli-commands = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }

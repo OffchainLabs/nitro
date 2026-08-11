@@ -16,6 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/filtering-report/api"
 	"github.com/offchainlabs/nitro/cmd/filtering-report/forwarder"
+	"github.com/offchainlabs/nitro/cmd/filtering-report/signer"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
@@ -41,8 +42,10 @@ type FilteringReportConfig struct {
 	IPC  genericconf.IPCConfig     `koanf:"ipc"`
 	Auth genericconf.AuthRPCConfig `koanf:"auth"`
 
-	Queue           sqsclient.QueueConfig `koanf:"queue"`
-	ReportForwarder forwarder.Config      `koanf:"report-forwarder"`
+	Queue              sqsclient.QueueConfig        `koanf:"queue"`
+	ReportForwarder    forwarder.Config             `koanf:"report-forwarder"`
+	FilterSetReporting genericconf.HTTPClientConfig `koanf:"filter-set-reporting"`
+	Signer             signer.Config                `koanf:"signer"`
 }
 
 var HTTPConfigDefault = genericconf.HTTPConfig{
@@ -69,19 +72,22 @@ var IPCConfigDefault = genericconf.IPCConfig{
 }
 
 var DefaultFilteringReportConfig = FilteringReportConfig{
-	Conf:            genericconf.ConfConfigDefault,
-	LogLevel:        "INFO",
-	LogType:         "plaintext",
-	Metrics:         false,
-	MetricsServer:   genericconf.MetricsServerConfigDefault,
-	PProf:           false,
-	PprofCfg:        genericconf.PProfDefault,
-	HTTP:            HTTPConfigDefault,
-	WS:              WSConfigDefault,
-	IPC:             IPCConfigDefault,
-	Auth:            genericconf.AuthRPCConfigDefault,
-	Queue:           sqsclient.DefaultQueueConfig,
-	ReportForwarder: forwarder.DefaultConfig,
+	Conf:               genericconf.ConfConfigDefault,
+	Persistent:         conf.PersistentConfigDefaultNoReadCompact,
+	LogLevel:           "INFO",
+	LogType:            "plaintext",
+	Metrics:            false,
+	MetricsServer:      genericconf.MetricsServerConfigDefault,
+	PProf:              false,
+	PprofCfg:           genericconf.PProfDefault,
+	HTTP:               HTTPConfigDefault,
+	WS:                 WSConfigDefault,
+	IPC:                IPCConfigDefault,
+	Auth:               genericconf.AuthRPCConfigDefault,
+	Queue:              sqsclient.DefaultQueueConfig,
+	ReportForwarder:    forwarder.DefaultConfig,
+	FilterSetReporting: genericconf.HTTPClientConfigDefault,
+	Signer:             signer.DefaultConfig,
 }
 
 func (c *FilteringReportConfig) Validate() error {
@@ -91,12 +97,22 @@ func (c *FilteringReportConfig) Validate() error {
 	if err := c.ReportForwarder.Validate(); err != nil {
 		return fmt.Errorf("report-forwarder config: %w", err)
 	}
+	// FilterSetReporting is optional; an empty URL disables the feature, so
+	// only validate when the operator configured a URL.
+	if c.FilterSetReporting.URL != "" {
+		if err := c.FilterSetReporting.Validate(); err != nil {
+			return fmt.Errorf("filter-set-reporting config: %w", err)
+		}
+	}
+	if err := c.Signer.Validate(); err != nil {
+		return fmt.Errorf("signer config: %w", err)
+	}
 	return nil
 }
 
 func addFlags(f *pflag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
-	conf.PersistentConfigAddOptions("persistent", f)
+	conf.PersistentConfigAddOptions("persistent", f, DefaultFilteringReportConfig.Persistent)
 
 	genericconf.FileLoggingConfigAddOptions("file-logging", f)
 	f.String("log-level", DefaultFilteringReportConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
@@ -114,6 +130,8 @@ func addFlags(f *pflag.FlagSet) {
 
 	sqsclient.QueueConfigAddOptions("queue", f, "SQS queue URL for filtered transaction reports")
 	forwarder.ConfigAddOptions("report-forwarder", f)
+	genericconf.HTTPClientConfigAddOptions("filter-set-reporting", f)
+	signer.ConfigAddOptions("signer", f)
 }
 
 func parseConfig(args []string) (*FilteringReportConfig, error) {
@@ -212,15 +230,19 @@ func mainImpl() int {
 			return 1
 		}
 	}
-	fwd, err := forwarder.New(&config.ReportForwarder, queueClient, poisonQueueClient)
+	sgn, err := signer.NewSigner(&config.Signer)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error creating forwarder: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error creating signer: %v\n", err)
 		return 1
 	}
+	sgn.Start(ctx)
+	defer sgn.StopAndWait()
+
+	fwd := forwarder.New(&config.ReportForwarder, queueClient, poisonQueueClient, sgn)
 	fwd.Start(ctx)
 	defer fwd.StopAndWait()
 
-	stack, err := api.NewStack(&stackConf, queueClient)
+	stack, err := api.NewStack(&stackConf, queueClient, &config.FilterSetReporting, sgn)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating stack: %v\n", err)
 		return 1

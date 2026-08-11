@@ -89,7 +89,7 @@ pub fn submit_retryable_ticket_id(
     Some(signed.trie_hash())
 }
 
-pub const MAX_L2_MESSAGE_SIZE: usize = 256 * 1024;
+pub use arbos_types::MAX_L2_MESSAGE_SIZE;
 
 pub mod encoding {
     use alloy_primitives::{Address, B256, U256};
