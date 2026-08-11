@@ -1051,10 +1051,10 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 
 		// make auth a chain owner
 		arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), b.L2.Client)
-		Require(t, err, "failed to deploy ArbDebug")
+		Require(t, err, "failed to bind ArbDebug precompile")
 
 		tx, err := arbdebug.BecomeChainOwner(&debugAuth)
-		Require(t, err, "failed to deploy ArbDebug")
+		Require(t, err, "failed to send BecomeChainOwner tx")
 
 		_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
 		Require(t, err)
@@ -1152,10 +1152,10 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 
 		// make auth a chain owner
 		arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), b.L2.Client)
-		Require(t, err, "failed to deploy ArbDebug")
+		Require(t, err, "failed to bind ArbDebug precompile")
 
 		tx, err := arbdebug.BecomeChainOwner(&debugAuth)
-		Require(t, err, "failed to deploy ArbDebug")
+		Require(t, err, "failed to send BecomeChainOwner tx")
 
 		_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
 		Require(t, err)
