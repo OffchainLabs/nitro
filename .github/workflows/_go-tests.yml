@@ -90,7 +90,10 @@ jobs:
       COVER: ${{ github.event_name != 'merge_group' && '--cover' || '' }}
     services:
       redis:
-        image: redis
+        # Only the redis test steps use an external redis instance (--test_redis).
+        # An empty image makes the runner skip the service container, so the other
+        # matrix jobs don't pull the image (and hit Docker Hub rate limits).
+        image: ${{ (inputs.run-defaults-a || inputs.run-flaky) && 'redis' || '' }}
         ports:
           - 6379:6379
 
