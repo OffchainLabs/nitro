@@ -78,6 +78,36 @@ func TestScheduleRejectsDeadCategory(t *testing.T) {
 	schedule(scheduleParams{Categories: map[string]bool{"ghost": true}})
 }
 
+func TestScheduleSortsHeaviestFirst(t *testing.T) {
+	light1 := newBuilder()
+	light1.name = "Light1"
+	heavy := newBuilder()
+	heavy.name = "Heavy"
+	WithMultiNode()(heavy)
+	light2 := newBuilder()
+	light2.name = "Light2"
+	fullStack := newBuilder()
+	fullStack.name = "Max"
+	WithFullStack()(fullStack)
+	stubRegistry(t, light1, heavy, light2, fullStack)
+
+	out := schedule(scheduleParams{})
+	if len(out) != 4 {
+		t.Fatalf("got %d scheduled tests, want 4", len(out))
+	}
+	for i := 1; i < len(out); i++ {
+		if out[i-1].Spec.Weight < out[i].Spec.Weight {
+			t.Fatalf("not heaviest-first at index %d", i)
+		}
+	}
+	if out[0].Spec.Name != "Max" {
+		t.Fatalf("want Max first, got %q", out[0].Spec.Name)
+	}
+	if out[2].Spec.Name != "Light1" || out[3].Spec.Name != "Light2" {
+		t.Fatalf("equal-weight tests not stable: got %q, %q", out[2].Spec.Name, out[3].Spec.Name)
+	}
+}
+
 func TestNamedResolvesBeforeDerivation(t *testing.T) {
 	stubRegistry(t)
 

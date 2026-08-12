@@ -39,6 +39,8 @@ func specWeight(topology Topology) weight {
 		return weightMedium
 	case TopologyMultiNode:
 		return weightHeavy
+	case TopologyFullStack:
+		return weightMax
 	}
 	return weightLight
 }
@@ -88,6 +90,7 @@ const (
 	TopologyL2Only    Topology = iota // L2-only sequencer, no parent chain
 	TopologyL1L2                      // L1 + sequencer L2 (batch posting + inbox reading)
 	TopologyMultiNode                 // L1 + sequencer L2 + non-sequencer follower L2
+	TopologyFullStack                 // L1 + sequencer L2 + follower L2 running block validation + staker
 )
 
 // Spec is the resolved per-variant config. Scenarios receive it by value on

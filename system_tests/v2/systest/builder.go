@@ -99,9 +99,15 @@ func (b *builder) validate() {
 	if b.validation && b.topology == TopologyL2Only {
 		panic("systest: WithValidation requires a parent chain")
 	}
-	if b.validation && b.stateScheme.IsSome() && b.stateScheme.Unwrap() != validationScheme {
+	if b.validates() && b.stateScheme.IsSome() && b.stateScheme.Unwrap() != validationScheme {
 		panic(fmt.Sprintf("systest: validation requires %s state scheme; conflicts with WithStateScheme(%s)", validationScheme, b.stateScheme.Unwrap()))
 	}
+}
+
+// validates reports whether any node in this test runs block validation:
+// requested via WithValidation, or TopologyFullStack's staker follower (buildFollowerNode).
+func (b *builder) validates() bool {
+	return b.validation || b.topology == TopologyFullStack
 }
 
 func (b *builder) shouldSkip(sp scheduleParams) string {
@@ -130,7 +136,7 @@ func (b *builder) shouldSkip(sp scheduleParams) string {
 			return fmt.Sprintf("incompatible with state scheme %q", s)
 		}
 	}
-	if b.validation && scheme.IsSome() && scheme.Unwrap() != validationScheme {
+	if b.validates() && scheme.IsSome() && scheme.Unwrap() != validationScheme {
 		return fmt.Sprintf("validation requires %s state scheme", validationScheme)
 	}
 	if !sp.categoryEnabled(b.category) {
@@ -185,7 +191,7 @@ func (b *builder) mergeParams(sp scheduleParams) {
 // weight is the scheduler-slot cost: topology-derived, floored to weightMax
 // when the run validates (JIT validation saturates a core).
 func (b *builder) weight() weight {
-	if b.validation {
+	if b.validates() {
 		return weightMax
 	}
 	return specWeight(b.topology)

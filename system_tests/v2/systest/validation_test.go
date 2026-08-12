@@ -163,6 +163,22 @@ func TestShouldSkipValidation(t *testing.T) {
 			sp:         scheduleParams{DefaultStateScheme: containers.Some(StateSchemePath)},
 			wantReason: "validation requires hash state scheme",
 		},
+		{
+			name: "full-stack on forced path scheme",
+			setup: func(b *builder) {
+				WithFullStack()(b)
+			},
+			sp:         scheduleParams{StateScheme: containers.Some(StateSchemePath)},
+			wantReason: "validation requires hash state scheme",
+		},
+		{
+			name: "full-stack on env-default path",
+			setup: func(b *builder) {
+				WithFullStack()(b)
+			},
+			sp:         scheduleParams{DefaultStateScheme: containers.Some(StateSchemePath)},
+			wantReason: "validation requires hash state scheme",
+		},
 	}
 	for _, c := range tests {
 		t.Run(c.name, func(t *testing.T) {
@@ -205,5 +221,54 @@ func TestMatrixPathCellDeclinesValidation(t *testing.T) {
 		default:
 			t.Fatalf("unexpected cell scheme %q", cell.Spec.StateScheme.Unwrap())
 		}
+	}
+}
+
+func TestFullStackSchemePinConflictPanics(t *testing.T) {
+	mustPanic(t, "validation requires hash", func() {
+		b := newBuilder()
+		WithStateScheme(StateSchemePath)(b)
+		WithFullStack()(b)
+		b.validate()
+	})
+}
+
+func TestFullStackTopology(t *testing.T) {
+	b := newBuilder()
+	WithFullStack()(b)
+	if b.topology != TopologyFullStack {
+		t.Fatalf("topology = %v, want TopologyFullStack", b.topology)
+	}
+	if w := b.weight(); w != weightMax {
+		t.Fatalf("weight = %d, want weightMax (%d)", w, weightMax)
+	}
+
+	// WithValidation must not downgrade a higher topology.
+	WithValidation()(b)
+	if b.topology != TopologyFullStack {
+		t.Fatalf("WithValidation downgraded topology to %v", b.topology)
+	}
+}
+
+func TestFullStackTopologyConflicts(t *testing.T) {
+	cases := []struct {
+		name string
+		opts []TestOption
+		want string
+	}{
+		{"WithFullStack twice", []TestOption{WithFullStack(), WithFullStack()}, "WithFullStack applied twice"},
+		{"WithMultiNode then WithFullStack", []TestOption{WithMultiNode(), WithFullStack()}, "conflicts with another topology"},
+		{"WithFullStack then WithL1", []TestOption{WithFullStack(), WithL1()}, "conflicts with another topology"},
+		{"WithL1 then WithFullStack", []TestOption{WithL1(), WithFullStack()}, "conflicts with another topology"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			mustPanic(t, c.want, func() {
+				b := newBuilder()
+				for _, o := range c.opts {
+					o(b)
+				}
+			})
+		})
 	}
 }

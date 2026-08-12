@@ -19,6 +19,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -26,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
 )
 
 // newEnv seeds the runtime Env for a node build.
@@ -39,7 +41,8 @@ type Env struct {
 	Ctx context.Context
 	// L2 is the sequencer handle. Always populated.
 	L2 *L2Handle
-	// L2Followers are the non-sequencer follower handles. Empty unless TopologyMultiNode.
+	// L2Followers are the non-sequencer follower handles. Empty unless
+	// TopologyMultiNode or TopologyFullStack.
 	L2Followers []*L2Handle
 	// L1 is the parent chain handle. Nil for TopologyL2Only scenarios.
 	L1   *L1Handle
@@ -147,7 +150,7 @@ func (e *Env) WaitForFollowersSync() {
 // requireFollower fails the scenario if it has no follower node.
 func (e *Env) requireFollower() {
 	e.t.Helper()
-	e.NotEmpty(e.L2Followers, "follower helper called on a non-multi-node scenario; register it with systest.WithMultiNode()")
+	e.NotEmpty(e.L2Followers, "follower helper called on a scenario without followers; register it with systest.WithMultiNode() or systest.WithFullStack()")
 }
 
 // waitFollowersSynced blocks until every follower executes the sequencer's
@@ -263,6 +266,39 @@ func (e *Env) LookupL2Tx(l1Receipt *types.Receipt) *types.Transaction {
 	}
 	e.Len(submissionTxs, 1, "LookupL2Tx: expected exactly 1 submission tx")
 	return submissionTxs[0]
+}
+
+// WaitForStaker blocks until a validator has staked on the rollup, mining L1
+// each poll. Fails fast when no node in the topology runs a staker.
+func (e *Env) WaitForStaker() {
+	e.t.Helper()
+	e.requireL1()
+	if !e.hasStaker() {
+		e.Require(errors.New("no node in this topology runs a staker; register the test with systest.WithFullStack()"))
+	}
+	rollup, err := rollup_legacy_gen.NewRollupUserLogic(e.L2.Consensus.DeployInfo.Rollup, e.L1.Client)
+	e.Require(err, "NewRollupUserLogic")
+	e.Require(defaultBackoff.until(e.Ctx, func() (bool, error) {
+		e.L1.AdvanceBlocks(1)
+		n, err := rollup.StakerCount(&bind.CallOpts{Context: e.Ctx})
+		if err != nil {
+			return false, fmt.Errorf("StakerCount: %w", err)
+		}
+		return n >= 1, nil
+	}), "waiting for a validator to stake on the rollup; on timeout, check the staker node's log")
+}
+
+// hasStaker reports whether any node in the topology runs a staker.
+func (e *Env) hasStaker() bool {
+	if e.L2.Consensus.Staker != nil {
+		return true
+	}
+	for _, f := range e.L2Followers {
+		if f.Consensus.Staker != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // requireL1 fails the scenario with a clear message if it lacks a parent chain.

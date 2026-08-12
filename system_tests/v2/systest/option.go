@@ -342,6 +342,14 @@ func WithValidation() TestOption {
 	}
 }
 
+// WithFullStack builds an L1 + sequencer L2 plus a follower L2 (env.L2Followers) that
+// runs block validation and a staker. Requires wasm machines.
+func WithFullStack() TestOption {
+	return func(b *builder) {
+		setTopology(b, TopologyFullStack, "WithFullStack")
+	}
+}
+
 // setTopology pins the node layout, rejecting a second topology option.
 func setTopology(b *builder, topo Topology, name string) {
 	if b.topology == topo {
