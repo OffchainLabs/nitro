@@ -15,7 +15,7 @@ pub mod network;
 pub mod payload;
 pub mod pool;
 pub mod producer;
-pub mod progress;
+mod progress;
 pub mod validator;
 
 use std::sync::Arc;

@@ -89,6 +89,10 @@ impl ProgressReporter {
     }
 
     fn log_window(&mut self) {
+        if self.window.blocks == 0 && self.window.flushes == 0 {
+            return;
+        }
+
         let elapsed = self.window_start.elapsed();
         info!(
             target: "block_producer",
@@ -132,16 +136,12 @@ pub(crate) async fn run_progress_reporter(
         tokio::select! {
             event = events.recv() => match event {
                 Some(event) => reporter.handle_event(event),
-                None => {
-                    if reporter.window.blocks > 0 || reporter.window.flushes > 0 {
-                        reporter.log_window();
-                    }
-                    return;
-                }
+                None => break,
             },
             _ = interval.tick() => reporter.log_window(),
         }
     }
+    reporter.log_window();
 }
 
 #[cfg(test)]
@@ -210,5 +210,6 @@ mod tests {
             gas: 21_000,
         });
         reporter.log_window();
+        assert_eq!(reporter.window.blocks, 0);
     }
 }
