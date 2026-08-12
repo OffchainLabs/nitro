@@ -74,7 +74,7 @@ func NewFilterService(config *Config) (*FilterService, error) {
 			listMeta, err = parseHashListStream(strings.NewReader(config.StaticList), addHash)
 			return listMeta, err
 		}
-		if err := staticStore.Store("static-list", estimateHashCount(int64(len(config.StaticList))), fill); err != nil {
+		if err := staticStore.Store("static-list", estimateHashCount(int64(len(config.StaticList)), minBytesPerHashEntry), fill); err != nil {
 			return nil, fmt.Errorf("failed to parse address-filter static-list: %w", err)
 		}
 		log.Info("address-filter static list loaded",

@@ -87,17 +87,21 @@ func (h *jsonHash) UnmarshalText(text []byte) error {
 }
 
 type S3SyncManager struct {
-	Syncer    *s3syncer.Syncer
-	hashStore *HashStore
-	bucket    string
-	objectKey string
+	Syncer               *s3syncer.Syncer
+	hashStore            *HashStore
+	bucket               string
+	objectKey            string
+	minBytesPerHashEntry int
 }
 
+// NewS3SyncManager creates a sync manager for one hash-list file. fileConfig
+// must have gone through withDefaults so that MinBytesPerHashEntry is positive.
 func NewS3SyncManager(fileConfig *FileConfig, hashStore *HashStore, objectSizeGauge *metrics.Gauge) *S3SyncManager {
 	manager := &S3SyncManager{
-		hashStore: hashStore,
-		bucket:    fileConfig.Bucket,
-		objectKey: fileConfig.ObjectKey,
+		hashStore:            hashStore,
+		bucket:               fileConfig.Bucket,
+		objectKey:            fileConfig.ObjectKey,
+		minBytesPerHashEntry: fileConfig.MinBytesPerHashEntry,
 	}
 	syncer := s3syncer.NewSyncer(
 		&fileConfig.Config,
@@ -123,7 +127,7 @@ func (s *S3SyncManager) handleHashListStream(r io.Reader, size int64, digest str
 		listMeta, err = parseHashListStream(r, addHash)
 		return listMeta, err
 	}
-	err := s.hashStore.Store(digest, estimateHashCount(size), fill)
+	err := s.hashStore.Store(digest, estimateHashCount(size, s.minBytesPerHashEntry), fill)
 	if err != nil {
 		return fmt.Errorf("failed to parse hash list: %w", err)
 	}

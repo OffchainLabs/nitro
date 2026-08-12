@@ -67,12 +67,13 @@ const bytesInMB = 1024 * 1024
 const minBytesPerHashEntry = 42
 
 // estimateHashCount returns a safe upper bound on the number of hashes in a
-// hash-list JSON document of the given byte size.
-func estimateHashCount(sizeBytes int64) int {
+// hash-list JSON document of the given byte size, assuming each entry occupies
+// at least minBytesPerEntry bytes.
+func estimateHashCount(sizeBytes int64, minBytesPerEntry int) int {
 	if sizeBytes < 0 {
 		return 0
 	}
-	return int(sizeBytes / minBytesPerHashEntry)
+	return int(sizeBytes / int64(minBytesPerEntry))
 }
 
 // numPreallocatedHashes returns how many hashes to preallocate structures for, derived from max-file-size-mb, or 0 when
@@ -83,7 +84,7 @@ func (c *FileConfig) numPreallocatedHashes() int {
 		return 0
 	}
 	// Compute the byte count in int64; it exceeds 32 bits for multi-GB files.
-	return int(int64(c.MaxFileSizeMB) * bytesInMB / int64(c.MinBytesPerHashEntry))
+	return estimateHashCount(int64(c.MaxFileSizeMB)*bytesInMB, c.MinBytesPerHashEntry)
 }
 
 // withDefaults returns a copy with zero-valued fields that must be positive
