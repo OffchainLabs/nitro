@@ -14,9 +14,9 @@ import (
 )
 
 // HashedAddressChecker is a global, shared address checker that filters
-// transactions using a HashStoreSet spanning all configured files. Hashing
-// and caching are delegated to the stores; this checker only manages async
-// execution and per-tx aggregation.
+// transactions using a HashStoreSet. Hashing and caching are delegated to
+// the stores; this checker only manages async execution and per-tx
+// aggregation.
 type HashedAddressChecker struct {
 	stopwaiter.StopWaiter
 	store       *HashStoreSet
