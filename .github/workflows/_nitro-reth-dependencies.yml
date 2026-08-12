@@ -20,6 +20,10 @@ jobs:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
       - uses: dtolnay/rust-toolchain@1.93
       - uses: taiki-e/install-action@0abfcd587b70a713fdaa7fb502c885e2112acb15  # v2.75.7
         with:

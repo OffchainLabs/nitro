@@ -13,6 +13,7 @@ env:
 jobs:
   build:
     uses: ./.github/workflows/_nitro-reth-build-release.yml
+    secrets: inherit
     with:
       artifact-name: spec-tests-binaries
 

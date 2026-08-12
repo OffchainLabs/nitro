@@ -41,6 +41,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.bench_changed == 'true'
     uses: ./.github/workflows/_nitro-reth-build-release.yml
+    secrets: inherit
     with:
       artifact-name: bench-pr-feature-binaries
       include-bench-driver: true
@@ -49,6 +50,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.bench_changed == 'true'
     uses: ./.github/workflows/_nitro-reth-build-release.yml
+    secrets: inherit
     with:
       artifact-name: bench-pr-baseline-binaries
       ref: ${{ github.base_ref }}
