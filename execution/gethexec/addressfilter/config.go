@@ -66,9 +66,6 @@ const bytesInMB = 1024 * 1024
 // preallocated bucket memory, never correctness.
 const minBytesPerHashEntry = 42
 
-// estimateHashCount returns a safe upper bound on the number of hashes in a
-// hash-list JSON document of the given byte size, assuming each entry occupies
-// at least minBytesPerEntry bytes.
 func estimateHashCount(sizeBytes int64, minBytesPerEntry int) int {
 	if sizeBytes < 0 {
 		return 0
@@ -76,9 +73,6 @@ func estimateHashCount(sizeBytes int64, minBytesPerEntry int) int {
 	return int(sizeBytes / int64(minBytesPerEntry))
 }
 
-// numPreallocatedHashes returns how many hashes to preallocate structures for, derived from max-file-size-mb, or 0 when
-// preallocation is disabled (the toggle is off or max-file-size-mb is unset). The receiver must have gone through
-// withDefaults so that MinBytesPerHashEntry is positive.
 func (c *FileConfig) numPreallocatedHashes() int {
 	if c.DisablePreallocateMemory || c.MaxFileSizeMB <= 0 {
 		return 0
@@ -87,10 +81,10 @@ func (c *FileConfig) numPreallocatedHashes() int {
 	return estimateHashCount(int64(c.MaxFileSizeMB)*bytesInMB, c.MinBytesPerHashEntry)
 }
 
-// withDefaults returns a copy with zero-valued fields that must be positive
-// for the syncer to work filled in. Koanf doesn't apply per-element defaults
-// when decoding into the Files slice (flag defaults exist only for scalar
-// keys), so a zero here means the field was omitted.
+// withDefaults returns a copy with zero-valued fields backfilled from
+// DefaultFileConfig. Koanf doesn't apply per-element defaults when decoding
+// into the Files slice (no flags are registered for its keys), so a zero is
+// treated as an omitted field.
 func (c *FileConfig) withDefaults() FileConfig {
 	file := *c
 	if file.ChunkSizeMB == 0 {
