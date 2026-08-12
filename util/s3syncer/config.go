@@ -67,8 +67,9 @@ func (c *Config) Validate() error {
 }
 
 var DefaultS3Config = Config{
-	ChunkSizeMB:   32,
-	MaxRetries:    3,
-	Concurrency:   10,
-	MaxFileSizeMB: 0,
+	ChunkSizeMB:              32,
+	MaxRetries:               3,
+	Concurrency:              10,
+	MaxFileSizeMB:            0,
+	DisablePreallocateMemory: false,
 }
