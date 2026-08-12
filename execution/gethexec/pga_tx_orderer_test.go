@@ -214,6 +214,41 @@ func TestPGATxOrdererRoundExpiryAdvancesAndBoosts(t *testing.T) {
 	})
 }
 
+// Yielded items are stamped with the round they were popped in; a revived tx joining mid-round
+// gets the active round, not a stale stamp.
+func TestPGATxOrdererStampsRoundOnYield(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		items := []txQueueItem{
+			makePGAQueueItem(t, 0, 100),
+			makePGAQueueItem(t, 1, 0),
+		}
+		o := newTestPGATxOrderer(&stubOrdererSequencer{items: items})
+
+		if !o.StartBlock(nil) {
+			t.Fatal("StartBlock = false, want true")
+		}
+		item, ok := o.NextQueueItem(nil, math.MaxInt)
+		if !ok || item.GetPGARound() != 1 {
+			t.Fatalf("round-1 yield = (round %d, %v), want round 1", item.GetPGARound(), ok)
+		}
+		o.OnTxInclusion(item)
+
+		// Round 1 expires: the leftover is yielded in round 2 and stamped accordingly.
+		time.Sleep(testPGARoundLength + time.Millisecond)
+		item, ok = o.NextQueueItem(nil, math.MaxInt)
+		if !ok || item.GetPGARound() != 2 {
+			t.Fatalf("round-2 yield = (round %d, %v), want round 2", item.GetPGARound(), ok)
+		}
+
+		// A tx revived mid-round is stamped with the active round.
+		o.OnNonceGapResolved(makePGAQueueItem(t, 2, 10))
+		item, ok = o.NextQueueItem(nil, math.MaxInt)
+		if !ok || item.GetPGARound() != 2 {
+			t.Fatalf("revived yield = (round %d, %v), want round 2", item.GetPGARound(), ok)
+		}
+	})
+}
+
 // When the last round expires the block ends, and the never-yielded txs keep their accumulated
 // boost for the next block.
 func TestPGATxOrdererLastRoundExpiryEndsBlock(t *testing.T) {
