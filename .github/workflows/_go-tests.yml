@@ -121,11 +121,21 @@ jobs:
           # Consumed by system_tests helpers (see getTestTimeoutScale in common_test.go).
           echo "NITRO_TEST_TIMEOUT_SCALE=2.0" >> "$GITHUB_ENV"
 
+      # npm intermittently hangs forever after a successful install (NIT-5420),
+      # so bound each attempt (successful builds take at most ~7 min) and retry;
+      # make is incremental, so retries resume where the killed attempt left off.
       - name: Build
-        run: make -j8 build test-go-deps
+        timeout-minutes: 35
+        run: |
+          for attempt in 1 2 3; do
+            timeout -k 60 10m make -j "$(nproc)" build test-go-deps && exit 0
+            echo "::warning::Build attempt ${attempt} failed or hung"
+          done
+          exit 1
 
       - name: Build node dependencies
-        run: make -j8 build-node-deps
+        timeout-minutes: 20
+        run: make -j "$(nproc)" build-node-deps
 
       # --------------------- PATHDB MODE ---------------------
 
