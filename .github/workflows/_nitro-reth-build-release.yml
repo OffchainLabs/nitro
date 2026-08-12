@@ -41,7 +41,7 @@ jobs:
           ref: ${{ inputs.ref }}
       - name: Init reth-referenced submodules
         working-directory: .
-        run: git submodule update --init --depth 1 --recursive -- brotli contracts contracts-local/src/precompiles
+        run: git submodule update --init --depth 1 --recursive -- brotli contracts contracts-local/src/precompiles crates/tools/wasmer
       - name: Install build deps
         run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
       - uses: dtolnay/rust-toolchain@1.93
