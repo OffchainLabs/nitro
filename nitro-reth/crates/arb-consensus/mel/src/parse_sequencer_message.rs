@@ -335,6 +335,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn malformed_brotli_payload_yields_empty_batch_not_error() -> MelResult<()> {
+        let garbage: &[u8] = b"\xff\xfe\xfd definitely not a brotli stream";
+        // Premise: the payload really is undecodable.
+        assert!(decompress_brotli(garbage, 1024).is_err());
+
+        let mut payload = vec![BROTLI_HEADER_BYTE];
+        payload.extend_from_slice(garbage);
+        let data = frame([0; 5], &payload);
+        let msg = parse_sequencer_message(1, B256::ZERO, &data, 1024, &no_da()).await?;
+        assert!(msg.segments.is_empty());
+
+        // Same for a brotli header byte with no stream behind it at all.
+        let data = frame([0; 5], &[BROTLI_HEADER_BYTE]);
+        let msg = parse_sequencer_message(2, B256::ZERO, &data, 1024, &no_da()).await?;
+        assert!(msg.segments.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn rejects_zeroheavy_encoding() {
         let data = frame([0; 5], &[ZEROHEAVY_FLAG]);
         let result = parse_sequencer_message(3, B256::ZERO, &data, usize::MAX, &no_da()).await;
