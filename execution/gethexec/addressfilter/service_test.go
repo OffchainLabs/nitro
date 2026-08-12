@@ -579,11 +579,11 @@ func TestFilterService_KeepsListOnOversizedSync(t *testing.T) {
 
 	require.NoError(t, service.Initialize(context.Background()))
 
-	digestBefore := service.getHashStoreDigest(0)
-	countBefore := service.getHashCount(0)
+	digestBefore := service.getHashStoreDigest(t, 0)
+	countBefore := service.getHashCount(t, 0)
 	require.NotEmpty(t, digestBefore, "initial digest should be set")
 	require.Equal(t, 1, countBefore)
-	restricted, _ := service.GetHashStore(0).IsRestricted(restrictedAddr)
+	restricted, _ := service.GetHashStore(t, 0).IsRestricted(restrictedAddr)
 	require.True(t, restricted, "address should be restricted after initial load")
 
 	// Swap the S3 object for a payload that exceeds the configured limit.
@@ -597,13 +597,13 @@ func TestFilterService_KeepsListOnOversizedSync(t *testing.T) {
 		t.Fatalf("expected ErrObjectTooLarge from oversized swap, got %v", err)
 	}
 
-	if got := service.getHashStoreDigest(0); got != digestBefore {
+	if got := service.getHashStoreDigest(t, 0); got != digestBefore {
 		t.Errorf("digest changed after failed sync: got %q, want %q", got, digestBefore)
 	}
-	if got := service.getHashCount(0); got != countBefore {
+	if got := service.getHashCount(t, 0); got != countBefore {
 		t.Errorf("hash count changed after failed sync: got %d, want %d", got, countBefore)
 	}
-	if restricted, _ := service.GetHashStore(0).IsRestricted(restrictedAddr); !restricted {
+	if restricted, _ := service.GetHashStore(t, 0).IsRestricted(restrictedAddr); !restricted {
 		t.Error("address should still be restricted after failed sync")
 	}
 }
@@ -768,7 +768,7 @@ func TestFilterService_MultiFile(t *testing.T) {
 
 	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, 1, key1, key2))
 	require.NoError(t, err)
-	require.Equal(t, 2, service.numFiles())
+	require.Equal(t, 2, service.numFiles(t))
 
 	require.False(t, service.AllFilesLoaded(), "no file should be loaded before Initialize")
 	require.NoError(t, service.Initialize(context.Background()))
@@ -818,7 +818,7 @@ func TestFilterService_StaticListOnly(t *testing.T) {
 
 	service, err := NewFilterService(&cfg)
 	require.NoError(t, err)
-	require.Equal(t, 0, service.numFiles())
+	require.Equal(t, 0, service.numFiles(t))
 	require.True(t, service.AllFilesLoaded(), "static list should be loaded at construction, before Initialize")
 	require.NoError(t, service.Initialize(context.Background()))
 
@@ -867,7 +867,7 @@ func TestFilterService_StaticListPlusS3File(t *testing.T) {
 
 	service, err := NewFilterService(cfg)
 	require.NoError(t, err)
-	require.Equal(t, 1, service.numFiles())
+	require.Equal(t, 1, service.numFiles(t))
 
 	require.False(t, service.AllFilesLoaded(), "the S3 file is not loaded before Initialize")
 	require.NoError(t, service.Initialize(context.Background()))
@@ -952,7 +952,7 @@ func TestFilterService_PreallocLoadAndReload(t *testing.T) {
 	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, 1, key))
 	require.NoError(t, err)
 
-	hashStore := service.GetHashStore(0)
+	hashStore := service.GetHashStore(t, 0)
 
 	// Preallocation engaged: ping-pong buffers exist and are sized.
 	wantHashes := service.files[0].config.numPreallocatedHashes()
@@ -962,7 +962,7 @@ func TestFilterService_PreallocLoadAndReload(t *testing.T) {
 	if r, _ := hashStore.IsRestricted(addr1); !r {
 		t.Fatal("addr1 should be restricted after initial load")
 	}
-	require.Equal(t, 1, service.getHashCount(0))
+	require.Equal(t, 1, service.getHashCount(t, 0))
 
 	// Capture the preallocated structures to prove they are reused, not replaced.
 	d0 := hashStore.buffers[0]
@@ -980,7 +980,7 @@ func TestFilterService_PreallocLoadAndReload(t *testing.T) {
 	if r, _ := hashStore.IsRestricted(addr1); r {
 		t.Fatal("addr1 should no longer be restricted after reload")
 	}
-	require.Equal(t, 1, service.getHashCount(0))
+	require.Equal(t, 1, service.getHashCount(t, 0))
 
 	// Structures reused across the reload.
 	require.Same(t, d0, hashStore.buffers[0])

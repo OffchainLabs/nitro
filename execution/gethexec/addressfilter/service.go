@@ -164,15 +164,15 @@ func (s *FilterService) TriggerSyncForTest(_ *testing.T, ctx context.Context) er
 	return errors.Join(errs...)
 }
 
-func (s *FilterService) numFiles() int {
+func (s *FilterService) numFiles(_ *testing.T) int {
 	return len(s.files)
 }
 
-func (s *FilterService) getHashCount(i int) int {
+func (s *FilterService) getHashCount(_ *testing.T, i int) int {
 	return s.files[i].hashStore.Size()
 }
 
-func (s *FilterService) getHashStoreDigest(i int) string {
+func (s *FilterService) getHashStoreDigest(_ *testing.T, i int) string {
 	return s.files[i].hashStore.Digest()
 }
 
@@ -180,7 +180,7 @@ func (s *FilterService) AllFilesLoaded() bool {
 	return s.storeSet.AllLoaded()
 }
 
-func (s *FilterService) GetHashStore(i int) *HashStore {
+func (s *FilterService) GetHashStore(_ *testing.T, i int) *HashStore {
 	return s.files[i].hashStore
 }
 

@@ -1350,7 +1350,7 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	}
 
 	// Store hashes to the hashstore so FilteringReady returns true
-	storeFilterHashes(t, filterService.GetHashStore(0), uuid.New(), testFilterSalt, addressfilter.HashingSchemeStringInput, nil, "test-digest")
+	storeFilterHashes(t, filterService.GetHashStore(t, 0), uuid.New(), testFilterSalt, addressfilter.HashingSchemeStringInput, nil, "test-digest")
 
 	if !execNode.Sequencer.FilteringReady() {
 		t.Fatal("FilteringReady should be true after filter rules are loaded")
@@ -1449,8 +1449,8 @@ func TestPeriodicFilterSetIDReporting(t *testing.T) {
 
 	idFile0 := uuid.New()
 	idFile1 := uuid.New()
-	storeFilterHashes(t, filterService.GetHashStore(0), idFile0, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-0")
-	storeFilterHashes(t, filterService.GetHashStore(1), idFile1, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-1")
+	storeFilterHashes(t, filterService.GetHashStore(t, 0), idFile0, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-0")
+	storeFilterHashes(t, filterService.GetHashStore(t, 1), idFile1, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-1")
 
 	expectedChainID := builder.L2.ExecNode.ExecEngine.ChainID().Uint64()
 	waitForReport := func(wantIDs []uuid.UUID) addressfilter.FilterSetIDsReport {
@@ -1476,7 +1476,7 @@ func TestPeriodicFilterSetIDReporting(t *testing.T) {
 	// Rotate the first file's filter set; the next reporting tick must pick
 	// up its new id while the other ids are unchanged.
 	idFile0Rotated := uuid.New()
-	storeFilterHashes(t, filterService.GetHashStore(0), idFile0Rotated, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-0-rotated")
+	storeFilterHashes(t, filterService.GetHashStore(t, 0), idFile0Rotated, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-0-rotated")
 
 	second := waitForReport([]uuid.UUID{idFile0Rotated, idFile1, staticID})
 	require.Equal(t, expectedChainID, second.ChainID, "chain id mismatch after rotation")
@@ -1496,7 +1496,7 @@ func TestPeriodicFilterSetIDReporting(t *testing.T) {
 	}
 
 	id3 := uuid.New()
-	storeFilterHashes(t, filterService.GetHashStore(0), id3, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-3")
+	storeFilterHashes(t, filterService.GetHashStore(t, 0), id3, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-3")
 
 	select {
 	case got := <-reportCh:
