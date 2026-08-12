@@ -231,9 +231,9 @@ wat = { version = "1" }
 wiremock = { version = "0.6" }
 
 # Nitro repo dependencies
-nitro-arbutil = { path = "../crates/arbutil" }
-nitro-brotli = { path = "../crates/brotli" }
-nitro-prover = { path = "../crates/prover", features = ["cc_brotli"] }
+nitro-arbutil = { package = "arbutil", path = "../crates/arbutil" }
+nitro-brotli = { package = "brotli", path = "../crates/brotli" }
+nitro-prover = { package = "prover", path = "../crates/prover", default-features = false, features = ["cc_brotli"] }
 wasmer = { path = "../crates/tools/wasmer/lib/api", default-features = false }
 wasmer-compiler = { path = "../crates/tools/wasmer/lib/compiler" }
 wasmer-types = { path = "../crates/tools/wasmer/lib/types" }

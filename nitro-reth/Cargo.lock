@@ -1563,9 +1563,9 @@ dependencies = [
  "revm",
  "thiserror 2.0.18",
  "tracing",
- "wasmer 7.1.0 (git+https://github.com/OffchainLabs/wasmer.git?rev=5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca)",
- "wasmer-compiler 7.1.0 (git+https://github.com/OffchainLabs/wasmer.git?rev=5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca)",
- "wasmer-types 7.1.0 (git+https://github.com/OffchainLabs/wasmer.git?rev=5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca)",
+ "wasmer",
+ "wasmer-compiler",
+ "wasmer-types",
  "wasmparser 0.121.2",
  "wat",
 ]
@@ -2646,7 +2646,6 @@ dependencies = [
  "cc",
  "lazy_static",
  "num_enum",
- "wasmer 7.1.0",
 ]
 
 [[package]]
@@ -4012,33 +4011,6 @@ name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
-
-[[package]]
-name = "dynasm"
-version = "5.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd358e74d2f8d71a11b7a2c51c67ad5df3de06003b0596875e47bc09126c894e"
-dependencies = [
- "bitflags 2.11.0",
- "byteorder",
- "lazy_static",
- "proc-macro-error3",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
-name = "dynasmrt"
-version = "5.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6efe03f6bd356ae85eeea7ee14c2bf54e664a949d089d238364b5a99afbc4116"
-dependencies = [
- "byteorder",
- "dynasm",
- "fnv",
- "memmap2 0.9.11",
-]
 
 [[package]]
 name = "dynify"
@@ -7238,16 +7210,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "proc-macro-error-attr3"
-version = "3.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0084e6206a967a2dad822180626b2f6b07a3b379325e8f1ec0438e33a469ba7"
-dependencies = [
- "proc-macro2",
- "quote",
-]
-
-[[package]]
 name = "proc-macro-error2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7257,18 +7219,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "proc-macro-error3"
-version = "3.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cf066225f2373bc711684792b69bdeac0356019b007e721090c24d92d5d5a50"
-dependencies = [
- "proc-macro-error-attr3",
- "proc-macro2",
- "quote",
- "syn 3.0.3",
 ]
 
 [[package]]
@@ -7365,8 +7315,6 @@ dependencies = [
  "bincode",
  "bitvec",
  "brotli 0.1.0",
- "c-kzg",
- "clap",
  "derivative",
  "digest 0.10.7",
  "enum-iterator",
@@ -7380,7 +7328,6 @@ dependencies = [
  "num-derive",
  "num-traits",
  "parking_lot",
- "rayon",
  "rustc-demangle",
  "serde",
  "serde_json",
@@ -7389,9 +7336,7 @@ dependencies = [
  "smallvec",
  "tiny-keccak",
  "validation",
- "wasmer 7.1.0",
- "wasmer-compiler-singlepass",
- "wasmer-types 7.1.0",
+ "wasmer-types",
  "wasmparser 0.245.1",
  "wat",
 ]
@@ -12979,44 +12924,11 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "wasm-bindgen",
- "wasmer-compiler 7.1.0",
- "wasmer-compiler-cranelift 7.1.0",
- "wasmer-derive 7.1.0",
- "wasmer-types 7.1.0",
- "wasmer-vm 7.1.0",
- "wasmparser 0.245.1",
- "wat",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "wasmer"
-version = "7.1.0"
-source = "git+https://github.com/OffchainLabs/wasmer.git?rev=5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca#5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca"
-dependencies = [
- "bindgen",
- "bytes",
- "cfg-if",
- "cmake",
- "derive_more 2.1.1",
- "indexmap 2.13.0",
- "js-sys",
- "more-asserts",
- "paste",
- "rustc-demangle",
- "serde",
- "serde-wasm-bindgen",
- "shared-buffer",
- "tar",
- "target-lexicon",
- "thiserror 2.0.18",
- "tracing",
- "wasm-bindgen",
- "wasmer-compiler 7.1.0 (git+https://github.com/OffchainLabs/wasmer.git?rev=5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca)",
- "wasmer-compiler-cranelift 7.1.0 (git+https://github.com/OffchainLabs/wasmer.git?rev=5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca)",
- "wasmer-derive 7.1.0 (git+https://github.com/OffchainLabs/wasmer.git?rev=5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca)",
- "wasmer-types 7.1.0 (git+https://github.com/OffchainLabs/wasmer.git?rev=5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca)",
- "wasmer-vm 7.1.0 (git+https://github.com/OffchainLabs/wasmer.git?rev=5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca)",
+ "wasmer-compiler",
+ "wasmer-compiler-cranelift",
+ "wasmer-derive",
+ "wasmer-types",
+ "wasmer-vm",
  "windows-sys 0.61.2",
 ]
 
@@ -13047,43 +12959,8 @@ dependencies = [
  "target-lexicon",
  "tempfile",
  "thiserror 2.0.18",
- "wasmer-types 7.1.0",
- "wasmer-vm 7.1.0",
- "wasmparser 0.245.1",
- "which",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "wasmer-compiler"
-version = "7.1.0"
-source = "git+https://github.com/OffchainLabs/wasmer.git?rev=5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca#5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca"
-dependencies = [
- "backtrace",
- "bytes",
- "cfg-if",
- "crossbeam-channel",
- "enum-iterator",
- "enumset",
- "itertools 0.14.0",
- "leb128",
- "libc",
- "macho-unwind-info",
- "memmap2 0.9.11",
- "more-asserts",
- "object 0.38.1",
- "rangemap",
- "rayon",
- "region",
- "rkyv",
- "self_cell",
- "shared-buffer",
- "smallvec",
- "target-lexicon",
- "tempfile",
- "thiserror 2.0.18",
- "wasmer-types 7.1.0 (git+https://github.com/OffchainLabs/wasmer.git?rev=5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca)",
- "wasmer-vm 7.1.0 (git+https://github.com/OffchainLabs/wasmer.git?rev=5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca)",
+ "wasmer-types",
+ "wasmer-vm",
  "wasmparser 0.245.1",
  "which",
  "windows-sys 0.61.2",
@@ -13105,47 +12982,8 @@ dependencies = [
  "smallvec",
  "target-lexicon",
  "tracing",
- "wasmer-compiler 7.1.0",
- "wasmer-types 7.1.0",
-]
-
-[[package]]
-name = "wasmer-compiler-cranelift"
-version = "7.1.0"
-source = "git+https://github.com/OffchainLabs/wasmer.git?rev=5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca#5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca"
-dependencies = [
- "cranelift-codegen",
- "cranelift-entity",
- "cranelift-frontend",
- "gimli 0.33.0",
- "indexmap 2.13.0",
- "itertools 0.14.0",
- "leb128",
- "more-asserts",
- "rayon",
- "smallvec",
- "target-lexicon",
- "tracing",
- "wasmer-compiler 7.1.0 (git+https://github.com/OffchainLabs/wasmer.git?rev=5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca)",
- "wasmer-types 7.1.0 (git+https://github.com/OffchainLabs/wasmer.git?rev=5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca)",
-]
-
-[[package]]
-name = "wasmer-compiler-singlepass"
-version = "7.1.0"
-dependencies = [
- "byteorder",
- "dynasm",
- "dynasmrt",
- "enumset",
- "gimli 0.33.0",
- "itertools 0.14.0",
- "more-asserts",
- "smallvec",
- "target-lexicon",
- "tempfile",
- "wasmer-compiler 7.1.0",
- "wasmer-types 7.1.0",
+ "wasmer-compiler",
+ "wasmer-types",
 ]
 
 [[package]]
@@ -13159,37 +12997,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "wasmer-derive"
-version = "7.1.0"
-source = "git+https://github.com/OffchainLabs/wasmer.git?rev=5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca#5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca"
-dependencies = [
- "proc-macro-error2",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
 name = "wasmer-types"
 version = "7.1.0"
-dependencies = [
- "bytecheck",
- "enum-iterator",
- "enumset",
- "getrandom 0.4.1",
- "hex",
- "indexmap 2.13.0",
- "more-asserts",
- "rkyv",
- "sha2 0.11.0",
- "target-lexicon",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "wasmer-types"
-version = "7.1.0"
-source = "git+https://github.com/OffchainLabs/wasmer.git?rev=5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca#5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca"
 dependencies = [
  "bytecheck",
  "enum-iterator",
@@ -13230,38 +13039,7 @@ dependencies = [
  "rustversion",
  "scopeguard",
  "thiserror 2.0.18",
- "wasmer-types 7.1.0",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "wasmer-vm"
-version = "7.1.0"
-source = "git+https://github.com/OffchainLabs/wasmer.git?rev=5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca#5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca"
-dependencies = [
- "backtrace",
- "bytesize",
- "cc",
- "cfg-if",
- "corosensei",
- "crossbeam-queue",
- "dashmap",
- "enum-iterator",
- "fnv",
- "gimli 0.33.0",
- "indexmap 2.13.0",
- "itertools 0.14.0",
- "libc",
- "libunwind",
- "mach2 0.6.0",
- "memoffset",
- "more-asserts",
- "parking_lot",
- "region",
- "rustversion",
- "scopeguard",
- "thiserror 2.0.18",
- "wasmer-types 7.1.0 (git+https://github.com/OffchainLabs/wasmer.git?rev=5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca)",
+ "wasmer-types",
  "windows-sys 0.61.2",
 ]
 
