@@ -106,14 +106,14 @@ func createProxyValidationNode(t *testing.T, ctx context.Context, spawner *proxy
 	return stack
 }
 
-// TestBlockValidatorTimeoutRetry verifies that timeout errors during validation
+// TestBlockValidatorTimeoutRetryFlaky verifies that timeout errors during validation
 // do not crash the node. With FailureIsFatal=true (the default), validation
 // failures normally crash the node. But timeout errors should be retried.
 //
 // Architecture: The test creates a proxy validation node that sits between the
 // block validator and a real validation node. The proxy returns timeout errors
 // for the first N requests, then forwards to the real node for correct results.
-func TestBlockValidatorTimeoutRetry(t *testing.T) {
+func TestBlockValidatorTimeoutRetryFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

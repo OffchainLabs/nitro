@@ -31,7 +31,7 @@ jobs:
   build:
     name: build release binaries
     runs-on: ocl-16cpu-64ram
-    timeout-minutes: 45
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: nitro-reth

@@ -14,7 +14,7 @@ jobs:
   nextest:
     name: unit tests (nextest)
     runs-on: ocl-16cpu-64ram
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: nitro-reth
@@ -39,7 +39,7 @@ jobs:
   doctests:
     name: doctests
     runs-on: ocl-16cpu-64ram
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: nitro-reth

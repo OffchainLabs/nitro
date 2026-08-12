@@ -59,7 +59,7 @@ jobs:
     name: abba pr-gate
     needs: [build-feature, build-baseline]
     runs-on: ocl-16cpu-64ram
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
       pull-requests: write

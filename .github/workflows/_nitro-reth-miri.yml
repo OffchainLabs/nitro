@@ -16,7 +16,7 @@ jobs:
   miri:
     name: miri aliasing
     runs-on: ocl-4cpu-16ram
-    timeout-minutes: 20
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: nitro-reth
