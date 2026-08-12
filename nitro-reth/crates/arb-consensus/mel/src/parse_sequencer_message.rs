@@ -14,10 +14,11 @@
 // The parser and its header-byte helpers are a complete, tested port that is not
 // yet wired into a caller; allow dead code until the MEL pipeline consumes it.
 #![allow(dead_code)]
-use std::io::Read;
+use std::mem::MaybeUninit;
 
 use alloy_primitives::B256;
 use arb_da_provider::DaReaderSource;
+use tracing::warn;
 
 use crate::{MelError, MelResult};
 
@@ -162,22 +163,23 @@ pub(crate) async fn parse_sequencer_message(
     }
 
     if is_brotli(header_byte) {
-        let decompressed = decompress_brotli(&payload[1..], max_uncompressed_batch_size)?;
-        parsed.segments = parse_segments(&decompressed);
+        match decompress_brotli(&payload[1..], max_uncompressed_batch_size) {
+            Ok(decompressed) => parsed.segments = parse_segments(&decompressed),
+            Err(error) => warn!("Sequencer msg decompression failed: {error:?}"),
+        }
         return Ok(parsed);
     }
 
     Ok(parsed)
 }
 
-/// Brotli-decompresses `compressed`, capping output at `max_size` bytes.
+/// Brotli-decompresses `compressed`, failing if the stream is malformed or the
+/// output exceeds `max_size` bytes.
 pub(crate) fn decompress_brotli(compressed: &[u8], max_size: usize) -> MelResult<Vec<u8>> {
-    let mut out = Vec::new();
-    brotli::Decompressor::new(compressed, 4096)
-        .take(max_size as u64)
-        .read_to_end(&mut out)
+    let mut buf = vec![MaybeUninit::<u8>::uninit(); max_size];
+    let out = nitro_brotli::decompress_fixed(compressed, &mut buf, nitro_brotli::Dictionary::Empty)
         .map_err(|_| MelError::BatchDecompressionFailed)?;
-    Ok(out)
+    Ok(out.to_vec())
 }
 
 fn parse_segments(decompressed: &[u8]) -> Vec<Vec<u8>> {
@@ -297,8 +299,8 @@ mod tests {
 
     #[tokio::test]
     async fn oversized_decompression_yields_no_segments() -> MelResult<()> {
-        // Cap decompression below the real output; the reader is truncated so no
-        // complete segment can be parsed, but the call still succeeds.
+        // Cap decompression below the real output; the decode fails (Go
+        // parity: no truncation) and the batch parses as empty segments.
         let raw = rlp_segments(&[b"aaaaaaaaaaaaaaaaaaaa"]);
         let mut payload = vec![BROTLI_HEADER_BYTE];
         payload.extend_from_slice(&brotli_compress(&raw));
