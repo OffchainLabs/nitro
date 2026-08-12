@@ -25,7 +25,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 nitro-brotli = { workspace = true, features = ["cc_brotli"] }
