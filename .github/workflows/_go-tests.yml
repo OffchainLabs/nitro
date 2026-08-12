@@ -124,14 +124,14 @@ jobs:
       # npm intermittently hangs forever after a successful install (NIT-5420),
       # so bound each attempt (successful builds take at most ~7 min) and retry;
       # make is incremental, so retries resume where the killed attempt left off.
+      # The script also captures diagnostics from the hung processes before
+      # killing them (see the hang-reports artifact) to report the bug upstream.
       - name: Build
         timeout-minutes: 35
-        run: |
-          for attempt in 1 2 3; do
-            timeout -k 60 10m make -j "$(nproc)" build test-go-deps && exit 0
-            echo "::warning::Build attempt ${attempt} failed or hung"
-          done
-          exit 1
+        env:
+          HANG_REPORT_DIR: ${{ github.workspace }}/hang-reports
+          NODE_OPTIONS: --report-on-signal --report-signal=SIGUSR2 --report-directory=${{ github.workspace }}/hang-reports
+        run: ${{ github.workspace }}/.github/workflows/buildWithRetry.sh
 
       - name: Build node dependencies
         timeout-minutes: 20
@@ -384,3 +384,11 @@ jobs:
         with:
           name: ${{ inputs.run-name }}-full.log
           path: full.log
+
+      - name: Upload npm hang diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: hang-reports-${{ inputs.run-name }}
+          path: hang-reports/
+          if-no-files-found: ignore
