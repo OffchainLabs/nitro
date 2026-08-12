@@ -12,16 +12,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 
+	"github.com/offchainlabs/nitro/cmd/filtering-report/signer/signertest"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
 func TestLiveness(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{})
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigningPair(t).Signer)
 
 	resp, err := http.Get(stack.HTTPEndpoint() + "/liveness")
 	if err != nil {
@@ -34,7 +38,7 @@ func TestLiveness(t *testing.T) {
 }
 
 func TestReadiness(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{})
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigningPair(t).Signer)
 
 	resp, err := http.Get(stack.HTTPEndpoint() + "/readiness")
 	if err != nil {
@@ -47,7 +51,7 @@ func TestReadiness(t *testing.T) {
 }
 
 func TestReportFilteredTransactions(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{})
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigningPair(t).Signer)
 	client := stack.Attach()
 	defer client.Close()
 
@@ -76,7 +80,7 @@ func TestReportFilteredTransactions(t *testing.T) {
 }
 
 func TestReportFilteredTransactionsEmpty(t *testing.T) {
-	stack := NewTestStack(t, &sqsclient.MockQueueClient{})
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigningPair(t).Signer)
 	client := stack.Attach()
 	defer client.Close()
 
@@ -94,7 +98,7 @@ func TestReportFilteredTransactionsPartialFailure(t *testing.T) {
 	stackConfig.HTTPPort = 0
 	stackConfig.WSHost = "127.0.0.1"
 	stackConfig.WSPort = 0
-	stack, err := NewStack(&stackConfig, mock)
+	stack, err := NewStack(&stackConfig, mock, &genericconf.HTTPClientConfigDefault, signertest.NewSigningPair(t).Signer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,6 +152,21 @@ func TestReportFilteredTransactionsPartialFailure(t *testing.T) {
 	// All 3 sends should have been attempted (no fail-fast)
 	if mock.sendCount != 3 {
 		t.Fatalf("expected 3 send attempts, got %d", mock.sendCount)
+	}
+}
+
+func TestReportCurrentFilterSetID_NoEndpointIsNoOp(t *testing.T) {
+	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigningPair(t).Signer)
+	client := stack.Attach()
+	defer client.Close()
+
+	report := addressfilter.FilterSetIDReport{
+		FilterSetID: uuid.New(),
+		ChainID:     42161,
+		ReportedAt:  time.Now().UTC(),
+	}
+	if err := client.Call(nil, "filteringreport_reportCurrentFilterSetID", report); err != nil {
+		t.Fatalf("expected no-op call to succeed, got %v", err)
 	}
 }
 

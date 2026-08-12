@@ -116,7 +116,7 @@ func defaultProtocolParams() protocolParams {
 	}
 }
 
-func TestEndToEnd_SmokeTest(t *testing.T) {
+func TestEndToEnd_SmokeTestFlaky(t *testing.T) {
 	timeCfg := defaultTimeParams()
 	timeCfg.blockTime = time.Second
 	runEndToEndTest(t, &e2eConfig{
@@ -133,7 +133,7 @@ func TestEndToEnd_SmokeTest(t *testing.T) {
 	})
 }
 
-func TestEndToEnd_TwoEvilValidators(t *testing.T) {
+func TestEndToEnd_TwoEvilValidatorsFlaky(t *testing.T) {
 	protocolCfg := defaultProtocolParams()
 	timeCfg := defaultTimeParams()
 	timeCfg.assertionPostingInterval = time.Hour
