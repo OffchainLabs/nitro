@@ -66,6 +66,10 @@ const bytesInMB = 1024 * 1024
 // preallocated bucket memory, never correctness.
 const minBytesPerHashEntry = 42
 
+// minBytesPerSha256HashEntry is the JSON size of the smallest sha256 entry: 64 hex chars plus the two surrounding
+// quotes.
+const minBytesPerSha256HashEntry = 66
+
 func estimateHashCount(sizeBytes int64, minBytesPerEntry int) int {
 	if sizeBytes < 0 {
 		return 0
@@ -119,8 +123,9 @@ func (c *Config) Validate() error {
 		if file.PollInterval <= 0 {
 			return fmt.Errorf("address-filter.files[%d] (s3://%s/%s): poll-interval must be positive", i, file.Bucket, file.ObjectKey)
 		}
-		if file.MinBytesPerHashEntry <= 0 {
-			return fmt.Errorf("address-filter.files[%d] (s3://%s/%s): min-bytes-per-hash-entry must be positive", i, file.Bucket, file.ObjectKey)
+		if file.MinBytesPerHashEntry != minBytesPerHashEntry && file.MinBytesPerHashEntry != minBytesPerSha256HashEntry {
+			return fmt.Errorf("address-filter.files[%d] (s3://%s/%s): min-bytes-per-hash-entry must be %d (any scheme) or %d (sha256-only lists), got %d",
+				i, file.Bucket, file.ObjectKey, minBytesPerHashEntry, minBytesPerSha256HashEntry, file.MinBytesPerHashEntry)
 		}
 		key := file.Bucket + "\x00" + file.ObjectKey
 		if _, dup := seen[key]; dup {

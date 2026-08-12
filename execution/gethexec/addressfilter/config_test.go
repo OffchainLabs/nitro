@@ -101,12 +101,22 @@ func TestConfigValidate(t *testing.T) {
 		require.Zero(t, cfg.Files[0].PollInterval)
 	})
 
-	t.Run("negative min-bytes-per-hash-entry", func(t *testing.T) {
-		cfg := validTestConfig(t)
-		cfg.Files[0].MinBytesPerHashEntry = -1
-		err := cfg.Validate()
-		require.ErrorContains(t, err, "min-bytes-per-hash-entry must be positive")
-		require.ErrorContains(t, err, "files[0]")
+	t.Run("valid min-bytes-per-hash-entry values", func(t *testing.T) {
+		for _, v := range []int{minBytesPerHashEntry, minBytesPerSha256HashEntry} {
+			cfg := validTestConfig(t)
+			cfg.Files[0].MinBytesPerHashEntry = v
+			require.NoError(t, cfg.Validate())
+		}
+	})
+
+	t.Run("invalid min-bytes-per-hash-entry", func(t *testing.T) {
+		for _, v := range []int{-1, 1, 50, 67} {
+			cfg := validTestConfig(t)
+			cfg.Files[0].MinBytesPerHashEntry = v
+			err := cfg.Validate()
+			require.ErrorContains(t, err, "min-bytes-per-hash-entry must be 42 (any scheme) or 66 (sha256-only lists)")
+			require.ErrorContains(t, err, "files[0]")
+		}
 	})
 
 	t.Run("negative poll interval", func(t *testing.T) {
