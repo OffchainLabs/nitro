@@ -48,7 +48,7 @@ func mustLoadCurrent() Version {
 	}, embedded)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "invalid Nitro build provenance: %v\n", err)
-		os.Exit(0)
+		os.Exit(1)
 	}
 	return version
 }
