@@ -28,7 +28,7 @@ jobs:
   clippy:
     name: clippy
     runs-on: ocl-16cpu-64ram
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: nitro-reth
@@ -57,7 +57,7 @@ jobs:
     # since arb-mel's tokio dev-dependency is not wasm-buildable.
     name: wasm
     runs-on: ocl-4cpu-16ram
-    timeout-minutes: 15
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: nitro-reth
@@ -79,7 +79,7 @@ jobs:
   docs:
     name: docs
     runs-on: ocl-16cpu-64ram
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       RUSTDOCFLAGS: "-D warnings"
     defaults:

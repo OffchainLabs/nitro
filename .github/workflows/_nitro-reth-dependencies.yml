@@ -14,7 +14,7 @@ jobs:
   deny-and-audit:
     name: cargo deny & audit
     runs-on: ocl-8cpu-32ram
-    timeout-minutes: 20
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: nitro-reth
