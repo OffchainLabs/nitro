@@ -22,8 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/util/s3syncer"
 )
 
-// Aggregate counters across all configured files; the per-file size gauge is
-// registered dynamically in newFileSizeGauge.
+// Aggregate counters across all configured files.
 var (
 	fileTooLargeCounter = metrics.NewRegisteredCounter("arb/addressfilter/file/toolarge_total", nil)
 	syncFailureCounter  = metrics.NewRegisteredCounter("arb/addressfilter/sync/failure_total", nil)
@@ -94,8 +93,6 @@ type S3SyncManager struct {
 	minBytesPerHashEntry int
 }
 
-// NewS3SyncManager creates a sync manager for one hash-list file. fileConfig
-// must have gone through withDefaults so that MinBytesPerHashEntry is positive.
 func NewS3SyncManager(fileConfig *FileConfig, hashStore *HashStore, objectSizeGauge *metrics.Gauge) *S3SyncManager {
 	manager := &S3SyncManager{
 		hashStore:            hashStore,
