@@ -8,8 +8,15 @@ pub struct RssMonitor {
 }
 
 impl RssMonitor {
+    /// Track this process's RSS.
     pub fn new() -> Self {
-        let pid = Pid::from_u32(std::process::id());
+        Self::for_pid(std::process::id())
+    }
+
+    /// Track another process's RSS, e.g. a spawned node whose memory — not the
+    /// harness's — is the thing under measurement.
+    pub fn for_pid(pid: u32) -> Self {
+        let pid = Pid::from_u32(pid);
         let sys = System::new_with_specifics(
             RefreshKind::new().with_processes(ProcessRefreshKind::new().with_memory()),
         );
@@ -17,6 +24,7 @@ impl RssMonitor {
     }
 
     /// Refresh and return current RSS in bytes. Updates the running peak.
+    /// Returns 0 when the process can't be read, e.g. it has exited.
     pub fn current_rss(&mut self) -> u64 {
         self.sys.refresh_processes_specifics(
             sysinfo::ProcessesToUpdate::Some(&[self.pid]),
@@ -51,5 +59,19 @@ mod tests {
         let r = m.current_rss();
         assert!(r > 0, "expected nonzero RSS for current process");
         assert!(m.peak_rss() >= r);
+    }
+
+    /// The subprocess runner reports the node's memory, not the harness's.
+    #[test]
+    fn rss_tracks_another_process() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn sleep");
+        let mut m = RssMonitor::for_pid(child.id());
+        let r = m.current_rss();
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(r > 0, "expected nonzero RSS for the child process");
     }
 }
