@@ -5,6 +5,7 @@ package nitroversion
 
 import (
 	"fmt"
+	"os"
 	"runtime/debug"
 )
 
@@ -46,7 +47,8 @@ func mustLoadCurrent() Version {
 		modified: modified,
 	}, embedded)
 	if err != nil {
-		panic(fmt.Sprintf("invalid Nitro build provenance: %v", err))
+		fmt.Fprintf(os.Stderr, "invalid Nitro build provenance: %v\n", err)
+		os.Exit(0)
 	}
 	return version
 }
