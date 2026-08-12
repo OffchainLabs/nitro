@@ -13,6 +13,7 @@ env:
 jobs:
   build:
     uses: ./.github/workflows/_nitro-reth-build-release.yml
+    secrets: inherit
     with:
       artifact-name: spec-tests-binaries
 
@@ -26,9 +27,10 @@ jobs:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
-      - name: Init reth-referenced submodules
-        working-directory: .
-        run: git submodule update --init --depth 1 --recursive -- brotli contracts contracts-local/src/precompiles
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
       - name: Install build deps
         run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
       - uses: dtolnay/rust-toolchain@1.93
