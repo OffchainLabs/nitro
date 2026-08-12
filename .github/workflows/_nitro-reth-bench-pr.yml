@@ -68,9 +68,10 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Init reth-referenced submodules
-        working-directory: .
-        run: git submodule update --init --depth 1 --recursive -- brotli contracts contracts-local/src/precompiles crates/tools/wasmer
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
       - uses: actions/download-artifact@v8
         with:
           name: bench-pr-feature-binaries
