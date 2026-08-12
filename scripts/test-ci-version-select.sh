@@ -30,6 +30,7 @@ run_selector() {
     local kv
     for kv in "$@"; do export "${kv?}"; done
     if [ "${MOCK_EMPTY_COMMIT:-}" = "1" ]; then
+      # shellcheck disable=SC2329  # Invoked indirectly by the sourced version selector.
       git() {
         if [ "${1:-}" = "rev-parse" ]; then
           return 0
@@ -39,6 +40,7 @@ run_selector() {
     fi
     # shellcheck source=/dev/null
     . "$selector" >/dev/null || exit 1
+    # shellcheck disable=SC2153  # IMAGE_TAG is assigned by the sourced version selector.
     printf '%s|%s|%s|%s\n' "$NITRO_TAG" "$NITRO_BRANCH" "$NITRO_COMMIT" "$IMAGE_TAG"
   )
 }
@@ -154,12 +156,11 @@ v3.11.3-rc.1+build
 v3.11.3+build
 EOF
 
-for tag in release/foo+bar; do
-  git -C "$repo" tag "$tag"
-  expect_tag_reject "Docker-incompatible tag $tag is rejected" \
-    "$repo" "$tag" "$tag-$sha"
-  git -C "$repo" tag -d "$tag" >/dev/null
-done
+tag='release/foo+bar'
+git -C "$repo" tag "$tag"
+expect_tag_reject "Docker-incompatible tag $tag is rejected" \
+  "$repo" "$tag" "$tag-$sha"
+git -C "$repo" tag -d "$tag" >/dev/null
 
 git -C "$repo" update-ref refs/tags/-candidate HEAD
 expect_tag_reject "tag beginning with dash is rejected" \
