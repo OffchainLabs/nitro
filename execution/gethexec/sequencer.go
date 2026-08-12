@@ -444,9 +444,9 @@ func (q *synchronizedTxQueue) Len() int {
 }
 
 type pendingQueueItemsResults struct {
-	block                *types.Block
-	hooks                *FullSequencingHooks
-	exhaustedOrdererList bool
+	block                   *types.Block
+	hooks                   *FullSequencingHooks
+	ordererSizeLimitReached bool
 }
 
 var _ txOrdererSequencer = (*Sequencer)(nil)
@@ -1362,9 +1362,9 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrde
 	}
 
 	s.pendingQueueItemsResults = &pendingQueueItemsResults{
-		block:                block,
-		hooks:                hooks,
-		exhaustedOrdererList: orderer.RemainingLen() == 0,
+		block:                   block,
+		hooks:                   hooks,
+		ordererSizeLimitReached: orderer.SizeLimitReached(),
 	}
 
 	if madeBlock {
@@ -1454,13 +1454,13 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 
 		if madeBlock {
 			blockTxSizeHistogram.Update(blockTxSize)
-			if s.pendingQueueItemsResults.exhaustedOrdererList {
-				// no transactions were skipped due to block size or gas limit
-				txExhaustedBlocksCounter.Inc(1)
+			if s.pendingQueueItemsResults.ordererSizeLimitReached {
+				dataLimitedBlocksCounter.Inc(1)
 			} else if blockGasLimitReached {
 				gasLimitedBlocksCounter.Inc(1)
 			} else {
-				dataLimitedBlocksCounter.Inc(1)
+				// no transactions were skipped due to block size or gas limit
+				txExhaustedBlocksCounter.Inc(1)
 			}
 		}
 	}
