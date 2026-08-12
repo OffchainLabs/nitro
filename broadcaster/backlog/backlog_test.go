@@ -570,7 +570,7 @@ func TestBacklogRaceCondition(t *testing.T) {
 	// Write to backlog in goroutine
 	wg.Add(1)
 	errs := make(chan error, 15)
-	go func(t *testing.T, b *backlog) {
+	go func(_t *testing.T, b *backlog) {
 		defer wg.Done()
 		for _, i := range newIndexes {
 			bm := message.CreateDummyBroadcastMessage([]arbutil.MessageIndex{i})
@@ -602,7 +602,7 @@ func TestBacklogRaceCondition(t *testing.T) {
 	// Delete from backlog in goroutine. This is normally done via Append with
 	// a confirmed sequence number, using delete method for simplicity in test.
 	wg.Add(1)
-	go func(t *testing.T, b *backlog) {
+	go func(_t *testing.T, b *backlog) {
 		defer wg.Done()
 		for _, i := range []uint64{40, 43, 47} {
 			b.delete(i)
