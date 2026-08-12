@@ -28,7 +28,7 @@ COPY --from=brotli-library-builder /workspace/install/ /
 FROM node:24.4.1-bookworm-slim AS contracts-builder
 RUN apt-get update && \
     apt-get install -y git python3 make g++ curl
-RUN curl -L https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup -i 1.2.3
+RUN curl -fL --retry 3 https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup -i 1.2.3
 WORKDIR /workspace
 COPY contracts-legacy/package.json contracts-legacy/yarn.lock contracts-legacy/
 RUN cd contracts-legacy && yarn install
@@ -51,7 +51,7 @@ FROM wasm-base AS wasm-libs-builder
 RUN apt-get update && \
     apt-get install -y clang=1:14.0-55.7~deb12u1 lld=1:14.0-55.7~deb12u1 wabt
     # pinned rust 1.93.0
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.93.0 --target x86_64-unknown-linux-gnu,wasm32-unknown-unknown,wasm32-wasip1
+RUN curl --proto '=https' --tlsv1.2 -sSf --retry 3 https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.93.0 --target x86_64-unknown-linux-gnu,wasm32-unknown-unknown,wasm32-wasip1
 COPY ./Makefile ./
 COPY Cargo.* ./
 COPY crates/ crates/
@@ -68,7 +68,7 @@ COPY --from=wasm-libs-builder /workspace/ /
 FROM wasm-base AS wasm-bin-builder
 RUN apt update && apt install -y wabt
 # pinned go version
-RUN curl -L https://golang.org/dl/go1.25.9.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
+RUN curl -fL --retry 3 https://golang.org/dl/go1.25.9.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
 COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
