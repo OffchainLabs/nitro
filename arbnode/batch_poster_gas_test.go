@@ -10,6 +10,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
+
+	"github.com/offchainlabs/nitro/util"
 )
 
 // fakeRPCClient answers eth_estimateGas and eth_call from canned results.
@@ -88,7 +90,7 @@ func TestEstimateGas(t *testing.T) {
 		{
 			name:          "zero estimate is an error",
 			client:        &fakeRPCClient{estimate: 0},
-			expectedErrs:  []error{errZeroGasEstimate},
+			expectedErrs:  []error{util.ErrZeroGasEstimate},
 			expectedCalls: []string{"eth_estimateGas"},
 		},
 	} {

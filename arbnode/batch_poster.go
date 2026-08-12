@@ -1283,18 +1283,14 @@ type OverrideAccount struct {
 
 type StateOverride map[common.Address]OverrideAccount
 
-var errZeroGasEstimate = errors.New("parent chain returned a gas estimate of zero")
-
 func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams, blockHex string) (uint64, error) {
 	var gas hexutil.Uint64
 	err := client.CallContext(ctx, &gas, "eth_estimateGas", params, blockHex)
+	estimate, err := util.CheckedGasEstimate(uint64(gas), err)
 	if err != nil {
 		return 0, detailedEstimateGasError(ctx, client, err, params, blockHex)
 	}
-	if gas == 0 {
-		return 0, errZeroGasEstimate
-	}
-	return uint64(gas), nil
+	return estimate, nil
 }
 
 // detailedEstimateGasError enriches a reverted eth_estimateGas error with the
@@ -1400,9 +1396,7 @@ func (b *BatchPoster) estimateGasForFutureTx(
 	}
 	var gas hexutil.Uint64
 	err = rawRpcClient.CallContext(ctx, &gas, "eth_estimateGas", gasParams, rpc.PendingBlockNumber, stateOverride)
-	if err == nil && gas == 0 {
-		err = errZeroGasEstimate
-	}
+	estimate, err := util.CheckedGasEstimate(uint64(gas), err)
 	if err != nil {
 		sequencerMessageHeader := sequencerMessage
 		if len(sequencerMessageHeader) > 33 {
@@ -1420,7 +1414,7 @@ func (b *BatchPoster) estimateGasForFutureTx(
 		)
 		return 0, fmt.Errorf("error estimating gas for batch: %w", err)
 	}
-	return uint64(gas) + config.ExtraBatchGas, nil
+	return estimate + config.ExtraBatchGas, nil
 }
 
 const ethPosBlockTime = 12 * time.Second
