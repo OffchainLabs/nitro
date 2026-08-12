@@ -46,10 +46,9 @@ use reth_storage_api::{StateProvider, StateProviderBox};
 use reth_trie_common::{HashedPostState, TrieInputSorted};
 use revm::database::{BundleState, StateBuilder};
 use revm_database::states::bundle_state::BundleRetention;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tracing::{debug, info, warn};
 
-use crate::{genesis, progress::ProducerEvent};
+use crate::{genesis, progress::ProgressCounters};
 
 /// Trait to access the in-memory canonical state from a provider.
 ///
@@ -172,7 +171,7 @@ pub struct ArbBlockProducer<Provider> {
     cross_block_cache_size: usize,
     cached_execution: Mutex<Option<CachedExecution>>,
     cached_prestate: Mutex<Option<CachedPrestate>>,
-    progress_tx: UnboundedSender<ProducerEvent>,
+    progress_counters: Arc<ProgressCounters>,
     metrics: ArbBlockProducerMetrics,
 }
 
@@ -205,8 +204,8 @@ where
         flush_interval: u64,
         cross_block_cache_size: usize,
         head_block: u64,
-    ) -> (Self, UnboundedReceiver<ProducerEvent>) {
-        let (progress_tx, progress_rx) = unbounded_channel();
+    ) -> (Self, Arc<ProgressCounters>) {
+        let progress_counters = Arc::new(ProgressCounters::new(head_block));
         let producer = Self {
             provider,
             chain_spec,
@@ -222,13 +221,13 @@ where
             cached_init: Mutex::new(None),
             finality: Mutex::new(FinalityMarkers::default()),
             validated_watcher: Mutex::new(None),
-            progress_tx,
+            progress_counters: Arc::clone(&progress_counters),
             cross_block_cache_size,
             cached_execution: Mutex::new(None),
             cached_prestate: Mutex::new(None),
             metrics: ArbBlockProducerMetrics::default(),
         };
-        (producer, progress_rx)
+        (producer, progress_counters)
     }
 
     fn get_or_create_execution_cache(&self, parent_hash: B256) -> ExecutionCache {
@@ -394,20 +393,14 @@ where
             chain_len_unflushed,
             "block flush"
         );
-        let persisted = ProducerEvent::BlocksPersisted {
-            last_block: result.last_num_hash.number,
-            flushed_blocks: result.count as u64,
+        self.progress_counters.record_flush(
+            result.last_num_hash.number,
+            result.count as u64,
             commit_latency_ms,
             dirty_pages_mb,
-            flush_interval: flush_interval_current,
+            flush_interval_current,
             chain_len_unflushed,
-        };
-        if self.progress_tx.send(persisted).is_err() {
-            warn!(
-                target: "block_producer",
-                "progress reporter stopped, dropping persisted blocks event"
-            );
-        }
+        );
         true
     }
 
@@ -1204,17 +1197,8 @@ where
             gas_used,
             "Produced block"
         );
-        let produced = ProducerEvent::BlockProduced {
-            number: l2_block_number,
-            transactions: num_txs as u64,
-            gas: gas_used,
-        };
-        if self.progress_tx.send(produced).is_err() {
-            warn!(
-                target: "block_producer",
-                "progress reporter stopped, dropping produced block event"
-            );
-        }
+        self.progress_counters
+            .record_block(l2_block_number, num_txs as u64, gas_used);
 
         Ok(ProducedBlock {
             block_hash,

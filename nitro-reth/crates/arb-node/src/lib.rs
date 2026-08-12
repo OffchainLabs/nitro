@@ -233,7 +233,7 @@ where
 
     let head_block = ctx.provider().last_block_number()?;
 
-    let (block_producer, progress_events) = ArbBlockProducer::new(
+    let (block_producer, progress_counters) = ArbBlockProducer::new(
         ctx.provider().clone(),
         chain_spec,
         evm_config,
@@ -243,10 +243,9 @@ where
         head_block,
     );
 
-    ctx.node().task_executor().spawn_critical_task(
-        "block progress reporter",
-        run_progress_reporter(progress_events, head_block),
-    );
+    ctx.node()
+        .task_executor()
+        .spawn_task(run_progress_reporter(progress_counters));
 
     let nitro_exec = NitroExecutionHandler::new(
         ctx.provider().clone(),

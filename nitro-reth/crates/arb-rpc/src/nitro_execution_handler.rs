@@ -206,10 +206,15 @@ where
         // The Init message does NOT produce a block. Its params are applied
         // during the first real block's execution.
         if kind == 11 {
-            let l2_msg = decode_l2_msg(&message.message.l2_msg)?;
+            let l2_msg = decode_l2_msg(&message.message.l2_msg).inspect_err(|err| {
+                warn!(target: "nitroexecution", msg_idx, block_num, kind, %err, "digestMessage failed to decode init message");
+            })?;
             self.block_producer
                 .cache_init_message(&l2_msg)
-                .map_err(RpcError::from)?;
+                .map_err(RpcError::from)
+                .inspect_err(|err| {
+                    warn!(target: "nitroexecution", msg_idx, block_num, kind, %err, "digestMessage failed to cache init message");
+                })?;
 
             let genesis_header = self
                 .get_header(self.genesis_block_num)?
@@ -232,7 +237,9 @@ where
             });
         }
 
-        let l2_msg = decode_l2_msg(&message.message.l2_msg)?;
+        let l2_msg = decode_l2_msg(&message.message.l2_msg).inspect_err(|err| {
+            warn!(target: "nitroexecution", msg_idx, block_num, kind, %err, "digestMessage failed to decode L2 message");
+        })?;
 
         // Build batch data stats if present
         let batch_data_stats = message
@@ -259,7 +266,10 @@ where
             .block_producer
             .produce_block(msg_idx, input)
             .await
-            .map_err(RpcError::from)?;
+            .map_err(RpcError::from)
+            .inspect_err(|err| {
+                warn!(target: "nitroexecution", msg_idx, block_num, kind, %err, "digestMessage failed to produce block");
+            })?;
 
         self.update_messages_behind();
 
