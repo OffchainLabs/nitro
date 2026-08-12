@@ -14,15 +14,23 @@ jobs:
   fmt:
     name: rustfmt
     runs-on: ocl-4cpu-16ram
-    timeout-minutes: 5
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
+      # Any cargo invocation (fmt included) loads the manifests of the whole
+      # local path-dep closure, which includes the wasmer submodule.
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt
+      # Plain fmt (not --all): --all would also format the path-based deps,
+      # i.e. crates/{prover,arbutil,brotli} and the vendored wasmer.
       - run: cargo +nightly fmt --check
 
   clippy:
