@@ -172,12 +172,10 @@ func (s *FilterService) getHashCount(i int) int {
 	return s.files[i].hashStore.Size()
 }
 
-// getHashStoreDigest returns the S3 ETag Digest of the hash list currently loaded for file i.
 func (s *FilterService) getHashStoreDigest(i int) string {
 	return s.files[i].hashStore.Digest()
 }
 
-// AllFilesLoaded reports whether every configured file has loaded a hash list.
 func (s *FilterService) AllFilesLoaded() bool {
 	return s.storeSet.AllLoaded()
 }
