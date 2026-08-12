@@ -125,6 +125,10 @@ func (c *SequencerConfig) PGARoundLength() time.Duration {
 }
 
 func (c *SequencerConfig) Validate() error {
+	if c.MaxBlockSpeed < 5*time.Millisecond {
+		return fmt.Errorf("max-block-speed must be greater or equal to 5ms, got %s", c.MaxBlockSpeed)
+	}
+
 	for _, address := range c.SenderWhitelist {
 		if len(address) == 0 {
 			continue
