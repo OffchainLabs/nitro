@@ -58,7 +58,7 @@ impl MelNode {
                 batch_posting_target_address: config.sequencer_inbox,
                 delayed_message_posting_target_address: config.bridge,
                 parent_chain_block_hash: start_block.hash,
-                parent_chain_prev_block_hash: start_block.parent_hash,
+                parent_chain_previous_block_hash: start_block.parent_hash,
                 ..Default::default()
             };
             mel_db.save_state(&initial_state)?;

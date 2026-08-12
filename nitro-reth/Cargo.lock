@@ -1260,7 +1260,7 @@ dependencies = [
  "arb-parent-chain-client",
  "arbos-types",
  "async-trait",
- "clap 4.5.60",
+ "clap",
  "eyre",
  "humantime",
  "tokio",
