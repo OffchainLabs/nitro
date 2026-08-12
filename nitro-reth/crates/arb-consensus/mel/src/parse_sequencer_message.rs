@@ -311,6 +311,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn oversized_decompression_does_not_yield_truncated_segments() -> MelResult<()> {
+        // Cap decompression at exactly the encoded length of the first segment,
+        // so a decode that truncated to the buffer instead of failing would
+        // still parse into one well-formed segment. The batch must come back
+        // empty rather than half-parsed.
+        let first: &[u8] = b"first-segment-payload";
+        let second: &[u8] = b"second-segment-payload";
+        let cap = alloy_rlp::encode(first).len();
+        let raw = rlp_segments(&[first, second]);
+        assert!(raw.len() > cap, "fixture must decompress past the cap");
+        // The prefix the buffer would hold is itself a valid single segment,
+        // which is what makes truncation observable here.
+        assert_eq!(parse_segments(&raw[..cap]), vec![first.to_vec()]);
+
+        let mut payload = vec![BROTLI_HEADER_BYTE];
+        payload.extend_from_slice(&brotli_compress(&raw));
+        let data = frame([0; 5], &payload);
+
+        let msg = parse_sequencer_message(1, B256::ZERO, &data, cap, &no_da()).await?;
+        assert!(msg.segments.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn rejects_zeroheavy_encoding() {
         let data = frame([0; 5], &[ZEROHEAVY_FLAG]);
         let result = parse_sequencer_message(3, B256::ZERO, &data, usize::MAX, &no_da()).await;
