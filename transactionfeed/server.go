@@ -22,9 +22,13 @@ import (
 )
 
 var (
-	clientsCurrentGauge     = metrics.NewRegisteredGauge("arb/transactionfeed/clients/current", nil)
-	clientsDisconnectedSlow = metrics.NewRegisteredCounter("arb/transactionfeed/clients/disconnected/slow", nil)
-	broadcastDroppedCounter = metrics.NewRegisteredCounter("arb/transactionfeed/broadcast/dropped", nil)
+	clientsCurrentGauge          = metrics.NewRegisteredGauge("arb/transactionfeed/clients/current", nil)
+	clientsConnectedTotalCounter = metrics.NewRegisteredCounter("arb/transactionfeed/clients/connected/total", nil)
+	clientsDisconnectedSlow      = metrics.NewRegisteredCounter("arb/transactionfeed/clients/disconnected/slow", nil)
+	broadcastSentCounter         = metrics.NewRegisteredCounter("arb/transactionfeed/broadcast/sent", nil)
+	broadcastDroppedCounter      = metrics.NewRegisteredCounter("arb/transactionfeed/broadcast/dropped", nil)
+	broadcastQueueDepthGauge     = metrics.NewRegisteredGauge("arb/transactionfeed/broadcast/queuedepth", nil)
+	messageSizeBytesHistogram    = metrics.NewRegisteredHistogram("arb/transactionfeed/message/sizebytes", nil, metrics.NewBoundedHistogramSample())
 )
 
 // broadcastDropLogInterval is the minimum gap between successive Warn logs
@@ -201,6 +205,7 @@ func (s *Server) run(ctx context.Context) {
 				clients[ev.cc] = struct{}{}
 				s.clientCount.Add(1)
 				clientsCurrentGauge.Update(int64(s.clientCount.Load()))
+				clientsConnectedTotalCounter.Inc(1)
 			} else if _, ok := clients[ev.cc]; ok {
 				delete(clients, ev.cc)
 				close(ev.cc.out)
@@ -209,6 +214,7 @@ func (s *Server) run(ctx context.Context) {
 			}
 
 		case data := <-s.broadcast:
+			broadcastQueueDepthGauge.Update(int64(len(s.broadcast)))
 			for cc := range clients {
 				select {
 				case cc.out <- data:
@@ -243,8 +249,12 @@ func (s *Server) BroadcastTransaction(msg *TransactionFeedMessage) {
 		return
 	}
 
+	messageSizeBytesHistogram.Update(int64(len(data)))
+
 	select {
 	case s.broadcast <- data:
+		broadcastSentCounter.Inc(1)
+		broadcastQueueDepthGauge.Update(int64(len(s.broadcast)))
 	default:
 		broadcastDroppedCounter.Inc(1)
 		s.maybeLogBroadcastDrop()
