@@ -155,9 +155,6 @@ func TestConfigValidate(t *testing.T) {
 	})
 }
 
-// TestConfigKoanfFilesDecoding pins down that koanf decodes the files slice
-// from a config file, including the two-level koanf ",squash" nesting
-// (FileConfig → s3syncer.Config → s3client.Config) inside slice elements.
 func TestConfigKoanfFilesDecoding(t *testing.T) {
 	configJSON := `{
 		"files": [
