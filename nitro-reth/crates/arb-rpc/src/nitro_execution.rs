@@ -21,7 +21,10 @@ mod opt_u256_dec_or_hex {
         S: Serializer,
     {
         match value {
-            Some(v) => serde::Serialize::serialize(v, serializer),
+            Some(v) => match u128::try_from(*v) {
+                Ok(n) => serializer.serialize_u128(n),
+                Err(_) => Err(serde::ser::Error::custom("baseFeeL1 exceeds u128")),
+            },
             None => serializer.serialize_none(),
         }
     }
@@ -71,14 +74,9 @@ pub struct RpcL1IncomingMessageHeader {
     #[serde(rename = "blockNumber")]
     pub block_number: u64,
     pub timestamp: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "requestId")]
+    #[serde(default, rename = "requestId")]
     pub request_id: Option<B256>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        rename = "baseFeeL1",
-        with = "opt_u256_dec_or_hex"
-    )]
+    #[serde(default, rename = "baseFeeL1", with = "opt_u256_dec_or_hex")]
     pub base_fee_l1: Option<U256>,
 }
 

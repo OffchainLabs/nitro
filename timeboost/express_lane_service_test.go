@@ -301,11 +301,11 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	var wg sync.WaitGroup
 	wg.Add(2) // We expect only one of the two txs below to return with an error here
 	var err1, err2 error
-	go func(w *sync.WaitGroup) {
+	go func(_w *sync.WaitGroup) {
 		err1 = els.SequenceExpressLaneSubmission(msg1)
 		wg.Done()
 	}(&wg)
-	go func(w *sync.WaitGroup) {
+	go func(_w *sync.WaitGroup) {
 		err2 = els.SequenceExpressLaneSubmission(msg2)
 		wg.Done()
 	}(&wg)

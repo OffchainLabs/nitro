@@ -36,19 +36,19 @@ func countStateEntries(db ethdb.Iteratee) int {
 	return entries
 }
 
-func TestPruningDBSizeReductionFullModeWithoutParallelStorageTraversal(t *testing.T) {
+func TestPruningDBSizeReductionFullModeWithoutParallelStorageTraversalFlaky(t *testing.T) {
 	runPruningDBSizeReductionTest(t, "full", false)
 }
 
-func TestPruningDBSizeReductionFullModeWithParallelStorageTraversal(t *testing.T) {
+func TestPruningDBSizeReductionFullModeWithParallelStorageTraversalFlaky(t *testing.T) {
 	runPruningDBSizeReductionTest(t, "full", true)
 }
 
-func TestPruningDBSizeReductionMinimalModeWithoutParallelStorageTraversal(t *testing.T) {
+func TestPruningDBSizeReductionMinimalModeWithoutParallelStorageTraversalFlaky(t *testing.T) {
 	runPruningDBSizeReductionTest(t, "minimal", false)
 }
 
-func TestPruningDBSizeReductionMinimalModeWithParallelStorageTraversal(t *testing.T) {
+func TestPruningDBSizeReductionMinimalModeWithParallelStorageTraversalFlaky(t *testing.T) {
 	runPruningDBSizeReductionTest(t, "minimal", true)
 }
 
@@ -94,7 +94,9 @@ func runPruningDBSizeReductionTest(t *testing.T, mode string, pruneParallelStora
 		stack, err := node.New(builder.l2StackConfig)
 		Require(t, err)
 		defer stack.Close()
-		executionDB, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
+		persistentConfig := conf.PersistentConfigDefault
+		Require(t, persistentConfig.Pebble.ResolveWithStateScheme(builder.execConfig.Caching.StateScheme))
+		executionDB, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("l2chaindata")})
 		Require(t, err)
 		defer executionDB.Close()
 		executionDBEntriesBeforePruning := countStateEntries(executionDB)
@@ -119,7 +121,6 @@ func runPruningDBSizeReductionTest(t *testing.T, mode string, pruneParallelStora
 		initConfig.Prune = mode
 		initConfig.PruneParallelStorageTraversal = pruneParallelStorageTraversal
 		coreCacheConfig := gethexec.DefaultCacheConfigFor(&builder.execConfig.Caching)
-		persistentConfig := conf.PersistentConfigDefault
 		err = pruning.PruneExecutionDB(ctx, executionDB, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false, builder.nodeConfig.MessageExtraction.Enable)
 		Require(t, err)
 
@@ -144,7 +145,7 @@ func runPruningDBSizeReductionTest(t *testing.T, mode string, pruneParallelStora
 	currentBlock := waitForChainToCatchUp(t, ctx, testClient, lastBlock)
 
 	bc := testClient.ExecNode.Backend.ArbInterface().BlockChain()
-	triedb := bc.StateCache().TrieDB()
+	triedb := bc.TrieDB()
 	var start uint64
 	if currentBlock+1 >= builder.execConfig.Caching.BlockCount {
 		start = currentBlock + 1 - builder.execConfig.Caching.BlockCount
@@ -259,7 +260,7 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 	// deletes such blocks specified with the exception of last validate and finalized
 	// blocks (if in "validator" mode)
 	bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
-	triedb := bc.StateCache().TrieDB()
+	triedb := bc.TrieDB()
 
 	for i := 1; i < numOfBlocksToGenerate; i++ {
 		// #nosec G115
@@ -281,7 +282,9 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 		stack, err := node.New(builder.l2StackConfig)
 		Require(t, err)
 		defer stack.Close()
-		executionDB, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
+		persistentConfig := conf.PersistentConfigDefault
+		Require(t, persistentConfig.Pebble.ResolveWithStateScheme(builder.execConfig.Caching.StateScheme))
+		executionDB, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("l2chaindata")})
 		Require(t, err)
 		defer executionDB.Close()
 		executionDBEntriesBeforePruning := countStateEntries(executionDB)
@@ -292,7 +295,6 @@ func runPruningStateAvailabilityTest(t *testing.T, mode string) {
 		initConfig.Prune = mode
 
 		coreCacheConfig := gethexec.DefaultCacheConfigFor(&builder.execConfig.Caching)
-		persistentConfig := conf.PersistentConfigDefault
 		err = pruning.PruneExecutionDBWithDistance(ctx, executionDB, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false, false, 100)
 		Require(t, err)
 

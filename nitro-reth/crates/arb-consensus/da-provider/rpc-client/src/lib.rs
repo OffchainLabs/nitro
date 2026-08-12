@@ -339,7 +339,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn transport_error_is_propagated() {
+    async fn transport_error_surfaces_as_provider_error() {
         let asserter = Asserter::new();
         asserter.push_failure_msg("internal server error");
 

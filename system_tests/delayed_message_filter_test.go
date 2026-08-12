@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
@@ -30,6 +31,8 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	filteringreportapi "github.com/offchainlabs/nitro/cmd/filtering-report/api"
 	"github.com/offchainlabs/nitro/cmd/filtering-report/forwarder"
+	"github.com/offchainlabs/nitro/cmd/filtering-report/signer/signertest"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
@@ -139,7 +142,7 @@ func advanceL1ForDelayed(t *testing.T, ctx context.Context, builder *NodeBuilder
 }
 
 // waitForDelayedSequencerHaltOnHashes waits until the delayed sequencer is halted on exactly the given hashes.
-func waitForDelayedSequencerHaltOnHashes(t *testing.T, ctx context.Context, builder *NodeBuilder, expectedHashes []common.Hash, timeout time.Duration) {
+func waitForDelayedSequencerHaltOnHashes(t *testing.T, _ctx context.Context, builder *NodeBuilder, expectedHashes []common.Hash, timeout time.Duration) {
 	t.Helper()
 	expectedSet := make(map[common.Hash]struct{}, len(expectedHashes))
 	for _, h := range expectedHashes {
@@ -172,7 +175,7 @@ func waitForDelayedSequencerHaltOnHashes(t *testing.T, ctx context.Context, buil
 }
 
 // waitForDelayedSequencerResume waits until the delayed sequencer is no longer halted.
-func waitForDelayedSequencerResume(t *testing.T, ctx context.Context, builder *NodeBuilder, timeout time.Duration) {
+func waitForDelayedSequencerResume(t *testing.T, _ctx context.Context, builder *NodeBuilder, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -219,11 +222,12 @@ func SetupFilteringReport(t *testing.T) (*node.Node, *forwarder.MockExternalEndp
 	t.Helper()
 
 	queueClient := &sqsclient.MockQueueClient{}
-	pemPath, externalEndpoint := forwarder.NewMockExternalEndpoint(t)
+	signingPair := signertest.NewSigningPair(t)
+	externalEndpoint := forwarder.NewMockExternalEndpoint(t, signingPair.Verifier)
 
-	stack := filteringreportapi.NewTestStack(t, queueClient)
+	stack := filteringreportapi.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, signingPair.Signer)
 
-	fwd := forwarder.NewTestForwarder(t, queueClient, nil, externalEndpoint.URL(), pemPath)
+	fwd := forwarder.NewTestForwarder(t, queueClient, nil, externalEndpoint.URL(), signingPair.Signer)
 	fwd.Start(t.Context())
 	t.Cleanup(func() { fwd.StopAndWait() })
 
@@ -288,6 +292,21 @@ func verifyCascadingRedeemFiltered(t *testing.T, ctx context.Context, builder *N
 	}
 	require.Equal(t, 0, redeemCount, "no redeem should exist - submission was filtered on retry")
 
+	blockNumber := rpc.BlockNumber(submissionReceipt.BlockNumber.Int64())
+	receipts, err := builder.L2.Client.BlockReceipts(ctx, rpc.BlockNumberOrHash{BlockNumber: &blockNumber})
+	Require(t, err)
+	redeemCount = 0
+	var gasFromReceipts uint64
+	for _, receipt := range receipts {
+		if receipt.Type == types.ArbitrumRetryTxType {
+			redeemCount++
+		}
+		gasFromReceipts += receipt.GasUsed
+	}
+	require.Equal(t, 0, redeemCount, "no receipt for redeem should exist")
+
+	blockGas := block.GasUsed()
+	require.Equal(t, blockGas, gasFromReceipts, "gas from receipts doesn't match gas used in the block")
 	return submissionReceipt
 }
 
@@ -536,10 +555,10 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	require.True(t, senderBalanceAfter.Cmp(senderBalanceBefore) < 0, "sender balance should decrease due to gas consumption")
 }
 
-// TestDelayedMessageFilterResumeNotBlockedByLaterUnfinalizedMessage asserts that the filtered
+// TestDelayedMessageFilterResumeNotBlockedByLaterUnfinalizedMessageFlaky asserts that the filtered
 // message processing resumes as soon as its onchain-filter condition is met, regardless of a later
 // message's finality.
-func TestDelayedMessageFilterResumeNotBlockedByLaterUnfinalizedMessage(t *testing.T) {
+func TestDelayedMessageFilterResumeNotBlockedByLaterUnfinalizedMessageFlaky(t *testing.T) {
 	if *testflag.MelFlag {
 		// Under message extraction the delayed sequencer never records
 		// waitingForFinalizedBlock for the later message while halted on the

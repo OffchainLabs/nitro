@@ -16,6 +16,7 @@ use arb_rpc::{
 };
 use arbos::types::{L1IncomingMessage, L1IncomingMessageHeader};
 use base64::Engine as _;
+use jsonrpsee::types::error::INVALID_PARAMS_CODE;
 
 /// Seeded in-memory backing exercising the `MelProvider` default methods.
 #[derive(Default)]
@@ -133,7 +134,12 @@ async fn delayed_message_bounds() {
     m.delayed.insert(0, delayed_msg(B256::ZERO, 0));
     let h = handler(m);
     assert!(h.get_delayed_message(0).await.is_ok());
-    assert!(h.get_delayed_message(2).await.is_err()); // index == delayed_seen
+    let err = h.get_delayed_message(2).await.unwrap_err(); // index == delayed_seen
+    assert_eq!(err.code(), INVALID_PARAMS_CODE);
+    assert_eq!(
+        err.message(),
+        "DelayedInboxMessage not available for index: 2 greater than head MEL state DelayedMessagesSeen count: 2"
+    );
 }
 
 #[tokio::test]
@@ -145,7 +151,12 @@ async fn batch_metadata_bounds() {
     m.batch_metas.insert(0, batch_meta(10));
     let h = handler(m);
     assert!(h.get_batch_metadata(0).await.is_ok());
-    assert!(h.get_batch_metadata(1).await.is_err()); // seq == batch_count
+    let err = h.get_batch_metadata(1).await.unwrap_err(); // seq == batch_count
+    assert_eq!(err.code(), INVALID_PARAMS_CODE);
+    assert_eq!(
+        err.message(),
+        "batchMetadata not found for seqNum: 1 greater than head MEL state batch count: 1"
+    );
 }
 
 #[tokio::test]
@@ -167,6 +178,7 @@ async fn find_inbox_batch_ladder() {
     for pos in [15, 100] {
         let r = h.find_inbox_batch_containing_message(pos).await.unwrap();
         assert!(!r.found, "pos {pos}");
+        assert_eq!(r.seq_num, 0, "pos {pos}"); // matches go's (0, false) not-found
     }
 }
 
@@ -181,6 +193,7 @@ async fn find_inbox_batch_empty() {
         .await
         .unwrap();
     assert!(!r.found);
+    assert_eq!(r.seq_num, 0);
 }
 
 #[tokio::test]
@@ -199,6 +212,7 @@ async fn finalized_delayed_success() {
     assert!(!r.not_yet_finalized);
     assert!(r.message.is_some());
     assert_eq!(r.parent_chain_block_number, 7);
+    assert_eq!(r.after_inbox_acc, delayed_msg(acc, 7).after_inbox_acc());
 }
 
 #[tokio::test]
@@ -215,6 +229,7 @@ async fn finalized_delayed_not_yet_finalized_missing_state() {
     assert!(r.not_yet_finalized);
     assert!(r.message.is_none());
     assert_eq!(r.parent_chain_block_number, 42); // block number survives
+    assert_eq!(r.after_inbox_acc, B256::ZERO);
 }
 
 #[tokio::test]
@@ -230,7 +245,9 @@ async fn finalized_delayed_pos_beyond_finalized_count() {
         .await
         .unwrap();
     assert!(r.not_yet_finalized); // pos 2 >= finalized count 2
+    assert!(r.message.is_none());
     assert_eq!(r.parent_chain_block_number, 9);
+    assert_eq!(r.after_inbox_acc, B256::ZERO);
 }
 
 #[tokio::test]
@@ -265,6 +282,11 @@ async fn finalized_delayed_zero_accumulator_skips_check() {
         .unwrap();
     assert!(!r.not_yet_finalized);
     assert!(r.message.is_some());
+    assert_eq!(r.parent_chain_block_number, 0);
+    assert_eq!(
+        r.after_inbox_acc,
+        delayed_msg(B256::repeat_byte(0xAA), 0).after_inbox_acc()
+    );
 }
 
 #[tokio::test]
@@ -295,6 +317,54 @@ async fn delayed_acc_equals_after_inbox_acc() {
 }
 
 #[tokio::test]
+async fn delayed_derived_methods_enforce_bounds() {
+    let mut m = MockMelProvider {
+        head: Some(mel_state(0, 0, 2, 0)),
+        ..Default::default()
+    };
+    m.delayed.insert(0, delayed_msg(B256::ZERO, 0));
+    let h = handler(m);
+    let expected = "DelayedInboxMessage not available for index: 5 greater than head MEL state DelayedMessagesSeen count: 2";
+    assert_eq!(h.get_delayed_acc(5).await.unwrap_err().message(), expected);
+    assert_eq!(
+        h.get_delayed_message_bytes(5).await.unwrap_err().message(),
+        expected
+    );
+}
+
+#[tokio::test]
+async fn batch_derived_methods_enforce_bounds() {
+    let mut m = MockMelProvider {
+        head: Some(mel_state(0, 1, 0, 0)),
+        ..Default::default()
+    };
+    m.batch_metas.insert(0, batch_meta(10));
+    m.seq_bytes = Some((vec![1], B256::ZERO));
+    let h = handler(m);
+    let expected =
+        "batchMetadata not found for seqNum: 9 greater than head MEL state batch count: 1";
+    assert_eq!(h.get_batch_acc(9).await.unwrap_err().message(), expected);
+    assert_eq!(
+        h.get_batch_message_count(9).await.unwrap_err().message(),
+        expected
+    );
+    assert_eq!(
+        h.get_batch_parent_chain_block(9)
+            .await
+            .unwrap_err()
+            .message(),
+        expected
+    );
+    assert_eq!(
+        h.get_sequencer_message_bytes(9)
+            .await
+            .unwrap_err()
+            .message(),
+        expected
+    );
+}
+
+#[tokio::test]
 async fn find_parent_chain_block_containing_delayed_is_unimplemented() {
     let m = MockMelProvider {
         head: Some(mel_state(0, 0, 0, 0)),
@@ -320,7 +390,7 @@ async fn head_derived_counts_and_origin() {
     assert_eq!(h.get_batch_count().await.unwrap(), 3);
     assert_eq!(h.get_delayed_count().await.unwrap(), 5);
     assert_eq!(h.get_msg_count().await.unwrap(), 20);
-    assert!(h.find_message_origin_mel_state(0).await.unwrap().is_some());
+    assert!(h.find_message_origin_mel_state(0).await.is_ok());
 }
 
 #[tokio::test]
@@ -351,7 +421,7 @@ async fn get_delayed_message_returns_converted() {
         ..Default::default()
     };
     m.delayed.insert(0, delayed_msg(B256::repeat_byte(0x11), 5));
-    let r = handler(m).get_delayed_message(0).await.unwrap().unwrap();
+    let r = handler(m).get_delayed_message(0).await.unwrap();
     assert_eq!(r.before_inbox_acc, B256::repeat_byte(0x11));
     assert_eq!(r.parent_chain_block_number, 5);
 }
@@ -401,14 +471,40 @@ async fn get_state_present_and_absent() {
     let mut m = MockMelProvider::default();
     m.states.insert(7, mel_state(7, 0, 0, 0));
     let h = handler(m);
-    assert!(h.get_state(7).await.unwrap().is_some());
-    assert!(h.get_state(999).await.unwrap().is_none()); // absent -> JSON null
+    assert_eq!(h.get_state(7).await.unwrap().parent_chain_block_number, 7);
+    // absent -> error on the wire, never JSON null (the go client nil-derefs)
+    let err = h.get_state(999).await.unwrap_err();
+    assert_eq!(err.message(), "resource not found: state at block 999");
+}
+
+#[tokio::test]
+async fn get_head_state_returns_seeded_head() {
+    let head = mel_state(50, 3, 5, 20);
+    let m = MockMelProvider {
+        head: Some(head.clone()),
+        ..Default::default()
+    };
+    let got = handler(m).get_head_state().await.unwrap();
+    assert_eq!(
+        serde_json::to_value(&got).unwrap(),
+        serde_json::to_value(&head).unwrap()
+    );
 }
 
 #[tokio::test]
 async fn head_state_absent_errors() {
     let h = handler(MockMelProvider::default());
     assert!(h.get_head_state().await.is_err());
+}
+
+#[tokio::test]
+async fn find_message_origin_absent_errors_with_nitro_string() {
+    // Mock returns its head state (None here) -> nitro's exact error text.
+    let err = handler(MockMelProvider::default())
+        .find_message_origin_mel_state(0)
+        .await
+        .unwrap_err();
+    assert_eq!(err.message(), "batch containing message not found");
 }
 
 #[tokio::test]
@@ -498,4 +594,24 @@ fn delayed_inbox_message_json_pascal_with_base64_l2msg() {
         v["Message"]["l2Msg"],
         base64::engine::general_purpose::STANDARD.encode([1, 2, 3])
     );
+}
+
+#[test]
+fn message_header_json_matches_go_shape() {
+    // baseFeeL1 must be a bare JSON number: go's big.Int rejects strings.
+    let mut d = delayed_msg(B256::ZERO, 0);
+    d.message.header.l1_base_fee = Some(U256::from(1_000_000_007u64));
+    let v = serde_json::to_value(RpcDelayedInboxMessage::from(&d)).unwrap();
+    let h = &v["Message"]["header"];
+    assert_eq!(h["baseFeeL1"], 1_000_000_007u64);
+    assert!(h["requestId"].is_string());
+
+    // Unset fields serialize as explicit null (go has no omitempty on either).
+    let mut d = delayed_msg(B256::ZERO, 0);
+    d.message.header.request_id = None;
+    d.message.header.l1_base_fee = None;
+    let v = serde_json::to_value(RpcDelayedInboxMessage::from(&d)).unwrap();
+    let h = v["Message"]["header"].as_object().unwrap();
+    assert!(h.contains_key("requestId") && h["requestId"].is_null());
+    assert!(h.contains_key("baseFeeL1") && h["baseFeeL1"].is_null());
 }

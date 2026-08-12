@@ -342,7 +342,7 @@ func TestBlockRecordSimple(t *testing.T) {
 	time.Sleep(time.Millisecond * 100)
 }
 
-func TestBlockValidatorSimpleOnchainUpgradeArbOs(t *testing.T) {
+func TestBlockValidatorSimpleOnchainUpgradeArbOsFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:  "onchain",
 		workloadLoops: 1,
@@ -352,7 +352,7 @@ func TestBlockValidatorSimpleOnchainUpgradeArbOs(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleOnchain(t *testing.T) {
+func TestBlockValidatorSimpleOnchainFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:  "onchain",
 		workloadLoops: 1,
@@ -362,7 +362,7 @@ func TestBlockValidatorSimpleOnchain(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleJITOnchainWithPublishedMachine(t *testing.T) {
+func TestBlockValidatorSimpleJITOnchainWithPublishedMachineFlaky(t *testing.T) {
 	cr, err := github.LatestConsensusRelease(context.Background())
 	Require(t, err)
 	machPath := populateMachineDir(t, cr)
@@ -377,7 +377,7 @@ func TestBlockValidatorSimpleJITOnchainWithPublishedMachine(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleOnchainWithPublishedMachine(t *testing.T) {
+func TestBlockValidatorSimpleOnchainWithPublishedMachineFlaky(t *testing.T) {
 	cr, err := github.LatestConsensusRelease(context.Background())
 	Require(t, err)
 	machPath := populateMachineDir(t, cr)
@@ -392,7 +392,7 @@ func TestBlockValidatorSimpleOnchainWithPublishedMachine(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleOnchainWithRedisStreams(t *testing.T) {
+func TestBlockValidatorSimpleOnchainWithRedisStreamsFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:    "onchain",
 		workloadLoops:   1,
@@ -403,7 +403,7 @@ func TestBlockValidatorSimpleOnchainWithRedisStreams(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleLocalAnyTrust(t *testing.T) {
+func TestBlockValidatorSimpleLocalAnyTrustFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:  "files",
 		workloadLoops: 1,
@@ -413,7 +413,7 @@ func TestBlockValidatorSimpleLocalAnyTrust(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleJITOnchain(t *testing.T) {
+func TestBlockValidatorSimpleJITOnchainFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:  "files",
 		workloadLoops: 8,
@@ -422,9 +422,9 @@ func TestBlockValidatorSimpleJITOnchain(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-// TestBlockValidatorReferenceDAWithProver tests the block validator with prover
+// TestBlockValidatorReferenceDAWithProverFlaky tests the block validator with prover
 // with the embedded reference DA
-func TestBlockValidatorReferenceDAWithProver(t *testing.T) {
+func TestBlockValidatorReferenceDAWithProverFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:  "referenceda",
 		workloadLoops: 1,
@@ -434,9 +434,9 @@ func TestBlockValidatorReferenceDAWithProver(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-// TestBlockValidatorReferenceDAWithJIT tests the block validator with JIT
+// TestBlockValidatorReferenceDAWithJITFlaky tests the block validator with JIT
 // with the embedded reference DA
-func TestBlockValidatorReferenceDAWithJIT(t *testing.T) {
+func TestBlockValidatorReferenceDAWithJITFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:  "referenceda",
 		workloadLoops: 1,

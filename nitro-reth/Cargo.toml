@@ -115,6 +115,7 @@ reth-rpc-types-compat = { git = "https://github.com/paradigmxyz/reth.git", tag =
 reth-transaction-pool = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-engine-primitives = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-engine-tree = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-execution-cache = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-payload-primitives = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-cli = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-cli-commands = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
@@ -214,9 +215,6 @@ base64 = { version = "0.22" }
 jsonrpsee = { version = "0.26.0" }
 jsonrpsee-http-client = { version = "0.26.0" }
 brotli = { version = "8", default-features = false }
-wasmer = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca", default-features = false }
-wasmer-compiler = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca" }
-wasmer-types = { git = "https://github.com/OffchainLabs/wasmer.git", rev = "5e7d8fd287436b01fa52d8dbcc9674b3cc7a66ca" }
 axum = { version = "0.7", default-features = false }
 chrono = { version = "0.4", default-features = false }
 csv = { version = "1" }
@@ -235,9 +233,13 @@ walkdir = { version = "2" }
 wat = { version = "1" }
 wiremock = { version = "0.6" }
 
-nitro-prover = { package = "prover", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b", default-features = false }
-nitro-arbutil = { package = "arbutil", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b" }
-nitro-brotli = { package = "brotli", git = "https://github.com/OffchainLabs/nitro.git", rev = "b1cf6db81afbc1f67c898ac9add5d37391ebd87b" }
+# Nitro repo dependencies
+nitro-arbutil = { package = "arbutil", path = "../crates/arbutil" }
+nitro-brotli = { package = "brotli", path = "../crates/brotli" }
+nitro-prover = { package = "prover", path = "../crates/prover", default-features = false, features = ["cc_brotli"] }
+wasmer = { path = "../crates/tools/wasmer/lib/api", default-features = false }
+wasmer-compiler = { path = "../crates/tools/wasmer/lib/compiler" }
+wasmer-types = { path = "../crates/tools/wasmer/lib/types" }
 
 # Transitive deps for Nitro crates
 tiny-keccak = { version = "2.0.2" }

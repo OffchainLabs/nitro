@@ -525,7 +525,7 @@ func testHandleNativeStackOverflow() error {
 	if err != nil {
 		return fmt.Errorf("failed getting cranelift target: %w", err)
 	}
-	wasmStore := db.Database().WasmStore()
+	wasmStore := db.Database().CodeDB().WasmStore()
 	batch := wasmStore.NewBatch()
 	rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, craneliftAsm)
 	if err := batch.Write(); err != nil {
@@ -652,7 +652,7 @@ func testHandleNativeStackOverflowAtMax() error {
 	if err != nil {
 		return fmt.Errorf("failed getting cranelift target: %w", err)
 	}
-	wasmStore := db.Database().WasmStore()
+	wasmStore := db.Database().CodeDB().WasmStore()
 	batch := wasmStore.NewBatch()
 	rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, craneliftAsm)
 	if err := batch.Write(); err != nil {
@@ -720,7 +720,7 @@ func testRetryRestoresStylusPages() error {
 	if err != nil {
 		return fmt.Errorf("failed getting cranelift target: %w", err)
 	}
-	wasmStore := db.Database().WasmStore()
+	wasmStore := db.Database().CodeDB().WasmStore()
 	batch := wasmStore.NewBatch()
 	rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, craneliftAsm)
 	if err := batch.Write(); err != nil {
@@ -846,7 +846,7 @@ func testCraneliftCompilationAndCache() error {
 	}
 
 	// Verify wasm store is initially empty for this module.
-	wasmStore := db.Database().WasmStore()
+	wasmStore := db.Database().CodeDB().WasmStore()
 	existing := rawdb.ReadActivatedAsm(wasmStore, craneliftTarget, moduleHash)
 	if len(existing) > 0 {
 		return fmt.Errorf("expected empty wasm store, but found %d bytes", len(existing))
