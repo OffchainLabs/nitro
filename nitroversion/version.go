@@ -58,10 +58,12 @@ type Provenance struct {
 	Modified  bool
 }
 
-// Version describes the build provenance embedded in a Nitro binary. Its tag
-// and commit time have already been validated at the provenance boundary.
+// Version describes the build provenance embedded in a Nitro binary. Its raw
+// tag is retained for display, while semverTag is populated only for canonical
+// semantic-version tags that can participate in version ordering.
 type Version struct {
-	tag        CanonicalVersion
+	tag        string
+	semverTag  CanonicalVersion
 	branch     string
 	commit     string
 	commitTime time.Time
@@ -74,28 +76,26 @@ var _ fmt.Stringer = Version{}
 // New validates explicit provenance and constructs a Version without consulting
 // the running binary's linker stamps or Go build information.
 func New(provenance Provenance) (Version, error) {
-	var tag CanonicalVersion
-	var err error
-	if provenance.Tag != "" {
-		tag, err = ParseCanonicalVersion(provenance.Tag)
-		if err != nil {
-			return Version{}, fmt.Errorf("tag: %w", err)
-		}
+	var semverTag CanonicalVersion
+	if provenance.Tag != "" && semver.Canonical(provenance.Tag) == provenance.Tag {
+		semverTag = CanonicalVersion{value: provenance.Tag}
 	}
 
 	var commitTime time.Time
+	var err error
 	if provenance.Timestamp != "" && provenance.Timestamp != "unknown" {
 		commitTime, err = time.Parse(time.RFC3339, provenance.Timestamp)
 		if err != nil {
 			return Version{}, fmt.Errorf("commit timestamp %q: %w", provenance.Timestamp, err)
 		}
 	}
-	if !tag.IsZero() && commitTime.IsZero() {
+	if provenance.Tag != "" && commitTime.IsZero() {
 		return Version{}, fmt.Errorf("tagged version %s has no commit timestamp", provenance.Tag)
 	}
 
 	return Version{
-		tag:        tag,
+		tag:        provenance.Tag,
+		semverTag:  semverTag,
 		branch:     provenance.Branch,
 		commit:     provenance.Commit,
 		commitTime: commitTime,
@@ -108,7 +108,7 @@ func New(provenance Provenance) (Version, error) {
 // stamped by the linker; the commit and compact UTC commit time follow as
 // build metadata.
 func (v Version) revision() string {
-	prefix := v.tag.String()
+	prefix := v.tag
 	if prefix == "" {
 		prefix = v.branch
 	}
@@ -151,16 +151,22 @@ func (v Version) GethVersion() string {
 	return strings.TrimPrefix(v.revision(), "v")
 }
 
-// IsTagged reports whether the binary was built from a release tag.
+// IsTagged reports whether the binary was built from any source tag.
 func (v Version) IsTagged() bool {
-	return !v.tag.IsZero()
+	return v.tag != ""
+}
+
+// IsSemverTagged reports whether the binary was built from a canonical
+// semantic-version tag that can participate in version ordering.
+func (v Version) IsSemverTagged() bool {
+	return !v.semverTag.IsZero()
 }
 
 func (v Version) IsVersionOlderThan(targetVersion CanonicalVersion) bool {
-	if !v.IsTagged() {
+	if !v.IsSemverTagged() {
 		return false
 	}
-	return semver.Compare(v.tag.String(), targetVersion.String()) < 0
+	return semver.Compare(v.semverTag.String(), targetVersion.String()) < 0
 }
 
 func (v Version) IsCommitTimestampOlderThan(ts time.Time) bool {
@@ -169,18 +175,18 @@ func (v Version) IsCommitTimestampOlderThan(ts time.Time) bool {
 
 // CheckVersionBounds validates the inclusive version bounds and checks whether
 // this Nitro version falls within them. A zero min or max disables that side of
-// the range. Untagged builds satisfy valid bounds because they do not have an
-// ordered semantic version.
+// the range. Builds without a canonical semantic-version tag satisfy valid
+// bounds because they do not have an ordered semantic version.
 func (v Version) CheckVersionBounds(minVersion, maxVersion CanonicalVersion) error {
 	if !minVersion.IsZero() && !maxVersion.IsZero() &&
 		semver.Compare(minVersion.String(), maxVersion.String()) > 0 {
 		return fmt.Errorf("%w: conf.min-version %s is greater than conf.max-version %s",
 			ErrInvalidVersionRange, minVersion, maxVersion)
 	}
-	if !v.IsTagged() {
+	if !v.IsSemverTagged() {
 		return nil
 	}
-	tag := v.tag.String()
+	tag := v.semverTag.String()
 	if (!minVersion.IsZero() && semver.Compare(tag, minVersion.String()) < 0) ||
 		(!maxVersion.IsZero() && semver.Compare(tag, maxVersion.String()) > 0) {
 		return fmt.Errorf("%w: this binary is nitro %s, but the configuration declares conf.min-version %q and conf.max-version %q",

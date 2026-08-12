@@ -1,33 +1,23 @@
 #!/usr/bin/env bash
 # Selects the build provenance for CI image builds. Meant to be sourced by the
 # CodeBuild buildspecs; sets and exports:
-#   NITRO_TAG      canonical SemVer tag pointing at HEAD ("" when untagged)
+#   NITRO_TAG      tag pointing at HEAD ("" when untagged)
 #   NITRO_BRANCH   branch that triggered an untagged build ("" for tagged builds)
-#   NITRO_COMMIT   short commit SHA of HEAD
+#   NITRO_COMMIT   short commit SHA of HEAD ("latest" when unavailable)
 #   IMAGE_TAG      hyphenated tag for Docker artifacts, which cannot contain
 #                  the "+" separating the commit in the binary's revision
-# Fails before anything is built when the selected tag at HEAD is noncanonical.
 
 nitro_ci_select_version() {
-  # Canonical SemVer as defined by Go's semver.Canonical: leading "v", full
-  # MAJOR.MINOR.PATCH without leading zeros, optional prerelease, no build
-  # metadata. This rejects shorthand (v3.11), metadata (v3.11.3+foo), calendar
-  # tags (v2024.01.10), and private-patch tag formats.
-  local ident='(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
-  local canonical="^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-${ident}(\.${ident})*)?\$"
-
-  NITRO_COMMIT=$(git rev-parse --short=7 HEAD)
+  NITRO_COMMIT=$(git rev-parse --short=7 HEAD 2>/dev/null || true)
+  if [ -z "$NITRO_COMMIT" ]; then
+    NITRO_COMMIT="latest"
+  fi
   NITRO_BRANCH=""
   # Prefer the highest tag pointing at HEAD, a stable release before its own
   # prereleases (the temporary "_" suffix makes it sort after them).
   NITRO_TAG=$(git tag --points-at HEAD | sed '/-/!s/$/_/' | sort -rV | sed 's/_$//' | head -n 1)
 
-  if [ -n "$NITRO_TAG" ]; then
-    if ! [[ $NITRO_TAG =~ $canonical ]]; then
-      echo "ERROR: tag ${NITRO_TAG} is not a canonical SemVer release tag (vMAJOR.MINOR.PATCH with optional prerelease); refusing to build" >&2
-      return 1
-    fi
-  else
+  if [ -z "$NITRO_TAG" ]; then
     # Untagged: name the branch that triggered the build. Webhook builds carry
     # it in CODEBUILD_WEBHOOK_HEAD_REF; manual builds may name one in
     # CODEBUILD_SOURCE_VERSION, which can instead hold a commit hash and is
@@ -49,13 +39,26 @@ nitro_ci_select_version() {
     fi
   fi
 
-  # Docker image tags allow only [A-Za-z0-9_.-]; sanitize branch separators
-  # like "/" here and nowhere else.
+  # Tagged builds preserve the tag exactly so the binary and image have the
+  # same identity. Untagged builds sanitize branch separators such as "/".
   local docker_ref=$NITRO_TAG
   if [ -z "$docker_ref" ]; then
     docker_ref=$(printf '%s' "$NITRO_BRANCH" | sed 's/[^A-Za-z0-9_.-]/-/g')
   fi
   IMAGE_TAG="${docker_ref}-${NITRO_COMMIT}"
+
+  # Docker tags are at most 128 ASCII characters, must start with an
+  # alphanumeric or underscore, and otherwise allow only alphanumerics,
+  # underscores, periods, and dashes.
+  local docker_tag_pattern='^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'
+  if ! [[ $IMAGE_TAG =~ $docker_tag_pattern ]]; then
+    if [ -n "$NITRO_TAG" ]; then
+      echo "ERROR: Git tag '${NITRO_TAG}' produces invalid Docker image tag '${IMAGE_TAG}'" >&2
+    else
+      echo "ERROR: branch '${NITRO_BRANCH}' produces invalid Docker image tag '${IMAGE_TAG}'" >&2
+    fi
+    return 1
+  fi
 
   export NITRO_TAG NITRO_BRANCH NITRO_COMMIT IMAGE_TAG
   echo "Selected nitro version: tag='${NITRO_TAG}' branch='${NITRO_BRANCH}' commit='${NITRO_COMMIT}' docker tag='${IMAGE_TAG}'"

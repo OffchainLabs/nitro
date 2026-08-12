@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Smoke tests for scripts/ci-version-select.sh: tag selection and canonical
-# SemVer enforcement, plus the branch and detached fallbacks used when HEAD is
-# untagged. Creates throwaway git repositories; needs no network.
+# Smoke tests for scripts/ci-version-select.sh: tag selection and Docker-safe
+# naming, plus the branch, commit, and detached fallbacks used when untagged.
+# Creates throwaway git repositories; needs no network.
 set -euo pipefail
 
 script_dir=$(cd "$(dirname "$0")" && pwd)
@@ -29,8 +29,16 @@ run_selector() {
     unset CODEBUILD_WEBHOOK_HEAD_REF CODEBUILD_SOURCE_VERSION
     local kv
     for kv in "$@"; do export "${kv?}"; done
+    if [ "${MOCK_EMPTY_COMMIT:-}" = "1" ]; then
+      git() {
+        if [ "${1:-}" = "rev-parse" ]; then
+          return 0
+        fi
+        command git "$@"
+      }
+    fi
     # shellcheck source=/dev/null
-    . "$selector" >/dev/null 2>&1 || exit 1
+    . "$selector" >/dev/null || exit 1
     printf '%s|%s|%s|%s\n' "$NITRO_TAG" "$NITRO_BRANCH" "$NITRO_COMMIT" "$IMAGE_TAG"
   )
 }
@@ -45,13 +53,16 @@ expect() {
   fi
 }
 
-expect_reject() {
-  local name="$1" dir="$2"
-  if run_selector "$dir" >/dev/null; then
-    echo "FAIL: $name: selector accepted a noncanonical tag" >&2
+expect_tag_reject() {
+  local name="$1" dir="$2" tag="$3" image_tag="$4" output
+  if output=$(run_selector "$dir" 2>&1); then
+    echo "FAIL: $name: selector accepted tag '$tag' as '$output'" >&2
     failures=$((failures + 1))
-  else
+  elif [[ $output == *"Git tag '$tag'"* && $output == *"Docker image tag '$image_tag'"* ]]; then
     echo "PASS: $name"
+  else
+    echo "FAIL: $name: unexpected error '$output'" >&2
+    failures=$((failures + 1))
   fi
 }
 
@@ -73,11 +84,47 @@ expect "stable tag preferred over its prerelease" \
   "$(run_selector "$repo")" "v3.11.3||$sha|v3.11.3-$sha"
 git -C "$repo" tag -d v3.11.3 v3.11.3-rc.1 >/dev/null
 
-for bad in v3.11 v3.11.3+build 3.11.3 v2024.01.10 v3.11.3-patch_1; do
-  git -C "$repo" tag "$bad"
-  expect_reject "noncanonical tag $bad rejected" "$repo"
-  git -C "$repo" tag -d "$bad" >/dev/null
+git -C "$repo" tag consensus-v61
+expect "consensus tag" \
+  "$(run_selector "$repo")" "consensus-v61||$sha|consensus-v61-$sha"
+git -C "$repo" tag -d consensus-v61 >/dev/null
+
+git -C "$repo" tag devnet-consensus-v3.1
+expect "devnet consensus tag" \
+  "$(run_selector "$repo")" "devnet-consensus-v3.1||$sha|devnet-consensus-v3.1-$sha"
+git -C "$repo" tag -d devnet-consensus-v3.1 >/dev/null
+
+while read -r tag; do
+  git -C "$repo" tag "$tag"
+  expect "Docker-compatible tag $tag is preserved" \
+    "$(run_selector "$repo")" "$tag||$sha|$tag-$sha"
+  git -C "$repo" tag -d "$tag" >/dev/null
+done <<'EOF'
+v3.11
+3.11.3
+v2024.01.10
+v3.11.3-patch_1
+arbitrary-tag
+EOF
+
+for tag in v1.2.3+abc release/foo+bar; do
+  git -C "$repo" tag "$tag"
+  expect_tag_reject "Docker-incompatible tag $tag is rejected" \
+    "$repo" "$tag" "$tag-$sha"
+  git -C "$repo" tag -d "$tag" >/dev/null
 done
+
+git -C "$repo" update-ref refs/tags/-candidate HEAD
+expect_tag_reject "tag beginning with dash is rejected" \
+  "$repo" "-candidate" "-candidate-$sha"
+git -C "$repo" update-ref -d refs/tags/-candidate
+
+printf -v long_tag '%*s' 121 ''
+long_tag=${long_tag// /a}
+git -C "$repo" tag "$long_tag"
+expect_tag_reject "commit-suffixed tag exceeding 128 characters is rejected" \
+  "$repo" "$long_tag" "$long_tag-$sha"
+git -C "$repo" tag -d "$long_tag" >/dev/null
 
 expect "webhook head ref names the branch" \
   "$(run_selector "$repo" CODEBUILD_WEBHOOK_HEAD_REF=refs/heads/feature/foo)" \
@@ -93,6 +140,9 @@ expect "commit hash masquerading as branch falls back to dev" \
 
 expect "master decoration falls back to dev" \
   "$(run_selector "$repo")" "|dev|$sha|dev-$sha"
+
+expect "empty commit falls back to latest" \
+  "$(run_selector "$repo" MOCK_EMPTY_COMMIT=1)" "|dev|latest|dev-latest"
 
 git -C "$repo" checkout -q -b v9.9.9
 expect "SemVer-looking branch stays untagged" \

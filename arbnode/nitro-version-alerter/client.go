@@ -52,8 +52,8 @@ type Client struct {
 
 func NewClient(ctx context.Context, cfg *ClientConfig) (*Client, error) {
 	nodeVersion := nitroversion.Current()
-	if !nodeVersion.IsTagged() {
-		log.Warn("node version is not a tagged release, skipping version alerter", "version", nodeVersion)
+	if !nodeVersion.IsSemverTagged() {
+		log.Warn("node version is not a semantic-version-tagged release, skipping version alerter", "version", nodeVersion)
 		return nil, nil
 	}
 	connectionConfigFetcher := func() *rpcclient.ClientConfig { return &cfg.Connection }

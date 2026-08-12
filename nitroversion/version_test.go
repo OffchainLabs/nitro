@@ -4,7 +4,6 @@
 package nitroversion
 
 import (
-	"errors"
 	"strings"
 	"testing"
 )
@@ -25,6 +24,16 @@ func TestNitroVersionString(t *testing.T) {
 			name:       "tagged prerelease",
 			provenance: Provenance{Tag: "v3.9.9-rc.1", Commit: "26b4b9b", Timestamp: timestamp},
 			want:       "v3.9.9-rc.1+26b4b9b-20260102T030405Z",
+		},
+		{
+			name:       "consensus tag",
+			provenance: Provenance{Tag: "consensus-v61", Commit: "26b4b9b", Timestamp: timestamp},
+			want:       "consensus-v61+26b4b9b-20260102T030405Z",
+		},
+		{
+			name:       "arbitrary tag",
+			provenance: Provenance{Tag: "release/foo+bar", Commit: "26b4b9b", Timestamp: timestamp},
+			want:       "release/foo+bar+26b4b9b-20260102T030405Z",
 		},
 		{
 			name:       "branch build",
@@ -58,15 +67,8 @@ func TestNewValidatesProvenance(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		provenance  Provenance
-		wantErr     error
 		wantMessage string
 	}{
-		{
-			name:        "noncanonical tag",
-			provenance:  Provenance{Tag: "3.9.9", Timestamp: "2026-01-02T03:04:05Z"},
-			wantErr:     ErrInvalidCanonicalVersion,
-			wantMessage: "tag",
-		},
 		{
 			name:        "malformed timestamp",
 			provenance:  Provenance{Branch: "dev", Timestamp: "not-a-timestamp"},
@@ -87,18 +89,88 @@ func TestNewValidatesProvenance(t *testing.T) {
 			provenance:  Provenance{Tag: "v3.9.9", Timestamp: "0001-01-01T00:00:00Z"},
 			wantMessage: "tagged version v3.9.9 has no commit timestamp",
 		},
+		{
+			name:        "non-semver tagged build without timestamp",
+			provenance:  Provenance{Tag: "consensus-v61"},
+			wantMessage: "tagged version consensus-v61 has no commit timestamp",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := New(tc.provenance)
 			if err == nil {
 				t.Fatal("New() expected an error")
 			}
-			if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
-				t.Errorf("New() error = %v, want error matching %v", err, tc.wantErr)
-			}
 			if !strings.Contains(err.Error(), tc.wantMessage) {
 				t.Errorf("New() error = %q, want it to contain %q", err, tc.wantMessage)
 			}
 		})
+	}
+}
+
+func TestTagClassification(t *testing.T) {
+	const timestamp = "2026-01-02T03:04:05Z"
+	for _, tc := range []struct {
+		name             string
+		provenance       Provenance
+		wantTagged       bool
+		wantSemverTagged bool
+	}{
+		{
+			name:             "canonical release",
+			provenance:       Provenance{Tag: "v3.9.9", Timestamp: timestamp},
+			wantTagged:       true,
+			wantSemverTagged: true,
+		},
+		{
+			name:       "consensus release",
+			provenance: Provenance{Tag: "consensus-v61", Timestamp: timestamp},
+			wantTagged: true,
+		},
+		{
+			name:       "noncanonical semver tag",
+			provenance: Provenance{Tag: "v3.9.9+build", Timestamp: timestamp},
+			wantTagged: true,
+		},
+		{
+			name:       "branch build",
+			provenance: Provenance{Branch: "dev"},
+		},
+		{
+			name:       "local build",
+			provenance: Provenance{},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			version, err := New(tc.provenance)
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			if got := version.IsTagged(); got != tc.wantTagged {
+				t.Errorf("IsTagged() = %v, want %v", got, tc.wantTagged)
+			}
+			if got := version.IsSemverTagged(); got != tc.wantSemverTagged {
+				t.Errorf("IsSemverTagged() = %v, want %v", got, tc.wantSemverTagged)
+			}
+		})
+	}
+}
+
+func TestNonSemverTagSkipsVersionOrdering(t *testing.T) {
+	version, err := New(Provenance{
+		Tag:       "consensus-v61",
+		Timestamp: "2026-01-02T03:04:05Z",
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	minVersion, err := ParseCanonicalVersion("v99.0.0")
+	if err != nil {
+		t.Fatalf("ParseCanonicalVersion() error = %v", err)
+	}
+	if version.IsVersionOlderThan(minVersion) {
+		t.Error("IsVersionOlderThan() = true for a non-SemVer tag")
+	}
+	if err := version.CheckVersionBounds(minVersion, CanonicalVersion{}); err != nil {
+		t.Errorf("CheckVersionBounds() error = %v for a non-SemVer tag", err)
 	}
 }

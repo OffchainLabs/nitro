@@ -176,9 +176,9 @@ func TestConfigVersionRange(t *testing.T) {
 		wantErr        error
 		wantErrMessage string
 	}{
-		/////////////////////////////////////////////////////////////////////////////////////////////////
-		// excluded from version checks - untagged builds have no ordered semantic version to enforce //
-		/////////////////////////////////////////////////////////////////////////////////////////////////
+		//////////////////////////////////////////////////////////////////////////////////////////////////////////
+		// excluded from version checks - builds without a SemVer tag have no ordered version to enforce //
+		//////////////////////////////////////////////////////////////////////////////////////////////////////////
 		{
 			name:       "excluded from version checks - local build without provenance",
 			jsonConfig: `{"conf":{"min-version":"v3.9.9", "max-version":"v3.9.9"}}`,
@@ -197,6 +197,11 @@ func TestConfigVersionRange(t *testing.T) {
 			name:       "excluded from version checks - semver-looking branch remains untagged",
 			version:    makeVersion(provenance{Branch: "v3.9.9"}),
 			jsonConfig: `{"conf":{"max-version":"v3.9.8"}}`,
+		},
+		{
+			name:       "excluded from version checks - consensus tag is not semver-tagged",
+			version:    makeVersion(provenance{Tag: "consensus-v61"}),
+			jsonConfig: `{"conf":{"min-version":"v99.0.0"}}`,
 		},
 		//////////////////////////
 		// version check passes //
@@ -405,6 +410,20 @@ func TestConfigVersionRange(t *testing.T) {
 		{
 			name:           "config versions invalid - malformed bound is validated for untagged build",
 			version:        makeVersion(provenance{Branch: "dev"}),
+			jsonConfig:     `{"conf":{"min-version":"not-semver"}}`,
+			wantErr:        nitroversion.ErrInvalidVersionRange,
+			wantErrMessage: "invalid conf.min-version",
+		},
+		{
+			name:           "config versions invalid - reversed bounds are validated for consensus tag",
+			version:        makeVersion(provenance{Tag: "consensus-v61"}),
+			jsonConfig:     `{"conf":{"min-version":"v3.10.0","max-version":"v3.9.0"}}`,
+			wantErr:        nitroversion.ErrInvalidVersionRange,
+			wantErrMessage: "conf.min-version v3.10.0 is greater than conf.max-version v3.9.0",
+		},
+		{
+			name:           "config versions invalid - malformed bound is validated for consensus tag",
+			version:        makeVersion(provenance{Tag: "consensus-v61"}),
 			jsonConfig:     `{"conf":{"min-version":"not-semver"}}`,
 			wantErr:        nitroversion.ErrInvalidVersionRange,
 			wantErrMessage: "invalid conf.min-version",

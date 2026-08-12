@@ -41,7 +41,7 @@ phases:
       - printf '%s' "$DOCKERHUB_PASSWORD" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin
       - aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin "$REPOSITORY_URI"
       # Sets NITRO_TAG, NITRO_BRANCH, NITRO_COMMIT, and the Docker-safe
-      # IMAGE_TAG; fails the build on a noncanonical release tag.
+      # IMAGE_TAG.
       - . scripts/ci-version-select.sh
       - NITRO_DATETIME=$(git show -s --date=iso-strict --format=%cd)
       - NITRO_MODIFIED="false"
