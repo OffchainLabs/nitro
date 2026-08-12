@@ -28,10 +28,6 @@ type fileSync struct {
 	syncMgr   *S3SyncManager
 }
 
-// FilterService manages the address-filter synchronization pipeline.
-// It periodically polls S3 for updates of each configured hash-list file,
-// each at its own interval, and maintains in-memory copies for efficient
-// address filtering. An address is restricted if it appears in any file.
 type FilterService struct {
 	stopwaiter.StopWaiter
 	config         *Config
