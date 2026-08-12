@@ -651,6 +651,55 @@ func (b *NodeBuilder) waitForMelToReadInitMsg(t *testing.T, tc *TestClient) {
 	}
 }
 
+// waitForNodeToCatchUpWithParentChain blocks until the node has executed every
+// message from the batches already posted to the parent chain. A node built on
+// a parent chain that already holds batches starts behind and catches up in the
+// background, so reading chain state before it settles samples a value that is
+// still moving.
+func (b *NodeBuilder) waitForNodeToCatchUpWithParentChain(t *testing.T) {
+	t.Helper()
+	node := b.L2.ConsensusNode
+	if node == nil || node.InboxTracker == nil || b.L1 == nil || b.addresses == nil {
+		return
+	}
+	// The target has to come from the parent chain; the node's own batch count
+	// only covers what it has read, so it is already reached mid-catch-up.
+	seqInbox, err := bridgegen.NewSequencerInboxCaller(b.addresses.SequencerInbox, b.L1.Client)
+	Require(t, err)
+	posted, err := seqInbox.BatchCount(&bind.CallOpts{Context: b.ctx})
+	Require(t, err)
+	if !posted.IsUint64() || posted.Uint64() == 0 {
+		return
+	}
+	target := posted.Uint64()
+
+	deadline := time.Now().Add(time.Minute)
+	for {
+		batches, err := node.InboxTracker.GetBatchCount()
+		Require(t, err)
+		var want, executed arbutil.MessageIndex
+		if batches >= target {
+			want, err = node.InboxTracker.GetBatchMessageCount(target - 1)
+			Require(t, err)
+			executed, err = node.TxStreamer.GetMessageCount()
+			Require(t, err)
+			if b.L2.ExecNode != nil {
+				head, err := b.L2.ExecNode.ExecEngine.HeadMessageIndex()
+				Require(t, err)
+				executed = min(executed, head+1)
+			}
+			if executed >= want {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("node did not catch up with the parent chain: read %d/%d batches, executed %d/%d messages",
+				batches, target, executed, want)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func (b *NodeBuilder) WithEventFilterRules(rules []eventfilter.EventRule) *NodeBuilder {
 	if b.execConfig == nil {
 		panic("execConfig must be initialised before setting event filter rules")
@@ -1036,11 +1085,12 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		b.waitForMelToReadInitMsg(t, b.L2)
 	}
 
+	// The node starts behind whenever the parent chain already holds batches, so
+	// settle it before anything reads chain state.
+	b.waitForNodeToCatchUpWithParentChain(t)
+
 	_, hasOwnerAccount := b.L2Info.Accounts["Owner"]
 	if b.takeOwnership && hasOwnerAccount {
-		// Sync the Owner nonce tracker with the actual on-chain state.
-		// This avoids nonce races when BuildL2OnL1 is called multiple times
-		// (e.g., in TestAnyTrustRekeyFlaky where the L2 is rebuilt on the same L1).
 		ownerAddr := b.L2Info.GetAddress("Owner")
 		onChainNonce, err := b.L2.Client.PendingNonceAt(b.ctx, ownerAddr)
 		Require(t, err)
