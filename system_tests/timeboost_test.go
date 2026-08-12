@@ -1368,7 +1368,7 @@ func verifyTimeboostedCorrectness(t *testing.T, ctx context.Context, user string
 	}
 }
 
-func placeBidsAndDecideWinner(t *testing.T, ctx context.Context, seqClient *ethclient.Client, seqInfo *BlockchainTestInfo, auctionContract *express_lane_auctiongen.ExpressLaneAuction, winner, loser string, winnerBidderClient, loserBidderClient *timeboost.BidderClient, roundDuration time.Duration) {
+func placeBidsAndDecideWinner(t *testing.T, ctx context.Context, seqClient *ethclient.Client, seqInfo *BlockchainTestInfo, auctionContract *express_lane_auctiongen.ExpressLaneAuction, winner, loser string, winnerBidderClient, loserBidderClient *timeboost.BidderClient, _roundDuration time.Duration) {
 	t.Helper()
 
 	rawRoundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})

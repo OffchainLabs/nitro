@@ -142,7 +142,7 @@ func advanceL1ForDelayed(t *testing.T, ctx context.Context, builder *NodeBuilder
 }
 
 // waitForDelayedSequencerHaltOnHashes waits until the delayed sequencer is halted on exactly the given hashes.
-func waitForDelayedSequencerHaltOnHashes(t *testing.T, ctx context.Context, builder *NodeBuilder, expectedHashes []common.Hash, timeout time.Duration) {
+func waitForDelayedSequencerHaltOnHashes(t *testing.T, _ctx context.Context, builder *NodeBuilder, expectedHashes []common.Hash, timeout time.Duration) {
 	t.Helper()
 	expectedSet := make(map[common.Hash]struct{}, len(expectedHashes))
 	for _, h := range expectedHashes {
@@ -175,7 +175,7 @@ func waitForDelayedSequencerHaltOnHashes(t *testing.T, ctx context.Context, buil
 }
 
 // waitForDelayedSequencerResume waits until the delayed sequencer is no longer halted.
-func waitForDelayedSequencerResume(t *testing.T, ctx context.Context, builder *NodeBuilder, timeout time.Duration) {
+func waitForDelayedSequencerResume(t *testing.T, _ctx context.Context, builder *NodeBuilder, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
