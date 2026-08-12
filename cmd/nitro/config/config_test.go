@@ -203,6 +203,11 @@ func TestConfigVersionRange(t *testing.T) {
 			version:    makeVersion(provenance{Tag: "consensus-v61"}),
 			jsonConfig: `{"conf":{"min-version":"v99.0.0"}}`,
 		},
+		{
+			name:       "excluded from version checks - non-semver private tag is not semver-tagged",
+			version:    makeVersion(provenance{Tag: "v3.11.x-private-patches-1"}),
+			jsonConfig: `{"conf":{"min-version":"v99.0.0"}}`,
+		},
 		//////////////////////////
 		// version check passes //
 		//////////////////////////
@@ -281,6 +286,11 @@ func TestConfigVersionRange(t *testing.T) {
 			name:       "version check passes - prerelease earlier than max-version",
 			version:    makeVersion(provenance{Tag: "v3.8.1-rc.1"}),
 			jsonConfig: `{"conf":{"max-version":"v3.8.1-rc.2"}}`,
+		},
+		{
+			name:       "version check passes - private derivative is between its base and next prerelease",
+			version:    makeVersion(provenance{Tag: "v3.12.0-dev.1.private.2"}),
+			jsonConfig: `{"conf":{"min-version":"v3.12.0-dev.1","max-version":"v3.12.0-dev.2"}}`,
 		},
 		/////////////////////////
 		// version check fails //
@@ -390,6 +400,20 @@ func TestConfigVersionRange(t *testing.T) {
 			name:           "config versions invalid - build metadata not allowed in max-version",
 			version:        makeVersion(provenance{Tag: "v3.9.9"}),
 			jsonConfig:     `{"conf":{"max-version":"v3.10.0+build"}}`,
+			wantErr:        nitroversion.ErrInvalidVersionRange,
+			wantErrMessage: "invalid conf.max-version",
+		},
+		{
+			name:           "config versions invalid - unsupported alpha prerelease",
+			version:        makeVersion(provenance{Tag: "v3.9.9"}),
+			jsonConfig:     `{"conf":{"min-version":"v3.10.0-alpha.1"}}`,
+			wantErr:        nitroversion.ErrInvalidVersionRange,
+			wantErrMessage: "invalid conf.min-version",
+		},
+		{
+			name:           "config versions invalid - legacy commit suffix",
+			version:        makeVersion(provenance{Tag: "v3.9.9"}),
+			jsonConfig:     `{"conf":{"max-version":"v3.10.0-rc.1-abcdef"}}`,
 			wantErr:        nitroversion.ErrInvalidVersionRange,
 			wantErrMessage: "invalid conf.max-version",
 		},

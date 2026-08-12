@@ -1,7 +1,8 @@
 ### Configuration
 - Added `--conf.min-version` to set the minimum supported Nitro version.
 - Added `--conf.max-version` to set the maximum supported Nitro version.
-- Version checks and the version alerter only run for canonical SemVer-tagged release builds; consensus-tagged, branch, development, and local builds skip them.
+- Comparable Nitro versions use stable `vMAJOR.MINOR.PATCH`, `dev.N`, `dev.N.private.N`, `rc.N`, or `rc.N.private.N` release tags, with positive counters.
+- Version checks and the version alerter only run for release tags following that convention; opaque tags without a canonical release core, consensus-tagged, branch, development, and local builds skip them.
 - Version range errors take precedence over unknown configuration key errors.
 
 ### Changed

@@ -16,7 +16,7 @@ import (
 
 var (
 	// ErrInvalidCanonicalVersion identifies a value that is not a canonical
-	// semantic version.
+	// Nitro release version.
 	ErrInvalidCanonicalVersion = errors.New("invalid canonical nitro version")
 	// ErrInvalidVersionRange identifies malformed or contradictory version bounds.
 	ErrInvalidVersionRange = errors.New("invalid nitro version range")
@@ -24,18 +24,59 @@ var (
 	ErrUnsupportedVersion = errors.New("unsupported nitro version")
 )
 
-// CanonicalVersion is a validated canonical semantic version. Its zero value
-// represents an absent optional version.
+// CanonicalVersion is a validated canonical Nitro release version. Its zero
+// value represents an absent optional version.
 type CanonicalVersion struct {
 	value string
 }
 
-// ParseCanonicalVersion validates a non-empty canonical semantic version.
+// ParseCanonicalVersion validates a non-empty canonical semantic version that
+// follows Nitro's release convention. Releases may be stable, dev.N, rc.N, or
+// a private.N derivative of a particular dev or rc release. All counters start
+// at one.
 func ParseCanonicalVersion(value string) (CanonicalVersion, error) {
-	if value == "" || semver.Canonical(value) != value {
-		return CanonicalVersion{}, fmt.Errorf("%w: %q, expected a canonical semantic version", ErrInvalidCanonicalVersion, value)
+	if value == "" || semver.Canonical(value) != value || !validNitroPrerelease(semver.Prerelease(value)) {
+		return CanonicalVersion{}, fmt.Errorf("%w: %q, expected vMAJOR.MINOR.PATCH with optional -dev.N, -dev.N.private.N, -rc.N, or -rc.N.private.N", ErrInvalidCanonicalVersion, value)
 	}
 	return CanonicalVersion{value: value}, nil
+}
+
+func validNitroPrerelease(prerelease string) bool {
+	if prerelease == "" {
+		return true
+	}
+	identifiers := strings.Split(strings.TrimPrefix(prerelease, "-"), ".")
+	if len(identifiers) != 2 && len(identifiers) != 4 {
+		return false
+	}
+	if identifiers[0] != "dev" && identifiers[0] != "rc" {
+		return false
+	}
+	if !positiveNumericIdentifier(identifiers[1]) {
+		return false
+	}
+	return len(identifiers) == 2 ||
+		(identifiers[2] == "private" && positiveNumericIdentifier(identifiers[3]))
+}
+
+func positiveNumericIdentifier(identifier string) bool {
+	if identifier == "" || identifier[0] < '1' || identifier[0] > '9' {
+		return false
+	}
+	for i := 1; i < len(identifier); i++ {
+		if identifier[i] < '0' || identifier[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func hasCanonicalReleaseCore(value string) bool {
+	core := value
+	if suffix := strings.IndexAny(core, "-+"); suffix >= 0 {
+		core = core[:suffix]
+	}
+	return strings.Count(core, ".") == 2 && semver.Canonical(core) == core
 }
 
 // String returns the canonical semantic version, or an empty string for the
@@ -60,7 +101,7 @@ type Provenance struct {
 
 // Version describes the build provenance embedded in a Nitro binary. Its raw
 // tag is retained for display, while semverTag is populated only for canonical
-// semantic-version tags that can participate in version ordering.
+// Nitro release tags that can participate in version ordering.
 type Version struct {
 	tag        string
 	semverTag  CanonicalVersion
@@ -77,8 +118,12 @@ var _ fmt.Stringer = Version{}
 // the running binary's linker stamps or Go build information.
 func New(provenance Provenance) (Version, error) {
 	var semverTag CanonicalVersion
-	if provenance.Tag != "" && semver.Canonical(provenance.Tag) == provenance.Tag {
-		semverTag = CanonicalVersion{value: provenance.Tag}
+	if hasCanonicalReleaseCore(provenance.Tag) {
+		parsed, err := ParseCanonicalVersion(provenance.Tag)
+		if err != nil {
+			return Version{}, fmt.Errorf("tag: %w", err)
+		}
+		semverTag = parsed
 	}
 
 	var commitTime time.Time
@@ -156,8 +201,8 @@ func (v Version) IsTagged() bool {
 	return v.tag != ""
 }
 
-// IsSemverTagged reports whether the binary was built from a canonical
-// semantic-version tag that can participate in version ordering.
+// IsSemverTagged reports whether the binary was built from a canonical Nitro
+// release tag that can participate in version ordering.
 func (v Version) IsSemverTagged() bool {
 	return !v.semverTag.IsZero()
 }
@@ -175,8 +220,8 @@ func (v Version) IsCommitTimestampOlderThan(ts time.Time) bool {
 
 // CheckVersionBounds validates the inclusive version bounds and checks whether
 // this Nitro version falls within them. A zero min or max disables that side of
-// the range. Builds without a canonical semantic-version tag satisfy valid
-// bounds because they do not have an ordered semantic version.
+// the range. Builds without a canonical Nitro release tag satisfy valid bounds
+// because they do not have an ordered semantic version.
 func (v Version) CheckVersionBounds(minVersion, maxVersion CanonicalVersion) error {
 	if !minVersion.IsZero() && !maxVersion.IsZero() &&
 		semver.Compare(minVersion.String(), maxVersion.String()) > 0 {

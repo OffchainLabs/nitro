@@ -4,9 +4,82 @@
 package nitroversion
 
 import (
+	"errors"
 	"strings"
 	"testing"
+
+	"golang.org/x/mod/semver"
 )
+
+func TestParseCanonicalVersion(t *testing.T) {
+	for _, value := range []string{
+		"v0.0.0",
+		"v3.12.0",
+		"v3.12.0-dev.1",
+		"v3.12.0-dev.1.private.1",
+		"v3.12.0-rc.12",
+		"v3.12.0-rc.12.private.34",
+	} {
+		t.Run("accept_"+value, func(t *testing.T) {
+			got, err := ParseCanonicalVersion(value)
+			if err != nil {
+				t.Fatalf("ParseCanonicalVersion(%q) error = %v", value, err)
+			}
+			if got.String() != value {
+				t.Errorf("ParseCanonicalVersion(%q) = %q", value, got.String())
+			}
+		})
+	}
+
+	for _, value := range []string{
+		"",
+		"3.12.0",
+		"v3.12",
+		"v3.12.0-dev.0",
+		"v3.12.0-dev.01",
+		"v3.12.0-dev.1.private.0",
+		"v3.12.0-dev.1.private.01",
+		"v3.12.0-rc.0",
+		"v3.12.0-alpha.1",
+		"v3.12.0-beta.1",
+		"v3.12.0-alice.1",
+		"v3.12.0-rc.1-abcdef",
+		"v3.12.0-abcdef",
+		"v3.12.0-private.1",
+		"v3.12.0-private-patches-1",
+		"v3.12.0-rc.1.private.1.extra",
+		"v3.12.0-rc.1+build",
+		"v3.12.0+build",
+	} {
+		t.Run("reject_"+value, func(t *testing.T) {
+			_, err := ParseCanonicalVersion(value)
+			if !errors.Is(err, ErrInvalidCanonicalVersion) {
+				t.Errorf("ParseCanonicalVersion(%q) error = %v, want %v", value, err, ErrInvalidCanonicalVersion)
+			}
+		})
+	}
+}
+
+func TestCanonicalVersionPrereleaseOrdering(t *testing.T) {
+	ordered := []string{
+		"v3.12.0-dev.1",
+		"v3.12.0-dev.1.private.1",
+		"v3.12.0-dev.1.private.2",
+		"v3.12.0-dev.2",
+		"v3.12.0-rc.1",
+		"v3.12.0-rc.1.private.1",
+		"v3.12.0-rc.2",
+		"v3.12.0",
+	}
+	for i, value := range ordered {
+		if _, err := ParseCanonicalVersion(value); err != nil {
+			t.Fatalf("ParseCanonicalVersion(%q) error = %v", value, err)
+		}
+		if i > 0 && semver.Compare(ordered[i-1], value) >= 0 {
+			t.Errorf("semver.Compare(%q, %q) = %d, want less than zero", ordered[i-1], value, semver.Compare(ordered[i-1], value))
+		}
+	}
+}
 
 func TestNitroVersionString(t *testing.T) {
 	const timestamp = "2026-01-02T04:04:05+01:00"
@@ -34,6 +107,11 @@ func TestNitroVersionString(t *testing.T) {
 			name:       "arbitrary tag",
 			provenance: Provenance{Tag: "release/foo+bar", Commit: "26b4b9b", Timestamp: timestamp},
 			want:       "release/foo+bar+26b4b9b-20260102T030405Z",
+		},
+		{
+			name:       "non-semver private tag",
+			provenance: Provenance{Tag: "v3.11.x-mglowacki-private-2", Commit: "26b4b9b", Timestamp: timestamp},
+			want:       "v3.11.x-mglowacki-private-2+26b4b9b-20260102T030405Z",
 		},
 		{
 			name:       "branch build",
@@ -94,6 +172,11 @@ func TestNewValidatesProvenance(t *testing.T) {
 			provenance:  Provenance{Tag: "consensus-v61"},
 			wantMessage: "tagged version consensus-v61 has no commit timestamp",
 		},
+		{
+			name:        "semver tag outside Nitro convention",
+			provenance:  Provenance{Tag: "v3.9.9-alpha.1", Timestamp: "2026-01-02T03:04:05Z"},
+			wantMessage: "expected vMAJOR.MINOR.PATCH",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := New(tc.provenance)
@@ -122,13 +205,19 @@ func TestTagClassification(t *testing.T) {
 			wantSemverTagged: true,
 		},
 		{
+			name:             "canonical private prerelease",
+			provenance:       Provenance{Tag: "v3.12.0-rc.1.private.2", Timestamp: timestamp},
+			wantTagged:       true,
+			wantSemverTagged: true,
+		},
+		{
 			name:       "consensus release",
 			provenance: Provenance{Tag: "consensus-v61", Timestamp: timestamp},
 			wantTagged: true,
 		},
 		{
-			name:       "noncanonical semver tag",
-			provenance: Provenance{Tag: "v3.9.9+build", Timestamp: timestamp},
+			name:       "non-semver private tag",
+			provenance: Provenance{Tag: "v3.11.x-private-patches-1", Timestamp: timestamp},
 			wantTagged: true,
 		},
 		{

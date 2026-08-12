@@ -66,6 +66,19 @@ expect_tag_reject() {
   fi
 }
 
+expect_convention_reject() {
+  local name="$1" dir="$2" tag="$3" output
+  if output=$(run_selector "$dir" 2>&1); then
+    echo "FAIL: $name: selector accepted tag '$tag' as '$output'" >&2
+    failures=$((failures + 1))
+  elif [[ $output == *"SemVer-like tag '$tag'"* && $output == *"Nitro release convention"* ]]; then
+    echo "PASS: $name"
+  else
+    echo "FAIL: $name: unexpected error '$output'" >&2
+    failures=$((failures + 1))
+  fi
+}
+
 repo="$tmp/repo"
 make_repo "$repo"
 sha=$(git -C "$repo" rev-parse --short=7 HEAD)
@@ -83,6 +96,17 @@ git -C "$repo" tag v3.11.3
 expect "stable tag preferred over its prerelease" \
   "$(run_selector "$repo")" "v3.11.3||$sha|v3.11.3-$sha"
 git -C "$repo" tag -d v3.11.3 v3.11.3-rc.1 >/dev/null
+
+while read -r tag; do
+  git -C "$repo" tag "$tag"
+  expect "Nitro prerelease tag $tag" \
+    "$(run_selector "$repo")" "$tag||$sha|$tag-$sha"
+  git -C "$repo" tag -d "$tag" >/dev/null
+done <<'EOF'
+v3.12.0-dev.1
+v3.12.0-dev.1.private.2
+v3.12.0-rc.1.private.2
+EOF
 
 git -C "$repo" tag consensus-v61
 expect "consensus tag" \
@@ -103,11 +127,34 @@ done <<'EOF'
 v3.11
 3.11.3
 v2024.01.10
-v3.11.3-patch_1
+v3.11.x-private-patches-1
 arbitrary-tag
 EOF
 
-for tag in v1.2.3+abc release/foo+bar; do
+while read -r tag; do
+  git -C "$repo" tag "$tag"
+  expect_convention_reject "SemVer-like tag $tag is rejected" "$repo" "$tag"
+  git -C "$repo" tag -d "$tag" >/dev/null
+done <<'EOF'
+v3.11.3-dev.0
+v3.11.3-dev.01
+v3.11.3-dev.1.private.0
+v3.11.3-dev.1.private.01
+v3.11.3-rc.0
+v3.11.3-alpha.1
+v3.11.3-beta.1
+v3.11.3-alice.1
+v3.11.3-rc.1-abcdef
+v3.11.3-abcdef
+v3.11.3-private.1
+v3.11.3-private-patches-1
+v3.11.3-patch_1
+v3.11.3-rc.1.private.1.extra
+v3.11.3-rc.1+build
+v3.11.3+build
+EOF
+
+for tag in release/foo+bar; do
   git -C "$repo" tag "$tag"
   expect_tag_reject "Docker-incompatible tag $tag is rejected" \
     "$repo" "$tag" "$tag-$sha"

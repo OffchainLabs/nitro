@@ -6,8 +6,18 @@
 #   NITRO_COMMIT   short commit SHA of HEAD ("latest" when unavailable)
 #   IMAGE_TAG      hyphenated tag for Docker artifacts, which cannot contain
 #                  the "+" separating the commit in the binary's revision
+# Tags with a canonical SemVer release core must follow Nitro's stable/dev/rc
+# convention. Tags without such a core are opaque Docker tag inputs.
 
 nitro_ci_select_version() {
+  # A tag with a canonical SemVer release core is an attempted release even if
+  # its suffix is malformed. Enforce Nitro's convention so typos cannot bypass
+  # validation by becoming non-SemVer. Ordering remains standard SemVer in Go.
+  local number='(0|[1-9][0-9]*)'
+  local release_core="^v${number}\.${number}\.${number}([-+].*)?\$"
+  local positive='[1-9][0-9]*'
+  local nitro_release="^v${number}\.${number}\.${number}(-(dev|rc)\.${positive}(\.private\.${positive})?)?\$"
+
   NITRO_COMMIT=$(git rev-parse --short=7 HEAD 2>/dev/null || true)
   if [ -z "$NITRO_COMMIT" ]; then
     NITRO_COMMIT="latest"
@@ -17,7 +27,10 @@ nitro_ci_select_version() {
   # prereleases (the temporary "_" suffix makes it sort after them).
   NITRO_TAG=$(git tag --points-at HEAD | sed '/-/!s/$/_/' | sort -rV | sed 's/_$//' | head -n 1)
 
-  if [ -z "$NITRO_TAG" ]; then
+  if [ -n "$NITRO_TAG" ] && [[ $NITRO_TAG =~ $release_core ]] && ! [[ $NITRO_TAG =~ $nitro_release ]]; then
+    echo "ERROR: SemVer-like tag '${NITRO_TAG}' does not follow the Nitro release convention; expected vMAJOR.MINOR.PATCH with optional -dev.N, -dev.N.private.N, -rc.N, or -rc.N.private.N" >&2
+    return 1
+  elif [ -z "$NITRO_TAG" ]; then
     # Untagged: name the branch that triggered the build. Webhook builds carry
     # it in CODEBUILD_WEBHOOK_HEAD_REF; manual builds may name one in
     # CODEBUILD_SOURCE_VERSION, which can instead hold a commit hash and is
