@@ -15,15 +15,15 @@ import (
 
 // Config holds the S3 configuration for syncing data.
 type Config struct {
-	s3client.Config   `koanf:",squash"`
-	Bucket            string `koanf:"bucket"`
-	ObjectKey         string `koanf:"object-key"`
-	ChunkSizeMB       int    `koanf:"chunk-size-mb"`
-	MaxRetries        int    `koanf:"max-retries"`
-	Concurrency       int    `koanf:"concurrency"`
-	MaxFileSizeMB     int    `koanf:"max-file-size-mb"`
-	PreallocateMemory bool   `koanf:"preallocate-memory"`
-	DownloadDir       string `koanf:"download-dir"`
+	s3client.Config          `koanf:",squash"`
+	Bucket                   string `koanf:"bucket"`
+	ObjectKey                string `koanf:"object-key"`
+	ChunkSizeMB              int    `koanf:"chunk-size-mb"`
+	MaxRetries               int    `koanf:"max-retries"`
+	Concurrency              int    `koanf:"concurrency"`
+	MaxFileSizeMB            int    `koanf:"max-file-size-mb"`
+	DisablePreallocateMemory bool   `koanf:"disable-preallocate-memory"`
+	DownloadDir              string `koanf:"download-dir"`
 }
 
 // ConfigAddOptions adds S3 configuration flags to the given flag set.
@@ -35,7 +35,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".concurrency", DefaultS3Config.Concurrency, "S3 multipart download concurrency")
 	f.Int(prefix+".max-retries", DefaultS3Config.MaxRetries, "maximum retries for S3 part body download")
 	f.Int(prefix+".max-file-size-mb", DefaultS3Config.MaxFileSizeMB, "maximum allowed S3 object size in MB; if the object is larger, skip the download (0 disables the check)")
-	f.Bool(prefix+".preallocate-memory", DefaultS3Config.PreallocateMemory, "preallocate the data structures the downloaded object is loaded into at startup, so reloads reuse them instead of allocating per download; engages only when max-file-size-mb is set")
+	f.Bool(prefix+".disable-preallocate-memory", DefaultS3Config.DisablePreallocateMemory, "do not preallocate the data structures the downloaded object is loaded into at startup; when preallocation is on (the default), reloads reuse those structures instead of allocating per download, engaging only when max-file-size-mb is set")
 	f.String(prefix+".download-dir", DefaultS3Config.DownloadDir, "directory for the temporary download file, which must have room for the whole object (required); point it at real disk — on many Linux systems /tmp is RAM-backed tmpfs, which would keep the download in memory")
 }
 
@@ -67,9 +67,8 @@ func (c *Config) Validate() error {
 }
 
 var DefaultS3Config = Config{
-	ChunkSizeMB:       32,
-	MaxRetries:        3,
-	Concurrency:       10,
-	MaxFileSizeMB:     0,
-	PreallocateMemory: true,
+	ChunkSizeMB:   32,
+	MaxRetries:    3,
+	Concurrency:   10,
+	MaxFileSizeMB: 0,
 }

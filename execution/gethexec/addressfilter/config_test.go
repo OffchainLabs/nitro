@@ -34,7 +34,7 @@ func TestConfigNumPreallocatedHashes(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := FileConfig{Config: s3syncer.Config{PreallocateMemory: tt.prealloc, MaxFileSizeMB: tt.maxMB}, MinBytesPerHashEntry: tt.minBytes}
+			cfg := FileConfig{Config: s3syncer.Config{DisablePreallocateMemory: !tt.prealloc, MaxFileSizeMB: tt.maxMB}, MinBytesPerHashEntry: tt.minBytes}
 			if got := cfg.numPreallocatedHashes(); got != tt.want {
 				t.Errorf("numPreallocatedHashes() = %d, want %d", got, tt.want)
 			}
