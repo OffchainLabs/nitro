@@ -10,15 +10,14 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/util"
 )
 
 // Values accepted by InitConfig.GenesisMode. The default (empty) selects the
-// first configured genesis source in the order: genesis, genesis-json-file,
-// genesis-json-file-directory.
+// first configured genesis source in the order: genesis-json,
+// genesis-json-file, genesis-json-file-directory.
 const (
 	GenesisModeDefault   = ""
 	GenesisModeInline    = "inline"
@@ -42,7 +41,7 @@ type InitConfig struct {
 	ImportWasm                    bool          `koanf:"import-wasm"`
 	AccountsPerSync               uint          `koanf:"accounts-per-sync"`
 	ImportFile                    string        `koanf:"import-file"`
-	Genesis                       core.Genesis  `koanf:"genesis"`
+	GenesisJson                   string        `koanf:"genesis-json"`
 	GenesisMode                   string        `koanf:"genesis-mode"`
 	GenesisJsonFile               string        `koanf:"genesis-json-file"`
 	GenesisJsonFileDirectory      string        `koanf:"genesis-json-file-directory"`
@@ -75,7 +74,7 @@ var InitConfigDefault = InitConfig{
 	Empty:                         false,
 	ImportWasm:                    false,
 	ImportFile:                    "",
-	Genesis:                       core.Genesis{},
+	GenesisJson:                   "",
 	GenesisMode:                   GenesisModeDefault,
 	GenesisJsonFile:               "",
 	GenesisJsonFileDirectory:      "",
@@ -110,10 +109,10 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".import-wasm", InitConfigDefault.ImportWasm, "if set, import the wasm directory when downloading a database (contains executable code - only use with highly trusted source)")
 	f.Bool(prefix+".then-quit", InitConfigDefault.ThenQuit, "quit after init is done")
 	f.String(prefix+".import-file", InitConfigDefault.ImportFile, "path for json data to import")
+	f.String(prefix+".genesis-json", InitConfigDefault.GenesisJson, "genesis document identical in format to a genesis json file; in a config file it may be a nested json object; quote large numbers as hex strings")
 	f.String(prefix+".genesis-json-file", InitConfigDefault.GenesisJsonFile, "path for genesis json file")
 	f.String(prefix+".genesis-json-file-directory", InitConfigDefault.GenesisJsonFileDirectory, "directory path for genesis json files - will search for a file named by the chain ID")
-	f.String(prefix+".genesis-mode", InitConfigDefault.GenesisMode, "genesis source to use: \"inline\" ("+prefix+".genesis), \"file\" ("+prefix+".genesis-json-file) or \"directory\" ("+prefix+".genesis-json-file-directory); empty selects the first configured of those, in that order. "+
-		"The "+prefix+".genesis config field holds a genesis document identical in format to a genesis json file; quote large numbers as hex strings")
+	f.String(prefix+".genesis-mode", InitConfigDefault.GenesisMode, "genesis source to use: \"inline\" ("+prefix+".genesis-json), \"file\" ("+prefix+".genesis-json-file) or \"directory\" ("+prefix+".genesis-json-file-directory); empty selects the first configured of those, in that order")
 	f.Uint(prefix+".accounts-per-sync", InitConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
 	f.String(prefix+".prune", InitConfigDefault.Prune, "pruning for a given use: \"full\" for full nodes serving RPC requests, or \"validator\" for validators")
 	f.Bool(prefix+".prune-parallel-storage-traversal", InitConfigDefault.PruneParallelStorageTraversal, "if true: use parallel pruning per account")
@@ -136,15 +135,16 @@ func (c *InitConfig) Validate() error {
 	if c.Empty && c.GenesisJsonFile != "" {
 		return fmt.Errorf("init config cannot be both empty and have a genesis json file specified")
 	}
-	if c.Empty && c.HasInlineGenesis() {
-		return fmt.Errorf("init config cannot be both empty and have an inline genesis (genesis config field) specified")
+	if c.Empty && c.GenesisJson != "" {
+		return fmt.Errorf("init config cannot be both empty and have an inline genesis (genesis-json) specified")
 	}
 	c.GenesisMode = strings.ToLower(c.GenesisMode)
 	switch c.GenesisMode {
 	case GenesisModeDefault:
+		// no genesis source forced - the first configured one is used
 	case GenesisModeInline:
-		if !c.HasInlineGenesis() {
-			return fmt.Errorf("genesis-mode is %q but the genesis config field is empty", GenesisModeInline)
+		if c.GenesisJson == "" {
+			return fmt.Errorf("genesis-mode is %q but genesis-json is empty", GenesisModeInline)
 		}
 	case GenesisModeFile:
 		if c.GenesisJsonFile == "" {
@@ -187,15 +187,6 @@ func (c *InitConfig) Validate() error {
 
 func (c *InitConfig) IsReorgRequested() bool {
 	return c.ReorgToBatch >= 0 || c.ReorgToBlockBatch >= 0 || c.ReorgToMessageBatch >= 0
-}
-
-// HasInlineGenesis reports whether the genesis config field holds a genesis
-// document. It checks the meaningful fields instead of comparing against an
-// empty struct because core.Genesis carries an unexported cache field. The
-// deprecated Config field counts as present so it is rejected with a clear
-// error at use instead of being silently ignored.
-func (c *InitConfig) HasInlineGenesis() bool {
-	return c.Genesis.SerializedChainConfig != "" || len(c.Genesis.Alloc) > 0 || c.Genesis.ArbOSInit != nil || c.Genesis.Config != nil //nolint:staticcheck // deliberate check of the deprecated field
 }
 
 var (

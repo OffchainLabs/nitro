@@ -5,6 +5,7 @@ package config
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -152,7 +154,7 @@ const testInlineGenesisConfig = `{
 	"persistent": {"chain": "/tmp/data"},
 	"chain": {"id": 42170},
 	"init": {
-		"genesis": {
+		"genesis-json": {
 			"gasLimit": "0x11e1a300",
 			"difficulty": "0x0",
 			"alloc": {
@@ -181,7 +183,8 @@ func TestInlineGenesisConfigFile(t *testing.T) {
 	if nodeConfig.Init.GenesisJsonFile != "" {
 		Fail(t, "expected genesis json file to stay empty, got", nodeConfig.Init.GenesisJsonFile)
 	}
-	gen := nodeConfig.Init.Genesis
+	var gen core.Genesis
+	Require(t, json.Unmarshal([]byte(nodeConfig.Init.GenesisJson), &gen))
 	if gen.GasLimit != 0x11e1a300 {
 		Fail(t, "wrong gas limit", gen.GasLimit)
 	}
@@ -211,29 +214,17 @@ func TestInlineGenesisAsJsonString(t *testing.T) {
 	args := []string{
 		"--persistent.chain", "/tmp/data",
 		"--chain.id", "42170",
-		"--conf.string", `{"init":{"genesis":"{\"gasLimit\":\"0x11e1a300\",\"difficulty\":\"0x0\",\"alloc\":{},\"serializedChainConfig\":\"{\\\"chainId\\\":42170}\"}"}}`,
+		"--init.genesis-json", `{"gasLimit":"0x11e1a300","difficulty":"0x0","alloc":{},"serializedChainConfig":"{\"chainId\":42170}"}`,
 	}
 	nodeConfig, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
-	if nodeConfig.Init.Genesis.GasLimit != 0x11e1a300 {
-		Fail(t, "wrong gas limit", nodeConfig.Init.Genesis.GasLimit)
+	var gen core.Genesis
+	Require(t, json.Unmarshal([]byte(nodeConfig.Init.GenesisJson), &gen))
+	if gen.GasLimit != 0x11e1a300 {
+		Fail(t, "wrong gas limit", gen.GasLimit)
 	}
 	if nodeConfig.Init.Empty {
 		Fail(t, "expected inline genesis to disable the empty init default")
-	}
-}
-
-func TestInlineGenesisMalformed(t *testing.T) {
-	configFile := filepath.Join(t.TempDir(), "config.json")
-	badConfig := strings.Replace(testInlineGenesisConfig, `"0xde0b6b3a7640000"`, `"not-a-number"`, 1)
-	Require(t, WriteToConfigFile(configFile, badConfig))
-
-	_, _, err := ParseNode(context.Background(), []string{"--conf.file", configFile})
-	if err == nil {
-		Fail(t, "expected malformed inline genesis to fail config parsing")
-	}
-	if !strings.Contains(err.Error(), "genesis") {
-		Fail(t, "expected error to mention genesis, got:", err.Error())
 	}
 }
 

@@ -888,30 +888,26 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 
 // resolveGenesisDocument picks the genesis document to init from, honoring
 // init.genesis-mode. With the default (empty) mode the first configured
-// source wins, in the order: genesis (inline), genesis-json-file,
+// source wins, in the order: genesis-json (inline), genesis-json-file,
 // genesis-json-file-directory. Returns nil when no document is configured.
 func resolveGenesisDocument(initConfig *conf.InitConfig, chainId uint64, otherInitMethodSupplied bool) (*core.Genesis, error) {
-	readGenesisFile := func(genesisJsonFile string) (*core.Genesis, error) {
-		genesisJson, err := os.ReadFile(genesisJsonFile)
-		if err != nil {
-			return nil, err
-		}
+	parseGenesis := func(genesisJson []byte) (*core.Genesis, error) {
 		var gen core.Genesis
 		if err := json.Unmarshal(genesisJson, &gen); err != nil {
 			return nil, err
 		}
 		return &gen, nil
 	}
-	inlineGenesis := func() *core.Genesis {
-		// use a copy: reading the chain config caches it inside the struct
-		// and must not mutate the live config, which is compared field by
-		// field on hot reload
-		gen := initConfig.Genesis
-		return &gen
+	readGenesisFile := func(genesisJsonFile string) (*core.Genesis, error) {
+		genesisJson, err := os.ReadFile(genesisJsonFile)
+		if err != nil {
+			return nil, err
+		}
+		return parseGenesis(genesisJson)
 	}
 	switch initConfig.GenesisMode {
 	case conf.GenesisModeInline:
-		return inlineGenesis(), nil
+		return parseGenesis([]byte(initConfig.GenesisJson))
 	case conf.GenesisModeFile:
 		return readGenesisFile(initConfig.GenesisJsonFile)
 	case conf.GenesisModeDirectory:
@@ -926,11 +922,11 @@ func resolveGenesisDocument(initConfig *conf.InitConfig, chainId uint64, otherIn
 		}
 		return readGenesisFile(genesisJsonFile)
 	}
-	if initConfig.HasInlineGenesis() {
+	if initConfig.GenesisJson != "" {
 		if initConfig.GenesisJsonFile != "" {
-			log.Warn("both init.genesis and init.genesis-json-file are configured, using init.genesis; set init.genesis-mode to choose explicitly", "ignoredFile", initConfig.GenesisJsonFile)
+			log.Warn("both init.genesis-json and init.genesis-json-file are configured, using init.genesis-json; set init.genesis-mode to choose explicitly", "ignoredFile", initConfig.GenesisJsonFile)
 		}
-		return inlineGenesis(), nil
+		return parseGenesis([]byte(initConfig.GenesisJson))
 	}
 	if initConfig.GenesisJsonFile != "" {
 		return readGenesisFile(initConfig.GenesisJsonFile)

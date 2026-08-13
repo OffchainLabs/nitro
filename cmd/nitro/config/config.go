@@ -5,6 +5,7 @@ package config
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -233,7 +234,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	l2ChainName := k.String("chain.name")
 	l2ChainInfoFiles := k.Strings("chain.info-files")
 	l2ChainInfoJson := k.String("chain.info-json")
-	l2GenesisConfigured := k.String("init.genesis-json-file") != "" || k.Get("init.genesis") != nil
+	l2GenesisConfigured := k.String("init.genesis-json-file") != "" || k.Get("init.genesis-json") != nil
 	// #nosec G115
 	err = applyChainParameters(k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2GenesisConfigured)
 	if err != nil {
@@ -253,6 +254,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	}
 
 	if err = arbnode.FixCompressionLevelsCLIParsing("node.batch-poster.compression-levels", k); err != nil {
+		return nil, nil, err
+	}
+
+	if err = fixInlineGenesisParsing("init.genesis-json", k); err != nil {
 		return nil, nil, err
 	}
 
@@ -314,6 +319,24 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l2DevWallet, nil
 }
 
+// fixInlineGenesisParsing lets a config file hold the inline genesis as a
+// nested json object (so genesis file contents can be pasted verbatim) while
+// the config struct stores it as a string: a map found at the key is
+// re-serialized and put back as its json string. A string (flag, env var,
+// conf.string) is used as-is.
+func fixInlineGenesisParsing(path string, k *koanf.Koanf) error {
+	raw := k.Get(path)
+	genesisMap, ok := raw.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	genesisJson, err := json.Marshal(genesisMap)
+	if err != nil {
+		return fmt.Errorf("error re-encoding %s: %w", path, err)
+	}
+	return k.Load(confmap.Provider(map[string]interface{}{path: string(genesisJson)}, "."), nil)
+}
+
 func resolveGenesisJsonFileDirectory(nodeConfig *NodeConfig) error {
 	nodeConfig.Init.GenesisMode = strings.ToLower(nodeConfig.Init.GenesisMode)
 	genesisMode := nodeConfig.Init.GenesisMode
@@ -331,7 +354,7 @@ func resolveGenesisJsonFileDirectory(nodeConfig *NodeConfig) error {
 			return fmt.Errorf("init.genesis-mode is %q but chain id is not set", conf.GenesisModeDirectory)
 		}
 	default:
-		if nodeConfig.Init.GenesisJsonFile != "" || nodeConfig.Init.HasInlineGenesis() || nodeConfig.Chain.ID == 0 || nodeConfig.Init.GenesisJsonFileDirectory == "" {
+		if nodeConfig.Init.GenesisJsonFile != "" || nodeConfig.Init.GenesisJson != "" || nodeConfig.Chain.ID == 0 || nodeConfig.Init.GenesisJsonFileDirectory == "" {
 			return nil
 		}
 	}

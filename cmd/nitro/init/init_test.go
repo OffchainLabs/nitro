@@ -1568,7 +1568,7 @@ func TestCheckAndDownloadDBNoSnapshot(t *testing.T) {
 	require.False(t, downloaded)
 }
 
-func getInitHelper(t *testing.T, ownerAdress string, chainID uint64, emptyState bool, importFile, genesisJsonFile string, inlineGenesis *core.Genesis, useDevInit, skipInitDataReader bool) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, ethdb.Database, func(), error) {
+func getInitHelper(t *testing.T, ownerAdress string, chainID uint64, emptyState bool, importFile, genesisJsonFile, inlineGenesisJson string, useDevInit, skipInitDataReader bool) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, ethdb.Database, func(), error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1594,8 +1594,8 @@ func getInitHelper(t *testing.T, ownerAdress string, chainID uint64, emptyState 
 	if genesisJsonFile != "" {
 		nodeConfig.Init.GenesisJsonFile = genesisJsonFile
 	}
-	if inlineGenesis != nil {
-		nodeConfig.Init.Genesis = *inlineGenesis
+	if inlineGenesisJson != "" {
+		nodeConfig.Init.GenesisJson = inlineGenesisJson
 	}
 
 	if useDevInit {
@@ -1625,7 +1625,7 @@ func getInitHelper(t *testing.T, ownerAdress string, chainID uint64, emptyState 
 		nodeConfig.Init.Empty = false
 		nodeConfig.Init.ImportFile = ""
 		nodeConfig.Init.GenesisJsonFile = ""
-		nodeConfig.Init.Genesis = core.Genesis{}
+		nodeConfig.Init.GenesisJson = ""
 		nodeConfig.Init.DevInit = false
 	}
 
@@ -1641,7 +1641,7 @@ func TestSimpleGetInit(t *testing.T) {
 
 	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	expectedChainConfig := chaininfo.ArbitrumDevTestChainConfig()
-	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, "", "", nil, true, false)
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, "", "", "", true, false)
 	Require(t, err)
 	defer cleanup()
 
@@ -1685,7 +1685,7 @@ func TestGetInitSkipInitDataReader(t *testing.T) {
 
 	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	expectedChainConfig := chaininfo.ArbitrumRollupGoerliTestnetChainConfig()
-	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, "", "", nil, true, true)
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, "", "", "", true, true)
 	Require(t, err)
 	defer cleanup()
 
@@ -1709,7 +1709,7 @@ func TestGetInitWithEmpty(t *testing.T) {
 
 	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	expectedChainConfig := chaininfo.ArbitrumOneChainConfig()
-	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), true, "", "", nil, false, false)
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), true, "", "", "", false, false)
 	Require(t, err)
 	defer cleanup()
 
@@ -1757,7 +1757,7 @@ func TestGetInitWithImportFile(t *testing.T) {
 	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	importFile := "testdata/initFileContent.json"
 	expectedChainConfig := chaininfo.ArbitrumDevTestAnyTrustChainConfig()
-	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, importFile, "", nil, false, false)
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, importFile, "", "", false, false)
 	Require(t, err)
 	defer cleanup()
 
@@ -1802,7 +1802,7 @@ func TestGetInitWithGenesis(t *testing.T) {
 	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	genesisJsonFile := "testdata/testGenesis.json"
 	expectedChainIdNum := uint64(3503995874084926)
-	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainIdNum, false, "", genesisJsonFile, nil, false, false)
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainIdNum, false, "", genesisJsonFile, "", false, false)
 	Require(t, err)
 	defer cleanup()
 
@@ -1863,19 +1863,22 @@ func TestGetInitWithGenesis(t *testing.T) {
 	Require(t, err)
 }
 
-func makeInlineTestGenesis(t *testing.T, chainId uint64, cancunTime uint64) core.Genesis {
+func makeInlineTestGenesis(t *testing.T, chainId uint64, cancunTime uint64) string {
 	t.Helper()
 	chainConfigSerialized, err := json.Marshal(params.ChainConfig{
 		ChainID:    new(big.Int).SetUint64(chainId),
 		CancunTime: &cancunTime,
 	})
 	Require(t, err)
-	return core.Genesis{
+	gen := core.Genesis{
 		SerializedChainConfig: string(chainConfigSerialized),
 		GasLimit:              0,
 		Difficulty:            big.NewInt(0),
 		Alloc:                 core.GenesisAlloc{},
 	}
+	genesisBytes, err := gen.MarshalJSON()
+	Require(t, err)
+	return string(genesisBytes)
 }
 
 func TestGetInitWithInlineGenesis(t *testing.T) {
@@ -1888,7 +1891,7 @@ func TestGetInitWithInlineGenesis(t *testing.T) {
 	Require(t, json.Unmarshal(genesisJson, &gen))
 	expectedChainIdNum := uint64(3503995874084926)
 
-	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainIdNum, false, "", "", &gen, false, false)
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainIdNum, false, "", "", string(genesisJson), false, false)
 	Require(t, err)
 	defer cleanup()
 
@@ -1915,16 +1918,14 @@ func TestGetInitInlineGenesisPrecedence(t *testing.T) {
 	t.Parallel()
 
 	chainId := uint64(42161)
-	inlineGen := makeInlineTestGenesis(t, chainId, 111)
-	fileGen := makeInlineTestGenesis(t, chainId, 222)
-	genesisBytes, err := fileGen.MarshalJSON()
-	Require(t, err)
+	inlineGenJson := makeInlineTestGenesis(t, chainId, 111)
+	fileGenJson := makeInlineTestGenesis(t, chainId, 222)
 	genesisFile := filepath.Join(t.TempDir(), "genesis.json")
-	Require(t, os.WriteFile(genesisFile, genesisBytes, 0600))
+	Require(t, os.WriteFile(genesisFile, []byte(fileGenJson), 0600))
 
 	nodeConfig := config.NodeConfigDefault
 	nodeConfig.Chain.ID = chainId
-	nodeConfig.Init.Genesis = inlineGen
+	nodeConfig.Init.GenesisJson = inlineGenJson
 	nodeConfig.Init.GenesisJsonFile = genesisFile
 
 	// default mode: the inline genesis wins over the file
@@ -1952,11 +1953,24 @@ func TestGetInitInlineGenesisPrecedence(t *testing.T) {
 
 	// no inline genesis: default mode falls back to the file
 	nodeConfig.Init.GenesisMode = conf.GenesisModeDefault
-	nodeConfig.Init.Genesis = core.Genesis{}
+	nodeConfig.Init.GenesisJson = ""
 	_, chainConfig, _, err = GetInit(&nodeConfig, nil)
 	Require(t, err)
 	if *chainConfig.CancunTime != 222 {
 		t.Fatalf("expected fallback to genesis file when inline genesis is absent, got CancunTime %d", *chainConfig.CancunTime)
+	}
+}
+
+func TestGetInitInlineGenesisMalformed(t *testing.T) {
+	t.Parallel()
+
+	nodeConfig := config.NodeConfigDefault
+	nodeConfig.Chain.ID = 42161
+	nodeConfig.Init.GenesisJson = `{"gasLimit":"0x0","difficulty":"0x0","alloc":{"0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E":{"balance":"not-a-number"}}}`
+
+	_, _, _, err := GetInit(&nodeConfig, nil)
+	if err == nil {
+		t.Fatal("expected malformed inline genesis to fail at init")
 	}
 }
 
@@ -1965,7 +1979,7 @@ func TestGetInitInlineGenesisWrongChainId(t *testing.T) {
 
 	nodeConfig := config.NodeConfigDefault
 	nodeConfig.Chain.ID = 42161
-	nodeConfig.Init.Genesis = makeInlineTestGenesis(t, 42162, 0)
+	nodeConfig.Init.GenesisJson = makeInlineTestGenesis(t, 42162, 0)
 
 	_, _, _, err := GetInit(&nodeConfig, nil)
 	if err == nil {
@@ -1981,7 +1995,7 @@ func TestGetInitInlineGenesisConflictsWithDevInit(t *testing.T) {
 
 	nodeConfig := config.NodeConfigDefault
 	nodeConfig.Chain.ID = 42161
-	nodeConfig.Init.Genesis = makeInlineTestGenesis(t, 42161, 0)
+	nodeConfig.Init.GenesisJson = makeInlineTestGenesis(t, 42161, 0)
 	nodeConfig.Init.DevInit = true
 
 	_, _, _, err := GetInit(&nodeConfig, nil)
@@ -1997,7 +2011,7 @@ func TestInitConfigInlineGenesisValidation(t *testing.T) {
 	gen := makeInlineTestGenesis(t, 42161, 0)
 
 	initConfig := conf.InitConfigDefault
-	initConfig.Genesis = gen
+	initConfig.GenesisJson = gen
 	initConfig.Empty = true
 	err := initConfig.Validate()
 	if err == nil || !strings.Contains(err.Error(), "cannot be both empty") {
@@ -2023,8 +2037,85 @@ func TestInitConfigInlineGenesisValidation(t *testing.T) {
 	// mode values are case-insensitive
 	initConfig = conf.InitConfigDefault
 	initConfig.GenesisMode = "INLINE"
-	initConfig.Genesis = gen
+	initConfig.GenesisJson = gen
 	Require(t, initConfig.Validate())
+}
+
+// TestInlineGenesisEndToEnd joins the two halves the other tests cover
+// separately: a single config file with a nested genesis-json object goes
+// through config.ParseNode and the result initializes a real database with
+// the genesis block built from the inline document.
+func TestInlineGenesisEndToEnd(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	devChainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	chainConfigSerialized, err := json.Marshal(devChainConfig)
+	Require(t, err)
+	fundedAddress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	nodeCfg := map[string]interface{}{
+		"persistent":   map[string]interface{}{"chain": t.TempDir()},
+		"chain":        map[string]interface{}{"id": devChainConfig.ChainID.Uint64()},
+		"parent-chain": map[string]interface{}{"id": 1337},
+		"node":         map[string]interface{}{"parent-chain-reader": map[string]interface{}{"enable": false}},
+		"execution":    map[string]interface{}{"forwarding-target": "null"},
+		"init": map[string]interface{}{
+			"genesis-json": map[string]interface{}{
+				"gasLimit":              "0x0",
+				"difficulty":            "0x0",
+				"alloc":                 map[string]interface{}{fundedAddress: map[string]interface{}{"balance": "0x3635c9adc5dea00000"}},
+				"serializedChainConfig": string(chainConfigSerialized),
+			},
+		},
+	}
+	cfgBytes, err := json.Marshal(nodeCfg)
+	Require(t, err)
+	configFile := filepath.Join(t.TempDir(), "config.json")
+	Require(t, os.WriteFile(configFile, cfgBytes, 0600))
+
+	nodeConfig, _, err := config.ParseNode(ctx, []string{"--conf.file", configFile})
+	Require(t, err)
+
+	if nodeConfig.Init.GenesisJson == "" {
+		t.Fatal("expected the nested genesis-json object to populate Init.GenesisJson")
+	}
+	if nodeConfig.Init.Empty {
+		t.Fatal("expected inline genesis to disable the empty init default")
+	}
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+	defer stack.Close()
+
+	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme
+	l1Client := ethclient.NewClient(stack.Attach())
+
+	_, _, l2BlockChain, _, err := OpenInitializeExecutionDB(
+		ctx,
+		stack,
+		nodeConfig,
+		new(big.Int).SetUint64(nodeConfig.Chain.ID),
+		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
+		nil,
+		&nodeConfig.Persistent,
+		l1Client,
+		chaininfo.RollupAddresses{},
+	)
+	Require(t, err)
+
+	genesisBlock := l2BlockChain.Genesis()
+	if genesisBlock == nil {
+		t.Fatal("expected genesis block to be built from the inline genesis")
+	}
+	statedb, err := l2BlockChain.State()
+	Require(t, err)
+	if statedb.GetBalance(common.HexToAddress(fundedAddress)).IsZero() {
+		t.Fatal("expected the inline genesis alloc account to be funded in genesis state")
+	}
 }
 
 func TestGetInitWithChainconfigInDB(t *testing.T) {
@@ -2033,7 +2124,7 @@ func TestGetInitWithChainconfigInDB(t *testing.T) {
 	// Force getInitHelper to store chainConfig to DB (similar to TestGetInitSkipInitDataReader)
 	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	expectedChainConfig := chaininfo.ArbitrumRollupGoerliTestnetChainConfig()
-	initDataReader, chainConfig, arbOsInit, executionDB, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, "", "", nil, true, true)
+	initDataReader, chainConfig, arbOsInit, executionDB, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, "", "", "", true, true)
 	Require(t, err)
 	defer cleanup()
 
