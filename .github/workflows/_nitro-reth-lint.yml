@@ -14,29 +14,38 @@ jobs:
   fmt:
     name: rustfmt
     runs-on: ocl-4cpu-16ram
-    timeout-minutes: 5
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
+      # Any cargo invocation (fmt included) loads the manifests of the whole
+      # local path-dep closure, which includes the wasmer submodule.
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt
-      - run: cargo +nightly fmt --all --check
+      # Plain fmt (not --all): --all would also format the path-based deps,
+      # i.e. crates/{prover,arbutil,brotli} and the vendored wasmer.
+      - run: cargo +nightly fmt --check
 
   clippy:
     name: clippy
     runs-on: ocl-16cpu-64ram
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
-      - name: Init reth-referenced submodules
-        working-directory: .
-        run: git submodule update --init --depth 1 --recursive -- brotli contracts contracts-local/src/precompiles
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
       - name: Install build deps
         run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
       - uses: dtolnay/rust-toolchain@1.93
@@ -57,15 +66,16 @@ jobs:
     # since arb-mel's tokio dev-dependency is not wasm-buildable.
     name: wasm
     runs-on: ocl-4cpu-16ram
-    timeout-minutes: 15
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
-      - name: Init reth-referenced submodules
-        working-directory: .
-        run: git submodule update --init --depth 1 --recursive -- brotli contracts contracts-local/src/precompiles
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
       - uses: dtolnay/rust-toolchain@1.93
         with:
           targets: wasm32-wasip1
@@ -79,7 +89,7 @@ jobs:
   docs:
     name: docs
     runs-on: ocl-16cpu-64ram
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       RUSTDOCFLAGS: "-D warnings"
     defaults:
@@ -87,9 +97,10 @@ jobs:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
-      - name: Init reth-referenced submodules
-        working-directory: .
-        run: git submodule update --init --depth 1 --recursive -- brotli contracts contracts-local/src/precompiles
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
       - name: Install build deps
         run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
       - uses: dtolnay/rust-toolchain@1.93

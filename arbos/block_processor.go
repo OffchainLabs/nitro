@@ -194,7 +194,7 @@ func (info *L1Info) L1BlockNumber() uint64 {
 	return info.l1BlockNumber
 }
 
-func createNewHeader(prevHeader *types.Header, l1info *L1Info, baseFee *big.Int, chainConfig *params.ChainConfig) *types.Header {
+func createNewHeader(prevHeader *types.Header, l1info *L1Info, baseFee *big.Int, _chainConfig *params.ChainConfig) *types.Header {
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
 	timestamp := uint64(0)

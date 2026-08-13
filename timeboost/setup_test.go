@@ -204,7 +204,7 @@ type testAccount struct {
 	txOpts      *bind.TransactOpts
 }
 
-func setupAccounts(t testing.TB, numAccounts uint64) ([]*testAccount, *simulated.Backend, string) {
+func setupAccounts(_t testing.TB, numAccounts uint64) ([]*testAccount, *simulated.Backend, string) {
 	genesis := make(core.GenesisAlloc)
 	gasLimit := uint64(100000000)
 
