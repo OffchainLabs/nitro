@@ -19,7 +19,7 @@ jobs:
   # --- Fast: Build + Lint only (required by can_proceed) ---
   fast:
     needs: changes
-    if: needs.changes.outputs.code_changed == 'true' || needs.changes.outputs.has_prior_success == 'false'
+    if: needs.changes.outputs.code_changed == 'true'
     uses: ./.github/workflows/_fast.yml
     secrets: inherit
 
@@ -37,15 +37,45 @@ jobs:
     uses: ./.github/workflows/_bold-legacy.yml
     secrets: inherit
 
+  # --- Run Nitro Reth tests (not required by can_proceed) ---
+  nitro-reth-tests:
+    needs: changes
+    if: needs.changes.outputs.nitro_reth_changed == 'true'
+    uses: ./.github/workflows/_nitro-reth-tests.yml
+    secrets: inherit
+
   # --- Full GO tests (not required by can_proceed) ---
   go-tests:
     needs: changes
-    if: needs.changes.outputs.code_changed == 'true' || needs.changes.outputs.has_prior_success == 'false'
+    if: needs.changes.outputs.code_changed == 'true'
     uses: ./.github/workflows/_standard-go-test-suite.yml
     secrets: inherit
 
+  # --- Record the tested tree so the merge queue can skip an identical re-run ---
+  record-tested-tree:
+    runs-on: ubuntu-4
+    timeout-minutes: 10
+    needs: go-tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Create tree marker
+        id: tree
+        run: |
+          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+          touch go-tests-passed
+
+      - name: Upload tree marker
+        uses: actions/upload-artifact@v6
+        with:
+          name: go-tests-passed-tree-${{ steps.tree.outputs.tree }}
+          path: go-tests-passed
+
   # --- MEL test modes: opt-in per-PR via the `test-mel` label. ---
-  # MEL triples runner contention on arbitrator-ci; see _mel-go-test-suite.yml.
+  # MEL triples runner contention on the go-tests runner pool; see _mel-go-test-suite.yml.
   mel-tests:
     if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'test-mel')
     uses: ./.github/workflows/_mel-go-test-suite.yml
@@ -54,7 +84,7 @@ jobs:
   # --- Validation tests (not required by can_proceed) ---
   validation-tests:
     needs: changes
-    if: needs.changes.outputs.code_changed == 'true' || needs.changes.outputs.has_prior_success == 'false'
+    if: needs.changes.outputs.code_changed == 'true'
     uses: ./.github/workflows/_validation-tests.yml
     secrets: inherit
 
@@ -66,7 +96,6 @@ jobs:
     secrets: inherit
     permissions:
       contents: read
-      pull-requests: write
     with:
       post_comment: true
       upload_report: false
@@ -74,6 +103,7 @@ jobs:
   # --- Ensure changelog is updated (required by can_proceed) ---
   changelog:
     needs: changes
+    if: needs.changes.outputs.reth_only != 'true'
     uses: ./.github/workflows/_changelog.yml
     secrets: inherit
     with:
@@ -82,15 +112,23 @@ jobs:
   can_proceed:
     name: can_proceed
     runs-on: ubuntu-4
-    needs: [fast, changelog]
+    timeout-minutes: 5
+    if: always()
+    needs: [changes, fast, changelog]
     steps:
-      - name: OK
-        run: exit 0
+      - name: Verify required jobs passed
+        run: |
+          if [[ "${{ needs.changelog.result }}" == "skipped" && "${{ needs.changes.outputs.reth_only }}" == "true" ]]; then
+            echo "Changelog skipped: reth-only PR"
+          elif [[ "${{ needs.changelog.result }}" != "success" ]]; then
+            exit 1
+          fi
+          [[ "${{ needs.fast.result }}" =~ ^(success|skipped)$ ]] || exit 1
 
   can_see_status:
-    # This job is just to make sure that the "can_proceed" job's status is visible
-    # on the pull request page, even if it is skipped due to all its dependencies being
-    # skipped. It does not depend on any other jobs, so it always runs.
+    # Depends on nothing, so it always runs and always reports a status on the
+    # pull request page regardless of which other jobs were skipped.
     runs-on: ubuntu-4
+    timeout-minutes: 5
     steps:
       - run: true

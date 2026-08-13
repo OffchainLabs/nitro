@@ -14,6 +14,7 @@ permissions:
 jobs:
   # Only run on schedule
   tests-scheduled:
+    if: github.event_name != 'schedule' || github.repository == 'OffchainLabs/nitro-private' || github.repository == 'OffchainLabs/nitro'
     strategy:
       fail-fast: false
       matrix:
@@ -34,19 +35,32 @@ jobs:
   # MEL test modes are gated out of default CI; run them nightly so master
   # coverage is preserved without blocking every PR.
   mel-tests-scheduled:
+    if: github.event_name != 'schedule' || github.repository == 'OffchainLabs/nitro-private' || github.repository == 'OffchainLabs/nitro'
     uses: ./.github/workflows/_mel-go-test-suite.yml
     secrets: inherit
+
+  # --- Upload nightly test results to Codecov for flaky-test tracking ---
+  codecov:
+    needs: [tests-scheduled, mel-tests-scheduled]
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/_codecov.yml
+    secrets: inherit
+    with:
+      post_comment: false
+      upload_report: true
+      report-name: Nightly CI Test Results
 
   notify-on-failure:
     name: Notify Slack on failure
     needs: [tests-scheduled, mel-tests-scheduled]
     runs-on: ubuntu-4
+    timeout-minutes: 10
     if: ${{ failure() }}
     env:
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - name: Send Slack notification
-        uses: slackapi/slack-github-action@91efab103c0de0a537f72a35f6b8cda0ee76bf0a  # v2.1.1
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c  # v3.0.3
         with:
           errors: true
           method: chat.postMessage
@@ -54,5 +68,5 @@ jobs:
           payload: |
             {
               "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
-              "text": "⚠️ CI job failed! ${{ env.RUN_URL }}",
+              "text": "⚠️ CI job failed! ${{ env.RUN_URL }}"
             }

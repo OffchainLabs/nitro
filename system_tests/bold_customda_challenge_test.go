@@ -65,25 +65,34 @@ import (
 // Test with evil data but good certificate
 // Evil validator will fail at OSP with "Invalid preimage hash"
 func TestChallengeProtocolBOLDCustomDA_EvilDataGoodCert(t *testing.T) {
-	testChallengeProtocolBOLDCustomDA(t, EvilDataGoodCert)
+	testChallengeProtocolBOLDCustomDARecorderModes(t, EvilDataGoodCert)
 }
 
 // Test with evil data and evil certificate
 // Evil validator will fail at OSP with "WRONG_CERTIFICATE_HASH"
 func TestChallengeProtocolBOLDCustomDA_EvilDataEvilCert(t *testing.T) {
-	testChallengeProtocolBOLDCustomDA(t, EvilDataEvilCert)
+	testChallengeProtocolBOLDCustomDARecorderModes(t, EvilDataEvilCert)
 }
 
 // Test with certificate signed by untrusted key
 // Evil validator will lie about certificate validity and will fail at OSP with "CLAIMED_VALID_BUT_INVALID"
 func TestChallengeProtocolBOLDCustomDA_UntrustedSignerCert(t *testing.T) {
-	testChallengeProtocolBOLDCustomDA(t, UntrustedSignerCert)
+	testChallengeProtocolBOLDCustomDARecorderModes(t, UntrustedSignerCert)
 }
 
 // Test with valid certificate but validator claims it's invalid
 // Evil validator will fail at OSP with "CLAIMED_INVALID_BUT_VALID"
 func TestChallengeProtocolBOLDCustomDA_ValidCertClaimedInvalid(t *testing.T) {
-	testChallengeProtocolBOLDCustomDA(t, ValidCertClaimedInvalid)
+	testChallengeProtocolBOLDCustomDARecorderModes(t, ValidCertClaimedInvalid)
+}
+
+func testChallengeProtocolBOLDCustomDARecorderModes(t *testing.T, evilStrategy EvilStrategy) {
+	for _, tc := range challengeBlockRecorderTestCases(t) {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			testChallengeProtocolBOLDCustomDA(t, tc, evilStrategy)
+		})
+	}
 }
 
 // postBatchWithDA posts a batch through DA and returns the certificate
@@ -171,6 +180,7 @@ func createNodeBWithSharedContracts(
 	l1client *ethclient.Client,
 	assertionChain *sol.AssertionChain,
 	parentChain *parent.ParentChain,
+	execConfigOpts ...func(*gethexec.Config),
 ) (*ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, *node.Node) {
 	fatalErrChan := make(chan error, 10)
 
@@ -210,12 +220,15 @@ func createNodeBWithSharedContracts(
 	Require(t, err)
 
 	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
+	for _, opt := range execConfigOpts {
+		opt(execConfig)
+	}
 	Require(t, execConfig.Validate())
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(&execConfig.Caching)
 	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2executionDB, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, &execConfig.TxIndexer, 0, execConfig.ExposeMultiGas)
 	Require(t, err)
 
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, containers.Some(l1client), NewCommonConfigFetcher(execConfig), 0, parentChain)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, containers.Some(l1client), NewCommonConfigFetcher(execConfig), 0, parentChain, fatalErrChan)
 	Require(t, err)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
@@ -231,7 +244,7 @@ func createNodeBWithSharedContracts(
 	return l2client, l2node, execNode, l2stack
 }
 
-func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, spawnerOpts ...server_arb.SpawnerOption) {
+func testChallengeProtocolBOLDCustomDA(t *testing.T, recorderCase blockRecorderTestCase, evilStrategy EvilStrategy, spawnerOpts ...server_arb.SpawnerOption) {
 	goodDir, err := os.MkdirTemp("", "good_*")
 	Require(t, err)
 	evilDir, err := os.MkdirTemp("", "evil_*")
@@ -326,7 +339,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 	// Create L2 node A
 	l2info, l2nodeA, l2execNodeA, _, l2stackA, assertionChain, _ := createL2NodeWithRollupAddresses(
 		t, ctx, true, nodeConfigA, l2chainConfig, l2info,
-		l1info, l1client, addresses, false, asserterOpts, signerCfg,
+		l1info, l1client, addresses, false, asserterOpts, signerCfg, withBlockRecorderTestCase(recorderCase),
 	)
 	defer l2nodeA.StopAndWait()
 
@@ -358,6 +371,7 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, evilStrategy EvilStrategy, 
 		l1client,
 		assertionChain,
 		parentChain,
+		withBlockRecorderTestCase(recorderCase),
 	)
 	defer l2nodeB.StopAndWait()
 	_ = l2clientB // suppress unused variable warning

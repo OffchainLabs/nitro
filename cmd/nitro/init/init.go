@@ -40,6 +40,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -60,9 +61,17 @@ import (
 
 var errNotFound = errors.New("file not found")
 
-// taken from wasmer's lib/types/src/serialize.rs: MetadataHeader::CURRENT_VERSION
-const WasmerSerializeVersion = 16
+// mirrors wasmer's MetadataHeader::CURRENT_VERSION (lib/types/src/serialize.rs)
+const WasmerSerializeVersion = 17
 const InitialWasmerSerializeVersion = 8
+
+// Version of the WAVM module wire format used for activated Stylus programs under
+// the activatedAsmWavm prefix in wasmdb. Bump together with the on-disk format in
+// crates/prover/src/wavm_serialize.rs. Old or missing entries are purged on startup.
+const WavmSerializeVersion uint32 = 1
+
+// Seam over the Rust FFI so tests can inject a mismatched version.
+var readRustWavmFormatVersion = programs.RustWavmFormatVersion
 
 func initializeAndDownloadInit(ctx context.Context, initConfig *conf.InitConfig, stack *node.Node) (string, func(), error) {
 	cleanUpTmp := func() {}
@@ -428,6 +437,25 @@ func databaseIsEmpty(db ethdb.Database) bool {
 	return !it.Next()
 }
 
+// wavmPrefixHasEntries reports whether any WAVM-prefixed key exists.
+func wavmPrefixHasEntries(db ethdb.Database) (bool, error) {
+	for _, prefix := range rawdb.WavmPrefixes() {
+		it := db.NewIterator(prefix, nil)
+		hasNext := it.Next()
+		err := it.Error()
+		it.Release()
+		// A transient I/O failure during the probe must not be misread as "no entries",
+		// which would skip the purge and leave stale entries in place for the decoder
+		if err != nil {
+			return false, fmt.Errorf("probe prefix %x: %w", prefix, err)
+		}
+		if hasNext {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func isWasmDB(path string) bool {
 	path = strings.ToLower(path) // lowers the path to handle case-insensitive file systems
 	path = filepath.Clean(path)
@@ -497,9 +525,20 @@ func deleteWasmEntries(db ethdb.Database, prefixes [][]byte, checkKeyLength bool
 						return fmt.Errorf("failed to write batch: %w", err)
 					}
 					batch.Reset()
+					// Without this, a transient storage error on the first batch
+					// would be silently dropped when the iterator is recreated,
+					// leaving the purge half-complete but the version key written.
+					if err := it.Error(); err != nil {
+						return fmt.Errorf("iterator error while purging prefix %v: %w", prefix, err)
+					}
 					it.Release()
 					it = db.NewIterator(prefix, key)
 				}
+			}
+			// Surface iterator I/O errors so a mid-traversal failure does not
+			// leave the DB in a half-purged state with the version key written.
+			if err := it.Error(); err != nil {
+				return fmt.Errorf("iterator error while purging prefix %v: %w", prefix, err)
 			}
 			return nil
 		}(); err != nil {
@@ -539,6 +578,75 @@ func validateOrUpgradeWasmerSerializeVersion(db ethdb.Database) error {
 		}
 	}
 	return nil
+}
+
+// reconcileWavmSerializeVersion makes the wasmdb's cached WAVM modules agree
+// with the current on-disk format version. It does not migrate data in place:
+//   - no wavm entries:       stamp the version key, no purge.
+//   - version key matches:   no-op.
+//   - key missing/mismatched (entries present): purge them, reset the rebuild
+//     marker, then stamp the current version.
+//
+// A missing key alongside existing entries means legacy bincode bytes, so it
+// counts as incompatible. Probing only wavm prefixes avoids a misleading purge
+// on nodes that carry only wasmer entries.
+//
+// purged is true when entries were deleted. A caller that stamps
+// RebuildingPositionKey=RebuildingDone after open MUST gate on it, or the
+// rebuild that recovers the purged entries is short-circuited on the same boot.
+func reconcileWavmSerializeVersion(db ethdb.Database) (purged bool, err error) {
+	// Fail fast on a Go/Rust build mismatch before touching the wasmdb: Go would
+	// purge on its own version while Rust rejects every new entry at LinkModule.
+	if rustVersion := readRustWavmFormatVersion(); rustVersion != WavmSerializeVersion {
+		return false, fmt.Errorf(
+			"WavmSerializeVersion mismatch between Go (%d) and Rust (%d); "+
+				"this is a build inconsistency. Rebuild both sides from the same revision",
+			WavmSerializeVersion, rustVersion,
+		)
+	}
+	hasEntries, err := wavmPrefixHasEntries(db)
+	if err != nil {
+		return false, fmt.Errorf("failed to probe wavm prefixes: %w", err)
+	}
+	if !hasEntries {
+		// Stamp the version so a later non-empty boot doesn't read the absence
+		// as legacy bincode and purge valid entries.
+		if err := rawdb.WriteWavmSerializeVersion(db, WavmSerializeVersion); err != nil {
+			return false, fmt.Errorf("failed to write wavm serialize version on wasmdb with no wavm entries: %w", err)
+		}
+		return false, nil
+	}
+	versionInDB, err := rawdb.ReadWavmSerializeVersion(db)
+	missing := false
+	if err != nil {
+		if rawdb.IsDbErrNotFound(err) {
+			missing = true
+		} else {
+			return false, fmt.Errorf("failed to retrieve wavm serialize version: %w", err)
+		}
+	}
+	if !missing && versionInDB == WavmSerializeVersion {
+		return false, nil
+	}
+	if missing {
+		log.Warn("No WavmSerializeVersion key found, removing old WAVM stylus module entries", "expected", WavmSerializeVersion)
+	} else {
+		log.Warn("Detected wavm serialize version mismatch, removing old WAVM stylus module entries", "found", versionInDB, "expected", WavmSerializeVersion)
+	}
+	prefixes := rawdb.WavmPrefixes()
+	if err := deleteWasmEntries(db, prefixes, false, 0); err != nil {
+		return false, fmt.Errorf("failed to purge wavm entries: %w", err)
+	}
+	log.Info("WAVM stylus module entries successfully removed.")
+	// Reset the rebuild marker so rebuildLocalWasm doesn't see a prior
+	// "done" and skip recovery of the entries we just purged.
+	if err := db.Delete(gethexec.RebuildingPositionKey); err != nil {
+		return false, fmt.Errorf("failed to reset rebuilding position after wavm purge: %w", err)
+	}
+	if err := rawdb.WriteWavmSerializeVersion(db, WavmSerializeVersion); err != nil {
+		return false, fmt.Errorf("failed to write wavm serialize version: %w", err)
+	}
+	return true, nil
 }
 
 // if db is not empty, validates if wasm database schema version matches current version
@@ -668,7 +776,7 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 		return executionDB, nil, l2BlockChain, false, err
 	}
 
-	err = recreateMissingStates(config, executionDB, l2BlockChain, cacheConfig)
+	err = recreateMissingStates(ctx, config, executionDB, l2BlockChain, cacheConfig)
 	if err != nil {
 		return executionDB, nil, l2BlockChain, false, fmt.Errorf("failed to recreate missing states: %w", err)
 	}
@@ -678,9 +786,9 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 	return executionDB, initDataReader, l2BlockChain, dbFreshlyCreated, err
 }
 
-func recreateMissingStates(config *config.NodeConfig, executionDB ethdb.Database, l2BlockChain *core.BlockChain, cacheConfig *core.BlockChainConfig) error {
+func recreateMissingStates(ctx context.Context, config *config.NodeConfig, executionDB ethdb.Database, l2BlockChain *core.BlockChain, cacheConfig *core.BlockChainConfig) error {
 	if config.Init.RecreateMissingStateFrom > 0 {
-		err := staterecovery.RecreateMissingStates(executionDB, l2BlockChain, cacheConfig, config.Init.RecreateMissingStateFrom)
+		err := staterecovery.RecreateMissingStates(ctx, executionDB, l2BlockChain, cacheConfig, config.Init.RecreateMissingStateFrom)
 		if err != nil {
 			return fmt.Errorf("failed to recreate missing states: %w", err)
 		}
@@ -952,19 +1060,26 @@ func downloadDB(ctx context.Context, stack *node.Node, config *config.NodeConfig
 }
 
 func openDownloadedExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, error) {
-	executionDB, wasmDB, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
+	opened, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to open executionDB: %w", err)
 	}
 
+	if opened.wavmPurged {
+		// Leave RebuildingPositionKey unset so rebuildLocalWasm runs the
+		// recovery on this boot; stamping done here would short-circuit it.
+		log.Info("WAVM entries were purged during open; rebuild will run instead of stamping done")
+		return opened.executionDB, opened.wasmDB, nil
+	}
+
 	// Rebuilding wasm store is not required when just starting out
-	err = gethexec.WriteToKeyValueStore(wasmDB, gethexec.RebuildingPositionKey, gethexec.RebuildingDone)
+	err = gethexec.WriteToKeyValueStore(opened.wasmDB, gethexec.RebuildingPositionKey, gethexec.RebuildingDone)
 	log.Info("Setting codehash position in rebuilding of wasm store to done")
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to set codehash position in rebuilding of wasm store to done: %w", err)
 	}
 
-	return executionDB, wasmDB, nil
+	return opened.executionDB, opened.wasmDB, nil
 }
 
 func OpenConsensusDB(stack *node.Node, config *config.NodeConfig) (ethdb.Database, error) {
@@ -982,35 +1097,52 @@ func OpenConsensusDB(stack *node.Node, config *config.NodeConfig) (ethdb.Databas
 	return consensusDB, nil
 }
 
-func openExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, error) {
+// openedExecutionDB bundles the outputs of openExecutionDB so callers can't
+// mix up the bool with another return value at the call site.
+type openedExecutionDB struct {
+	executionDB ethdb.Database
+	wasmDB      ethdb.Database
+	// wavmPurged is true when reconcileWavmSerializeVersion deleted
+	// entries on this open. Callers that stamp RebuildingPositionKey must
+	// gate on it, or the rebuild that recovers the purged entries is
+	// short-circuited on the same boot.
+	wavmPurged bool
+}
+
+// Opens l2chaindata + wasm DBs and runs schema/version validators.
+func openExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *core.BlockChainConfig, persistentConfig *conf.PersistentConfig) (*openedExecutionDB, error) {
 	chainData, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{AncientsDirectory: config.Persistent.Ancient, MetricsNamespace: "l2chaindata/", Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("l2chaindata")})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := dbutil.UnfinishedConversionCheck(chainData); err != nil {
-		return nil, nil, fmt.Errorf("l2chaindata unfinished database conversion check error: %w", err)
+		return nil, fmt.Errorf("l2chaindata unfinished database conversion check error: %w", err)
 	}
 
 	wasmDB, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{Cache: config.Execution.Caching.DatabaseCache, Handles: config.Persistent.Handles, MetricsNamespace: "wasm/", PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("wasm"), NoFreezer: true})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := validateOrUpgradeWasmStoreSchemaVersion(wasmDB); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := validateOrUpgradeWasmerSerializeVersion(wasmDB); err != nil {
-		return nil, nil, err
+		return nil, err
+	}
+	wavmPurged, err := reconcileWavmSerializeVersion(wasmDB)
+	if err != nil {
+		return nil, err
 	}
 	if err := dbutil.UnfinishedConversionCheck(wasmDB); err != nil {
-		return nil, nil, fmt.Errorf("wasm unfinished database conversion check error: %w", err)
+		return nil, fmt.Errorf("wasm unfinished database conversion check error: %w", err)
 	}
 	executionDB := rawdb.WrapDatabaseWithWasm(chainData, wasmDB)
 	_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, executionDB)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	return executionDB, wasmDB, nil
+	return &openedExecutionDB{executionDB: executionDB, wasmDB: wasmDB, wavmPurged: wavmPurged}, nil
 }
 
 func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, *core.BlockChain, *params.ChainConfig, error) {
@@ -1022,17 +1154,17 @@ func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, chainI
 					return nil, nil, nil, chainConfig, fmt.Errorf("database has chain ID %v but config has chain ID %v (are you sure this database is for the right chain?)", chainConfig.ChainID, chainId)
 				}
 
-				executionDB, wasmDB, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
+				opened, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
 				if err != nil {
 					return nil, nil, nil, chainConfig, err
 				}
 
-				l2BlockChain, err := gethexec.GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer, config.Execution.ExposeMultiGas)
+				l2BlockChain, err := gethexec.GetBlockChain(opened.executionDB, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer, config.Execution.ExposeMultiGas)
 				if err != nil {
 					return nil, nil, nil, chainConfig, err
 				}
 
-				return executionDB, wasmDB, l2BlockChain, chainConfig, nil
+				return opened.executionDB, opened.wasmDB, l2BlockChain, chainConfig, nil
 			}
 			readOnlyDb.Close()
 		} else if !dbutil.IsNotExistError(err) {

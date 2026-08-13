@@ -19,8 +19,14 @@ import (
 )
 
 func TestStylusTracer(t *testing.T) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testStylusTracer(t, recorderOpt)
+	})
+}
+
+func testStylusTracer(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	const jit = false
-	builder, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	l2info := builder.L2Info
@@ -158,6 +164,8 @@ func TestStylusTracer(t *testing.T) {
 			tx := l2info.PrepareTxTo("Owner", &to, l2info.TransferGas, nil, testCase.args)
 			err := l2client.SendTransaction(ctx, tx)
 			Require(t, err, "send transaction")
+			_, err = builder.L2.EnsureTxSucceeded(tx)
+			Require(t, err)
 
 			nativeResult := traceTransaction(tx.Hash(), "stylusTracer")
 			normalizeHostioTrace(nativeResult)

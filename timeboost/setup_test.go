@@ -5,7 +5,6 @@ package timeboost
 import (
 	"context"
 	"crypto/ecdsa"
-	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -24,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 type auctionSetup struct {
@@ -167,7 +167,7 @@ func setupBidderClient(
 			BidValidatorEndpoint:   bidValidatorEndpoint,
 			ArbitrumNodeEndpoint:   testSetup.endpoint,
 			Wallet: genericconf.WalletConfig{
-				PrivateKey: fmt.Sprintf("%x", account.privKey.D.Bytes()),
+				PrivateKey: testhelpers.PrivateKeyToHex(account.privKey),
 			},
 		}
 	}
@@ -204,7 +204,7 @@ type testAccount struct {
 	txOpts      *bind.TransactOpts
 }
 
-func setupAccounts(t testing.TB, numAccounts uint64) ([]*testAccount, *simulated.Backend, string) {
+func setupAccounts(_t testing.TB, numAccounts uint64) ([]*testAccount, *simulated.Backend, string) {
 	genesis := make(core.GenesisAlloc)
 	gasLimit := uint64(100000000)
 

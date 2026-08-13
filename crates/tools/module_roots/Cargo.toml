@@ -7,6 +7,6 @@ edition = "2024"
 arbutil = { path = "../../arbutil/" }
 prover = { path = "../../prover/" }
 eyre = "0.6.5"
-structopt = "0.3.23"
+clap = { version = "4.4.8", features = ["derive"] }
 
 [workspace]

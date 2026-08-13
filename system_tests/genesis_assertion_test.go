@@ -24,7 +24,8 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	dataposterconfig "github.com/offchainlabs/nitro/arbnode/dataposter/config"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/parent"
@@ -153,13 +154,14 @@ func createCompleteTestNodeOnL1(
 	l2infoIn info,
 	useExternalSigner bool,
 	enableCustomDA bool,
+	execConfigOpts ...func(*gethexec.Config),
 ) (
 	l2info info, currentNode *arbnode.Node, execNode *gethexec.ExecutionNode, l2client *ethclient.Client, l2stack *node.Node,
 	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 	assertionChain *sol.AssertionChain, stakeTokenAddr common.Address, asserterOpts *bind.TransactOpts, l2blockchain *core.BlockChain, addresses *chaininfo.RollupAddresses,
 ) {
 	// First set up L1 and deploy contracts
-	var signerCfg *dataposter.ExternalSignerCfg
+	var signerCfg *dataposterconfig.ExternalSignerConfig
 	l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr, asserterOpts, signerCfg = setupL1WithRollupAddresses(
 		t, ctx, rollupStackConf, useExternalSigner, nodeConfig, chainConfig, enableCustomDA,
 	)
@@ -168,7 +170,7 @@ func createCompleteTestNodeOnL1(
 	l2info, currentNode, execNode, l2client, l2stack, assertionChain, l2blockchain = createL2NodeWithRollupAddresses(
 		t, ctx, isSequencer, nodeConfig, chainConfig, l2infoIn,
 		l1info, l1client, addresses,
-		useExternalSigner, asserterOpts, signerCfg,
+		useExternalSigner, asserterOpts, signerCfg, execConfigOpts...,
 	)
 
 	return
@@ -185,7 +187,7 @@ func setupL1WithRollupAddresses(
 ) (
 	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 	addresses *chaininfo.RollupAddresses, stakeTokenAddr common.Address, asserterOpts *bind.TransactOpts,
-	signerCfg *dataposter.ExternalSignerCfg,
+	signerCfg *dataposterconfig.ExternalSignerConfig,
 ) {
 	var srv *externalsignertest.SignerServer
 	if useExternalSigner {
@@ -211,12 +213,13 @@ func setupL1WithRollupAddresses(
 
 	var err error
 	if useExternalSigner {
-		signerCfg, err = dataposter.ExternalSignerTestCfg(srv.Address, srv.URL())
+		signerCfg, err = dataposterconfig.ExternalSignerTestConfig(srv.Address, srv.URL())
 		if err != nil {
 			t.Fatalf("Error getting external signer config: %v", err)
 		}
-		asserterOpts, err = dataposter.ExternalSignerTxOpts(ctx, signerCfg)
+		externalSigner, err := externalsigner.NewExternalSigner(ctx, signerCfg)
 		Require(t, err)
+		asserterOpts = externalSigner.TxOpts()
 	} else {
 		l1info.GenerateAccount("Asserter")
 		tmpOpts := l1info.GetDefaultTransactOpts("Asserter", ctx)
@@ -280,7 +283,8 @@ func createL2NodeWithRollupAddresses(
 	addresses *chaininfo.RollupAddresses,
 	useExternalSigner bool,
 	asserterOpts *bind.TransactOpts,
-	signerCfg *dataposter.ExternalSignerCfg,
+	signerCfg *dataposterconfig.ExternalSignerConfig,
+	execConfigOpts ...func(*gethexec.Config),
 ) (
 	l2info info, currentNode *arbnode.Node, execNode *gethexec.ExecutionNode, l2client *ethclient.Client, l2stack *node.Node,
 	assertionChain *sol.AssertionChain, l2blockchain *core.BlockChain,
@@ -291,6 +295,9 @@ func createL2NodeWithRollupAddresses(
 	fatalErrChan := make(chan error, 10)
 
 	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
+	for _, opt := range execConfigOpts {
+		opt(execConfig)
+	}
 
 	Require(t, execConfig.Validate())
 	stackConfig := testhelpers.CreateStackConfigForTest("")
@@ -300,7 +307,7 @@ func createL2NodeWithRollupAddresses(
 
 	var l2executionDB ethdb.Database
 	var l2consensusDB ethdb.Database
-	l2info, l2stack, l2executionDB, l2consensusDB, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2infoIn, "", chainConfig, nil, initMessage, stackConfig, execConfig, false)
+	l2info, l2stack, l2executionDB, l2consensusDB, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2infoIn, "", chainConfig, nil, initMessage, stackConfig, execConfig, false, false)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -324,7 +331,7 @@ func createL2NodeWithRollupAddresses(
 	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &nodeConfig.ParentChainReader }, arbSys)
 	Require(t, err)
 	parentChain := parent.NewParentChain(ctx, parentChainId, l1Reader)
-	execNode, err = gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, containers.Some(l1client), NewCommonConfigFetcher(execConfig), 0, parentChain)
+	execNode, err = gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, containers.Some(l1client), NewCommonConfigFetcher(execConfig), 0, parentChain, fatalErrChan)
 	Require(t, err)
 
 	locator, err := server_common.NewMachineLocator("")

@@ -1,0 +1,18 @@
+[package]
+name = "arb-mel-db"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+alloy-primitives = { workspace = true, features = ["rlp"] }
+alloy-rlp = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+
+arb-consensus-db.workspace = true
+arb-mel-types.workspace = true
+arbos-types.workspace = true
+
+[lints]
+workspace = true

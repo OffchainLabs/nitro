@@ -21,6 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/containers"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 // failingBlobReader wraps a real BlobReader and can be configured to fail.
@@ -288,11 +289,14 @@ func (b *NodeBuilder) Build2ndNodeWithBlobReader(t *testing.T, params *SecondNod
 	if b.nodeConfig.BatchPoster.Enable && params.nodeConfig.BatchPoster.Enable && params.nodeConfig.BatchPoster.RedisUrl == "" {
 		t.Fatal("The batch poster must use Redis when enabled for multiple nodes")
 	}
+	if *testflag.ConsensusExecutionInSameProcessUseRPC {
+		configureConsensusExecutionOverRPC(params.execConfig, params.nodeConfig, params.stackConfig)
+	}
 
 	var cleanup func()
 	testClient := NewTestClient(b.ctx)
 	testClient.Client, testClient.ConsensusNode, testClient.ExecNode, cleanup, testClient.ConsensusConfigFetcher, testClient.ExecutionConfigFetcher =
-		Create2ndNodeWithConfig(t, b.ctx, b.L2.ConsensusNode, b.L2.ExecNode, b.L1.Stack, b.L1Info, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, b.valnodeConfig, params.addresses, b.initMessage, params.useExecutionClientOnly, blobReader, b.L2.ConsensusNode.ParentChain)
+		Create2ndNodeWithConfig(t, b.ctx, b.L2.ConsensusNode, b.L2.ExecNode, b.L1.Stack, b.L1Info, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, b.valnodeConfig, params.addresses, b.initMessage, params.useExecutionClientOnly, blobReader, b.L2.ConsensusNode.ParentChain, b.NoHistoryIndexDelay, params.fatalErrChan)
 	testClient.cleanup = cleanup
 	testClient.L1BlobReader = blobReader
 

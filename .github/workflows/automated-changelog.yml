@@ -9,6 +9,7 @@ jobs:
     # Only run if the PR is opened by dependabot
     if: github.actor == 'dependabot[bot]'
     runs-on: ubuntu-4
+    timeout-minutes: 10
     permissions:
       contents: write
 
@@ -37,7 +38,7 @@ jobs:
             console.log(`Created ${filename} for PR: ${title}`);
 
       - name: Commit and Push
-        uses: stefanzweifel/git-auto-commit-action@v7
+        uses: stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d  # v7.2.0
         with:
           commit_message: "Add a changelog entry for dependabot update"
           file_pattern: 'changelog/dependabot-*.md'

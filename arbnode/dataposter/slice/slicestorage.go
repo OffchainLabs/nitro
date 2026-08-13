@@ -69,6 +69,12 @@ func (s *Storage) Prune(_ context.Context, until uint64) error {
 	return nil
 }
 
+func (s *Storage) PruneAll(_ context.Context) error {
+	s.queue = nil
+	s.firstNonce = 0
+	return nil
+}
+
 func (s *Storage) Put(_ context.Context, index uint64, prev, new *storage.QueuedTransaction) error {
 	if new == nil {
 		return fmt.Errorf("tried to insert nil item at index %v", index)

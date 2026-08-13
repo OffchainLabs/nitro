@@ -7,6 +7,7 @@ import (
 	"context"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -143,8 +144,7 @@ func TestDifficultyForLatestArbOS(t *testing.T) {
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
 	// deploy a test contract
-	_, _, simple, err := localgen.DeploySimple(&auth, builder.L2.Client)
-	Require(t, err, "could not deploy contract")
+	_, simple := builder.L2.DeploySimple(t, auth)
 
 	tx, err := simple.StoreDifficulty(&auth)
 	Require(t, err)
@@ -169,8 +169,7 @@ func TestDifficultyForArbOSTen(t *testing.T) {
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
 	// deploy a test contract
-	_, _, simple, err := localgen.DeploySimple(&auth, builder.L2.Client)
-	Require(t, err, "could not deploy contract")
+	_, simple := builder.L2.DeploySimple(t, auth)
 
 	tx, err := simple.StoreDifficulty(&auth)
 	Require(t, err)
@@ -334,25 +333,45 @@ func TestGasEstimationWithRPCGasLimit(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
+	// Bound the estimation RPCs below so that a stalled node surfaces as a
+	// quick test failure instead of hanging until the package timeout kills
+	// the process (which also disables gotestsum's flaky-test reruns).
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, time.Duration(float64(2*time.Minute)*getTestTimeoutScale()))
+	defer rpcCancel()
+
+	// Build2ndNode only wires up the consensus side; execution digests the
+	// setup messages asynchronously (over JSON-RPC in the
+	// consensus-execution-rpc test configs). Wait for each 2nd node's
+	// execution head to reach the first node's head before issuing
+	// estimation RPCs so they don't stall on a lagging execution backend.
+	firstNodeHead := builder.L2.ExecNode.ArbInterface.BlockChain().CurrentBlock().Number.Uint64()
+	waitForExecHead := func(tc *TestClient, desc string) {
+		pollUntil(t, ctx, time.Minute, 100*time.Millisecond, desc, func() bool {
+			return tc.ExecNode.ArbInterface.BlockChain().CurrentBlock().Number.Uint64() >= firstNodeHead
+		})
+	}
+
 	execConfigA := builder.execConfig
 	execConfigA.RPC.RPCGasCap = params.TxGas
 	testClientA, cleanupA := builder.Build2ndNode(t, &SecondNodeParams{execConfig: execConfigA})
 	defer cleanupA()
+	waitForExecHead(testClientA, "2nd node A execution to catch up")
 	addr := common.HexToAddress("0x12345678")
-	estimateGas, err := testClientA.Client.EstimateGas(ctx, ethereum.CallMsg{To: &addr})
+	estimateGas, err := testClientA.Client.EstimateGas(rpcCtx, ethereum.CallMsg{To: &addr})
 	Require(t, err)
 	if estimateGas <= params.TxGas {
 		Fatal(t, "Incorrect gas estimate")
 	}
 
-	_, err = testClientA.Client.CallContract(ctx, ethereum.CallMsg{To: &addr}, nil)
+	_, err = testClientA.Client.CallContract(rpcCtx, ethereum.CallMsg{To: &addr}, nil)
 	Require(t, err)
 
 	execConfigB := builder.execConfig
 	execConfigB.RPC.RPCGasCap = params.TxGas - 1
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{execConfig: execConfigB})
 	defer cleanupB()
-	_, err = testClientB.Client.EstimateGas(ctx, ethereum.CallMsg{To: &addr})
+	waitForExecHead(testClientB, "2nd node B execution to catch up")
+	_, err = testClientB.Client.EstimateGas(rpcCtx, ethereum.CallMsg{To: &addr})
 	if err == nil {
 		Fatal(t, "EstimateGas passed with insufficient gas")
 	}

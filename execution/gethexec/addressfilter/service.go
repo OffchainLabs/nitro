@@ -7,7 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"testing"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/ethereum/go-ethereum/log"
 
@@ -32,7 +35,11 @@ func NewFilterService(config *Config) (*FilterService, error) {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
-	hashStore := NewHashStore(config.CacheSize)
+	maxHashes := config.numPreallocatedHashes()
+	if maxHashes > 0 {
+		log.Info("address-filter preallocating memory for hash list", "maxHashes", maxHashes)
+	}
+	hashStore := newHashStore(config.CacheSize, maxHashes)
 
 	return &FilterService{
 		config:         config,
@@ -98,6 +105,10 @@ func (s *FilterService) Start(ctx context.Context) {
 	)
 }
 
+func (s *FilterService) TriggerSyncForTest(_ *testing.T, ctx context.Context) error {
+	return s.syncMgr.Syncer.CheckAndSync(ctx)
+}
+
 func (s *FilterService) GetHashCount() int {
 	return s.hashStore.Size()
 }
@@ -113,6 +124,10 @@ func (s *FilterService) GetLoadedAt() time.Time {
 
 func (s *FilterService) GetHashStore() *HashStore {
 	return s.hashStore
+}
+
+func (s *FilterService) CurrentFilterSetID() uuid.UUID {
+	return s.hashStore.Id()
 }
 
 func (s *FilterService) GetAddressChecker() *HashedAddressChecker {

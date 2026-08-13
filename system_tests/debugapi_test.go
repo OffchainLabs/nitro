@@ -549,8 +549,7 @@ func dumpState(t *testing.T, client *TestClient, blockNumber uint64) *stateDump 
 		if len(data.CodeHash) > 0 {
 			codeHash := common.BytesToHash(data.CodeHash)
 			if codeHash != types.EmptyCodeHash {
-				account.Code, err = sdb.Reader().Code(common.Address{}, codeHash)
-				Require(t, err)
+				account.Code = sdb.Reader().Code(common.Address{}, codeHash)
 			}
 		}
 

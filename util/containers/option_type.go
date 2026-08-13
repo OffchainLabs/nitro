@@ -29,3 +29,10 @@ func (x Option[T]) IsSome() bool {
 func (x Option[T]) Unwrap() T {
 	return *x.value
 }
+
+func (x Option[T]) UnwrapOr(def T) T {
+	if x.value == nil {
+		return def
+	}
+	return *x.value
+}

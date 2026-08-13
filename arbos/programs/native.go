@@ -117,6 +117,9 @@ var nativeStackBaseline atomic.Uint64
 // Storing a non-zero baseline re-enables doubleNativeStackSize.
 func SetInitialNativeStackSize(size uint64) {
 	SetNativeStackSize(size)
+	// Stacks pooled before the size change keep their old size, so drop them
+	// the same way doubleNativeStackSize does.
+	DrainStackPool()
 	// Always capture the true Wasmer stack size (whether newly set or the
 	// existing default when size == 0) so doubleNativeStackSize can
 	// double from a real baseline.
@@ -162,6 +165,19 @@ func SetNativeStackSize(size uint64) {
 // GetNativeStackSize returns the current process-wide default Wasmer coroutine stack size in bytes.
 func GetNativeStackSize() uint64 {
 	return uint64(C.stylus_get_native_stack_size())
+}
+
+// WasmerSerializeVersion returns wasmer's MetadataHeader::CURRENT_VERSION
+func WasmerSerializeVersion() uint32 {
+	return uint32(C.stylus_wasmer_serialize_version())
+}
+
+// RustWavmFormatVersion returns the WAVM wire-format version Rust will
+// produce and accept. `reconcileWavmSerializeVersion` in
+// cmd/nitro/init compares this against `WavmSerializeVersion` on startup
+// and refuses to proceed on mismatch.
+func RustWavmFormatVersion() uint32 {
+	return uint32(C.stylus_wavm_format_version())
 }
 
 // DrainStackPool discards all cached Wasmer coroutine stacks so that
@@ -459,7 +475,7 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 	if currentHoursSince > program.activatedAt {
 		// stylus program is active on-chain, and was activated in the past
 		// so we store it directly to database (including cranelift entries)
-		batch := statedb.Database().WasmStore().NewBatch()
+		batch := statedb.Database().CodeDB().WasmStore().NewBatch()
 		// rawdb.WriteActivation iterates over the asms map and writes each entry separately to wasmdb, so the writes for the same module hash can be incremental
 		// we know that all targets for which asms were found initially, were read from disk as oppose to from newly activated asms from memory, as otherwise statedb.ActivatedAsmMap would have failed with an error because of missing targets within newly activated asms
 		rawdb.WriteActivation(batch, moduleHash, newlyBuilt)
@@ -715,7 +731,7 @@ func getCraneliftAsm(
 	}
 
 	// Persist to wasm store.
-	wasmStore := db.Database().WasmStore()
+	wasmStore := db.Database().CodeDB().WasmStore()
 	if wasmStore != nil {
 		batch := wasmStore.NewBatch()
 		rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, asm)

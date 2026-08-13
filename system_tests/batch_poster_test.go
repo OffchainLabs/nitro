@@ -23,7 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	dataposterconfig "github.com/offchainlabs/nitro/arbnode/dataposter/config"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/parent"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -102,7 +102,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
 	builder.nodeConfig.BatchPoster.RedisLock.Enable = useRedisLock
-	signerCfg, err := dataposter.ExternalSignerTestCfg(srv.Address, srv.URL())
+	signerCfg, err := dataposterconfig.ExternalSignerTestConfig(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting external signer config: %v", err)
 	}
@@ -221,7 +221,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool, useRedisLock bool) {
 	}
 }
 
-func TestRedisBatchPosterHandoff(t *testing.T) {
+func TestRedisBatchPosterHandoffFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	srv := externalsignertest.NewServer(t)
@@ -245,7 +245,7 @@ func TestRedisBatchPosterHandoff(t *testing.T) {
 	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
 	builder.nodeConfig.BatchPoster.RedisLock.LockoutDuration = 100 * time.Millisecond
 	builder.nodeConfig.BatchPoster.RedisLock.RefreshDuration = 50 * time.Millisecond
-	signerCfg, err := dataposter.ExternalSignerTestCfg(srv.Address, srv.URL())
+	signerCfg, err := dataposterconfig.ExternalSignerTestConfig(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting external signer config: %v", err)
 	}
@@ -688,7 +688,7 @@ func TestParentChainNonEIP7623(t *testing.T) {
 	}
 }
 
-func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
+func TestBatchPosterWithDelayProofsAndBacklogFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -698,6 +698,15 @@ func TestBatchPosterWithDelayProofsAndBacklog(t *testing.T) {
 		WithDelayBuffer(threshold).
 		WithL1ClientWrapper(t).
 		WithTakeOwnership(false)
+	// While the L1 transaction filter below is enabled, the data poster never sees its
+	// batch transactions confirm, and the aggressive test replacement schedule (1s, 2s,
+	// 5s, ...) would make it re-send fee-bumped replacements of the same nonces within
+	// the capture window. That makes the captured set nondeterministic, and the earlier
+	// variant of a replaced nonce can never mine, so replaying it would time out.
+	// Disable replace-by-fee within the test window so exactly numBatches transactions
+	// are captured. The fees are always sufficient here; replacement is purely
+	// time-triggered.
+	builder.nodeConfig.BatchPoster.DataPoster.ReplacementTimes = []time.Duration{time.Hour}
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -867,20 +876,25 @@ func TestBatchPosterL1SurplusMatchesBatchGasFlaky(t *testing.T) {
 	// Advance L1 to satisfy finality requirements for the batch posting report to be processed
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 2)
 
-	// find the L2 block which processed the delayed messages (the header Nonce increases)
-	latestL2, err := builder.L2.Client.BlockNumber(ctx)
-	Require(t, err)
-
+	// find the L2 block which processed the delayed messages (the header Nonce increases).
+	// Poll, because delayed messages are enqueued and sequenced asynchronously, so the
+	// block may not be produced the instant AdvanceL1 returns.
 	var foundBlock uint64
-	// scan recent L2 blocks for nonce increase
-	// we expect this to be within the last 50 since the batch poster should post quickly
-	for b := l2Block.Number().Uint64(); b <= latestL2; b++ {
-		block, err := builder.L2.Client.BlockByNumber(ctx, new(big.Int).SetUint64(b))
+	deadline := time.Now().Add(time.Duration(float64(30*time.Second) * getTestTimeoutScale()))
+	for time.Now().Before(deadline) && foundBlock == 0 {
+		latestL2, err := builder.L2.Client.BlockNumber(ctx)
 		Require(t, err)
-		t.Logf("checking L2 block %d: nonce=%d (looking for %d)", b, block.Nonce(), batchNum)
-		if block.Nonce() == batchNum+1 {
-			foundBlock = block.Header().Number.Uint64()
-			break
+		for b := l2Block.Number().Uint64(); b <= latestL2; b++ {
+			block, err := builder.L2.Client.BlockByNumber(ctx, new(big.Int).SetUint64(b))
+			Require(t, err)
+			t.Logf("checking L2 block %d: nonce=%d (looking for %d)", b, block.Nonce(), batchNum)
+			if block.Nonce() == batchNum+1 {
+				foundBlock = block.Header().Number.Uint64()
+				break
+			}
+		}
+		if foundBlock == 0 {
+			time.Sleep(10 * time.Millisecond)
 		}
 	}
 	if foundBlock == 0 {

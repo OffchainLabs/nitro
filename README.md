@@ -41,22 +41,6 @@ compiled to WASM.
 
 Arbitrum One successfully migrated from the Classic Arbitrum stack onto Nitro on 8/31/22. (See [state migration](https://developer.arbitrum.io/migration/state-migration) and [dapp migration](https://developer.arbitrum.io/migration/dapp_migration) for more info).
 
-## Building `nitro-private`
-
-`nitro-private` routes a subset of submodules (`go-ethereum`, `wasmer`)
-through `-private` forks. First-time setup:
-
-```sh
-git clone git@github.com:OffchainLabs/nitro-private.git   # no need for --recurse-submodules
-cd nitro-private
-make init-submodules
-make check-submodules
-```
-
-See [`docs/private-submodules.md`](./docs/private-submodules.md) for the
-full workflow, including branch switching, the pre-push guard hook, and
-the CI counterpart.
-
 ## License
 
 Nitro is currently licensed under a [Business Source License](./LICENSE.md), similar to our friends at Uniswap and Aave, with an "Additional Use Grant" to ensure that everyone can have full comfort using and running nodes on all public Arbitrum chains.
@@ -73,13 +57,6 @@ We will always support the current minor release of Nitro. Older versions of Nit
 - Offchain communicates a critical security concern about a version that warrants immediate upgrading to a newer, fixed version.
 
 Visit the documentation [Support policy page](https://docs.arbitrum.io/run-arbitrum-node/nitro-support-policy) for more detail.
-
-### Current supported Nitro versions
-
-| Currently supported | Relevant links |
-| ------------------- | -------------- |
-| Nitro 3.10.x        | [GitHub](https://github.com/OffchainLabs/nitro/releases/tag/v3.10.0) |
-| Nitro 3.9.9         | [GitHub](https://github.com/OffchainLabs/nitro/releases/tag/v3.9.9)
 
 ### Special note about ArbOS & Arbitrum Classic
 

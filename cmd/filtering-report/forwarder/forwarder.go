@@ -5,11 +5,10 @@ package forwarder
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
@@ -20,6 +19,8 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/filtering-report/signer"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
+	"github.com/offchainlabs/nitro/util/httpclient"
 	"github.com/offchainlabs/nitro/util/httperror"
 	"github.com/offchainlabs/nitro/util/sqsclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -90,7 +91,6 @@ type Config struct {
 	ExternalEndpoint                       genericconf.HTTPClientConfig                 `koanf:"external-endpoint"`
 	ExternalEndpointRetryableErrorSlowdown ExternalEndpointRetryableErrorSlowdownConfig `koanf:"external-endpoint-retryable-error-slowdown"`
 	PoisonQueue                            sqsclient.QueueConfig                        `koanf:"poison-queue"`
-	Signer                                 signer.Config                                `koanf:"signer"`
 }
 
 var DefaultConfig = Config{
@@ -100,7 +100,6 @@ var DefaultConfig = Config{
 	ExternalEndpoint:                       genericconf.HTTPClientConfigDefault,
 	ExternalEndpointRetryableErrorSlowdown: DefaultExternalEndpointRetryableErrorSlowdownConfig,
 	PoisonQueue:                            sqsclient.DefaultQueueConfig,
-	Signer:                                 signer.DefaultConfig,
 }
 
 func (c *Config) Validate() error {
@@ -118,10 +117,7 @@ func (c *Config) Validate() error {
 			return err
 		}
 	}
-	if err := c.ExternalEndpoint.Validate(); err != nil {
-		return err
-	}
-	return c.Signer.Validate()
+	return c.ExternalEndpoint.Validate()
 }
 
 func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -131,7 +127,6 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	genericconf.HTTPClientConfigAddOptions(prefix+".external-endpoint", f)
 	ExternalEndpointRetryableErrorSlowdownConfigAddOptions(prefix+".external-endpoint-retryable-error-slowdown", f)
 	sqsclient.QueueConfigAddOptions(prefix+".poison-queue", f, "SQS queue URL for messages that failed with non-retryable errors")
-	signer.ConfigAddOptions(prefix+".signer", f)
 }
 
 // Forwarder polls messages from an SQS queue and forwards them to an external
@@ -168,29 +163,18 @@ type Forwarder struct {
 	signer            *signer.Signer
 }
 
-func New(config *Config, queueClient sqsclient.QueueClient, poisonQueueClient sqsclient.QueueClient) (*Forwarder, error) {
-	if config == nil {
-		return nil, errors.New("config must not be nil")
-	}
-	if queueClient == nil {
-		return nil, errors.New("queueClient must not be nil")
-	}
-	sgn, err := signer.NewSigner(&config.Signer)
-	if err != nil {
-		return nil, fmt.Errorf("create signer: %w", err)
-	}
+func New(config *Config, queueClient sqsclient.QueueClient, poisonQueueClient sqsclient.QueueClient, sgn *signer.Signer) *Forwarder {
 	return &Forwarder{
 		config:            config,
 		queueClient:       queueClient,
 		poisonQueueClient: poisonQueueClient,
 		httpClient:        &http.Client{Timeout: config.ExternalEndpoint.Timeout},
 		signer:            sgn,
-	}, nil
+	}
 }
 
 func (r *Forwarder) Start(ctx context.Context) {
 	r.StopWaiter.Start(ctx, r)
-	r.StartAndTrackChild(r.signer)
 	for i := uint(0); i < r.config.Workers; i++ {
 		var consecutiveRetryableErrors int
 		r.CallIteratively(func(ctx context.Context) time.Duration {
@@ -211,8 +195,9 @@ func (r *Forwarder) pollAndForward(ctx context.Context, consecutiveRetryableErro
 		return r.config.PollInterval
 	}
 	msg := msgs[0]
+	reportFields := reportLogFields(*msg.Body)
 	if err := r.forwardToEndpoint(ctx, *msg.Body); err != nil {
-		log.Error("Failed to forward report to external endpoint", "err", err, "messageId", *msg.MessageId, "body", *msg.Body)
+		log.Error("Failed to forward report to external endpoint", append([]any{"err", err, "messageId", *msg.MessageId}, reportFields...)...)
 		var httpErr *httperror.HTTPError
 		if errors.As(err, &httpErr) && !httpErr.IsRetryable() {
 			externalEndpointNonRetryableFailuresCounter.Inc(1)
@@ -230,7 +215,7 @@ func (r *Forwarder) pollAndForward(ctx context.Context, consecutiveRetryableErro
 	}
 	externalEndpointSuccessesCounter.Inc(1)
 	*consecutiveRetryableErrors = 0
-	log.Info("Successfully forwarded report to external endpoint", "messageId", *msg.MessageId, "body", *msg.Body)
+	log.Info("Successfully forwarded report to external endpoint", append([]any{"messageId", *msg.MessageId}, reportFields...)...)
 	if err = r.queueClient.Delete(ctx, *msg.ReceiptHandle); err != nil {
 		sqsDeleteFailuresCounter.Inc(1)
 		log.Error("Failed to delete SQS message after forwarding", "err", err, "messageId", *msg.MessageId)
@@ -238,6 +223,14 @@ func (r *Forwarder) pollAndForward(ctx context.Context, consecutiveRetryableErro
 		sqsDeleteSuccessesCounter.Inc(1)
 	}
 	return 0
+}
+
+func reportLogFields(body string) []any {
+	var report addressfilter.FilteredTxReport
+	if err := json.Unmarshal([]byte(body), &report); err != nil {
+		return []any{"bodyParseErr", err}
+	}
+	return []any{"reportId", report.ID, "txHash", report.TxHash}
 }
 
 func (r *Forwarder) sendToPoisonQueue(ctx context.Context, msg sqstypes.Message, httpErr *httperror.HTTPError) {
@@ -261,31 +254,6 @@ func (r *Forwarder) sendToPoisonQueue(ctx context.Context, msg sqstypes.Message,
 	}
 }
 
-func (r *Forwarder) forwardToEndpoint(ctx context.Context, body string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.config.ExternalEndpoint.URL, strings.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	r.signer.SignHTTPRequest(req, []byte(body), time.Now())
-	resp, err := r.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("send request: %w", err)
-	}
-	defer func() {
-		if _, drainErr := io.Copy(io.Discard, resp.Body); drainErr != nil {
-			log.Warn("Failed draining response body", "err", drainErr)
-		}
-		resp.Body.Close()
-	}()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 1024)) // cap error body to avoid unbounded reads
-		respBodyStr := string(respBody)
-		if readErr != nil {
-			log.Warn("Failed reading external endpoint error response body", "err", readErr, "statusCode", resp.StatusCode)
-			respBodyStr = fmt.Sprintf("%s (body read error: %s)", respBodyStr, readErr)
-		}
-		return &httperror.HTTPError{StatusCode: resp.StatusCode, Body: respBodyStr}
-	}
-	return nil
+func (r *Forwarder) forwardToEndpoint(ctx context.Context, reportJSON string) error {
+	return httpclient.PostJSON(ctx, r.httpClient, r.config.ExternalEndpoint.URL, []byte(reportJSON), r.signer.SignHTTPRequest)
 }

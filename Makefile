@@ -15,16 +15,24 @@ else
 endif
 
 
-ifneq ($(origin NITRO_VERSION),undefined)
- GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.version=$(NITRO_VERSION)
+ifneq ($(origin NITRO_TAG),undefined)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/nitroversion.tag=$(NITRO_TAG)
+endif
+
+ifneq ($(origin NITRO_BRANCH),undefined)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/nitroversion.branch=$(NITRO_BRANCH)
+endif
+
+ifneq ($(origin NITRO_COMMIT),undefined)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/nitroversion.commit=$(NITRO_COMMIT)
 endif
 
 ifneq ($(origin NITRO_DATETIME),undefined)
- GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.datetime=$(NITRO_DATETIME)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/nitroversion.datetime=$(NITRO_DATETIME)
 endif
 
 ifneq ($(origin NITRO_MODIFIED),undefined)
- GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.modified=$(NITRO_MODIFIED)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/nitroversion.modified=$(NITRO_MODIFIED)
 endif
 
 # Stripped-binary build (STRIP=1): adds -s -w to Go ldflags, -trimpath to go
@@ -42,6 +50,15 @@ endif
 ifeq ($(STRIP),1)
  GOLANG_PARAMS += -trimpath
 endif
+
+# Tool pins, so a fresh checkout builds and lints identically to CI (which
+# runs lint through `make lint`; see .github/actions/lint-go). GOTOOLCHAIN
+# makes every go invocation under make use exactly this toolchain — the
+# `toolchain` directive in go.mod only upgrades older installs, never
+# downgrades newer ones. Bump these two and go.mod's toolchain together.
+export GOTOOLCHAIN := go1.25.12
+GOLANGCI_LINT_VERSION := v2.5.0
+golangci_lint := target/bin/golangci-lint
 
 UNAME_S := $(shell uname -s)
 
@@ -176,6 +193,8 @@ CBROTLI_WASM_BUILD_ARGS ?=-d
 
 # user targets
 
+.DEFAULT_GOAL := build
+
 ##@ Setup
 
 .PHONY: init-submodules ## Initialize private submodules.
@@ -271,6 +290,12 @@ fmt: format
 
 .PHONY: lint ## Run linters.
 lint: .make/lint
+	@printf $(done)
+
+.PHONY: lint-fix ## Run linters and apply automatic fixes.
+lint-fix: build-node-deps .make/golangci-lint-$(GOLANGCI_LINT_VERSION)
+	go run ./linters ./...
+	$(golangci_lint) run --fix
 	@printf $(done)
 
 ##@ Test
@@ -497,7 +522,7 @@ crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a: $(DEP_P
 		crates/wasm-libraries/soft-float/SoftFloat/source/include/*.h \
 		crates/wasm-libraries/soft-float/SoftFloat/source/8086/*.c \
 		crates/wasm-libraries/soft-float/SoftFloat/source/8086/*.h
-	cd crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang && make $(MAKEFLAGS)
+	cd crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang && $(MAKE)
 
 crates/wasm-libraries/soft-float/bindings32.o: $(DEP_PREDICATE) crates/wasm-libraries/soft-float/bindings32.c
 	clang crates/wasm-libraries/soft-float/bindings32.c --sysroot $(WASI_SYSROOT) -I crates/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasip1 -Wconversion -c -o $@
@@ -676,7 +701,7 @@ contracts/test/prover/proofs/forward-test.json: $(arbitrator_cases)/forward-test
 	$(prover_bin) $< -o $@ --allow-hostapi $(patsubst %,-l %, $(arbitrator_tests_forward_deps))
 
 contracts/test/prover/proofs/link.json: $(arbitrator_cases)/link.wasm $(arbitrator_tests_link_deps) $(prover_bin)
-	$(prover_bin) $< -o $@ --allow-hostapi --stylus-modules $(arbitrator_tests_link_deps) --require-success
+	$(prover_bin) $< -o $@ --allow-hostapi $(patsubst %, --stylus-modules %, $(arbitrator_tests_link_deps)) --require-success
 
 contracts/test/prover/proofs/dynamic.json: $(patsubst %,$(arbitrator_cases)/%.wasm, dynamic user) $(prover_bin)
 	$(prover_bin) $< -o $@ --allow-hostapi --stylus-modules $(arbitrator_cases)/user.wasm --require-success
@@ -689,14 +714,20 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 
 # strategic rules to minimize dependency building
 
-.make/lint: $(DEP_PREDICATE) build-node-deps $(ORDER_ONLY_PREDICATE) .make
+# The version is part of the stamp name so bumping GOLANGCI_LINT_VERSION
+# triggers a reinstall without spurious reinstalls on other Makefile edits.
+.make/golangci-lint-$(GOLANGCI_LINT_VERSION): $(ORDER_ONLY_PREDICATE) .make
+	GOBIN=$(abspath target/bin) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	@touch $@
+
+.make/lint: $(DEP_PREDICATE) build-node-deps .make/golangci-lint-$(GOLANGCI_LINT_VERSION) $(ORDER_ONLY_PREDICATE) .make
 	go run ./linters ./...
-	golangci-lint run --fix
+	$(golangci_lint) run
 	yarn --cwd contracts solhint
 	@touch $@
 
-.make/fmt: $(DEP_PREDICATE) build-node-deps .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
-	golangci-lint fmt
+.make/fmt: $(DEP_PREDICATE) build-node-deps .make/yarndeps .make/golangci-lint-$(GOLANGCI_LINT_VERSION) $(ORDER_ONLY_PREDICATE) .make
+	$(golangci_lint) fmt
 	cargo +nightly fmt -- --check
 	cargo +nightly fmt --manifest-path crates/wasm-testsuite/Cargo.toml -- --check
 	forge fmt --root contracts-local
@@ -725,7 +756,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	@touch $@
 
 .make/yarndeps: $(DEP_PREDICATE) */package.json */yarn.lock $(ORDER_ONLY_PREDICATE) .make
-	npm --prefix safe-smart-account install
+	npm --prefix safe-smart-account ci
 	yarn --cwd contracts install
 	yarn --cwd contracts-legacy install
 	+make -C contracts-local install

@@ -2,11 +2,12 @@
 
 set -euo pipefail
 
-if [ -z "${PRIVATE_REPO_TOKEN:-}" ]; then
-  echo "ERROR: PRIVATE_REPO_TOKEN required to download the consensus machine from the private repo (see scripts/download-machine.sh)" >&2
-  exit 1
+if [ -n "${PRIVATE_REPO_TOKEN:-}" ]; then
+  GH_TOKEN="$PRIVATE_REPO_TOKEN" DOCKER_BUILDKIT=1 docker build --secret id=gh_token,env=GH_TOKEN --target nitro-node-dev --tag nitro-local-build .
+else
+  # No private token (e.g. public nitro): the consensus machine is fetched from public releases.
+  DOCKER_BUILDKIT=1 docker build --target nitro-node-dev --tag nitro-local-build .
 fi
-GH_TOKEN="$PRIVATE_REPO_TOKEN" DOCKER_BUILDKIT=1 docker build --secret id=gh_token,env=GH_TOKEN --target nitro-node-dev --tag nitro-local-build .
 
 # Clone nitro-devnode repo
 git clone https://github.com/OffchainLabs/nitro-devnode.git
@@ -24,7 +25,7 @@ sleep 10
 # Run execution spec tests
 git clone https://github.com/OffchainLabs/execution-specs.git
 cd execution-specs
-curl -LsSf https://astral.sh/uv/install.sh | sh
+curl -LsSf --retry 3 https://astral.sh/uv/install.sh | sh
 uv python install 3.11
 uv python pin 3.11
 uv sync --all-extras

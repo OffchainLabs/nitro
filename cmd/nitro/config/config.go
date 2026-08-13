@@ -29,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/nitroversion"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
@@ -201,7 +202,7 @@ func NodeConfigAddOptions(f *pflag.FlagSet) {
 	f.String("log-level", NodeConfigDefault.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", NodeConfigDefault.LogType, "log type (plaintext or json)")
 	genericconf.FileLoggingConfigAddOptions("file-logging", f)
-	conf.PersistentConfigAddOptions("persistent", f)
+	conf.PersistentConfigAddOptions("persistent", f, NodeConfigDefault.Persistent)
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
@@ -220,11 +221,18 @@ func NodeConfigAddOptions(f *pflag.FlagSet) {
 }
 
 func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, error) {
+	return ParseNodeWithVersion(ctx, args, nitroversion.Current())
+}
+
+// ParseNodeWithVersion parses a node configuration against an explicitly
+// supplied Nitro version. Tests can use this without mutating process-global
+// version state.
+func ParseNodeWithVersion(ctx context.Context, args []string, version nitroversion.Version) (*NodeConfig, *genericconf.WalletConfig, error) {
 	f := pflag.NewFlagSet("", pflag.ContinueOnError)
 
 	NodeConfigAddOptions(f)
 
-	k, err := confighelpers.BeginCommonParse(f, args)
+	k, err := confighelpers.BeginCommonParseWithVersion(f, args, version)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -304,7 +312,9 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if err := resolveGenesisJsonFileDirectory(&nodeConfig); err != nil {
 		return nil, nil, err
 	}
-
+	if err = nodeConfig.Persistent.Pebble.ResolveWithStateScheme(nodeConfig.Execution.Caching.StateScheme); err != nil {
+		return nil, nil, err
+	}
 	err = nodeConfig.Validate()
 	if err != nil {
 		return nil, nil, err

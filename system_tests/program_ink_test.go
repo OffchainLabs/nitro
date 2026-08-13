@@ -636,7 +636,7 @@ func encodeHostioTestCalldata(t *testing.T, solFunc string, args []any) []byte {
 }
 
 // For the functions that are not in the Hostio interface, we encoded them manually
-func encodeHostioFromSignature(t *testing.T, signature string, args []uint64) []byte {
+func encodeHostioFromSignature(_t *testing.T, signature string, args []uint64) []byte {
 	data := crypto.Keccak256([]byte(signature))[:4]
 	for _, arg := range args {
 		data = append(data, make([]byte, 24)...) // padding

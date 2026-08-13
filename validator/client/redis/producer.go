@@ -190,31 +190,33 @@ func NewBOLDRedisExecutionClient(redisValClient *ValidationClient) *BOLDRedisExe
 	}
 }
 
-func (br *BOLDRedisExecutionClient) Initialize(ctx context.Context, moduleRoots []common.Hash) error {
-	if br.redisValidationClient.config.RedisURL == "" {
-		return fmt.Errorf("redis url cannot be empty")
-	}
-	redisClient, err := redisutil.RedisClientFromURL(br.redisValidationClient.config.RedisURL)
+func (br *BOLDRedisExecutionClient) StartValidators(moduleRoots []common.Hash) error {
+	ctx, err := br.GetContextSafe()
 	if err != nil {
-		return err
+		return fmt.Errorf("getting context: %w", err)
 	}
+	if br.redisValidationClient == nil || br.redisValidationClient.redisClient == nil {
+		return fmt.Errorf("BOLD redis execution client has no valid validation client")
+	}
+	cfg := br.redisValidationClient.config
+	redisClient := br.redisValidationClient.redisClient
 	for _, mr := range moduleRoots {
-		if br.redisValidationClient.config.CreateStreams {
-			if err := pubsub.CreateStream(ctx, server_api.RedisBoldStreamForRoot(br.redisValidationClient.config.StreamPrefix, mr), redisClient); err != nil {
+		if cfg.CreateStreams {
+			if err := pubsub.CreateStream(ctx, server_api.RedisBoldStreamForRoot(cfg.StreamPrefix, mr), redisClient); err != nil {
 				return fmt.Errorf("creating redis stream: %w", err)
 			}
 		}
 		if _, exists := br.producers[mr]; exists {
-			log.Warn("Producer already exists for module root", "hash", mr)
+			log.Info("BOLD producer already exists for module root", "hash", mr)
 			continue
 		}
 		p, err := pubsub.NewProducer[*server_api.BoldValidationInput, []byte](
-			redisClient, server_api.RedisBoldStreamForRoot(br.redisValidationClient.config.StreamPrefix, mr), &br.redisValidationClient.config.ProducerConfig)
+			redisClient, server_api.RedisBoldStreamForRoot(cfg.StreamPrefix, mr), &cfg.ProducerConfig)
 		if err != nil {
-			log.Warn("failed init redis", "hash", mr, "err", err)
-			continue
+			return fmt.Errorf("creating redis producer: %w", err)
 		}
 		br.producers[mr] = p
+		br.StartAndTrackChild(p)
 	}
 	return nil
 }
@@ -232,14 +234,8 @@ func (br *BOLDRedisExecutionClient) produce(req *server_api.BoldValidationInput)
 }
 
 func (br *BOLDRedisExecutionClient) Start(ctx_in context.Context) error {
-	if err := br.Initialize(ctx_in, br.redisValidationClient.moduleRoots); err != nil {
-		return err
-	}
 	br.StopWaiter.Start(ctx_in, br)
-	for _, p := range br.producers {
-		br.StartAndTrackChild(p)
-	}
-	return nil
+	return br.StartValidators(br.redisValidationClient.moduleRoots)
 }
 
 func (br *BOLDRedisExecutionClient) Stop() {

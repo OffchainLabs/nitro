@@ -20,8 +20,8 @@ func TestGetArbNodeConfig_NilReturnsNil(t *testing.T) {
 
 func TestGetArbNodeConfig_WrongTypeReturnsNil(t *testing.T) {
 	db := state.NewDatabaseForTesting()
-	db.SetArbNodeConfig("not a *ArbNodeConfig")
 	statedb, _ := state.New(types.EmptyRootHash, db)
+	statedb.Database().CodeDB().SetArbNodeConfig("not a *ArbNodeConfig")
 	require.Nil(t, GetArbNodeConfig(statedb),
 		"wrong-type storage is a wiring bug; fail-open is safe because all limits "+
 			"gated by this config are off-chain only")
@@ -30,8 +30,8 @@ func TestGetArbNodeConfig_WrongTypeReturnsNil(t *testing.T) {
 func TestGetArbNodeConfig_RoundTrips(t *testing.T) {
 	db := state.NewDatabaseForTesting()
 	want := &ArbNodeConfig{MaxOpenPages: 42, MaxStylusCallDepth: 5}
-	db.SetArbNodeConfig(want)
 	statedb, _ := state.New(types.EmptyRootHash, db)
+	statedb.Database().CodeDB().SetArbNodeConfig(want)
 	got := GetArbNodeConfig(statedb)
 	require.NotNil(t, got)
 	require.Equal(t, want.MaxOpenPages, got.MaxOpenPages)

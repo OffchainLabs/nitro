@@ -1,0 +1,121 @@
+name: ZK CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    uses: ./.github/workflows/_detect-changes.yml
+    secrets: inherit
+
+  zk-proving:
+    name: Run tests for ZK-related components and pipelines
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.code_changed == 'true'
+    runs-on: ocl-32cpu-128ram-dind
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
+
+      - name: Setup CI
+        uses: ./.github/actions/ci-setup
+
+      - name: Ensure python points to python3
+        run: |
+          command -v python >/dev/null 2>&1 || sudo ln -s "$(command -v python3)" /usr/local/bin/python
+
+      - name: Setup LLVM
+        uses: ZhongRuoyu/setup-llvm@v0
+        with:
+          llvm-version: 21
+
+      - name: Install nightly rustfmt
+        run: rustup toolchain install nightly --component rustfmt --profile minimal
+
+      - name: Rustfmt (SP1 crates)
+        working-directory: crates/sp1
+        run: cargo +nightly fmt -- --check
+
+      - name: Install SP1 toolchain
+        run: make -C crates/sp1 install-sp1
+
+      - name: Clippy check (SP1 crates)
+        run: make -C crates/sp1 clippy
+
+      - name: Run stylus-compiler-runner compare
+        # Compare compilation consistency between running it natively and in the SP1 execution mode.
+        run: make -C crates/sp1 stylus-compiler-compare
+
+      - name: Run stylus-compiler-runner proving
+        # Generate and verify a proof of correct Stylus compilation.
+        run: make -C crates/sp1 stylus-compiler-prove
+
+      # The SP1 replay pipeline is mocked for now (NIT-5337): the guest
+      # performs no real validation, so this step only proves the
+      # build-and-execute plumbing end-to-end. It is replaced by a real
+      # SP1-vs-JIT hash comparison as guest functionality lands.
+      - name: Run SP1 validation (MOCKED)
+        run: |
+          set -o pipefail
+          # The guest's output is forwarded on the executor's stderr.
+          make -C crates/sp1 run 2>&1 | tee run.log
+          grep -q "Validation MOCKED" run.log
+
+      - name: Record block inputs
+        run: make -C crates/sp1 record-blocks
+
+      # Ground-truth check: every recorded block must validate under JIT.
+      # Once the SP1 runner is ported, it joins this loop and its hash is
+      # compared against JIT's.
+      - name: Validate recorded blocks with JIT
+        run: |
+          set -e -o pipefail
+          shopt -s nullglob
+          # Keep in sync with the number of TestRecordBlock* tests in
+          # system_tests/block_recording_test.go — catches a skipped or
+          # silently dropped recording, which a zero-check would miss.
+          EXPECTED_BLOCKS=8
+          INPUTS=(target/sp1/block-inputs/*.json)
+          if [ ${#INPUTS[@]} -ne "$EXPECTED_BLOCKS" ]; then
+            echo "::error::Expected $EXPECTED_BLOCKS recorded block inputs, found ${#INPUTS[@]}: ${INPUTS[*]}"
+            exit 1
+          fi
+          LOG=$(mktemp)
+          trap 'rm -f "$LOG"' EXIT
+          for INPUT in "${INPUTS[@]}"; do
+            BLOCK=$(basename "$INPUT" .json)
+            echo "--- Running JIT validation ($BLOCK) ---"
+            if ! ./target/bin/jit \
+              --debug --cranelift \
+              --binary target/machines/latest/replay.wasm \
+              --require-success \
+              json --inputs="$INPUT" >"$LOG" 2>&1; then
+              echo "::error::JIT validation failed for $BLOCK"
+              cat "$LOG"
+              exit 1
+            fi
+            JIT_HASH=$(grep "Completed in .* with hash" "$LOG" | awk '{print $NF}' | sed 's/\.$//' || true)
+            if [ -z "$JIT_HASH" ]; then
+              echo "::error::Failed to capture JIT hash for $BLOCK"
+              cat "$LOG"
+              exit 1
+            fi
+            echo "$BLOCK JIT hash: $JIT_HASH"
+          done

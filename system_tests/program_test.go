@@ -51,20 +51,38 @@ var allWasmTargets = []string{string(rawdb.TargetWavm), string(rawdb.TargetArm64
 
 var localTargetOnly = []string{string(rawdb.LocalTarget())}
 
-func TestProgramKeccak(t *testing.T) {
-	t.Run("WithDefaultWasmTargets", func(t *testing.T) {
-		keccakTest(t, true)
-	})
-
-	t.Run("WithAllWasmTargets", func(t *testing.T) {
-		keccakTest(t, true, func(builder *NodeBuilder) {
-			builder.WithExtraArchs(allWasmTargets)
+func testProgramRecorderModes(t *testing.T, run func(t *testing.T, recorderOpt func(*NodeBuilder))) {
+	for _, tc := range blockRecorderTestCases() {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			run(t, func(builder *NodeBuilder) {
+				builder.execConfig.RecordingDatabase.Mode = tc.recorderMode
+				builder.RequireScheme(t, tc.stateScheme)
+			})
 		})
-	})
+	}
+}
 
-	t.Run("WithOnlyLocalTarget", func(t *testing.T) {
-		keccakTest(t, true, func(builder *NodeBuilder) {
-			builder.WithExtraArchs(localTargetOnly)
+func testProgramDefaultRecorderOnly(t *testing.T, run func(t *testing.T, recorderOpt func(*NodeBuilder))) {
+	run(t, func(*NodeBuilder) {})
+}
+
+func TestProgramKeccak(t *testing.T) {
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		t.Run("WithDefaultWasmTargets", func(t *testing.T) {
+			keccakTest(t, true, recorderOpt)
+		})
+
+		t.Run("WithAllWasmTargets", func(t *testing.T) {
+			keccakTest(t, true, recorderOpt, func(builder *NodeBuilder) {
+				builder.WithExtraArchs(allWasmTargets)
+			})
+		})
+
+		t.Run("WithOnlyLocalTarget", func(t *testing.T) {
+			keccakTest(t, true, recorderOpt, func(builder *NodeBuilder) {
+				builder.WithExtraArchs(localTargetOnly)
+			})
 		})
 	})
 }
@@ -76,7 +94,7 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	defer cleanup()
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 
-	wasmDB := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDB := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	checkWasmStoreContent(t, wasmDB, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	wasm, _ := readWasmFile(t, rustFile("keccak"))
@@ -163,17 +181,19 @@ func keccakTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 }
 
 func TestProgramActivateTwice(t *testing.T) {
-	t.Run("WithDefaultWasmTargets", func(t *testing.T) {
-		testActivateTwice(t, true)
-	})
-	t.Run("WithAllWasmTargets", func(t *testing.T) {
-		testActivateTwice(t, true, func(builder *NodeBuilder) {
-			builder.WithExtraArchs(allWasmTargets)
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		t.Run("WithDefaultWasmTargets", func(t *testing.T) {
+			testActivateTwice(t, true, recorderOpt)
 		})
-	})
-	t.Run("WithOnlyLocalTarget", func(t *testing.T) {
-		testActivateTwice(t, true, func(builder *NodeBuilder) {
-			builder.WithExtraArchs([]string{string(rawdb.LocalTarget())})
+		t.Run("WithAllWasmTargets", func(t *testing.T) {
+			testActivateTwice(t, true, recorderOpt, func(builder *NodeBuilder) {
+				builder.WithExtraArchs(allWasmTargets)
+			})
+		})
+		t.Run("WithOnlyLocalTarget", func(t *testing.T) {
+			testActivateTwice(t, true, recorderOpt, func(builder *NodeBuilder) {
+				builder.WithExtraArchs([]string{string(rawdb.LocalTarget())})
+			})
 		})
 	})
 }
@@ -206,7 +226,7 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
-	wasmDB := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDB := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	checkWasmStoreContent(t, wasmDB, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	preimage := []byte("it's time to du-du-du-du d-d-d-d-d-d-d de-duplicate")
@@ -269,11 +289,14 @@ func testActivateTwice(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)
 }
 
 func TestStylusUpgrade(t *testing.T) {
-	testStylusUpgrade(t, true)
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testStylusUpgrade(t, true, recorderOpt)
+	})
 }
 
-func testStylusUpgrade(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) { b.WithArbOSVersion(params.ArbosVersion_Stylus) })
+func testStylusUpgrade(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) { b.WithArbOSVersion(params.ArbosVersion_Stylus) })
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	defer cleanup()
 
 	ctx := builder.ctx
@@ -411,11 +434,13 @@ func testStylusUpgrade(t *testing.T, jit bool) {
 }
 
 func TestProgramErrors(t *testing.T) {
-	errorTest(t, true)
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		errorTest(t, true, recorderOpt)
+	})
 }
 
-func errorTest(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func errorTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -452,11 +477,13 @@ func errorTest(t *testing.T, jit bool) {
 }
 
 func TestProgramStorage(t *testing.T) {
-	storageTest(t, true)
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		storageTest(t, true, recorderOpt)
+	})
 }
 
-func storageTest(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func storageTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -481,16 +508,20 @@ func storageTest(t *testing.T, jit bool) {
 	validateBlocks(t, 2, jit, builder)
 
 	// Captures a block_inputs json file for the block that included the
-	// storage write transaction. Include wasm targets necessary for arbitrator prover and jit binaries
-	recordBlock(t, receipt.BlockNumber.Uint64(), builder, rawdb.TargetWavm, rawdb.LocalTarget())
+	// storage write transaction. Include wasm targets necessary for arbitrator
+	// prover and jit binaries, plus the original wasm source so runners that
+	// compile stylus programs on the fly (e.g. SP1) can use the recording.
+	recordBlock(t, receipt.BlockNumber.Uint64(), builder, rawdb.TargetWavm, rawdb.TargetWasm, rawdb.LocalTarget())
 }
 
 func TestProgramTransientStorage(t *testing.T) {
-	transientStorageTest(t, true)
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		transientStorageTest(t, true, recorderOpt)
+	})
 }
 
-func transientStorageTest(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func transientStorageTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -552,13 +583,16 @@ func transientStorageTest(t *testing.T, jit bool) {
 }
 
 func TestProgramMath(t *testing.T) {
-	fastMathTest(t, true)
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		fastMathTest(t, true, recorderOpt)
+	})
 }
 
-func fastMathTest(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+func fastMathTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithDatabase(rawdb.DBPebble)
 	})
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -580,12 +614,14 @@ func fastMathTest(t *testing.T, jit bool) {
 	validateBlocks(t, 6, jit, builder)
 }
 
-func TestProgramCalls(t *testing.T) {
-	testCalls(t, true)
+func TestProgramCallsFlaky(t *testing.T) {
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testCalls(t, true, recorderOpt)
+	})
 }
 
-func testCalls(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func testCalls(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -795,11 +831,13 @@ func testCalls(t *testing.T, jit bool) {
 }
 
 func TestProgramReturnData(t *testing.T) {
-	testReturnData(t, true)
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testReturnData(t, true, recorderOpt)
+	})
 }
 
-func testReturnData(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func testReturnData(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -847,17 +885,22 @@ func testReturnData(t *testing.T, jit bool) {
 }
 
 func TestProgramLogs(t *testing.T) {
-	testLogs(t, true, false)
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testLogs(t, true, false, recorderOpt)
+	})
 }
 
 func TestProgramLogsWithTracing(t *testing.T) {
-	testLogs(t, true, true)
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testLogs(t, true, true, recorderOpt)
+	})
 }
 
-func testLogs(t *testing.T, jit, tracing bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+func testLogs(t *testing.T, jit, tracing bool, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithDatabase(rawdb.DBPebble)
 	})
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -961,11 +1004,13 @@ func testLogs(t *testing.T, jit, tracing bool) {
 }
 
 func TestProgramCreate(t *testing.T) {
-	testCreate(t, true)
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testCreate(t, true, recorderOpt)
+	})
 }
 
-func testCreate(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func testCreate(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -1056,15 +1101,19 @@ func testCreate(t *testing.T, jit bool) {
 }
 
 func TestProgramInfiniteLoopShouldCauseErrOutOfGas(t *testing.T) {
-	testInfiniteLoopCausesErrOutOfGas(t, false)
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testInfiniteLoopCausesErrOutOfGas(t, false, recorderOpt)
+	})
 }
 
 func TestProgramInfiniteLoopShouldCauseErrOutOfGas_Jit(t *testing.T) {
-	testInfiniteLoopCausesErrOutOfGas(t, true)
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testInfiniteLoopCausesErrOutOfGas(t, true, recorderOpt)
+	})
 }
 
-func testInfiniteLoopCausesErrOutOfGas(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func testInfiniteLoopCausesErrOutOfGas(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -1083,13 +1132,16 @@ func testInfiniteLoopCausesErrOutOfGas(t *testing.T, jit bool) {
 }
 
 func TestProgramMemory(t *testing.T) {
-	testMemory(t, true)
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testMemory(t, true, recorderOpt)
+	})
 }
 
-func testMemory(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+func testMemory(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithDatabase(rawdb.DBPebble)
 	})
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -1244,17 +1296,28 @@ func testMemory(t *testing.T, jit bool) {
 }
 
 func TestProgramMaxStylusOpenPages(t *testing.T) {
-	testMaxStylusOpenPages(t, true)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testMaxStylusOpenPages(t, true, recorderOpt)
+	})
 }
 
 func TestProgramMaxStylusOpenPagesNative(t *testing.T) {
-	testMaxStylusOpenPages(t, false)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testMaxStylusOpenPages(t, false, recorderOpt)
+	})
 }
 
 func TestProgramMemoryGrowOverflowCompatibilityNative(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, false, func(b *NodeBuilder) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testProgramMemoryGrowOverflowCompatibilityNative(t, recorderOpt)
+	})
+}
+
+func testProgramMemoryGrowOverflowCompatibilityNative(t *testing.T, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithArbOSVersion(params.ArbosVersion_51)
 	})
+	builder, auth, cleanup := setupProgramTest(t, false, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -1329,7 +1392,9 @@ func TestProgramMemoryGrowOverflowCompatibilityNative(t *testing.T) {
 }
 
 func TestProgramMemoryGrowMachineLimit(t *testing.T) {
-	testMemoryGrowMachineLimit(t, true)
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testMemoryGrowMachineLimit(t, true, recorderOpt)
+	})
 }
 
 // testMemoryGrowMachineLimit verifies that both the JIT (wasmer) and the
@@ -1339,10 +1404,11 @@ func TestProgramMemoryGrowMachineLimit(t *testing.T) {
 // memory-grow.wat reads N (u32 LE) from calldata, calls memory.grow(N), and
 // returns 0 (tx succeeds) when grow returned a valid page count, or 1 (tx
 // reverts) when grow returned -1 (machine ceiling hit).
-func testMemoryGrowMachineLimit(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+func testMemoryGrowMachineLimit(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithArbOSVersion(params.ArbosVersion_51)
 	})
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -1471,11 +1537,12 @@ func testMemoryGrowMachineLimit(t *testing.T, jit bool) {
 	validateBlocks(t, 1, jit, builder)
 }
 
-func testMaxStylusOpenPages(t *testing.T, jit bool) {
+func testMaxStylusOpenPages(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	const pageLimit uint16 = 20
-	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
 	})
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -1512,21 +1579,25 @@ func testMaxStylusOpenPages(t *testing.T, jit bool) {
 	// On-chain over limit should fail.
 	// FilterTx() causes the sequencer to reject the tx entirely (not included in a block),
 	// so SendTransaction itself returns an error rather than producing a failed receipt.
-	// We match on state.ErrArbTxFilter.Error() (rather than a literal string) so that
+	// We match on state.ErrSeqFilter.Error() (rather than a literal string) so that
 	// the test tracks the sentinel if it's ever reworded.
 	tx = l2info.PrepareTxTo("Owner", &memWriteAddr, 1e9, nil, overLimitArgs)
 	err = l2client.SendTransaction(ctx, tx)
-	if err == nil || !strings.Contains(err.Error(), state.ErrArbTxFilter.Error()) {
-		Fatal(t, "on-chain tx over limit should have been rejected with", state.ErrArbTxFilter.Error(), ", got:", err)
+	if err == nil || !strings.Contains(err.Error(), state.ErrSeqFilter.Error()) {
+		Fatal(t, "on-chain tx over limit should have been rejected with", state.ErrSeqFilter.Error(), ", got:", err)
 	}
 }
 
 func TestProgramDelayedInboxPageLimitBypass(t *testing.T) {
-	testDelayedInboxPageLimitBypass(t, true)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testDelayedInboxPageLimitBypass(t, true, recorderOpt)
+	})
 }
 
 func TestProgramDelayedInboxPageLimitBypassNative(t *testing.T) {
-	testDelayedInboxPageLimitBypass(t, false)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testDelayedInboxPageLimitBypass(t, false, recorderOpt)
+	})
 }
 
 // testDelayedInboxPageLimitBypass verifies that a Stylus call which would
@@ -1539,13 +1610,14 @@ func TestProgramDelayedInboxPageLimitBypassNative(t *testing.T) {
 // producing a MessageRunContext where IsSequencing() is false, which causes
 // addPages to fall through to the exempt branch. If that wiring regresses
 // (e.g. back to NewMessageSequencingContext), FilterTx fires inside
-// ProduceBlock, block production fails with ErrArbTxFilter, the delayed
+// ProduceBlock, block production fails with ErrSeqFilter, the delayed
 // message never lands, and EnsureTxSucceeded below times out.
-func testDelayedInboxPageLimitBypass(t *testing.T, jit bool) {
+func testDelayedInboxPageLimitBypass(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	const pageLimit uint16 = 20
-	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
 	})
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	defer cleanup()
 
@@ -1558,27 +1630,32 @@ func testDelayedInboxPageLimitBypass(t *testing.T, jit bool) {
 	// SendSignedTxViaL1 posts delayedTx to the delayed inbox on L1, advances
 	// L1 to trigger delayed-message sequencing on L2, and asserts the L2 tx
 	// succeeded. With the fix, it lands and runs normally; without the fix,
-	// block production would stall on ErrArbTxFilter and this would fail.
+	// block production would stall on ErrSeqFilter and this would fail.
 	builder.L1.SendSignedTx(t, builder.L2.Client, delayedTx, builder.L1Info)
 }
 
 func TestProgramMaxStylusOpenPagesInitialFootprint(t *testing.T) {
-	testMaxStylusOpenPagesInitialFootprint(t, true)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testMaxStylusOpenPagesInitialFootprint(t, true, recorderOpt)
+	})
 }
 
 func TestProgramMaxStylusOpenPagesInitialFootprintNative(t *testing.T) {
-	testMaxStylusOpenPagesInitialFootprint(t, false)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testMaxStylusOpenPagesInitialFootprint(t, false, recorderOpt)
+	})
 }
 
-func testMaxStylusOpenPagesInitialFootprint(t *testing.T, jit bool) {
+func testMaxStylusOpenPagesInitialFootprint(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	// grow-120.wat has a fixed 120-page initial footprint and does NOT call
 	// memory.grow at runtime, so the addPages hostio in api.go never fires.
 	// This isolates the CallProgram-entry page-limit check in
 	// arbos/programs/programs.go.
 	const pageLimit uint16 = 50
-	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
 	})
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -1602,28 +1679,33 @@ func testMaxStylusOpenPagesInitialFootprint(t *testing.T, jit bool) {
 	// Sequenced tx: sequencing branch → FilterTx, sequencer rejects before inclusion.
 	tx := l2info.PrepareTxTo("Owner", &fixed120Addr, 1e9, nil, nil)
 	err = l2client.SendTransaction(ctx, tx)
-	if err == nil || !strings.Contains(err.Error(), state.ErrArbTxFilter.Error()) {
-		Fatal(t, "on-chain tx over limit should have been rejected with", state.ErrArbTxFilter.Error(), ", got:", err)
+	if err == nil || !strings.Contains(err.Error(), state.ErrSeqFilter.Error()) {
+		Fatal(t, "on-chain tx over limit should have been rejected with", state.ErrSeqFilter.Error(), ", got:", err)
 	}
 }
 
 func TestProgramMaxStylusOpenPagesInitialFootprintConsensus(t *testing.T) {
-	testMaxStylusOpenPagesInitialFootprintConsensus(t, true)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testMaxStylusOpenPagesInitialFootprintConsensus(t, true, recorderOpt)
+	})
 }
 
 func TestProgramMaxStylusOpenPagesInitialFootprintConsensusNative(t *testing.T) {
-	testMaxStylusOpenPagesInitialFootprintConsensus(t, false)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testMaxStylusOpenPagesInitialFootprintConsensus(t, false, recorderOpt)
+	})
 }
 
-func testMaxStylusOpenPagesInitialFootprintConsensus(t *testing.T, jit bool) {
+func testMaxStylusOpenPagesInitialFootprintConsensus(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	// Exercises the chain-level consensus cap (StylusParams.PageLimit, ArbOS >= 59)
 	// at the CallProgram-entry path. grow-120.wat has a fixed 120-page footprint
 	// and no memory.grow, so the addPages hostio never fires. The node-level
 	// MaxOpenPages cap is left at its default (0 = disabled), isolating the
 	// consensus check.
-	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithArbOSVersion(params.ArbosVersion_59)
 	})
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -1659,11 +1741,15 @@ func testMaxStylusOpenPagesInitialFootprintConsensus(t *testing.T, jit bool) {
 }
 
 func TestProgramNestedStylusCumulativeFootprint(t *testing.T) {
-	testNestedStylusCumulativeFootprint(t, true)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testNestedStylusCumulativeFootprint(t, true, recorderOpt)
+	})
 }
 
 func TestProgramNestedStylusCumulativeFootprintNative(t *testing.T) {
-	testNestedStylusCumulativeFootprint(t, false)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testNestedStylusCumulativeFootprint(t, false, recorderOpt)
+	})
 }
 
 // testNestedStylusCumulativeFootprint exercises the CallProgram-entry
@@ -1677,10 +1763,11 @@ func TestProgramNestedStylusCumulativeFootprintNative(t *testing.T) {
 // targets the consensus cap (StylusParams.PageLimit, ArbOS >= 59), so
 // the sequencer includes the tx and it fails on-chain rather than being
 // FilterTx'd.
-func testNestedStylusCumulativeFootprint(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+func testNestedStylusCumulativeFootprint(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithArbOSVersion(params.ArbosVersion_59)
 	})
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -1717,26 +1804,31 @@ func testNestedStylusCumulativeFootprint(t *testing.T, jit bool) {
 }
 
 func TestProgramNestedStylusCumulativeFootprintNodeLevel(t *testing.T) {
-	testNestedStylusCumulativeFootprintNodeLevel(t, true)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testNestedStylusCumulativeFootprintNodeLevel(t, true, recorderOpt)
+	})
 }
 
 func TestProgramNestedStylusCumulativeFootprintNodeLevelNative(t *testing.T) {
-	testNestedStylusCumulativeFootprintNodeLevel(t, false)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testNestedStylusCumulativeFootprintNodeLevel(t, false, recorderOpt)
+	})
 }
 
 // Same nested-call scenario, but exercises the node-level MaxOpenPages
 // cap rather than the consensus cap. In a sequencing runCtx, FilterTx
 // fires inside the inner frame, marking the whole tx for exclusion so
-// the sequencer rejects it with ErrArbTxFilter before inclusion.
-func testNestedStylusCumulativeFootprintNodeLevel(t *testing.T, jit bool) {
+// the sequencer rejects it with ErrSeqFilter before inclusion.
+func testNestedStylusCumulativeFootprintNodeLevel(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	const pageLimit uint16 = 128
 	// The consensus cumulative-pages cap (ArbOS >= 59) would
 	// OOG at CallProgram entry WITHOUT calling FilterTx and pre-empt the
 	// node-level MaxOpenPages path this test is designed to exercise.
-	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithArbOSVersion(params.ArbosVersion_51)
 		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
 	})
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -1753,19 +1845,22 @@ func testNestedStylusCumulativeFootprintNodeLevel(t *testing.T, jit bool) {
 	// in a sequencing runCtx → FilterTx + OOG. The whole tx is dropped.
 	tx := l2info.PrepareTxTo("Owner", &outerAddr, 1e9, nil, calldata)
 	err := l2client.SendTransaction(ctx, tx)
-	if err == nil || !strings.Contains(err.Error(), state.ErrArbTxFilter.Error()) {
+	if err == nil || !strings.Contains(err.Error(), state.ErrSeqFilter.Error()) {
 		Fatal(t, "sequenced tx exceeding cumulative MaxOpenPages should have been filtered, got:", err)
 	}
 }
 
 func TestProgramActivateFails(t *testing.T) {
-	testActivateFails(t, true)
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testActivateFails(t, true, recorderOpt)
+	})
 }
 
-func testActivateFails(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+func testActivateFails(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithDatabase(rawdb.DBPebble)
 	})
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -1799,11 +1894,13 @@ func testActivateFails(t *testing.T, jit bool) {
 }
 
 func TestProgramSdkStorage(t *testing.T) {
-	testSdkStorage(t, true)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testSdkStorage(t, true, recorderOpt)
+	})
 }
 
-func testSdkStorage(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func testSdkStorage(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -1994,7 +2091,13 @@ func TestStylusPrecompileMethodsSimple(t *testing.T) {
 }
 
 func TestProgramActivationLogs(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testProgramActivationLogs(t, recorderOpt)
+	})
+}
+
+func testProgramActivationLogs(t *testing.T, builderOpts ...func(*NodeBuilder)) {
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	l2client := builder.L2.Client
 	ctx := builder.ctx
 	defer cleanup()
@@ -2033,11 +2136,13 @@ func TestProgramActivationLogs(t *testing.T) {
 }
 
 func TestProgramEarlyExit(t *testing.T) {
-	testEarlyExit(t, true)
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testEarlyExit(t, true, recorderOpt)
+	})
 }
 
-func testEarlyExit(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func testEarlyExit(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -2065,7 +2170,13 @@ func testEarlyExit(t *testing.T, jit bool) {
 }
 
 func TestProgramCacheManager(t *testing.T) {
-	builder, ownerAuth, cleanup := setupProgramTest(t, true)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testProgramCacheManager(t, recorderOpt)
+	})
+}
+
+func testProgramCacheManager(t *testing.T, builderOpts ...func(*NodeBuilder)) {
+	builder, ownerAuth, cleanup := setupProgramTest(t, true, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	l2info := builder.L2Info
@@ -2182,8 +2293,9 @@ func TestProgramCacheManager(t *testing.T) {
 	assert(len(all) == 0, err)
 }
 
-func testReturnDataCost(t *testing.T, arbosVersion uint64) {
-	builder, auth, cleanup := setupProgramTest(t, false, func(b *NodeBuilder) { b.WithArbOSVersion(arbosVersion) })
+func testReturnDataCost(t *testing.T, arbosVersion uint64, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) { b.WithArbOSVersion(arbosVersion) })
+	builder, auth, cleanup := setupProgramTest(t, false, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -2243,14 +2355,24 @@ func testReturnDataCost(t *testing.T, arbosVersion uint64) {
 }
 
 func TestReturnDataCost(t *testing.T) {
-	testReturnDataCost(t, params.ArbosVersion_StylusFixes)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testReturnDataCost(t, params.ArbosVersion_StylusFixes, recorderOpt)
+	})
 }
 
 func TestReturnDataCost_StylusFixes(t *testing.T) {
-	testReturnDataCost(t, params.ArbosVersion_StylusFixes)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testReturnDataCost(t, params.ArbosVersion_StylusFixes, recorderOpt)
+	})
 }
 
 func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) (
+	*NodeBuilder, bind.TransactOpts, func(),
+) {
+	return setupProgramTestWithScheme(t, jit, "", builderOpts...)
+}
+
+func setupProgramTestWithScheme(t *testing.T, jit bool, stateScheme string, builderOpts ...func(*NodeBuilder)) (
 	*NodeBuilder, bind.TransactOpts, func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -2261,9 +2383,15 @@ func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder))
 		opt(builder)
 	}
 
-	// setupProgramTest is being called by tests that validate blocks.
-	// For now validation only works with HashScheme set.
-	builder.RequireScheme(t, rawdb.HashScheme)
+	if stateScheme == "" {
+		stateScheme = rawdb.HashScheme
+		if builder.execConfig.RecordingDatabase.Mode == gethexec.BlockRecorderModeChainTip {
+			stateScheme = builder.defaultStateScheme
+		}
+	}
+	if stateScheme != "" {
+		builder.RequireScheme(t, stateScheme)
+	}
 	builder.nodeConfig.BlockValidator.Enable = false
 	builder.nodeConfig.Staker.Enable = true
 	builder.nodeConfig.BatchPoster.Enable = true
@@ -2534,7 +2662,7 @@ func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targets
 	if !bytes.Equal(result, want) {
 		t.Fatalf("got wrong value, got %x, want %x", result, want)
 	}
-	wasmDB := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDB := nodeB.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	checkWasmStoreContent(t, wasmDB, nodeBExecConfigBefore.StylusTarget.WasmTargets(), numModules)
 	// close nodeB
 	cleanupB()
@@ -2575,7 +2703,7 @@ func testWasmRecreate(t *testing.T, builder *NodeBuilder, targetsBefore, targets
 	_, err = EnsureTxSucceeded(ctx, nodeB.Client, loadTx)
 	Require(t, err)
 
-	wasmDB = nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDB = nodeB.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	checkWasmStoreContent(t, wasmDB, nodeBExecConfigAfter.StylusTarget.WasmTargets(), numModules)
 
 	cleanupB()
@@ -2646,18 +2774,23 @@ func TestWasmRecreate(t *testing.T) {
 	databaseEngine := rawdb.DBPebble
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			testWasmRecreateWithCall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDBBetween, databaseEngine)
+			testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+				testWasmRecreateWithCall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDBBetween, databaseEngine, recorderOpt)
+			})
 		})
 		t.Run(tc.name+" with delegate call", func(t *testing.T) {
-			testWasmRecreateWithDelegatecall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDBBetween, databaseEngine)
+			testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+				testWasmRecreateWithDelegatecall(t, tc.targetsBefore, tc.targetsAfter, tc.removeWasmDBBetween, databaseEngine, recorderOpt)
+			})
 		})
 	}
 }
 
-func testWasmRecreateWithCall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDBBetween bool, databaseEngine string) {
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+func testWasmRecreateWithCall(t *testing.T, _targetsBefore, _targetsAfter []string, _removeWasmDBBetween bool, databaseEngine string, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithDatabase(rawdb.DBPebble)
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -2674,10 +2807,11 @@ func testWasmRecreateWithCall(t *testing.T, targetsBefore, targetsAfter []string
 	testWasmRecreate(t, builder, localTargetOnly, allWasmTargets, 1, false, storeTx, loadTx, val[:], databaseEngine)
 }
 
-func testWasmRecreateWithDelegatecall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDBBetween bool, databaseEngine string) {
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+func testWasmRecreateWithDelegatecall(t *testing.T, _targetsBefore, _targetsAfter []string, _removeWasmDBBetween bool, databaseEngine string, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithDatabase(rawdb.DBPebble)
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -2720,11 +2854,18 @@ func createMapFromDb(db ethdb.KeyValueStore) (map[string][]byte, error) {
 }
 
 func TestWasmStoreRebuilding(t *testing.T) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testWasmStoreRebuilding(t, recorderOpt)
+	})
+}
+
+func testWasmStoreRebuilding(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	databaseEngine := rawdb.DBLeveldb
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithExtraArchs(allWasmTargets)
 		b.WithDatabase(databaseEngine)
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -2757,7 +2898,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 		Fatal(t, "got wrong value")
 	}
 
-	wasmDB := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDB := nodeB.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 
 	storeMap, err := createMapFromDb(wasmDB)
 	Require(t, err)
@@ -2779,7 +2920,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 	nodeB, cleanupB = builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
 	bc := nodeB.ExecNode.Backend.ArbInterface().BlockChain()
 
-	wasmDBAfterDelete := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDBAfterDelete := nodeB.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	storeMapAfterDelete, err := createMapFromDb(wasmDBAfterDelete)
 	Require(t, err)
 	if len(storeMapAfterDelete) != 0 {
@@ -2791,7 +2932,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 	execConfig := builder.execConfig
 	Require(t, gethexec.RebuildWasmStore(ctx, wasmDBAfterDelete, nodeB.ExecNode.ExecutionDB, execConfig.RPC.MaxRecreateStateDepth, &execConfig.StylusTarget, bc, common.Hash{}, bc.CurrentBlock().Hash()))
 
-	wasmDBAfterRebuild := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDBAfterRebuild := nodeB.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 
 	// Before comparing, check if rebuilding was set to done and then delete the keys that are used to track rebuilding status
 	status, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDBAfterRebuild, gethexec.RebuildingPositionKey)
@@ -2929,11 +3070,18 @@ func deployWasmAndGetEntrySizeEstimateBytes(
 }
 
 func TestWasmLruCache(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testWasmLruCache(t, recorderOpt)
+	})
+}
+
+func testWasmLruCache(t *testing.T, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		// TestWasmLruCache shouldn't be run in parallel as it targets global Wasm LRU Cache,
 		// programs.ClearWasmLruCache is called in the test.
 		b.DontParalellise()
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 
 	ctx := builder.ctx
 	l2info := builder.L2Info
@@ -3030,11 +3178,18 @@ func checkLruCacheMetrics(t *testing.T, expected programs.WasmLruCacheMetrics) {
 }
 
 func TestWasmLongTermCache(t *testing.T) {
-	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testWasmLongTermCache(t, recorderOpt)
+	})
+}
+
+func testWasmLongTermCache(t *testing.T, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		// TestWasmLongTermCache shouldn't be run in parallel as it targets global Wasm Long Term Cache,
 		// programs.ClearWasmLongTermCache is called in the test.
 		b.DontParalellise()
 	})
+	builder, ownerAuth, cleanup := setupProgramTest(t, true, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -3170,11 +3325,18 @@ func TestWasmLongTermCache(t *testing.T) {
 }
 
 func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
-	builder, ownerAuth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testRepopulateWasmLongTermCacheFromLru(t, recorderOpt)
+	})
+}
+
+func testRepopulateWasmLongTermCacheFromLru(t *testing.T, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		// TestRepopulateWasmLongTermCacheFromLru shouldn't be run in parallel as it targets global Wasm Long Term Cache and Wasm LRU Cache,
 		// programs.ClearWasmLongTermCache and programs.ClearWasmLruCache are called in the test.o
 		b.DontParalellise()
 	})
+	builder, ownerAuth, cleanup := setupProgramTest(t, true, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -3299,10 +3461,17 @@ func TestRepopulateWasmLongTermCacheFromLru(t *testing.T) {
 }
 
 func TestOutOfGasInStorageCacheFlush(t *testing.T) {
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testOutOfGasInStorageCacheFlush(t, recorderOpt)
+	})
+}
+
+func testOutOfGasInStorageCacheFlush(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	jit := false
-	builder, auth, cleanup := setupProgramTest(t, jit, func(b *NodeBuilder) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithDatabase(rawdb.DBPebble)
 	})
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	defer cleanup()
 
@@ -3389,27 +3558,23 @@ func TestOutOfGasInStorageCacheFlush(t *testing.T) {
 	}
 	blockNumberFailedTx := receipt.BlockNumber
 
-	wasmModuleRoot := currentRootModule(t)
-	// Retry ValidateResult because the batch may not yet be confirmed on L1
-	// ("batch not found on L1 yet").
-	retryUntilFound(t, ctx, 40, 250*time.Millisecond, "ValidateResult", "batch not found on L1", func() error {
-		_, _, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidateResult(
-			ctx,
-			arbutil.MessageIndex(blockNumberFailedTx.Uint64()),
-			false,
-			wasmModuleRoot,
-		)
-		return err
-	})
+	validateResultAt(t, ctx, builder, arbutil.MessageIndex(blockNumberFailedTx.Uint64()))
 }
 
 func TestProgramMemoryFillOverflow(t *testing.T) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testProgramMemoryFillOverflow(t, recorderOpt)
+	})
+}
+
+func testProgramMemoryFillOverflow(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	// Pre-Stylus-v3 (ArbOS < 59) emits the buggy memory.fill that traps on
 	// values exceeding 8 bits; that trap is what invokes FilterTx. Stylus v3+
 	// masks the value and never traps, so this test must run at ArbOS 51.
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithArbOSVersion(params.ArbosVersion_51)
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -3419,7 +3584,7 @@ func TestProgramMemoryFillOverflow(t *testing.T) {
 
 	tx := l2info.PrepareTxTo("Owner", &overflowAddr, 1e9, nil, nil)
 	err := l2client.SendTransaction(ctx, tx)
-	if err == nil || !strings.Contains(err.Error(), state.ErrArbTxFilter.Error()) {
+	if err == nil || !strings.Contains(err.Error(), state.ErrSeqFilter.Error()) {
 		t.Fatal("should get filtered, got: ", err)
 	}
 }

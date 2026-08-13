@@ -6,7 +6,14 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,11 +23,17 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
+	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbos/util"
+	filteringreportapi "github.com/offchainlabs/nitro/cmd/filtering-report/api"
+	"github.com/offchainlabs/nitro/cmd/filtering-report/signer/signertest"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
@@ -28,40 +41,24 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/s3client"
 	"github.com/offchainlabs/nitro/util/s3syncer"
+	"github.com/offchainlabs/nitro/util/sqsclient"
 )
+
+func storeFilterHashes(t *testing.T, store *addressfilter.HashStore, id uuid.UUID, salt uuid.UUID, scheme addressfilter.HashingScheme, hashes []common.Hash, digest string) {
+	t.Helper()
+	require.NoError(t, store.Store(digest, len(hashes), func(addHash func(common.Hash)) (*addressfilter.ListMeta, error) {
+		for _, h := range hashes {
+			addHash(h)
+		}
+		return &addressfilter.ListMeta{ID: id, Salt: salt, Scheme: scheme}, nil
+	}))
+}
 
 func isFilteredError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(err.Error(), "internal error")
-}
-
-func newHashedChecker(addrs []common.Address) *addressfilter.HashedAddressChecker {
-	return newHashedCheckerWithScheme(addrs, addressfilter.HashingSchemeStringInput)
-}
-
-func newHashedCheckerWithScheme(addrs []common.Address, scheme addressfilter.HashingScheme) *addressfilter.HashedAddressChecker {
-	const cacheSize = 100
-	store := addressfilter.NewHashStore(cacheSize)
-	if len(addrs) > 0 {
-		salt, _ := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
-		hashes := make([]common.Hash, len(addrs))
-		if scheme == addressfilter.HashingSchemeRawBytesInput {
-			for i, addr := range addrs {
-				hashes[i] = addressfilter.HashRawBytesInput(salt, addr)
-			}
-		} else {
-			hashPrefix := addressfilter.GetHashStringInputPrefix(salt)
-			for i, addr := range addrs {
-				hashes[i] = addressfilter.HashStringInputWithPrefix(hashPrefix, addr)
-			}
-		}
-		store.Store(uuid.New(), salt, scheme, hashes, "test")
-	}
-	checker := addressfilter.NewHashedAddressChecker(store, 4, 8192)
-	checker.Start(context.Background())
-	return checker
+	return strings.Contains(err.Error(), "Transaction rejected by chain policy")
 }
 
 func TestAddressFilterDirectTransfer(t *testing.T) {
@@ -72,6 +69,7 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 	builder.isSequencer = true
 	filteringReportStack, endpoint := SetupFilteringReport(t)
 	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -85,8 +83,7 @@ func TestAddressFilterDirectTransfer(t *testing.T) {
 
 	// Set up address filter to block FilteredUser
 	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
-	addrFilter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	// Test 1: Transaction TO a filtered address should fail and produce a report
 	tx := builder.L2Info.PrepareTx("NormalUser", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
@@ -176,6 +173,7 @@ func TestAddressFilterArbSysWithdrawEth(t *testing.T) {
 	builder.isSequencer = true
 	filteringReportStack, endpoint := SetupFilteringReport(t)
 	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -187,8 +185,7 @@ func TestAddressFilterArbSysWithdrawEth(t *testing.T) {
 	builder.L1Info.GenerateAccount("OkL1Dest")
 	okL1Dest := builder.L1Info.GetAddress("OkL1Dest")
 
-	addrFilter := newHashedChecker([]common.Address{filteredL1Dest})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredL1Dest})
 
 	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, builder.L2.Client)
 	Require(t, err)
@@ -252,6 +249,7 @@ func TestAddressFilterMultipleTxsInBlock(t *testing.T) {
 	builder.isSequencer = true
 	filteringReportStack, endpoint := SetupFilteringReport(t)
 	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -274,8 +272,7 @@ func TestAddressFilterMultipleTxsInBlock(t *testing.T) {
 	builder.L2Info.GenerateAccount("CleanReceiver3")
 	builder.L2Info.GenerateAccount("CleanReceiver5")
 
-	addrFilter := newHashedChecker([]common.Address{filteredA, filteredB})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredA, filteredB})
 
 	clean1 := builder.L2Info.PrepareTx("Sender1", "CleanReceiver1", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	badA := builder.L2Info.PrepareTx("Sender2", "FilteredUserA", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
@@ -283,24 +280,21 @@ func TestAddressFilterMultipleTxsInBlock(t *testing.T) {
 	badB := builder.L2Info.PrepareTx("Sender4", "FilteredUserB", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	clean5 := builder.L2Info.PrepareTx("Sender5", "CleanReceiver5", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 
-	sequencer := builder.L2.ExecNode.Sequencer
-	// SequenceTransactionsForTest bypasses the tx queue and sequences every
+	// sequenceTransactionsInTheSameBlock bypasses the tx queue and sequences every
 	// tx into a single block.
-	sequencer.Pause()
-	defer sequencer.Activate()
-	block, txErrors := sequencer.SequenceTransactionsForTest(
-		t, types.Transactions{clean1, badA, clean3, badB, clean5},
+	block, txResults := sequenceTransactionsInTheSameBlock(
+		t, builder, types.Transactions{clean1, badA, clean3, badB, clean5},
 	)
 	require.NotNil(t, block, "block should have been produced")
-	require.Len(t, txErrors, 5)
+	require.Len(t, txResults, 5)
 
-	require.NoError(t, txErrors[0], "clean tx 1 should have been sequenced")
-	require.Error(t, txErrors[1], "tx to FilteredUserA should have been rejected")
-	require.Truef(t, isFilteredError(txErrors[1]), "tx 2 rejection should be a filter error, got: %v", txErrors[1])
-	require.NoErrorf(t, txErrors[2], "clean tx 3 must not inherit filter state from tx 2, got: %v", txErrors[2])
-	require.Error(t, txErrors[3], "tx to FilteredUserB should have been rejected")
-	require.Truef(t, isFilteredError(txErrors[3]), "tx 4 rejection should be a filter error, got: %v", txErrors[3])
-	require.NoErrorf(t, txErrors[4], "clean tx 5 must not inherit filter state from tx 4, got: %v", txErrors[4])
+	require.NoError(t, txResults[0].Err, "clean tx 1 should have been sequenced")
+	require.Error(t, txResults[1].Err, "tx to FilteredUserA should have been rejected")
+	require.Truef(t, isFilteredError(txResults[1].Err), "tx 2 rejection should be a filter error, got: %v", txResults[1].Err)
+	require.NoErrorf(t, txResults[2].Err, "clean tx 3 must not inherit filter state from tx 2, got: %v", txResults[2].Err)
+	require.Error(t, txResults[3].Err, "tx to FilteredUserB should have been rejected")
+	require.Truef(t, isFilteredError(txResults[3].Err), "tx 4 rejection should be a filter error, got: %v", txResults[3].Err)
+	require.NoErrorf(t, txResults[4].Err, "clean tx 5 must not inherit filter state from tx 4, got: %v", txResults[4].Err)
 
 	cleanReceipt1, err := builder.L2.EnsureTxSucceeded(clean1)
 	require.NoError(t, err)
@@ -368,6 +362,7 @@ func TestAddressFilterEventRuleReport(t *testing.T) {
 	builder.isSequencer = true
 	filteringReportStack, endpoint := SetupFilteringReport(t)
 	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -377,11 +372,10 @@ func TestAddressFilterEventRuleReport(t *testing.T) {
 	// Create filtered address and set up address filter
 	builder.L2Info.GenerateAccount("FilteredBeneficiary")
 	filteredAddr := builder.L2Info.GetAddress("FilteredBeneficiary")
-	addrFilter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	// Emit Transfer event with filtered address as recipient (topic[2])
-	// This triggers postTxFilter via the event filter path
+	// This triggers PostTxFilter via the event filter path
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	tx, err := contract.EmitTransfer(&auth, auth.From, filteredAddr)
 	if err == nil {
@@ -460,6 +454,7 @@ func TestAddressFilterCall(t *testing.T) {
 	builder.isSequencer = true
 	filteringReportStack, endpoint := SetupFilteringReport(t)
 	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -470,8 +465,7 @@ func TestAddressFilterCall(t *testing.T) {
 	targetAddr, _ := deployAddressFilterTestContract(t, ctx, builder)
 
 	// Set up filter to block the target contract
-	checker := newHashedChecker([]common.Address{targetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, checker)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{targetAddr})
 
 	// Test: CALL to filtered address should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -519,6 +513,7 @@ func TestAddressFilterStaticCall(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.isSequencer = true
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -529,8 +524,7 @@ func TestAddressFilterStaticCall(t *testing.T) {
 	targetAddr, _ := deployAddressFilterTestContract(t, ctx, builder)
 
 	// Set up filter to block the target contract
-	filter := newHashedChecker([]common.Address{targetAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{targetAddr})
 
 	// Test: STATICCALL to filtered address within a transaction should fail
 	// We use staticcallTargetInTx which does a state change + staticcall
@@ -564,6 +558,7 @@ func runInnerCallFilterTest(t *testing.T, useEOATarget bool, invoke func(*localg
 	builder.isSequencer = true
 	filteringReportStack, endpoint := SetupFilteringReport(t)
 	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -577,8 +572,7 @@ func runInnerCallFilterTest(t *testing.T, useEOATarget bool, invoke func(*localg
 		filteredAddr, _ = deployAddressFilterTestContract(t, ctx, builder)
 	}
 
-	checker := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, checker)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	tx, err := invoke(caller, &auth, filteredAddr)
@@ -667,6 +661,7 @@ func runStylusCallFilterTest(t *testing.T, useEOATarget bool) {
 	builder.isSequencer = true
 	filteringReportStack, endpoint := SetupFilteringReport(t)
 	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -682,8 +677,7 @@ func runStylusCallFilterTest(t *testing.T, useEOATarget bool) {
 		filteredAddr = deployWasm(t, ctx, auth2, builder.L2.Client, rustFile("storage"))
 	}
 
-	checker := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, checker)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	args := argsForMulticall(vm.CALL, filteredAddr, nil, nil)
 	tx := builder.L2Info.PrepareTxTo("Owner", &multicallAddr, 10_000_000, common.Big0, args)
@@ -723,12 +717,146 @@ func TestAddressFilterStylusCallToEOA(t *testing.T) {
 	runStylusCallFilterTest(t, true)
 }
 
-func TestAddressFilterDisabled(t *testing.T) {
+// TestAddressFilterStylusCacheNoLeak verifies a dropped (filtered) tx doesn't
+// leave its Stylus program warm for a later committed tx in the same block. If it
+// did, the sequencer would charge cached init gas where replay (which never saw
+// the dropped tx) charges cold.
+func TestAddressFilterStylusCacheNoLeak(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// The recent-wasms cache is gated to ArbOS 60.
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_60)
+	builder.isSequencer = true
+	s3Filter := setupFakeS3AddressFilter(t, builder)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	multicallAddr := deployWasm(t, ctx, auth, builder.L2.Client, rustFile("multicall"))
+
+	builder.L2Info.GenerateAccount("FilteredEOA")
+	filteredAddr := builder.L2Info.GetAddress("FilteredEOA")
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
+
+	// Distinct senders so nonces don't couple the txs.
+	for _, name := range []string{"SenderA", "SenderB", "SenderC"} {
+		builder.L2Info.GenerateAccount(name)
+		builder.L2.TransferBalance(t, "Owner", name, big.NewInt(1e18), builder.L2Info)
+	}
+	txA := builder.L2Info.PrepareTxTo("SenderA", &multicallAddr, 1e7, nil, argsForMulticall(vm.CALL, filteredAddr, nil, nil))
+	txB := builder.L2Info.PrepareTxTo("SenderB", &multicallAddr, 1e7, nil, multicallEmptyArgs())
+	txC := builder.L2Info.PrepareTxTo("SenderC", &multicallAddr, 1e7, nil, multicallEmptyArgs())
+
+	block, txResults := sequenceTransactionsInTheSameBlock(t, builder, types.Transactions{txA, txB, txC})
+	require.NotNil(t, block, "block should have been created")
+	require.Len(t, txResults, 3)
+	require.Error(t, txResults[0].Err, "txA should be dropped by the filter")
+	require.Truef(t, isFilteredError(txResults[0].Err), "txA must fail with a filter error (not be included), got: %v", txResults[0].Err)
+	require.NoError(t, txResults[1].Err, "txB should commit")
+	require.NoError(t, txResults[2].Err, "txC should commit")
+
+	rcptB, err := builder.L2.EnsureTxSucceeded(txB)
+	require.NoError(t, err)
+	rcptC, err := builder.L2.EnsureTxSucceeded(txC)
+	require.NoError(t, err)
+	require.Equal(t, rcptB.BlockNumber.Uint64(), rcptC.BlockNumber.Uint64(), "txB and txC must share a block")
+
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, builder.L2.Client)
+	require.NoError(t, err)
+	initGas, err := arbWasm.ProgramInitGas(nil, multicallAddr)
+	require.NoError(t, err)
+	discount := initGas.Gas - initGas.GasWhenCached
+	require.Greater(t, discount, uint64(0), "sanity: cached init must be cheaper than cold")
+
+	// txB pays cold init and txC cached; the difference is charged to the
+	// WasmComputation dimension. If txA had leaked its warm-start, txB would be
+	// cached too and the dimensions would match.
+	assertStylusInitGasDelta(t, rcptB, rcptC, discount)
+}
+
+// assertStylusInitGasDelta asserts that two receipts for byte-identical Stylus
+// calls match in every multi-gas dimension except WasmComputation, where `cold`
+// exceeds `cached` by wantDelta
+func assertStylusInitGasDelta(t *testing.T, cold, cached *types.Receipt, wantDelta uint64) {
+	t.Helper()
+	for k := multigas.ResourceKindUnknown; k < multigas.NumResourceKind; k++ {
+		coldGas, cachedGas := cold.MultiGasUsed.Get(k), cached.MultiGasUsed.Get(k)
+		if k == multigas.ResourceKindWasmComputation {
+			require.Equalf(t, wantDelta, coldGas-cachedGas,
+				"WasmComputation must differ by the init discount (cold=%d cached=%d)", coldGas, cachedGas)
+		} else {
+			require.Equalf(t, cachedGas, coldGas, "dimension %v must match between the two calls", k)
+		}
+	}
+}
+
+// TestStylusWarmStartCacheSurvivesRevert is the complement to
+// TestAddressFilterStylusCacheNoLeak: a tx that warms a Stylus program and then
+// reverts but is still included must keep the warming, so a later committed call in
+// the same block is charged cached, not cold. Guards against dropping warmings on
+// revert
+func TestStylusWarmStartCacheSurvivesRevert(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_60)
+	builder.isSequencer = true
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	multicallAddr := deployWasm(t, ctx, auth, builder.L2.Client, rustFile("multicall"))
+
+	// multicall -> CALL ArbDebug.customRevert: the multicall program is warmed
+	// (init paid) before it calls the precompile, which reverts the whole tx.
+	customRevert, _ := util.NewCallParser(precompilesgen.ArbDebugABI, "customRevert")
+	revertCalldata, err := customRevert(uint64(32))
+	require.NoError(t, err)
+	revertArgs := argsForMulticall(vm.CALL, types.ArbDebugAddress, nil, revertCalldata)
+
+	for _, name := range []string{"Reverter", "SenderW1", "SenderW2"} {
+		builder.L2Info.GenerateAccount(name)
+		builder.L2.TransferBalance(t, "Owner", name, big.NewInt(1e18), builder.L2Info)
+	}
+	txRevert := builder.L2Info.PrepareTxTo("Reverter", &multicallAddr, 1e7, nil, revertArgs)
+	txW1 := builder.L2Info.PrepareTxTo("SenderW1", &multicallAddr, 1e7, nil, multicallEmptyArgs())
+	txW2 := builder.L2Info.PrepareTxTo("SenderW2", &multicallAddr, 1e7, nil, multicallEmptyArgs())
+
+	block, txResults := sequenceTransactionsInTheSameBlock(t, builder, types.Transactions{txRevert, txW1, txW2})
+	require.NotNil(t, block)
+	require.Len(t, txResults, 3)
+	// A reverted tx is still included (not a sequencing drop), so no error here.
+	require.NoError(t, txResults[0].Err)
+	require.NoError(t, txResults[1].Err)
+	require.NoError(t, txResults[2].Err)
+
+	// txRevert is included with failed status (reverted), proving it ran and warmed
+	// the program rather than being dropped.
+	rcptRevert, err := builder.L2.Client.TransactionReceipt(ctx, txRevert.Hash())
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusFailed, rcptRevert.Status, "txRevert should be included but reverted")
+
+	rcptW1, err := builder.L2.EnsureTxSucceeded(txW1)
+	require.NoError(t, err)
+	rcptW2, err := builder.L2.EnsureTxSucceeded(txW2)
+	require.NoError(t, err)
+	require.Equal(t, rcptW1.BlockNumber.Uint64(), rcptW2.BlockNumber.Uint64(), "txW1 and txW2 must share a block")
+
+	// Both committed calls are warm (txRevert kept the program warm), so they match
+	// in every multi-gas dimension. If the warming were dropped on revert, txW1
+	// would pay cold init and WasmComputation would differ.
+	assertStylusInitGasDelta(t, rcptW1, rcptW2, 0)
+}
+
+func TestAddressFilterEmptyList(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.isSequencer = true
+	// Filtering is enabled but seeded with an empty list, so nothing is filtered.
+	setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -736,11 +864,6 @@ func TestAddressFilterDisabled(t *testing.T) {
 	builder.L2Info.GenerateAccount("TestUser")
 	builder.L2.TransferBalance(t, "Owner", "TestUser", big.NewInt(1e18), builder.L2Info)
 
-	// Set up an empty filter (disabled)
-	filter := newHashedChecker([]common.Address{})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
-
-	// All transactions should succeed when filter is disabled
 	tx := builder.L2Info.PrepareTx("Owner", "TestUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	err := builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
@@ -762,6 +885,7 @@ func TestAddressFilterCreate2(t *testing.T) {
 	builder.isSequencer = true
 	filteringReportStack, endpoint := SetupFilteringReport(t)
 	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -774,8 +898,7 @@ func TestAddressFilterCreate2(t *testing.T) {
 	Require(t, err)
 
 	// Set up filter to block the computed address
-	checker := newHashedChecker([]common.Address{create2Addr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, checker)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{create2Addr})
 
 	// Test: CREATE2 to filtered address should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -824,6 +947,7 @@ func TestAddressFilterCreate(t *testing.T) {
 	builder.isSequencer = true
 	filteringReportStack, endpoint := SetupFilteringReport(t)
 	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -838,8 +962,7 @@ func TestAddressFilterCreate(t *testing.T) {
 	createAddr := crypto.CreateAddress(callerAddr, nonce)
 
 	// Set up filter to block the computed address
-	checker := newHashedChecker([]common.Address{createAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, checker)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{createAddr})
 
 	// Test: CREATE to filtered address should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -872,8 +995,7 @@ func TestAddressFilterCreate(t *testing.T) {
 
 	// Test: CREATE to non-filtered address (after nonce incremented) should succeed
 	// Clear the filter to allow the next CREATE
-	emptyChecker := newHashedChecker([]common.Address{})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, emptyChecker)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, nil)
 
 	auth = builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 	tx, err = caller.CreateContract(&auth)
@@ -891,6 +1013,7 @@ func TestAddressFilterTopLevelDeployment(t *testing.T) {
 	builder.isSequencer = true
 	filteringReportStack, endpoint := SetupFilteringReport(t)
 	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -902,8 +1025,7 @@ func TestAddressFilterTopLevelDeployment(t *testing.T) {
 	// We pre-compute it with the same formula so the filter can block it.
 	createAddr := crypto.CreateAddress(senderAddr, senderNonce)
 
-	checker := newHashedChecker([]common.Address{createAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, checker)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{createAddr})
 
 	// Minimal init code: deploys a 0x35-byte runtime that always reverts. Same bytecode used by
 	// AddressFilterTest.createContract — we only need a valid constructor that runs to completion.
@@ -944,6 +1066,7 @@ func TestAddressFilterSelfdestruct(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.isSequencer = true
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -955,8 +1078,7 @@ func TestAddressFilterSelfdestruct(t *testing.T) {
 	filteredAddr := builder.L2Info.GetAddress("FilteredBeneficiary")
 
 	// Set up filter to block the beneficiary
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	// Test: SELFDESTRUCT to filtered beneficiary should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -989,6 +1111,7 @@ func TestAddressFilterSelfdestructOnConstruct(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
 	builder.isSequencer = true
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -1005,8 +1128,7 @@ func TestAddressFilterSelfdestructOnConstruct(t *testing.T) {
 	cleanAddr := builder.L2Info.GetAddress("CleanBeneficiary")
 
 	// Set up address filter to block FilteredBeneficiary
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	// Test 1: Deploy contract that selfdestructs to filtered address in constructor should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Deployer", ctx)
@@ -1065,6 +1187,7 @@ func TestAddressFilterWithFilteredEvents(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithEventFilterRules(rules)
 	builder.isSequencer = true
 
+	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -1079,8 +1202,7 @@ func TestAddressFilterWithFilteredEvents(t *testing.T) {
 	builder.L2Info.GenerateAccount("CleanBeneficiary")
 	cleanAddr := builder.L2Info.GetAddress("CleanBeneficiary")
 
-	filter := newHashedChecker([]common.Address{filteredAddr})
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, filter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	// Test 1: Transfer to filtered beneficiary should fail
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
@@ -1200,9 +1322,10 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	// Create a filter service with valid config but without loaded rules
 	filterCfg := &addressfilter.Config{
 		S3: s3syncer.Config{
-			Config:    s3client.Config{Region: "us-east-1"},
-			Bucket:    "test-bucket",
-			ObjectKey: "test-key",
+			Config:      s3client.Config{Region: "us-east-1"},
+			Bucket:      "test-bucket",
+			ObjectKey:   "test-key",
+			DownloadDir: t.TempDir(),
 		},
 		PollInterval:              5 * time.Minute,
 		CacheSize:                 100,
@@ -1223,9 +1346,7 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	}
 
 	// Store hashes to the hashstore so FilteringReady returns true
-	salt, err := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
-	Require(t, err)
-	filterService.GetHashStore().Store(uuid.New(), salt, addressfilter.HashingSchemeStringInput, nil, "test-digest")
+	storeFilterHashes(t, filterService.GetHashStore(), uuid.New(), testFilterSalt, addressfilter.HashingSchemeStringInput, nil, "test-digest")
 
 	if !execNode.Sequencer.FilteringReady() {
 		t.Fatal("FilteringReady should be true after filter rules are loaded")
@@ -1236,10 +1357,150 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	}
 }
 
-// Exercises an end-to-end filtering tx flow under the raw-bytes hashing scheme:
-// the checker's HashStore is loaded with sha256-rawbytesinput hashes and the
-// sequencer must still reject txs to/from a listed address.
-func TestAddressFilterDirectTransferRawBytesScheme(t *testing.T) {
+func TestPeriodicFilterSetIDReporting(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	signingPair := signertest.NewSigningPair(t)
+
+	// Capture every POST sent to the "external provider".
+	reportCh := make(chan addressfilter.FilterSetIDReport, 16)
+	externalEndpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+			http.Error(w, "bad method", http.StatusMethodNotAllowed)
+			return
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("expected Content-Type application/json, got %s", ct)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+			http.Error(w, "read failed", http.StatusInternalServerError)
+			return
+		}
+		if err := signingPair.Verifier.VerifyHTTPRequest(r, body); err != nil {
+			t.Errorf("verifier rejected filter-set id report: %v", err)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		var report addressfilter.FilterSetIDReport
+		if err := json.Unmarshal(body, &report); err != nil {
+			t.Errorf("unmarshal body: %v", err)
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		select {
+		case reportCh <- report:
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer externalEndpoint.Close()
+
+	// Stand up the filtering-report service pointing at the external endpoint.
+	filteringReportStack := filteringreportapi.NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfig{
+		URL:     externalEndpoint.URL,
+		Timeout: 5 * time.Second,
+	}, signingPair.Signer)
+
+	// Build an active sequencer node wired to the filtering-report service.
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	builder.execConfig.Sequencer.FilterSetReportingInterval = 200 * time.Millisecond
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Inject an enabled filter service (without S3) so the sequencer has a
+	// filter-set id to report, and wire it into the sequencer via the
+	// test-only setter. Using a direct hash store Store() lets us control the
+	// id deterministically.
+	filterCfg := &addressfilter.Config{
+		S3: s3syncer.Config{
+			Config:      s3client.Config{Region: "us-east-1"},
+			Bucket:      "test-bucket",
+			ObjectKey:   "test-key",
+			DownloadDir: t.TempDir(),
+		},
+		PollInterval:              5 * time.Minute,
+		CacheSize:                 100,
+		AddressCheckerWorkerCount: 1,
+		AddressCheckerQueueSize:   10,
+	}
+	filterService, err := addressfilter.NewFilterService(filterCfg)
+	require.NoError(t, err)
+	builder.L2.ExecNode.Sequencer.SetAddressFilterServiceForTest(t, filterService)
+
+	salt, err := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
+	require.NoError(t, err)
+
+	// First id: assert we observe it at the external endpoint.
+	id1 := uuid.New()
+	storeFilterHashes(t, filterService.GetHashStore(), id1, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-1")
+
+	expectedChainID := builder.L2.ExecNode.ExecEngine.ChainID().Uint64()
+	waitForReport := func(wantID uuid.UUID) addressfilter.FilterSetIDReport {
+		t.Helper()
+		deadline := time.After(10 * time.Second)
+		for {
+			select {
+			case got := <-reportCh:
+				if got.FilterSetID == wantID {
+					return got
+				}
+				// Drop stale reports (e.g. from the previous id during rotation).
+			case <-deadline:
+				t.Fatalf("timed out waiting for report with filter-set id %s", wantID)
+			}
+		}
+	}
+
+	first := waitForReport(id1)
+	require.Equal(t, expectedChainID, first.ChainID, "chain id mismatch")
+	require.False(t, first.ReportedAt.IsZero(), "reported-at should be set")
+
+	// Rotate the filter set; the next reporting tick must pick up id2.
+	id2 := uuid.New()
+	storeFilterHashes(t, filterService.GetHashStore(), id2, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-2")
+
+	second := waitForReport(id2)
+	require.Equal(t, expectedChainID, second.ChainID, "chain id mismatch after rotation")
+	require.True(t, second.ReportedAt.After(first.ReportedAt) || second.ReportedAt.Equal(first.ReportedAt),
+		"second report's reported-at (%s) should be >= first (%s)", second.ReportedAt, first.ReportedAt)
+
+	// An inactive sequencer must not report. Pause, then wait out any tick that
+	// was already past the IsActive check before draining stale reports.
+	builder.L2.ExecNode.Sequencer.Pause()
+	time.Sleep(500 * time.Millisecond)
+	for drained := false; !drained; {
+		select {
+		case <-reportCh:
+		default:
+			drained = true
+		}
+	}
+
+	id3 := uuid.New()
+	storeFilterHashes(t, filterService.GetHashStore(), id3, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-3")
+
+	select {
+	case got := <-reportCh:
+		t.Fatalf("paused sequencer sent filter-set id report %s", got.FilterSetID)
+	case <-time.After(1 * time.Second):
+	}
+
+	// Reporting must resume once the sequencer becomes active again.
+	builder.L2.ExecNode.Sequencer.Activate()
+	third := waitForReport(id3)
+	require.Equal(t, expectedChainID, third.ChainID, "chain id mismatch after reactivation")
+}
+
+// Exercises an end-to-end filtering tx flow under the string-input hashing scheme:
+// the S3 address-filter pipeline serves a list of sha256-stringinput hashes and
+// the sequencer must still reject txs to/from a listed address.
+func TestAddressFilterDirectTransferStringInputScheme(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1247,6 +1508,7 @@ func TestAddressFilterDirectTransferRawBytesScheme(t *testing.T) {
 	builder.isSequencer = true
 	filteringReportStack, endpoint := SetupFilteringReport(t)
 	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	s3Filter := setupFakeS3AddressFilterWithScheme(t, builder, addressfilter.HashingSchemeStringInput)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -1256,13 +1518,12 @@ func TestAddressFilterDirectTransferRawBytesScheme(t *testing.T) {
 	builder.L2.TransferBalance(t, "Owner", "FilteredUser", big.NewInt(1e18), builder.L2Info)
 
 	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
-	addrFilter := newHashedCheckerWithScheme([]common.Address{filteredAddr}, addressfilter.HashingSchemeRawBytesInput)
-	builder.L2.ExecNode.ExecEngine.SetAddressChecker(t, addrFilter)
+	s3Filter.setFilteredAddresses(t, ctx, builder.L2.ExecNode, []common.Address{filteredAddr})
 
 	tx := builder.L2Info.PrepareTx("NormalUser", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	err := builder.L2.Client.SendTransaction(ctx, tx)
 	if err == nil {
-		t.Fatal("expected transaction to filtered address to be rejected under raw-bytes scheme")
+		t.Fatal("expected transaction to filtered address to be rejected under string-input scheme")
 	}
 	if !isFilteredError(err) {
 		t.Fatalf("expected filtered error, got: %v", err)
@@ -1281,4 +1542,84 @@ func TestAddressFilterDirectTransferRawBytesScheme(t *testing.T) {
 	Require(t, err)
 
 	endpoint.AssertNoReport(t, 500*time.Millisecond)
+}
+
+func TestGenerateAddressHashesFixtureScript(t *testing.T) {
+	const script = "../scripts/generate-address-hashes-fixture.sh"
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not available; skipping generator script test")
+	}
+	salt := uuid.MustParse("ce823987-8c5b-42c8-9d44-11df313b91e9")
+	addrs := []common.Address{
+		common.HexToAddress("0xddfabcdc4d8ffc6d5beaf154f18b778f892a0740"), // vendor vector
+		common.HexToAddress("0x0000000000000000000000000000000000000000"), // all-zero
+		common.HexToAddress("0xffffffffffffffffffffffffffffffffffffffff"), // all-ff
+	}
+	addrStrs := make([]string, len(addrs))
+	for i, a := range addrs {
+		addrStrs[i] = a.Hex()
+	}
+	csv := strings.Join(addrStrs, ",")
+
+	for _, scheme := range []addressfilter.HashingScheme{
+		addressfilter.HashingSchemeStringInput,
+		addressfilter.HashingSchemeRawBytesInput,
+	} {
+		t.Run(string(scheme), func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "list.json")
+			cmd := exec.Command("bash", script, // #nosec G204 -- test-only, all args are in-test constants
+				"--hashing-scheme", string(scheme),
+				"--salt", salt.String(),
+				"--addresses", csv,
+				"--size", "1MB", "--out", out)
+			if b, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("generator failed: %v\n%s", err, b)
+			}
+
+			var payload struct {
+				Salt          string   `json:"salt"`
+				HashingScheme string   `json:"hashing_scheme"`
+				Hashes        []string `json:"hashes"`
+			}
+			data, err := os.ReadFile(out)
+			Require(t, err)
+			Require(t, json.Unmarshal(data, &payload))
+			if payload.HashingScheme != string(scheme) {
+				t.Fatalf("hashing_scheme: got %q want %q", payload.HashingScheme, scheme)
+			}
+
+			hashes := make([]common.Hash, len(payload.Hashes))
+			set := make(map[common.Hash]struct{}, len(payload.Hashes))
+			for i, h := range payload.Hashes {
+				hashes[i] = common.HexToHash(h)
+				set[hashes[i]] = struct{}{}
+			}
+
+			// Each address's production-computed hash must appear in the generated file.
+			prefix := addressfilter.GetHashStringInputPrefix(salt)
+			for _, a := range addrs {
+				var want common.Hash
+				if scheme == addressfilter.HashingSchemeRawBytesInput {
+					want = addressfilter.HashRawBytesInput(salt, a)
+				} else {
+					want = addressfilter.HashStringInputWithPrefix(prefix, a)
+				}
+				if _, ok := set[want]; !ok {
+					t.Fatalf("addr %s: production hash %s missing from generated file", a.Hex(), want.Hex())
+				}
+			}
+
+			// The generated file loads and filters via the production HashStore.
+			store := addressfilter.NewHashStore(100)
+			storeFilterHashes(t, store, uuid.New(), salt, scheme, hashes, "test")
+			for _, a := range addrs {
+				if restricted, _ := store.IsRestricted(a); !restricted {
+					t.Fatalf("addr %s should be restricted under %s", a.Hex(), scheme)
+				}
+			}
+			if restricted, _ := store.IsRestricted(common.HexToAddress("0x00000000000000000000000000000000cafef00d")); restricted {
+				t.Fatal("unlisted address must not be restricted")
+			}
+		})
+	}
 }

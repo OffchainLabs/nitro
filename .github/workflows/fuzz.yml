@@ -12,18 +12,17 @@ permissions:
 
 jobs:
   list:
-    runs-on: arbitrator-ci
+    runs-on: ocl-16cpu-64ram-dind
+    timeout-minutes: 20
+    if: github.event_name != 'schedule' || github.repository == 'OffchainLabs/nitro-private'
 
     steps:
       - uses: actions/checkout@v6
-        with:
-          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
 
       - uses: ./.github/actions/init-submodules
         with:
           client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
-          pat: ${{ secrets.PRIVATE_REPO_PAT }}
 
       - name: Setup CI
         uses: ./.github/actions/ci-setup
@@ -38,7 +37,7 @@ jobs:
 
   fuzz:
     runs-on: ubuntu-4
-    timeout-minutes: 360
+    timeout-minutes: 30
     needs: list
     strategy:
       fail-fast: false
@@ -47,14 +46,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-        with:
-          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
 
       - uses: ./.github/actions/init-submodules
         with:
           client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
-          pat: ${{ secrets.PRIVATE_REPO_PAT }}
 
       - uses: actions/setup-go@v6
         with:
