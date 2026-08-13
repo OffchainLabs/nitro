@@ -121,6 +121,10 @@ func TestRevalidationDoesNotMoveValidationForward(t *testing.T) {
 	defer cancelCtx()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	// Refusing to move validation forward means validating from genesis, which needs
+	// the state of every block to still be around after the restart below.
+	builder.RequireScheme(t, rawdb.HashScheme)
+	builder.execConfig.Caching.Archive = true
 	cleanup := builder.Build(t)
 	defer cleanup()
 
