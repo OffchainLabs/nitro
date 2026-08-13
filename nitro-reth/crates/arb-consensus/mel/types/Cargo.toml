@@ -8,9 +8,13 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-alloy-primitives = { workspace = true, features = ["std", "rlp"] }
+alloy-primitives = { workspace = true, features = ["std", "rlp", "serde"] }
 alloy-rlp = { workspace = true, features = ["derive"] }
 arbos-types.workspace = true
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+serde_json = { workspace = true }
 
 [lints]
 workspace = true
