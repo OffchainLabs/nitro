@@ -234,7 +234,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	l2ChainName := k.String("chain.name")
 	l2ChainInfoFiles := k.Strings("chain.info-files")
 	l2ChainInfoJson := k.String("chain.info-json")
-	l2GenesisConfigured := k.String("init.genesis-json-file") != "" || k.Get("init.genesis-json") != nil
+	l2GenesisConfigured := k.String("init.genesis-json-file") != "" || inlineGenesisConfigured(k.Get("init.genesis-json"))
 	// #nosec G115
 	err = applyChainParameters(k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2GenesisConfigured)
 	if err != nil {
@@ -317,6 +317,21 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		return nil, nil, err
 	}
 	return &nodeConfig, &l2DevWallet, nil
+}
+
+// inlineGenesisConfigured reports whether the raw config value at
+// init.genesis-json holds a genesis document: a non-empty string or a nested
+// json object. Key existence alone is not enough - the flag default loads an
+// empty string into the config tree on every parse, and counting that would
+// permanently suppress the init.empty chain default.
+func inlineGenesisConfigured(raw interface{}) bool {
+	switch v := raw.(type) {
+	case string:
+		return v != ""
+	case map[string]interface{}:
+		return true
+	}
+	return false
 }
 
 // fixInlineGenesisParsing lets a config file hold the inline genesis as a

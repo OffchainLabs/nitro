@@ -228,6 +228,25 @@ func TestInlineGenesisAsJsonString(t *testing.T) {
 	}
 }
 
+func TestAutoEmptyInitPreservedWithoutGenesis(t *testing.T) {
+	// the init.genesis-json flag default (an empty string) is always present
+	// in the parsed config tree and must not count as a configured genesis,
+	// which would suppress the chain's init.empty default
+	args := strings.Split("--persistent.chain /tmp/data --chain.id 42170", " ")
+	nodeConfig, _, err := ParseNode(context.Background(), args)
+	Require(t, err)
+	if !nodeConfig.Init.Empty {
+		Fail(t, "expected the empty init default for a chain without pre-existing genesis state")
+	}
+
+	args = append(args, "--init.genesis-json", "")
+	nodeConfig, _, err = ParseNode(context.Background(), args)
+	Require(t, err)
+	if !nodeConfig.Init.Empty {
+		Fail(t, "expected an explicitly empty init.genesis-json to keep the empty init default")
+	}
+}
+
 func TestInlineGenesisSkipsDirectoryDiscovery(t *testing.T) {
 	tempDir := t.TempDir()
 	Require(t, os.WriteFile(filepath.Join(tempDir, "42170.json"), []byte("{}"), 0600))

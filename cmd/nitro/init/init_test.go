@@ -1568,7 +1568,7 @@ func TestCheckAndDownloadDBNoSnapshot(t *testing.T) {
 	require.False(t, downloaded)
 }
 
-func getInitHelper(t *testing.T, ownerAdress string, chainID uint64, emptyState bool, importFile, genesisJsonFile, inlineGenesisJson string, useDevInit, skipInitDataReader bool) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, ethdb.Database, func(), error) {
+func getInitHelper(t *testing.T, ownerAddress string, chainID uint64, emptyState bool, importFile, genesisJsonFile, inlineGenesisJson string, useDevInit, skipInitDataReader bool) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, ethdb.Database, func(), error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1602,7 +1602,7 @@ func getInitHelper(t *testing.T, ownerAdress string, chainID uint64, emptyState 
 		nodeConfig.Init.DevInit = true
 	}
 
-	nodeConfig.Init.DevInitAddress = ownerAdress
+	nodeConfig.Init.DevInitAddress = ownerAddress
 	nodeConfig.Init.ValidateGenesisAssertion = false
 
 	l1Client := ethclient.NewClient(stack.Attach())
@@ -1639,9 +1639,9 @@ func getInitHelper(t *testing.T, ownerAdress string, chainID uint64, emptyState 
 func TestSimpleGetInit(t *testing.T) {
 	t.Parallel()
 
-	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	ownerAddress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	expectedChainConfig := chaininfo.ArbitrumDevTestChainConfig()
-	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, "", "", "", true, false)
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAddress, expectedChainConfig.ChainID.Uint64(), false, "", "", "", true, false)
 	Require(t, err)
 	defer cleanup()
 
@@ -1662,7 +1662,7 @@ func TestSimpleGetInit(t *testing.T) {
 	chainOwner, err := initDataReader.GetChainOwner()
 	Require(t, err)
 
-	expectedOwnerAddress := common.HexToAddress(ownerAdress)
+	expectedOwnerAddress := common.HexToAddress(ownerAddress)
 	if chainOwner != expectedOwnerAddress {
 		t.Fatalf("chainOwner address %s does not match expected address: %s", chainOwner.Hex(), expectedOwnerAddress.Hex())
 	}
@@ -1683,9 +1683,9 @@ func TestSimpleGetInit(t *testing.T) {
 func TestGetInitSkipInitDataReader(t *testing.T) {
 	t.Parallel()
 
-	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	ownerAddress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	expectedChainConfig := chaininfo.ArbitrumRollupGoerliTestnetChainConfig()
-	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, "", "", "", true, true)
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAddress, expectedChainConfig.ChainID.Uint64(), false, "", "", "", true, true)
 	Require(t, err)
 	defer cleanup()
 
@@ -1707,9 +1707,9 @@ func TestGetInitSkipInitDataReader(t *testing.T) {
 func TestGetInitWithEmpty(t *testing.T) {
 	t.Parallel()
 
-	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	ownerAddress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	expectedChainConfig := chaininfo.ArbitrumOneChainConfig()
-	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), true, "", "", "", false, false)
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAddress, expectedChainConfig.ChainID.Uint64(), true, "", "", "", false, false)
 	Require(t, err)
 	defer cleanup()
 
@@ -1754,10 +1754,10 @@ func TestGetInitWithEmpty(t *testing.T) {
 func TestGetInitWithImportFile(t *testing.T) {
 	t.Parallel()
 
-	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	ownerAddress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	importFile := "testdata/initFileContent.json"
 	expectedChainConfig := chaininfo.ArbitrumDevTestAnyTrustChainConfig()
-	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, importFile, "", "", false, false)
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAddress, expectedChainConfig.ChainID.Uint64(), false, importFile, "", "", false, false)
 	Require(t, err)
 	defer cleanup()
 
@@ -1799,10 +1799,10 @@ func TestGetInitWithImportFile(t *testing.T) {
 func TestGetInitWithGenesis(t *testing.T) {
 	t.Parallel()
 
-	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	ownerAddress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	genesisJsonFile := "testdata/testGenesis.json"
 	expectedChainIdNum := uint64(3503995874084926)
-	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainIdNum, false, "", genesisJsonFile, "", false, false)
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAddress, expectedChainIdNum, false, "", genesisJsonFile, "", false, false)
 	Require(t, err)
 	defer cleanup()
 
@@ -1884,14 +1884,14 @@ func makeInlineTestGenesis(t *testing.T, chainId uint64, cancunTime uint64) stri
 func TestGetInitWithInlineGenesis(t *testing.T) {
 	t.Parallel()
 
-	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	ownerAddress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	genesisJson, err := os.ReadFile("testdata/testGenesis.json")
 	Require(t, err)
 	var gen core.Genesis
 	Require(t, json.Unmarshal(genesisJson, &gen))
 	expectedChainIdNum := uint64(3503995874084926)
 
-	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainIdNum, false, "", "", string(genesisJson), false, false)
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAddress, expectedChainIdNum, false, "", "", string(genesisJson), false, false)
 	Require(t, err)
 	defer cleanup()
 
@@ -2122,9 +2122,9 @@ func TestGetInitWithChainconfigInDB(t *testing.T) {
 	t.Parallel()
 
 	// Force getInitHelper to store chainConfig to DB (similar to TestGetInitSkipInitDataReader)
-	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	ownerAddress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	expectedChainConfig := chaininfo.ArbitrumRollupGoerliTestnetChainConfig()
-	initDataReader, chainConfig, arbOsInit, executionDB, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, "", "", "", true, true)
+	initDataReader, chainConfig, arbOsInit, executionDB, cleanup, err := getInitHelper(t, ownerAddress, expectedChainConfig.ChainID.Uint64(), false, "", "", "", true, true)
 	Require(t, err)
 	defer cleanup()
 
