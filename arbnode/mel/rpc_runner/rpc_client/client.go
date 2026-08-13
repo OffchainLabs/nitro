@@ -54,8 +54,8 @@ func (c *Client) Start(ctxIn context.Context) error {
 }
 
 func (c *Client) StopAndWait() {
-	c.client.Close()
 	c.StopWaiter.StopAndWait()
+	c.client.Close()
 }
 
 func (c *Client) waitForCaughtUp(ctx context.Context) {
