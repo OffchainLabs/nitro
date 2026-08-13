@@ -9,6 +9,7 @@ jobs:
   close-trivial-pr:
     if: github.event.label.name == 'trivial'
     runs-on: ubuntu-4
+    timeout-minutes: 10
     permissions:
       pull-requests: write
 
@@ -18,7 +19,7 @@ jobs:
         env:
           REPO: ${{ github.repository }}
         run: |
-          SNIPPET=$(curl -sSfL "https://raw.githubusercontent.com/${REPO}/refs/heads/master/CONTRIBUTING.md" \
+          SNIPPET=$(curl -sSfL --retry 3 "https://raw.githubusercontent.com/${REPO}/refs/heads/master/CONTRIBUTING.md" \
             | sed -n '/<!-- start-trivial-prs -->/,/<!-- end-trivial-prs -->/p' \
             | sed '/<!--.*-->/d')
 

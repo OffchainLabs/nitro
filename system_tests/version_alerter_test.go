@@ -10,7 +10,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
+	nitroversionalerter "github.com/offchainlabs/nitro/arbnode/nitro-version-alerter"
+	"github.com/offchainlabs/nitro/nitroversion"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -22,7 +23,8 @@ func TestNitroNodeVersionAlerter(t *testing.T) {
 	defer cancel()
 
 	reqNodeVersion := "v3.2.1"
-	reqNodeVersionDate := time.Now().Format(time.RFC3339)
+	reqNodeVersionTime := time.Now()
+	reqNodeVersionDate := reqNodeVersionTime.Format(time.RFC3339)
 	upgradeDeadline := time.Now().Add(time.Hour).Format(time.RFC3339)
 	msg := "Node version or date is below the minimum requirement, please upgrade"
 
@@ -48,27 +50,52 @@ func TestNitroNodeVersionAlerter(t *testing.T) {
 	cfg.Connection.URL = builder.L2.Stack.HTTPEndpoint()
 	connection := rpcclient.NewRpcClient(func() *rpcclient.ClientConfig { return &cfg.Connection }, nil)
 	Require(t, connection.Start(ctx))
+	makeVersion := func(tag string, commitTime time.Time) nitroversion.Version {
+		version, err := nitroversion.New(nitroversion.Provenance{
+			Tag:       tag,
+			Commit:    "26b4b9b",
+			Timestamp: commitTime.Format(time.RFC3339),
+		})
+		Require(t, err)
+		return version
+	}
 	alerter := &nitroversionalerter.Client{
 		Cfg:        &cfg,
 		Connection: connection,
 	}
 
 	logHandler.Clear()
-	// When our node is above required minimum version, we shouldn't log anything
-	alerter.NodeVersion = "v3.2.2"
-	nodeVersionTime, err := time.Parse(time.RFC3339, reqNodeVersionDate)
-	Require(t, err)
-	alerter.NodeVersionTime = nodeVersionTime
+	// A newer semantic version and commit time satisfy both requirements.
+	alerter.NodeVersion = makeVersion("v3.2.2", reqNodeVersionTime.Add(time.Minute))
 	alerter.LogUpgradeMsgIfNecessary(ctx)
 	if logHandler.WasLogged(msg) {
 		t.Fatal("minimum required node version message should not be logged for correct versioned nodes")
 	}
 
 	logHandler.Clear()
-	// Node version (v3.2.2) meets requirement, but node version date is shifted 1 minute before
-	// the required minimum date, triggering the date check. With default UpgradeGracePeriod (0),
-	// now + 0 <= deadline (1h ahead), so INFO level.
-	alerter.NodeVersionTime = alerter.NodeVersionTime.Add(-time.Minute)
+	// Equal semantic version and commit time satisfy both requirements.
+	alerter.NodeVersion = makeVersion(reqNodeVersion, reqNodeVersionTime)
+	alerter.LogUpgradeMsgIfNecessary(ctx)
+	if logHandler.WasLogged(msg) {
+		t.Fatal("minimum required node version message should not be logged for equal versioned nodes")
+	}
+
+	logHandler.Clear()
+	// A version-only requirement does not depend on the local commit timestamp.
+	builder.nodeConfig.VersionAlerterServer.MinRequiredNitroByDate = ""
+	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
+	alerter.NodeVersion = makeVersion("v3.2.2", reqNodeVersionTime.Add(-time.Minute))
+	alerter.LogUpgradeMsgIfNecessary(ctx)
+	if logHandler.WasLogged(msg) {
+		t.Fatal("minimum required node version message should not be logged when a version-only requirement is met")
+	}
+
+	logHandler.Clear()
+	// A date-only requirement uses the typed commit-time comparison without
+	// trying to parse an absent semantic version.
+	builder.nodeConfig.VersionAlerterServer.MinRequiredNitroByVersion = ""
+	builder.nodeConfig.VersionAlerterServer.MinRequiredNitroByDate = reqNodeVersionDate
+	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
 	alerter.LogUpgradeMsgIfNecessary(ctx)
 	if !logHandler.WasLoggedAtLevel(msg, slog.LevelInfo) {
 		t.Fatal("minimum required node version message was not logged at level Info")
@@ -79,10 +106,11 @@ func TestNitroNodeVersionAlerter(t *testing.T) {
 
 	logHandler.Clear()
 	// Node version date equals the required minimum (passes the strict less-than check), but
-	// node version "v3.2" is below required "v3.2.1". UpgradeGracePeriod is set large enough
+	// node version "v3.2.0" is below required "v3.2.1". UpgradeGracePeriod is set large enough
 	// that now + gracePeriod > deadline, but now < deadline, so we should see a WARN log.
-	alerter.NodeVersionTime = nodeVersionTime
-	alerter.NodeVersion = "v3.2"
+	builder.nodeConfig.VersionAlerterServer.MinRequiredNitroByVersion = reqNodeVersion
+	builder.L2.ConsensusConfigFetcher.Set(builder.nodeConfig)
+	alerter.NodeVersion = makeVersion("v3.2.0", reqNodeVersionTime)
 	alerter.Cfg.UpgradeGracePeriod = 2 * time.Hour
 	alerter.LogUpgradeMsgIfNecessary(ctx)
 	if !logHandler.WasLoggedAtLevel(msg, slog.LevelWarn) {

@@ -1,0 +1,46 @@
+[workspace]
+members = [
+    "replay-builder",
+    "replay-program",
+    "replay-runner",
+    "stylus-compiler-program",
+    "stylus-compiler-runner",
+]
+resolver = "2"
+
+[workspace.package]
+authors = ["Offchain Labs"]
+edition = "2024"
+homepage = "https://arbitrum.io"
+license = "BSL"
+publish = false
+repository = "https://github.com/OffchainLabs/nitro.git"
+rust-version = "1.93"
+
+[workspace.dependencies]
+anyhow = { version = "1.0.100" }
+bincode = { version = "1.3.3" }
+clap = { version = "4.4.8" }
+corosensei = { version = "=0.3.3" }
+serde = { version = "1.0.130" }
+sp1-build = { version = "6.2.1" }
+sp1-core-executor = { version = "6.2.1" }
+sp1-sdk = { version = "6.2.1" }
+sp1-zkvm = { version = "6.2.1" }
+tracing = { version = "0.1.44" }
+
+prover = { path = "../prover", default-features = false }
+stylus-compiler-program = { path = "stylus-compiler-program" }
+
+# wasmer
+wasmer = { path = "../tools/wasmer/lib/api" }
+
+[patch.crates-io]
+target-lexicon = { git = "https://github.com/OffchainLabs/target-lexicon", tag = "v0.13.5-sp1" }
+region = { git = "https://github.com/OffchainLabs/region-rs", tag = "v3.0.2-sp1-v6.2.1" }
+corosensei = { git = "https://github.com/OffchainLabs/corosensei", tag = "v0.3.3-sp1-v6.2.1" }
+k256 = { git = "https://github.com/sp1-patches/elliptic-curves", tag = "patch-k256-13.4-sp1-6.2.0" }
+tiny-keccak = { git = "https://github.com/sp1-patches/tiny-keccak", tag = "patch-2.0.2-sp1-6.2.0" }
+
+[profile.release]
+debug = true

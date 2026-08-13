@@ -30,9 +30,17 @@ jobs:
     uses: ./.github/workflows/_bold-legacy.yml
     secrets: inherit
 
+  # --- Run Nitro Reth tests ---
+  nitro-reth-tests:
+    needs: changes
+    if: needs.changes.outputs.nitro_reth_changed == 'true'
+    uses: ./.github/workflows/_nitro-reth-tests.yml
+    secrets: inherit
+
   # --- Skip the Go suite if this exact tree already passed PR CI ---
   tested-tree:
     runs-on: ubuntu-4
+    timeout-minutes: 10
     permissions:
       contents: read
       actions: read
@@ -84,7 +92,8 @@ jobs:
 
   can_proceed:
     runs-on: ubuntu-4
-    needs: [changes, fast, rust-tests, bold-legacy, go-tests, tested-tree]
+    timeout-minutes: 5
+    needs: [changes, fast, rust-tests, bold-legacy, nitro-reth-tests, go-tests, tested-tree]
     if: always()
     steps:
       - name: Aggregate results
@@ -93,6 +102,7 @@ jobs:
           go_tests_result="${{ needs['go-tests'].result }}"
           rust_tests_result="${{ needs['rust-tests'].result }}"
           bold_legacy_result="${{ needs['bold-legacy'].result }}"
+          nitro_reth_result="${{ needs['nitro-reth-tests'].result }}"
           already_tested="${{ needs['tested-tree'].outputs.already-tested }}"
           code_changed="${{ needs.changes.outputs.code_changed }}"
           ok=1
@@ -114,6 +124,10 @@ jobs:
             ok=0
             echo "Bold Legacy job failed"
           fi
+          if [ "$nitro_reth_result" != "success" ] && [ "$nitro_reth_result" != "skipped" ]; then
+            ok=0
+            echo "Nitro Reth job failed"
+          fi
           if [ $ok -eq 1 ]; then
             echo "All required jobs passed or were skipped"
             exit 0
@@ -127,5 +141,6 @@ jobs:
     # on the pull request page, even if it is skipped due to all its dependencies being
     # skipped. It does not depend on any other jobs, so it always runs.
     runs-on: ubuntu-4
+    timeout-minutes: 5
     steps:
       - run: true

@@ -1,0 +1,190 @@
+{
+  "name": "contract_limit_v59_max_size",
+  "description": "Mirrors stylus_contract_limit_increase_test.go::TestDeployStylusRootContractGreaterThanMaxCodeSize at the pre-v60 boundary. Boots ArbOS v59, attempts to deploy a Stylus contract whose compressed activated code exceeds the legacy MAX_CODE_SIZE (24,576 bytes). The signed deploy tx must revert with ContractCodeTooLarge / equivalent. Sibling fixture covers v60 where the same payload succeeds. Placeholder l2Msg string needs an oversized (>24KB) WASM payload + signed deploy.",
+  "genesis": {
+    "config": {
+      "chainId": 421614,
+      "homesteadBlock": 0,
+      "daoForkSupport": true,
+      "eip150Block": 0,
+      "eip155Block": 0,
+      "eip158Block": 0,
+      "byzantiumBlock": 0,
+      "constantinopleBlock": 0,
+      "petersburgBlock": 0,
+      "istanbulBlock": 0,
+      "muirGlacierBlock": 0,
+      "berlinBlock": 0,
+      "londonBlock": 0,
+      "depositContractAddress": "0x0000000000000000000000000000000000000000",
+      "clique": {
+        "period": 0,
+        "epoch": 0
+      },
+      "arbitrum": {
+        "EnableArbOS": true,
+        "AllowDebugPrecompiles": true,
+        "DataAvailabilityCommittee": false,
+        "InitialArbOSVersion": 59,
+        "InitialChainOwner": "0x0000000000000000000000000000000000000000",
+        "GenesisBlockNum": 0
+      }
+    },
+    "coinbase": "0x0000000000000000000000000000000000000000",
+    "difficulty": "0x1",
+    "extraData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "gasLimit": "0x4000000000000",
+    "nonce": "0x1",
+    "timestamp": "0x0"
+  },
+  "messages": [
+    {
+      "msgIdx": null,
+      "message": {
+        "header": {
+          "kind": 12,
+          "sender": "0xde70e7820f6d69ad4fde67de05b4791afd1be38d",
+          "blockNumber": 0,
+          "timestamp": 1727426700,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "EKFRFZCzP7zt478GBhQPffrp8BYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADY1ya3F3qAAAA=="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "msgIdx": null,
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 1,
+          "timestamp": 1727426701,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL5ASCDBm7ugICEO5rKAIQC+vCAgIC4yGEAumAOYAA5YQC6YADz7/AAAFuVhwFANJouuStjTSHZthZjvmUv+xUG4dE8dsgBcFYBRRVHSaCvti3JoLRuThCbQdAF/Xhoe4H/PBMAS46n1lp4NJGcaGWu0c/Z7K7X4zP7ca7muF4u/eNgPAFwit3Vjf/YPkGAk2SJWTxBVKghJRhpSphBFWSewoYZPO8EjddZhYssvXThBpINc7tZmYFE4v8N0wMmft3P8gsoipkj0EOyrwgL57BQK4ddFHKokqISUTDMaX0BwICgiC+b7YBRiQwgyHfXA3SB1fZoNw9ey9aSaFADROtfI6ygFWHovi5qs8zQer/QLG3m6sWrbqWUaEGbVEIJfJrJmVE="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "msgIdx": null,
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 2,
+          "timestamp": 1727426702,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4j4MGbu4BgIQ7msoAhAHJw4CUAAAAAAAAAAAAAAAAAAAAAAAAAHEBpFjHgMIAAAAAAAAAAAAAAADCzNCvSc++HUOYQT+JAoxdxigNmMCAoDqPZ0Zgllx1EWdyZgVN2qvOfn6aPkMMcJbCGFpapjGmoHvhQffstjUyjpvQmS+XHJEcMnftsCFyixxHW8yXzW96"
+      },
+      "delayedMessagesRead": 1
+    }
+  ],
+  "expected": {
+    "blocks": [
+      {
+        "number": 1,
+        "block_hash": "0xc9861d2b36b526e200ae22e8f394ab4c8b5b15ba935c08e7d0b0a91f5a8c1caf",
+        "state_root": "0x7fba682a760aef96b72730bf03a238234631f078112188439ae453c40b7b2116",
+        "receipts_root": "0xd7a92f3697d06225df2a55e920d2f7a04a4b78f19a42e774c4a3993e342c61bb",
+        "transactions_root": "0x5ad900a4b674707f111bf4a0e9c18dfad0adf032dfd57c0324cfbfaebd6f35af",
+        "gas_used": 0
+      },
+      {
+        "number": 2,
+        "block_hash": "0xd76bae514d70da7f6ac3a0982dd7c8cf2a3cf6696e56febb898f30658b365648",
+        "state_root": "0x588734c42ff1a0426e3567bdf44527bd0b75061de5af2f975b3364c00fd8ef6d",
+        "receipts_root": "0x9530cfbaee99ca2812186054200537f0d56aaa6eba9dbd123a789cc4c7289304",
+        "transactions_root": "0xc04a0af6ac518a4feda7198a3d8773ec8a53876c104cf74314998c3832f1a35c",
+        "gas_used": 2461384
+      },
+      {
+        "number": 3,
+        "block_hash": "0xb93aa60b7dfd5ba7965e9343471444ea763e2b51e0160874bf07aca12b7560ee",
+        "state_root": "0xfaf43a89b6d51f45bcc878e8760c32b3c33ac340e7a2a072640ccb3e79c765db",
+        "receipts_root": "0x21befe756989c2e78925e67bf53c0a115ed0f4483ddcc1e73161707a766f4723",
+        "transactions_root": "0x2aad96031b6bc1d3946da8b350ae242442f8affb9ab8fb85b700546ed6eca52d",
+        "gas_used": 30000000
+      }
+    ],
+    "eth_calls": [],
+    "storage": [],
+    "balances": [],
+    "txReceipts": [
+      {
+        "txHash": "0xdaa6ab079c285eeb92efd724961ca2f5007fca5785a9616dfa32f6ac9a50944c",
+        "blockNumber": 1,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0x00000000000000000000000000000000000a4b05",
+        "to": "0x00000000000000000000000000000000000a4b05"
+      },
+      {
+        "txHash": "0x01daf89f4c97c493844c2c338c8d38009fbec5f41eadf9c7f81bafd2e8303d17",
+        "blockNumber": 1,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 0,
+        "from": "0xde70e7820f6d69ad4fde67de05b4791afd1be38d",
+        "to": "0x10a1511590b33fbcede3bf0606140f7dfae9f016"
+      },
+      {
+        "txHash": "0x9acb661892b62d28e661b151009effa900646c0cf2c71d6c37e4bd2a002ccfb8",
+        "blockNumber": 2,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 1,
+        "from": "0x00000000000000000000000000000000000a4b05",
+        "to": "0x00000000000000000000000000000000000a4b05"
+      },
+      {
+        "txHash": "0xcd0e0cc3e6f9a56c756de6740b96025170225614a7de1a397ec80416f076cebd",
+        "blockNumber": 2,
+        "status": 1,
+        "gasUsed": 2461384,
+        "cumulativeGasUsed": 2461384,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 2368000,
+        "l1BlockNumber": 1,
+        "contractAddress": "0xc2ccd0af49cfbe1d4398413f89028c5dc6280d98",
+        "from": "0x10a1511590b33fbcede3bf0606140f7dfae9f016"
+      },
+      {
+        "txHash": "0x16916a41290919a57c8e1f65dfcd6fc3248d7fd23d9d814e740bc72e5df64d30",
+        "blockNumber": 3,
+        "status": 1,
+        "gasUsed": 0,
+        "cumulativeGasUsed": 0,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 0,
+        "l1BlockNumber": 2,
+        "from": "0x00000000000000000000000000000000000a4b05",
+        "to": "0x00000000000000000000000000000000000a4b05"
+      },
+      {
+        "txHash": "0x117a843162778e2fe28abab735f1cd37928aa3ac0de216def2bd3b607aac2eba",
+        "blockNumber": 3,
+        "status": 0,
+        "gasUsed": 30000000,
+        "cumulativeGasUsed": 30000000,
+        "effectiveGasPrice": 100000000,
+        "gasUsedForL1": 1200000,
+        "l1BlockNumber": 2,
+        "from": "0x10a1511590b33fbcede3bf0606140f7dfae9f016",
+        "to": "0x0000000000000000000000000000000000000071"
+      }
+    ]
+  }
+}

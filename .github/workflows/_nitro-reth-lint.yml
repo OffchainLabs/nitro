@@ -1,0 +1,273 @@
+---
+name: nitro-reth-lint
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ocl-4cpu-16ram
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: nitro-reth
+    steps:
+      - uses: actions/checkout@v6
+      # Any cargo invocation (fmt included) loads the manifests of the whole
+      # local path-dep closure, which includes the wasmer submodule.
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+      # Plain fmt (not --all): --all would also format the path-based deps,
+      # i.e. crates/{prover,arbutil,brotli} and the vendored wasmer.
+      - run: cargo +nightly fmt --check
+
+  clippy:
+    name: clippy
+    runs-on: ocl-16cpu-64ram
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: nitro-reth
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
+      - uses: dtolnay/rust-toolchain@1.93
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: nitro-reth
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  wasm:
+    # Pins wasm32-wasip1 buildability of the MEL message-extraction core, so that
+    # adding a native-only dependency (tokio/reqwest/c-kzg/revm) to arb-mel or
+    # anything beneath it fails here rather than in the replay binary.
+    #
+    # Deliberately narrow: per-package rather than --workspace, since sibling
+    # crates like arb-blob-client pull c-kzg and reqwest; and no --all-targets,
+    # since arb-mel's tokio dev-dependency is not wasm-buildable.
+    name: wasm
+    runs-on: ocl-4cpu-16ram
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: nitro-reth
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
+      - uses: dtolnay/rust-toolchain@1.93
+        with:
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: nitro-reth
+      - run: >
+          cargo check --locked --target wasm32-wasip1
+          -p arb-mel -p arb-mel-types -p arb-da-provider -p arbos-types
+
+  docs:
+    name: docs
+    runs-on: ocl-16cpu-64ram
+    timeout-minutes: 45
+    env:
+      RUSTDOCFLAGS: "-D warnings"
+    defaults:
+      run:
+        working-directory: nitro-reth
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
+      - uses: dtolnay/rust-toolchain@1.93
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: nitro-reth
+      - run: cargo doc --workspace --no-deps
+
+  guardrails:
+    name: guardrails
+    runs-on: ocl-4cpu-16ram
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: nitro-reth
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: no hand-written selectors
+        id: no-hand-written-selectors
+        continue-on-error: true
+        run: |
+          set -e
+          matches=$(grep -rnE 'const\s+[A-Z_0-9]+\s*:\s*\[\s*u8\s*;\s*4\s*\]\s*=' \
+            crates/arb-precompiles/src/ || true)
+          if [ -n "$matches" ]; then
+            echo "Hand-written function-selector constants are not allowed in arb-precompiles/src/."
+            echo "Precompile selectors must come from the sol!-generated SolCall::SELECTOR."
+            echo "$matches"
+            exit 1
+          fi
+
+      - name: no thread_local in arb-precompiles
+        id: no-thread-local-in-precompiles
+        continue-on-error: true
+        run: |
+          set -e
+          matches=$(grep -rn 'thread_local!' crates/arb-precompiles/src/ || true)
+          if [ -n "$matches" ]; then
+            echo "thread_local! is not allowed in crates/arb-precompiles/src/."
+            echo "Handlers must read state via the ctx parameter threaded through register_arb_precompiles."
+            echo "$matches"
+            exit 1
+          fi
+
+      - name: no static state in arb-precompiles
+        # Blocks reintroducing top-level static state (Mutex/RwLock/OnceCell)
+        # in arb-precompiles. State must be threaded through ArbPrecompileCtx.
+        id: no-static-state-in-precompiles
+        continue-on-error: true
+        run: |
+          set -e
+          matches=$(grep -rnE 'static\s+[A-Za-z0-9_]+.*(Mutex|RwLock|OnceCell)' crates/arb-precompiles/src/ || true)
+          if [ -n "$matches" ]; then
+            echo "Top-level static state (Mutex/RwLock/OnceCell) is not allowed in crates/arb-precompiles/src/."
+            echo "Per-block and per-tx state must be threaded through ArbPrecompileCtx."
+            echo "$matches"
+            exit 1
+          fi
+
+      - name: no Result<_, ()> in core crates
+        # Blocks Result<_, ()> in arbos/arb-evm/arb-precompiles: callers cannot
+        # diagnose failures from a bare () error.
+        id: no-unit-error-results
+        continue-on-error: true
+        run: |
+          set -e
+          matches=$(grep -rnE 'Result<.*,\s*\(\)\s*>' \
+            crates/arbos/src/ crates/arb-evm/src/ crates/arb-precompiles/src/ || true)
+          if [ -n "$matches" ]; then
+            echo "Result<_, ()> is not allowed in arbos/arb-evm/arb-precompiles source."
+            echo "Use a typed error enum so callers can match on the failure mode."
+            echo "$matches"
+            exit 1
+          fi
+
+      - name: no Result<_, String> in core crates
+        # Blocks Result<_, String> in arbos/arb-evm/arb-precompiles. The single
+        # surviving site is revm's PrecompileProvider::run, whose return type is
+        # forced upstream and matches on `Self::Output`.
+        id: no-string-error-results
+        continue-on-error: true
+        run: |
+          set -e
+          matches=$(grep -rnE 'Result<.*,\s*String\s*>' \
+            crates/arbos/src/ crates/arb-evm/src/ crates/arb-precompiles/src/ \
+            | grep -v 'Self::Output' || true)
+          if [ -n "$matches" ]; then
+            echo "Result<_, String> is not allowed in arbos/arb-evm/arb-precompiles source."
+            echo "Use a typed error enum (thiserror) so callers can match on the failure mode."
+            echo "The single allowed survivor is revm's PrecompileProvider::run signature,"
+            echo "which returns Result<Option<Self::Output>, String> and is filtered above."
+            echo "$matches"
+            exit 1
+          fi
+
+      - name: no unsafe mut-deref in arb-evm
+        # Blocks raw `unsafe { &mut * ... }` derefs in arb-evm. The Stylus FFI
+        # cordon stays in arb-stylus (out of scope for this grep).
+        id: no-unsafe-mut-deref-in-arb-evm
+        continue-on-error: true
+        run: |
+          set -e
+          matches=$(grep -rnE 'unsafe\s*\{\s*&mut\s*\*' crates/arb-evm/src/ || true)
+          if [ -n "$matches" ]; then
+            echo "Raw unsafe { &mut * ... } derefs are not allowed in crates/arb-evm/src/."
+            echo "Use Storage::state_mut() or another typed accessor that owns the SAFETY invariant."
+            echo "$matches"
+            exit 1
+          fi
+
+      - name: no *mut State cast outside arb-stylus
+        # Blocks `as *mut State<...>` casts everywhere except arb-stylus FFI.
+        id: no-mut-state-cast-outside-stylus
+        continue-on-error: true
+        run: |
+          set -e
+          matches=$(grep -rnE 'as\s*\*mut\s*State<' crates/ --include='*.rs' \
+            | grep -v '^crates/arb-stylus/' || true)
+          if [ -n "$matches" ]; then
+            echo "Raw `as *mut State<...>` casts are not allowed outside crates/arb-stylus/."
+            echo "Use Storage::state_mut() or another typed accessor that owns the SAFETY invariant."
+            echo "$matches"
+            exit 1
+          fi
+
+      - name: no _via_backend suffix
+        # Blocks `_via_backend` method/function names from being reintroduced.
+        id: no-via-backend-suffix
+        continue-on-error: true
+        run: |
+          set -e
+          matches=$(grep -rn '_via_backend' crates/ --include='*.rs' || true)
+          if [ -n "$matches" ]; then
+            echo "The _via_backend suffix is not allowed; the StorageBackend API is the single path."
+            echo "$matches"
+            exit 1
+          fi
+
+      - name: no ACTIVE_CTX helpers
+        # Blocks `with_active`, `install_active`, `clear_active`, and `ACTIVE_CTX`
+        # symbols. ArbPrecompileCtx must be threaded through handler signatures.
+        id: no-active-ctx-helpers
+        continue-on-error: true
+        run: |
+          set -e
+          matches=$(grep -rnE '(with_active|install_active|clear_active|ACTIVE_CTX)' \
+            crates/ --include='*.rs' || true)
+          if [ -n "$matches" ]; then
+            echo "ACTIVE_CTX helpers (with_active/install_active/clear_active) are not allowed."
+            echo "ArbPrecompileCtx is threaded through handler signatures; no ambient state."
+            echo "$matches"
+            exit 1
+          fi
+
+      - name: Fail if any guardrail check failed
+        # Introspects every id'd step's outcome instead of hand-listing ids here,
+        # so a new guardrail step is enforced automatically as long as it has an
+        # id — nothing to remember to wire up in this step.
+        if: always()
+        env:
+          STEPS_JSON: ${{ toJSON(steps) }}
+        run: |
+          set -euo pipefail
+          not_ok=$(echo "$STEPS_JSON" | jq -r 'to_entries[] | select(.value.outcome != "success") | "\(.key): \(.value.outcome)"')
+          if [ -n "$not_ok" ]; then
+            echo "The following guardrail step(s) did not succeed:"
+            echo "$not_ok"
+            exit 1
+          fi

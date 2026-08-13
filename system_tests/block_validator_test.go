@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -48,9 +49,23 @@ type Options struct {
 	useRedisStreams bool
 	wasmRootDir     string
 	arbosVersion    uint64 // sets InitialArbOSVersion, overwrites any other operation setting it like upgradeArbOs worload
+	recorderMode    string
+	stateScheme     string
 }
 
 func testBlockValidatorSimple(t *testing.T, opts Options) {
+	if opts.recorderMode == "" {
+		for _, tc := range blockRecorderTestCases() {
+			opts := opts
+			opts.recorderMode = tc.recorderMode
+			opts.stateScheme = tc.stateScheme
+			t.Run(tc.name, func(t *testing.T) {
+				testBlockValidatorSimple(t, opts)
+			})
+		}
+		return
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -69,8 +84,8 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder = builder.WithWasmRootDir(opts.wasmRootDir)
-	// For now PathDB is not supported when using block validation
-	builder.RequireScheme(t, rawdb.HashScheme)
+	builder.execConfig.RecordingDatabase.Mode = opts.recorderMode
+	builder.RequireScheme(t, opts.stateScheme)
 
 	builder.nodeConfig = l1NodeConfigA
 	builder.chainConfig = chainConfig
@@ -117,7 +132,11 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 
 	AddValNode(t, ctx, validatorConfig, !opts.arbitrator, redisURL, opts.wasmRootDir)
 
-	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
+	validatorExecConfig := *builder.execConfig
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{
+		nodeConfig: validatorConfig,
+		execConfig: &validatorExecConfig,
+	})
 	defer cleanupB()
 	builder.L2Info.GenerateAccount("User2")
 
@@ -267,16 +286,32 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	if !testClientB.ConsensusNode.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlock.NumberU64()), timeout) {
 		Fatal(t, "did not validate all blocks")
 	}
-	gethExec := testClientB.ExecNode
-	gethExec.Recorder.TrimAllPrepared(t)
-	finalRefCount := gethExec.Recorder.RecordingDBReferenceCount()
-	lastBlockNow, err := testClientB.Client.BlockByNumber(ctx, nil)
-	Require(t, err)
-	// up to 3 extra references: awaiting validation, recently valid, lastValidatedHeader
-	largestRefCount := lastBlockNow.NumberU64() - lastBlock.NumberU64() + 3
-	// #nosec G115
-	if finalRefCount < 0 || finalRefCount > int64(largestRefCount) {
-		Fatal(t, "unexpected refcount:", finalRefCount)
+	switch opts.recorderMode {
+	case gethexec.BlockRecorderModeLegacy:
+		legacyRecorder, ok := testClientB.ExecNode.Recorder.(*gethexec.BlockRecorder)
+		if !ok {
+			Fatal(t, "expected legacy block recorder")
+		}
+		legacyRecorder.TrimAllPrepared(t)
+		finalRefCount := legacyRecorder.RecordingDBReferenceCount()
+		lastBlockNow, err := testClientB.Client.BlockByNumber(ctx, nil)
+		Require(t, err)
+		// up to 3 extra references: awaiting validation, recently valid, lastValidatedHeader
+		largestRefCount := lastBlockNow.NumberU64() - lastBlock.NumberU64() + 3
+		// #nosec G115
+		if finalRefCount < 0 || finalRefCount > int64(largestRefCount) {
+			Fatal(t, "unexpected refcount:", finalRefCount)
+		}
+	case gethexec.BlockRecorderModeChainTip:
+		tipRecorder, ok := testClientB.ExecNode.Recorder.(*gethexec.ChainTipBlockRecorder)
+		if !ok {
+			Fatal(t, "expected chain-tip block recorder")
+		}
+		if tipRecorder.ServedTipRecordings() == 0 {
+			Fatal(t, "expected chain-tip block recorder to serve validation recordings")
+		}
+	default:
+		Fatal(t, "unknown recorder mode:", opts.recorderMode)
 	}
 }
 
@@ -307,7 +342,7 @@ func TestBlockRecordSimple(t *testing.T) {
 	time.Sleep(time.Millisecond * 100)
 }
 
-func TestBlockValidatorSimpleOnchainUpgradeArbOs(t *testing.T) {
+func TestBlockValidatorSimpleOnchainUpgradeArbOsFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:  "onchain",
 		workloadLoops: 1,
@@ -317,7 +352,7 @@ func TestBlockValidatorSimpleOnchainUpgradeArbOs(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleOnchain(t *testing.T) {
+func TestBlockValidatorSimpleOnchainFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:  "onchain",
 		workloadLoops: 1,
@@ -327,7 +362,7 @@ func TestBlockValidatorSimpleOnchain(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleJITOnchainWithPublishedMachine(t *testing.T) {
+func TestBlockValidatorSimpleJITOnchainWithPublishedMachineFlaky(t *testing.T) {
 	cr, err := github.LatestConsensusRelease(context.Background())
 	Require(t, err)
 	machPath := populateMachineDir(t, cr)
@@ -342,7 +377,7 @@ func TestBlockValidatorSimpleJITOnchainWithPublishedMachine(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleOnchainWithPublishedMachine(t *testing.T) {
+func TestBlockValidatorSimpleOnchainWithPublishedMachineFlaky(t *testing.T) {
 	cr, err := github.LatestConsensusRelease(context.Background())
 	Require(t, err)
 	machPath := populateMachineDir(t, cr)
@@ -357,7 +392,7 @@ func TestBlockValidatorSimpleOnchainWithPublishedMachine(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleOnchainWithRedisStreams(t *testing.T) {
+func TestBlockValidatorSimpleOnchainWithRedisStreamsFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:    "onchain",
 		workloadLoops:   1,
@@ -368,7 +403,7 @@ func TestBlockValidatorSimpleOnchainWithRedisStreams(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleLocalAnyTrust(t *testing.T) {
+func TestBlockValidatorSimpleLocalAnyTrustFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:  "files",
 		workloadLoops: 1,
@@ -378,7 +413,7 @@ func TestBlockValidatorSimpleLocalAnyTrust(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleJITOnchain(t *testing.T) {
+func TestBlockValidatorSimpleJITOnchainFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:  "files",
 		workloadLoops: 8,
@@ -387,9 +422,9 @@ func TestBlockValidatorSimpleJITOnchain(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-// TestBlockValidatorReferenceDAWithProver tests the block validator with prover
+// TestBlockValidatorReferenceDAWithProverFlaky tests the block validator with prover
 // with the embedded reference DA
-func TestBlockValidatorReferenceDAWithProver(t *testing.T) {
+func TestBlockValidatorReferenceDAWithProverFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:  "referenceda",
 		workloadLoops: 1,
@@ -399,9 +434,9 @@ func TestBlockValidatorReferenceDAWithProver(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-// TestBlockValidatorReferenceDAWithJIT tests the block validator with JIT
+// TestBlockValidatorReferenceDAWithJITFlaky tests the block validator with JIT
 // with the embedded reference DA
-func TestBlockValidatorReferenceDAWithJIT(t *testing.T) {
+func TestBlockValidatorReferenceDAWithJITFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:  "referenceda",
 		workloadLoops: 1,

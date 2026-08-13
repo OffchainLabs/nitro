@@ -37,6 +37,13 @@ jobs:
     uses: ./.github/workflows/_bold-legacy.yml
     secrets: inherit
 
+  # --- Run Nitro Reth tests (not required by can_proceed) ---
+  nitro-reth-tests:
+    needs: changes
+    if: needs.changes.outputs.nitro_reth_changed == 'true'
+    uses: ./.github/workflows/_nitro-reth-tests.yml
+    secrets: inherit
+
   # --- Full GO tests (not required by can_proceed) ---
   go-tests:
     needs: changes
@@ -47,6 +54,7 @@ jobs:
   # --- Record the tested tree so the merge queue can skip an identical re-run ---
   record-tested-tree:
     runs-on: ubuntu-4
+    timeout-minutes: 10
     needs: go-tests
     steps:
       - name: Checkout
@@ -67,7 +75,7 @@ jobs:
           path: go-tests-passed
 
   # --- MEL test modes: opt-in per-PR via the `test-mel` label. ---
-  # MEL triples runner contention on arbitrator-ci; see _mel-go-test-suite.yml.
+  # MEL triples runner contention on the go-tests runner pool; see _mel-go-test-suite.yml.
   mel-tests:
     if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'test-mel')
     uses: ./.github/workflows/_mel-go-test-suite.yml
@@ -95,6 +103,7 @@ jobs:
   # --- Ensure changelog is updated (required by can_proceed) ---
   changelog:
     needs: changes
+    if: needs.changes.outputs.reth_only != 'true'
     uses: ./.github/workflows/_changelog.yml
     secrets: inherit
     with:
@@ -103,17 +112,23 @@ jobs:
   can_proceed:
     name: can_proceed
     runs-on: ubuntu-4
+    timeout-minutes: 5
     if: always()
-    needs: [fast, changelog]
+    needs: [changes, fast, changelog]
     steps:
       - name: Verify required jobs passed
         run: |
-          [[ "${{ needs.changelog.result }}" == "success" ]] || exit 1
+          if [[ "${{ needs.changelog.result }}" == "skipped" && "${{ needs.changes.outputs.reth_only }}" == "true" ]]; then
+            echo "Changelog skipped: reth-only PR"
+          elif [[ "${{ needs.changelog.result }}" != "success" ]]; then
+            exit 1
+          fi
           [[ "${{ needs.fast.result }}" =~ ^(success|skipped)$ ]] || exit 1
 
   can_see_status:
     # Depends on nothing, so it always runs and always reports a status on the
     # pull request page regardless of which other jobs were skipped.
     runs-on: ubuntu-4
+    timeout-minutes: 5
     steps:
       - run: true

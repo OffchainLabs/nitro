@@ -1,0 +1,9 @@
+{
+  "name": "inertia_setter_reflects_in_state",
+  "description": "Setting inertia to 50 must be observable",
+  "setup": {"arbos_version": 30, "chain_id": 412346},
+  "actions": [{"type": "l1_pricing_set_inertia", "value": 50}],
+  "assertions": {
+    "l1_pricing": {"inertia": 50}
+  }
+}

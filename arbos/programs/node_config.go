@@ -61,7 +61,7 @@ func (c *ArbNodeConfig) Validate() {
 // path is a wiring bug: it logs an error and fails open so the node continues
 // to run with pre-feature behavior.
 func GetArbNodeConfig(statedb vm.StateDB) *ArbNodeConfig {
-	raw := statedb.Database().ArbNodeConfig()
+	raw := statedb.Database().CodeDB().ArbNodeConfig()
 	if raw == nil {
 		return nil
 	}

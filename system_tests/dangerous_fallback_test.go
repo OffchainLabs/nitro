@@ -19,11 +19,23 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
+
+// The dangerous always-fallback flag is rejected by config validation when
+// message extraction is enabled (see arbnode.Config.Validate), so the
+// node-building tests below cannot run in the MEL CI configurations.
+func skipIfMessageExtractionEnabled(t *testing.T) {
+	t.Helper()
+	if *testflag.MelFlag {
+		t.Skip("always-fallback-to-parent-chain-da is incompatible with message-extraction.enable=true")
+	}
+}
 
 // Post-retirement: chain config still requires DAC and DAS is unreachable.
 // The dangerous flag must short-circuit AnyTrust wiring so the node never tries to connect.
 func TestDangerousAlwaysFallback_BatchPosterPostsToParentChain(t *testing.T) {
+	skipIfMessageExtractionEnabled(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -57,6 +69,7 @@ func TestDangerousAlwaysFallback_BatchPosterPostsToParentChain(t *testing.T) {
 // Migration step 1: DAS still alive, AnyTrust still enabled in config, but the
 // dangerous flag must override and force the batch poster to post to L1.
 func TestDangerousAlwaysFallback_OverridesEnabledAnyTrust(t *testing.T) {
+	skipIfMessageExtractionEnabled(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -99,6 +112,7 @@ func TestDangerousAlwaysFallback_OverridesEnabledAnyTrust(t *testing.T) {
 }
 
 func TestDangerousAlwaysFallback_SyncingFatalsOnAnyTrustBatch(t *testing.T) {
+	skipIfMessageExtractionEnabled(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -164,6 +178,7 @@ func TestDangerousAlwaysFallback_SyncingFatalsOnAnyTrustBatch(t *testing.T) {
 // Phase-out: sequencer (no flag) posts real AnyTrust batches; a syncing node
 // with the flag plus rest-aggregator must read them from the committee, not halt.
 func TestDangerousAlwaysFallback_SyncingReadsFromCommittee(t *testing.T) {
+	skipIfMessageExtractionEnabled(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

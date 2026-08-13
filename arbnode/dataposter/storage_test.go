@@ -13,6 +13,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -26,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
+	testflag "github.com/offchainlabs/nitro/util/testhelpers/flag"
 )
 
 var ignoreData = cmp.Options{
@@ -48,7 +50,15 @@ func newLevelDBStorage(t *testing.T, encF storage.EncoderDecoderF) *dbstorage.St
 
 func newPebbleDBStorage(t *testing.T, encF storage.EncoderDecoderF) *dbstorage.Storage {
 	t.Helper()
-	db, err := node.NewPebbleDBDatabase(path.Join(t.TempDir(), "pebble.db"), 0, 0, "default", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("pebble"))
+	stateScheme := rawdb.HashScheme
+	if *testflag.StateSchemeFlag == rawdb.PathScheme || *testflag.StateSchemeFlag == rawdb.HashScheme {
+		stateScheme = *testflag.StateSchemeFlag
+	}
+	persistentConfig := conf.PersistentConfigDefault
+	if err := persistentConfig.Pebble.ResolveWithStateScheme(stateScheme); err != nil {
+		t.Fatalf("failed to resolve pebble config: %v", err)
+	}
+	db, err := node.NewPebbleDBDatabase(path.Join(t.TempDir(), "pebble.db"), 0, 0, "default", false, persistentConfig.Pebble.ExtraOptions("pebble"))
 	if err != nil {
 		t.Fatalf("NewPebbleDBDatabase() unexpected error: %v", err)
 	}

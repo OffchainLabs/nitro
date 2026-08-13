@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"path"
 	"runtime/debug"
@@ -31,6 +32,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
@@ -54,6 +56,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
+	"github.com/offchainlabs/nitro/transactionfeed"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
@@ -95,6 +98,12 @@ func (e *ErrFilteredDelayedMessage) Error() string {
 // ErrDelayedTxFiltered is an internal error used during block production to signal
 // that a transaction touched a filtered address and is not in the onchain filter.
 var ErrDelayedTxFiltered = errors.New("delayed transaction filtered")
+
+// transactionBroadcaster is the subset of transactionfeed.Server functionality used
+// by the execution engine to broadcast transactions as they are accepted.
+type transactionBroadcaster interface {
+	BroadcastTransaction(msg *transactionfeed.TransactionFeedMessage)
+}
 
 // DelayedFilteringSequencingHooks extends NoopSequencingHooks with address filtering
 // for delayed message processing. Builds FilteredTxReport entries for txs that touch
@@ -182,6 +191,10 @@ func (f *DelayedFilteringSequencingHooks) PostTxFilter(header *types.Header, db 
 	return nil
 }
 
+func (f *DelayedFilteringSequencingHooks) FilteredTxCount() int {
+	return len(f.filteredTxHashes)
+}
+
 func (f *DelayedFilteringSequencingHooks) SupportsGroupRollback() bool { return true }
 
 // TxFailed builds a fully populated FilteredTxReport from
@@ -225,6 +238,12 @@ func (f *DelayedFilteringSequencingHooks) TxFailed(err error) {
 		DelayedReportData: &addressfilter.DelayedReportData{InboxRequestId: f.inboxRequestId},
 	}
 	f.pendingFilteredTxReports = append(f.pendingFilteredTxReports, report)
+}
+
+// TxAccepted deliberately does NOT broadcast to the transaction feed. A
+// delayed block is produced atomically from one inbox message and discarded
+// completely if any of its txs is filtered. Its broadcast is handled after block production.
+func (f *DelayedFilteringSequencingHooks) TxAccepted(header *types.Header, tx *types.Transaction, receipt *types.Receipt) {
 }
 
 func applyEventFilter(ef *eventfilter.EventFilter, db *state.StateDB) {
@@ -278,9 +297,10 @@ type FilteredTxWaitState struct {
 type ExecutionEngine struct {
 	stopwaiter.StopWaiter
 
-	bc        *core.BlockChain
-	consensus consensus.FullConsensusClient
-	recorder  *BlockRecorder
+	bc          *core.BlockChain
+	consensus   consensus.FullConsensusClient
+	recorder    *BlockRecorder
+	tipRecorder *ChainTipBlockRecorder
 
 	createBlocksMutex sync.Mutex
 
@@ -316,6 +336,8 @@ type ExecutionEngine struct {
 	disableDelayedSequencingFilter bool
 	filteredTxFullRetryInterval    time.Duration
 	waitingForFilteredTx           *FilteredTxWaitState
+
+	transactionBroadcaster transactionBroadcaster
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -351,6 +373,14 @@ func NewExecutionEngine(
 		filteringReportRPCClient:       filteringReportRPCClient,
 		filteredTxFullRetryInterval:    filteredTxFullRetryInterval,
 	}
+}
+
+func (s *ExecutionEngine) GetFilteringReportRPCClient() *FilteringReportRPCClient {
+	return s.filteringReportRPCClient
+}
+
+func (s *ExecutionEngine) ChainID() *big.Int {
+	return s.bc.Config().ChainID
 }
 
 func (s *ExecutionEngine) backlogCallDataUnits() uint64 {
@@ -430,7 +460,7 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 	}
 	s.wasmTargets = targetConfig.WasmTargets()
 	programs.SetAllowFallback(targetConfig.AllowFallback)
-	s.bc.StateCache().SetArbNodeConfig(&programs.ArbNodeConfig{
+	s.bc.CodeDB().SetArbNodeConfig(&programs.ArbNodeConfig{
 		MaxOpenPages:       targetConfig.MaxStylusOpenPages,
 		MaxStylusCallDepth: targetConfig.MaxStylusCallDepth,
 	})
@@ -447,6 +477,16 @@ func (s *ExecutionEngine) SetRecorder(recorder *BlockRecorder) {
 		panic("trying to set recorder policy when already set")
 	}
 	s.recorder = recorder
+}
+
+func (s *ExecutionEngine) SetTipRecorder(recorder *ChainTipBlockRecorder) {
+	if s.Started() {
+		panic("trying to set tip recorder after start")
+	}
+	if s.tipRecorder != nil {
+		panic("trying to set tip recorder when already set")
+	}
+	s.tipRecorder = recorder
 }
 
 func (s *ExecutionEngine) SetReorgEventsNotifier(reorgEventsNotifier chan struct{}) {
@@ -694,7 +734,7 @@ func (s *ExecutionEngine) ResequenceReorgedMessage(msg *arbostypes.MessageWithMe
 		log.Warn("failed to parse sequencer message found from reorg", "err", err)
 		return nil, nil
 	}
-	hooks := MakeResequencingHooks(txes)
+	hooks := MakeResequencingHooks(txes, s.transactionBroadcaster)
 	sequencedMsg, _, err := s.sequenceTransactionsWithBlockMutex(msg.Message.Header, hooks)
 	if err != nil {
 		return nil, fmt.Errorf("failed to re-sequence old sequencer message removed by reorg: %w", err)
@@ -779,26 +819,23 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, nil, err
 	}
 
-	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
+	session, err := s.beginTipRecording(lastBlockHeader, core.NewMessageSequencingContext(s.wasmTargets), s.tipRecorder != nil)
 	if err != nil {
 		return nil, nil, err
 	}
+	statedb := session.statedb
 	lastBlock := s.bc.GetBlock(lastBlockHeader.Hash(), lastBlockHeader.Number.Uint64())
 	if lastBlock == nil {
 		return nil, nil, errors.New("can't find block for current header")
 	}
 	var witness *stateless.Witness
-	var witnessStats *stateless.WitnessStats
-	if s.bc.GetVMConfig().StatelessSelfValidation {
-		witness, err = stateless.NewWitness(lastBlock.Header(), s.bc)
+	if s.bc.StatelessSelfValidation() {
+		witness, err = stateless.NewWitness(lastBlock.Header(), s.bc, s.bc.EnableWitnessStats())
 		if err != nil {
 			return nil, nil, err
 		}
-		if s.bc.GetVMConfig().EnableWitnessStats {
-			witnessStats = stateless.NewWitnessStats()
-		}
 	}
-	statedb.StartPrefetcher("Sequencer", witness, witnessStats)
+	statedb.StartPrefetcher("Sequencer", witness)
 	defer statedb.StopPrefetcher()
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
 
@@ -808,10 +845,10 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		delayedMessagesRead,
 		lastBlockHeader,
 		statedb,
-		s.bc,
+		session.chainContext,
 		hooks,
 		false,
-		core.NewMessageSequencingContext(s.wasmTargets),
+		session.runCtx,
 		s.exposeMultiGas,
 		s.addressChecker,
 	)
@@ -825,9 +862,12 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, nil, nil
 	}
 
-	sequencedTxes, err := hooks.SequencedTxes()
-	if err != nil {
-		return nil, nil, err
+	sequencedTxes := hooks.SequencedTxes()
+	for _, res := range sequencedTxes {
+		// This is not supposed to happen, if so we have a bug
+		if errors.Is(res.Err, txNotFinalized) {
+			return nil, nil, fmt.Errorf("block processor never reported tx %s's result", res.Tx.Hash())
+		}
 	}
 	allTxsErrored := !slices.ContainsFunc(sequencedTxes, func(res TxResult) bool { return res.Err == nil })
 	if allTxsErrored {
@@ -850,6 +890,13 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	}
 	msgResult, err := s.resultFromHeader(block.Header())
 	if err != nil {
+		return nil, nil, err
+	}
+
+	// Persist the chain-tip recording before the message is handed to
+	// consensus and before the block is appended, so the recording is durable
+	// by the time the chain is.
+	if err := s.finishTipRecording(session, block, statedb); err != nil {
 		return nil, nil, err
 	}
 
@@ -1076,6 +1123,22 @@ func (s *ExecutionEngine) MessageIndexToBlockNumber(msgIdx arbutil.MessageIndex)
 	return uint64(msgIdx) + s.GetGenesisBlockNumber()
 }
 
+func (s *ExecutionEngine) broadcastBlockTxs(block *types.Block, receipts types.Receipts) {
+	if s.transactionBroadcaster == nil {
+		return
+	}
+	header := block.Header()
+
+	for i, tx := range block.Transactions() {
+		msg, err := transactionfeed.BuildFeedMessage(header, tx, receipts[i])
+		if err != nil {
+			log.Error("Transaction feed: failed to build message", "block", header.Number, "err", err)
+			continue
+		}
+		s.transactionBroadcaster.BroadcastTransaction(msg)
+	}
+}
+
 // must hold createBlockMutex
 //
 // isDelayedSequencing indicates the sequencer is actively building a block from
@@ -1093,29 +1156,10 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		return nil, nil, nil, errors.New("can't find block for current header")
 	}
 
-	err := s.bc.RecoverState(currentBlock)
+	err := s.bc.RecoverState(s.GetContext(), currentBlock)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to recover block %v state: %w", currentBlock.Number(), err)
 	}
-
-	statedb, err := s.bc.StateAt(currentHeader.Root)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	var witness *stateless.Witness
-	var witnessStats *stateless.WitnessStats
-	if s.bc.GetVMConfig().StatelessSelfValidation {
-		witness, err = stateless.NewWitness(currentBlock.Header(), s.bc)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		if s.bc.GetVMConfig().EnableWitnessStats {
-			witnessStats = stateless.NewWitnessStats()
-		}
-	}
-	statedb.StartPrefetcher("TransactionStreamer", witness, witnessStats)
-	defer statedb.StopPrefetcher()
 
 	var runCtx *core.MessageRunContext
 	switch {
@@ -1126,6 +1170,24 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	default:
 		runCtx = core.NewMessageCommitContext(s.wasmTargets)
 	}
+
+	session, err := s.beginTipRecording(currentHeader, runCtx, s.tipRecorder != nil && !isMsgForPrefetch)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	statedb := session.statedb
+	chainContext := session.chainContext
+	runCtx = session.runCtx
+
+	var witness *stateless.Witness
+	if s.bc.StatelessSelfValidation() {
+		witness, err = stateless.NewWitness(currentBlock.Header(), s.bc, s.bc.EnableWitnessStats())
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	statedb.StartPrefetcher("TransactionStreamer", witness)
+	defer statedb.StopPrefetcher()
 
 	// For delayed message sequencing, we use DelayedFilteringSequencingHooks which can
 	// halt on filtered addresses. This duplicates logic from arbos.ProduceBlock but with
@@ -1150,7 +1212,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			msg.DelayedMessagesRead,
 			currentHeader,
 			statedb,
-			s.bc,
+			chainContext,
 			filteringHooks,
 			isMsgForPrefetch,
 			runCtx,
@@ -1161,7 +1223,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 			return nil, nil, nil, err
 		}
 		// Check if any txs touched filtered addresses but are not in the onchain filter
-		if len(filteringHooks.filteredTxHashes) > 0 {
+		if filteringHooks.FilteredTxCount() > 0 {
 			if s.transactionFiltererRPCClient != nil {
 				filteredTxHashes := filteringHooks.filteredTxHashes
 				s.LaunchThread(func(ctx context.Context) {
@@ -1189,6 +1251,11 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 				DelayedMsgIdx: msg.DelayedMessagesRead - 1,
 			}
 		}
+
+		if err := s.finishTipRecording(session, block, statedb); err != nil {
+			return nil, nil, nil, err
+		}
+		s.broadcastBlockTxs(block, receipts)
 		return block, statedb, receipts, nil
 	}
 
@@ -1197,13 +1264,104 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		msg.DelayedMessagesRead,
 		currentHeader,
 		statedb,
-		s.bc,
+		chainContext,
 		isMsgForPrefetch,
 		runCtx,
 		s.exposeMultiGas,
 	)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
-	return block, statedb, receipts, err
+	if err := s.finishTipRecording(session, block, statedb); err != nil {
+		return nil, nil, nil, err
+	}
+	if isDelayedSequencing {
+		s.broadcastBlockTxs(block, receipts)
+	}
+	return block, statedb, receipts, nil
+}
+
+// tipRecordingSession carries the pieces wiring one block production run for
+// chain-tip recording. When recording is off it degrades to the plain statedb
+// and chain context, and finishTipRecording is a no-op.
+type tipRecordingSession struct {
+	statedb      *state.StateDB
+	chainContext core.ChainContext
+	runCtx       *core.MessageRunContext
+
+	recordingStateDatabase *arbitrum.TipRecordingStateDatabase
+	recordingChainContext  *arbitrum.RecordingChainContext
+}
+
+func (s *ExecutionEngine) beginTipRecording(parentHeader *types.Header, runCtx *core.MessageRunContext, recordAtTip bool) (*tipRecordingSession, error) {
+	if !recordAtTip {
+		statedb, err := s.bc.StateAt(parentHeader.Root)
+		if err != nil {
+			return nil, err
+		}
+		return &tipRecordingSession{statedb: statedb, chainContext: s.bc, runCtx: runCtx}, nil
+	}
+	stateDatabase := state.NewDatabase(s.bc.TrieDB(), s.bc.CodeDB()).WithSnapshot(s.bc.Snapshots())
+	recordingStateDatabase := arbitrum.NewTipRecordingStateDatabase(stateDatabase)
+	recordingChainContext := arbitrum.NewRecordingChainContext(s.bc, parentHeader)
+	statedb, err := state.NewRecording(parentHeader.Root, recordingStateDatabase)
+	if err != nil {
+		return nil, err
+	}
+	statedb.StartRecording()
+	if err := recordReplayInitialStatePreimages(statedb, s.bc.Config()); err != nil {
+		return nil, err
+	}
+	return &tipRecordingSession{
+		statedb:                statedb,
+		chainContext:           recordingChainContext,
+		runCtx:                 core.NewTipRecordingContext(runCtx),
+		recordingStateDatabase: recordingStateDatabase,
+		recordingChainContext:  recordingChainContext,
+	}, nil
+}
+
+// finishTipRecording persists the chain-tip recording for the produced block,
+// using the statedb returned by block production, which may be a checkpoint
+// copy of the session's. Sessions that are not recording are a no-op.
+func (s *ExecutionEngine) finishTipRecording(session *tipRecordingSession, block *types.Block, statedb *state.StateDB) error {
+	if session == nil || session.recordingStateDatabase == nil || block == nil || statedb == nil || s.tipRecorder == nil {
+		return nil
+	}
+	// Persist before consensus/block side effects so write failures can abort cleanly.
+	session.recordingStateDatabase.StopRecording()
+	preimages := session.recordingStateDatabase.Preimages()
+	// StateDB owns VM SHA3 preimages and ArbOS preimages added during finalization.
+	for hash, preimage := range statedb.Preimages() {
+		preimages[hash] = preimage
+	}
+	return s.tipRecorder.RecordTip(block, preimages, session.recordingChainContext.GetMinBlockNumberAccessed(), session.recordingStateDatabase.CodeHashes(), statedb.UserWasms())
+}
+
+func recordReplayInitialStatePreimages(statedb *state.StateDB, chainConfig *params.ChainConfig) error {
+	initialArbosState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	if err != nil {
+		return fmt.Errorf("error opening initial ArbOS state: %w", err)
+	}
+	chainId, err := initialArbosState.ChainId()
+	if err != nil {
+		return fmt.Errorf("error getting chain ID from initial ArbOS state: %w", err)
+	}
+	if chainId.Cmp(chainConfig.ChainID) != 0 {
+		return fmt.Errorf("unexpected chain ID %v in ArbOS state, expected %v", chainId, chainConfig.ChainID)
+	}
+	genesisNum, err := initialArbosState.GenesisBlockNum()
+	if err != nil {
+		return fmt.Errorf("error getting genesis block number from initial ArbOS state: %w", err)
+	}
+	if expectedNum := chainConfig.ArbitrumChainParams.GenesisBlockNum; genesisNum != expectedNum {
+		return fmt.Errorf("unexpected genesis block number %v in ArbOS state, expected %v", genesisNum, expectedNum)
+	}
+	if _, err := initialArbosState.ChainConfig(); err != nil {
+		return fmt.Errorf("error getting chain config from initial ArbOS state: %w", err)
+	}
+	return nil
 }
 
 // must hold createBlockMutex
@@ -1580,16 +1738,16 @@ func (s *ExecutionEngine) MaintenanceStatus() *execution.MaintenanceStatus {
 	}
 }
 
-func (s *ExecutionEngine) SetAddressChecker(_ *testing.T, checker state.AddressChecker) {
-	s.addressChecker = checker
-}
-
 func (s *ExecutionEngine) SetEventFilter(ef *eventfilter.EventFilter) {
 	s.eventFilter = ef
 }
 
 func (s *ExecutionEngine) SetTransactionFiltererRPCClient(client *TransactionFiltererRPCClient) {
 	s.transactionFiltererRPCClient = client
+}
+
+func (s *ExecutionEngine) SetTransactionBroadcaster(tb transactionBroadcaster) {
+	s.transactionBroadcaster = tb
 }
 
 func (s *ExecutionEngine) isTxHashInOnchainFilter(txHash common.Hash) (bool, error) {

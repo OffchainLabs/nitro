@@ -107,7 +107,7 @@ func (t *ExpressLaneTracker) RoundController(round uint64) (common.Address, erro
 
 // validateExpressLaneTx checks for the correctness of all fields of msg
 func (t *ExpressLaneTracker) ValidateExpressLaneTx(msg *ExpressLaneSubmission) error {
-	if msg == nil || msg.Transaction == nil || msg.Signature == nil {
+	if msg == nil || msg.Transaction == nil || msg.Signature == nil || msg.ChainId == nil {
 		return ErrMalformedData
 	}
 	txSize := msg.Transaction.Size()

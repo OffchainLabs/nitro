@@ -14,8 +14,14 @@ on:
         description: 'New changelog fragments.'
         value: ${{ jobs.changes.outputs.changelog_added }}
       code_changed:
-        description: 'True if any file other than CHANGELOG.md or changelog/** changed.'
+        description: 'True if any file other than CHANGELOG.md, changelog/**, or Nitro Reth files changed.'
         value: ${{ jobs.changes.outputs.code_changed }}
+      nitro_reth_changed:
+        description: 'True if Nitro Reth or related files changed.'
+        value: ${{ jobs.changes.outputs.nitro_reth_changed }}
+      reth_only:
+        description: 'True if only Nitro Reth and changelog files changed.'
+        value: ${{ jobs.changes.outputs.reth_only }}
 
 permissions:
   contents: read
@@ -24,17 +30,19 @@ jobs:
   changes:
     name: Detect file changes
     runs-on: ubuntu-4
+    timeout-minutes: 10
     outputs:
-      rust_changed: ${{ steps.changed.outputs.rust_any_changed }}
+      rust_changed: ${{ steps.changed.outputs.rust_any_changed == 'true' || steps.gitlinks.outputs.rust_changed == 'true' }}
       bold_legacy_changed: ${{ steps.changed.outputs.bold_legacy_any_changed }}
       changelog_added: ${{ steps.changed.outputs.changelog_added_files }}
-      code_changed: ${{ steps.changed.outputs.code_any_changed }}
+      code_changed: ${{ steps.changed.outputs.code_any_changed == 'true' || steps.gitlinks.outputs.any_changed == 'true' }}
+      nitro_reth_changed: ${{ steps.changed.outputs.nitro_reth_any_changed }}
+      reth_only: ${{ steps.changed.outputs.nitro_reth_any_changed == 'true' && steps.changed.outputs.code_any_changed != 'true' && steps.gitlinks.outputs.any_changed != 'true' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          token: ${{ secrets.PRIVATE_REPO_PAT || github.token }}
           fetch-depth: 10            # Will cover most PRs
           persist-credentials: true  # In case changed-files requires deeper depth
 
@@ -45,22 +53,62 @@ jobs:
           files_yaml: |
             rust:
               - 'crates/**'
-              # Submodules aren't checked out here, so a contracts bump appears
-              # in diffs as the bare gitlink path 'contracts', which the glob
-              # form doesn't match. Keep both in case checkout behavior changes.
-              - 'contracts'
+              # Submodule bumps never appear in changed-files output; the
+              # gitlinks step below detects them instead.
               - 'contracts/**'
               - 'Makefile'
               - '**.toml'
               - '**/Cargo.lock'
+              - '!nitro-reth/**'
               - '.github/workflows/_rust-tests.yml'
               - '.github/workflows/_detect-changes.yml'
             bold_legacy:
               - 'bold/legacy/**'
               - '.github/workflows/_bold-legacy.yml'
+            nitro_reth:
+              - 'nitro-reth/**'
+              - '.github/workflows/_nitro-reth*.yml'
+              - '.github/workflows/_detect-changes.yml'
+              # Root submodules that nitro-reth symlinks into its tree, so
+              # pin bumps also run the reth suite.
+              - 'brotli'
+              - 'contracts'
+              - 'contracts-local/src/precompiles'
+              # Root configs that nitro-reth builds inherit (no local copies),
+              # so toolchain/format bumps also run the reth suite.
+              - 'rust-toolchain.toml'
+              - 'rustfmt.toml'
             changelog:
               - 'changelog/**.md'
             code:
               - '**'
               - '!CHANGELOG.md'
               - '!changelog/**'
+              - '!nitro-reth/**'
+              - '!.github/workflows/_nitro-reth*.yml'
+
+      - name: Detect submodule pointer changes
+        id: gitlinks
+        # changed-files diffs the parent repo with --ignore-submodules=all and
+        # can only expand a submodule's inner files when the submodule is
+        # checked out (it isn't here), so a PR whose only code change is a
+        # submodule bump would otherwise report no changes and skip CI.
+        # Runs on every event with a PR diff base; only workflow_dispatch
+        # lacks one.
+        if: github.event_name != 'workflow_dispatch'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA" "$HEAD_SHA"
+          changed=$(git config --file .gitmodules --get-regexp path | awk '{print $2}' \
+            | xargs -r git diff --name-only "$BASE_SHA" "$HEAD_SHA" --)
+          any=false
+          rust=false
+          while read -r path; do
+            [ -n "$path" ] || continue
+            any=true
+            case "$path" in crates/*|contracts|brotli) rust=true ;; esac
+          done <<< "$changed"
+          echo "any_changed=$any" >> "$GITHUB_OUTPUT"
+          echo "rust_changed=$rust" >> "$GITHUB_OUTPUT"

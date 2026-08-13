@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/eth/catalyst"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode/parent"
@@ -81,19 +82,27 @@ func TestParentChainEthConfigPolling(t *testing.T) {
 	}
 }
 
-// TestParentChainEthConfigForkTransition verifies that the ParentChain poller
+// TestParentChainEthConfigForkTransitionFlaky verifies that the ParentChain poller
 // detects when the parent chain transitions through a fork that changes the
 // blob schedule (e.g., Osaka -> BPO1).
-func TestParentChainEthConfigForkTransition(t *testing.T) {
+func TestParentChainEthConfigForkTransitionFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Pick a BPO1 activation far enough in the future that Build()'s setup
 	// blocks won't already cross it, and drive L1 past it explicitly later.
+	// The dev-mode L1 seals one block per transaction with timestamp
+	// max(wallclock, parent+1), so the head timestamp advances by at least
+	// one second per block regardless of wall-clock time. Build() can mint
+	// hundreds of L1 blocks (the bridging wait loop alone is budgeted for up
+	// to 600) on a slow runner, so the offset must comfortably exceed the
+	// number of setup blocks plus setup wall-clock seconds; 600 was
+	// observably crossable in CI, 30000 is not reachable within the test
+	// timeout.
 	// The pointer is set once before Build() and never mutated again, so we
 	// don't depend on geth retaining the same struct pointer we passed in.
 	// #nosec G115
-	bpo1Time := uint64(time.Now().Unix()) + 600
+	bpo1Time := uint64(time.Now().Unix()) + 30000
 	l1ChainConfig := *params.AllDevChainProtocolChanges
 	l1ChainConfig.BPO1Time = &bpo1Time
 	l1ChainConfig.BlobScheduleConfig = &params.BlobScheduleConfig{
@@ -147,6 +156,14 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 			lastPhase1Cfg.Max == params.DefaultOsakaBlobConfig.Max
 	})
 
+	// Drive the L1 head timestamp past BPO1Time. Each dev-mode L1 block only
+	// bumps the timestamp by ~1s when blocks are minted quickly, so instead
+	// of minting tens of thousands of blocks we seal a single block with an
+	// explicitly adjusted timestamp via the simulated beacon.
+	simBeacon, ok := builder.L1.L1BlobReader.Unwrap().(*catalyst.SimulatedBeacon)
+	if !ok {
+		t.Fatalf("expected L1 blob reader to be a *catalyst.SimulatedBeacon, got %T", builder.L1.L1BlobReader.Unwrap())
+	}
 	pollUntil(t, ctx, 60*time.Second, 100*time.Millisecond, "L1 timestamp past BPO1Time", func() bool {
 		head, err := builder.L1.Client.BlockByNumber(ctx, nil)
 		if err != nil {
@@ -156,10 +173,12 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 		if head.Time() >= bpo1Time {
 			return true
 		}
-		// Each dev-mode L1 block only bumps the timestamp by 1s, so advancing a
-		// single block per 100ms iteration cannot cover the 600s to BPO1Time
-		// within the poll budget; advance a chunk of blocks per iteration instead.
-		AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 25)
+		// AdjustTime fails if the txpool has pending transactions (e.g. a
+		// batch poster tx in flight); just retry on the next iteration.
+		// #nosec G115
+		if err := simBeacon.AdjustTime(time.Duration(bpo1Time-head.Time()+1) * time.Second); err != nil {
+			t.Logf("AdjustTime failed (will retry): %v", err)
+		}
 		return false
 	})
 

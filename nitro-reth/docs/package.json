@@ -1,0 +1,15 @@
+{
+  "name": "arbitrum-reth-docs",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vocs dev",
+    "build": "vocs build",
+    "preview": "vocs preview"
+  },
+  "dependencies": {
+    "vocs": "^2.5.3",
+    "waku": "^1.0.0-beta.6"
+  }
+}

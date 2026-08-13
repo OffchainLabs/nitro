@@ -66,14 +66,23 @@ import (
 )
 
 func TestChallengeProtocolBOLDReadInboxChallenge(t *gotesting.T) {
-	testChallengeProtocolBOLD(t, false, false)
+	testChallengeProtocolBOLDRecorderModes(t, false, false)
+}
+
+func testChallengeProtocolBOLDRecorderModes(t *gotesting.T, useExternalSigner bool, useRedis bool, spawnerOpts ...server_arb.SpawnerOption) {
+	for _, tc := range challengeBlockRecorderTestCases(t) {
+		tc := tc
+		t.Run(tc.name, func(t *gotesting.T) {
+			testChallengeProtocolBOLD(t, tc, useExternalSigner, useRedis, spawnerOpts...)
+		})
+	}
 }
 
 func TestChallengeProtocolBOLDWithRedisReadInboxChallenge(t *gotesting.T) {
-	testChallengeProtocolBOLD(t, false, true)
+	testChallengeProtocolBOLDRecorderModes(t, false, true)
 }
 func TestChallengeProtocolBOLDReadInboxChallengeWithExternalSigner(t *gotesting.T) {
-	testChallengeProtocolBOLD(t, true, false)
+	testChallengeProtocolBOLDRecorderModes(t, true, false)
 }
 
 func TestChallengeProtocolBOLDStartStepChallenge(t *gotesting.T) {
@@ -85,10 +94,10 @@ func TestChallengeProtocolBOLDStartStepChallenge(t *gotesting.T) {
 			return NewIncorrectIntermediateMachine(inner, 1)
 		}),
 	}
-	testChallengeProtocolBOLD(t, false, false, opts...)
+	testChallengeProtocolBOLDRecorderModes(t, false, false, opts...)
 }
 
-func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis bool, spawnerOpts ...server_arb.SpawnerOption) {
+func testChallengeProtocolBOLD(t *gotesting.T, recorderCase blockRecorderTestCase, useExternalSigner bool, useRedis bool, spawnerOpts ...server_arb.SpawnerOption) {
 	goodDir, err := os.MkdirTemp("", "good_*")
 	Require(t, err)
 	evilDir, err := os.MkdirTemp("", "evil_*")
@@ -127,6 +136,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 		l2info,
 		useExternalSigner,
 		false,
+		withBlockRecorderTestCase(recorderCase),
 	)
 	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
@@ -151,6 +161,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 		stakeTokenAddr,
 		asserterOpts,
 		false,
+		withBlockRecorderTestCase(recorderCase),
 	)
 	defer l2nodeB.StopAndWait()
 
@@ -536,6 +547,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	stakeTokenAddr common.Address,
 	asserterOpts *bind.TransactOpts,
 	enableCustomDA bool,
+	execConfigOpts ...func(*gethexec.Config),
 ) (*node.Node, *ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, *sol.AssertionChain) {
 	fatalErrChan := make(chan error, 10)
 	l1rpcClient := l1stack.Attach()
@@ -580,6 +592,9 @@ func create2ndNodeWithConfigForBoldProtocol(
 	Require(t, err)
 
 	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
+	for _, opt := range execConfigOpts {
+		opt(execConfig)
+	}
 	Require(t, execConfig.Validate())
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(&execConfig.Caching)
 	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2executionDB, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, &execConfig.TxIndexer, 0, execConfig.ExposeMultiGas)
@@ -592,7 +607,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &nodeConfig.ParentChainReader }, arbSys)
 	Require(t, err)
 	parentChain := parent.NewParentChain(ctx, l1ChainId, l1Reader)
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, containers.Some(l1client), NewCommonConfigFetcher(execConfig), 0, parentChain)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, containers.Some(l1client), NewCommonConfigFetcher(execConfig), 0, parentChain, fatalErrChan)
 	Require(t, err)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)

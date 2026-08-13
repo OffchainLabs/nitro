@@ -1152,7 +1152,7 @@ func sendDelayedMessagesViaL1(
 }
 
 // waitForDelayedCount polls the inbox tracker until the delayed message count reaches the expected value.
-func waitForDelayedCount(t *testing.T, ctx context.Context, builder *NodeBuilder, expected uint64) {
+func waitForDelayedCount(t *testing.T, _ctx context.Context, builder *NodeBuilder, expected uint64) {
 	t.Helper()
 	timeout := time.NewTimer(30 * time.Second)
 	defer timeout.Stop()

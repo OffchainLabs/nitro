@@ -1,0 +1,45 @@
+---
+name: nitro-reth-miri
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Skip isolation so miri can hit the workspace-vendored advisory db used by some lazy initialisers.
+  MIRIFLAGS: "-Zmiri-disable-isolation"
+
+jobs:
+  miri:
+    name: miri aliasing
+    runs-on: ocl-4cpu-16ram
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: nitro-reth
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: nitro-reth
+      # The lifetime-bound Storage<'a, D> foundation and the per-block
+      # ArbPrecompileCtx are the two types whose aliasing invariants are
+      # load-bearing for the rest of the workspace.
+      #
+      # arb-storage runs --lib only; integration tests there exercise the
+      # documented Storage::state_mut() compromise (see SECURITY.md) and
+      # are not in scope for the aliasing gate.
+      - name: miri arb-storage lib tests
+        run: cargo +nightly miri test -p arb-storage --lib
+      - name: miri arb-context tests
+        run: cargo +nightly miri test -p arb-context
