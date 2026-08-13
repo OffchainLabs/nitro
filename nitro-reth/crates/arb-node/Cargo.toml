@@ -84,5 +84,8 @@ tokio = { workspace = true, features = ["macros", "sync", "time"] }
 tokio-stream = { workspace = true }
 tracing = { workspace = true }
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+
 [lints]
 workspace = true

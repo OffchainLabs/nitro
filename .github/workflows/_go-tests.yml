@@ -90,7 +90,10 @@ jobs:
       COVER: ${{ github.event_name != 'merge_group' && '--cover' || '' }}
     services:
       redis:
-        image: redis
+        # Only the redis test steps use an external redis instance (--test_redis).
+        # An empty image makes the runner skip the service container, so the other
+        # matrix jobs don't pull the image (and hit Docker Hub rate limits).
+        image: ${{ (inputs.run-defaults-a || inputs.run-flaky) && 'redis' || '' }}
         ports:
           - 6379:6379
 
@@ -118,11 +121,21 @@ jobs:
           # Consumed by system_tests helpers (see getTestTimeoutScale in common_test.go).
           echo "NITRO_TEST_TIMEOUT_SCALE=2.0" >> "$GITHUB_ENV"
 
+      # npm intermittently hangs forever after a successful install (NIT-5420),
+      # so bound each attempt (successful builds take at most ~7 min) and retry;
+      # make is incremental, so retries resume where the killed attempt left off.
+      # The script also captures diagnostics from the hung processes before
+      # killing them (see the hang-reports artifact) to report the bug upstream.
       - name: Build
-        run: make -j8 build test-go-deps
+        timeout-minutes: 35
+        env:
+          HANG_REPORT_DIR: ${{ github.workspace }}/hang-reports
+          NODE_OPTIONS: --report-on-signal --report-signal=SIGUSR2 --report-directory=${{ github.workspace }}/hang-reports
+        run: ${{ github.workspace }}/.github/workflows/buildWithRetry.sh
 
       - name: Build node dependencies
-        run: make -j8 build-node-deps
+        timeout-minutes: 20
+        run: make -j "$(nproc)" build-node-deps
 
       # --------------------- PATHDB MODE ---------------------
 
@@ -371,3 +384,11 @@ jobs:
         with:
           name: ${{ inputs.run-name }}-full.log
           path: full.log
+
+      - name: Upload npm hang diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: hang-reports-${{ inputs.run-name }}
+          path: hang-reports/
+          if-no-files-found: ignore
