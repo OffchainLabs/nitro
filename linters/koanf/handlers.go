@@ -205,7 +205,7 @@ func tagFromField(f *ast.Field) string {
 }
 
 // checkStruct returns violations where koanf tag name doesn't match field names.
-func checkStruct(pass *analysis.Pass, s *ast.StructType) Result {
+func checkStruct(_pass *analysis.Pass, s *ast.StructType) Result {
 	var res Result
 	for _, f := range s.Fields.List {
 		tag := tagFromField(f)

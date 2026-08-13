@@ -11,7 +11,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 )
 
-func (m *MessageExtractor) reorg(ctx context.Context, current *fsm.CurrentState[action, FSMState]) (time.Duration, error) {
+func (m *MessageExtractor) reorg(_ctx context.Context, current *fsm.CurrentState[action, FSMState]) (time.Duration, error) {
 	reorgAction, ok := current.SourceEvent.(reorgToOldBlock)
 	if !ok {
 		return m.config.RetryInterval, fmt.Errorf("invalid action: %T", current.SourceEvent)

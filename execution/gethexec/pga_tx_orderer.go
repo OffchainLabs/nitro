@@ -23,7 +23,8 @@ type pgaTxOrderer struct {
 	mempool  *pga.Mempool[txQueueItem]
 	schedule *pga.Schedule
 
-	baseFee *big.Int
+	baseFee          *big.Int
+	sizeLimitReached bool
 }
 
 var _ txOrderer = (*pgaTxOrderer)(nil)
@@ -59,6 +60,7 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 		// If the next tx is too big to fit in the remaining block space, we add it back to the mempool and stop sequencing.
 		// The sequencer will finalize the block and start a new one, which will have a fresh mempool and schedule.
 		if item.txSize > remainingBlockSize {
+			p.sizeLimitReached = true
 			p.mempool.Push(item)
 			return txQueueItem{}, false
 		}
@@ -85,8 +87,8 @@ func (p *pgaTxOrderer) TakeRemaining() []txQueueItem {
 	return p.mempool.TakeRemaining()
 }
 
-func (p *pgaTxOrderer) RemainingLen() int {
-	return p.mempool.PriorityQueueLen()
+func (p *pgaTxOrderer) SizeLimitReached() bool {
+	return p.sizeLimitReached
 }
 
 func (p *pgaTxOrderer) OnTxInclusion(queueItem txQueueItem) {

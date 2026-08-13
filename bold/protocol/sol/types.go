@@ -63,7 +63,7 @@ func (a *Assertion) HasSecondChild(ctx context.Context, opts *bind.CallOpts) (bo
 	return inner.SecondChildBlock > 0, nil
 }
 
-func (a *Assertion) inner(ctx context.Context, opts *bind.CallOpts) (*rollupgen.AssertionNode, error) {
+func (a *Assertion) inner(_ctx context.Context, opts *bind.CallOpts) (*rollupgen.AssertionNode, error) {
 	var b [32]byte
 	copy(b[:], a.id.Bytes())
 	assertionNode, err := a.chain.userLogic.GetAssertion(opts, b)
