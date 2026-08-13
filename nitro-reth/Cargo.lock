@@ -1269,6 +1269,8 @@ dependencies = [
  "alloy-primitives",
  "alloy-rlp",
  "arbos-types",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1471,6 +1473,7 @@ dependencies = [
  "arb-chainspec",
  "arb-errors",
  "arb-evm",
+ "arb-mel-types",
  "arb-precompiles",
  "arb-primitives",
  "arb-storage",
