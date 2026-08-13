@@ -273,7 +273,7 @@ pub trait MelProvider: Send + Sync + 'static {
     /// can override this to report batches posted but not yet processed. Mirrors
     /// nitro's `GetSyncProgress` fallback path.
     async fn get_sync_progress(&self) -> MelProviderResult<MessageSyncProgress> {
-        // TODO allow override for sequencer "seen" values, if needed
+        // TODO(NIT-5431) allow override for sequencer "seen" values, if needed
         let head = self.head_state().await?;
         Ok(MessageSyncProgress {
             batch_seen: head.batch_count,
