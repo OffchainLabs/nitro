@@ -15,6 +15,7 @@ pub mod network;
 pub mod payload;
 pub mod pool;
 pub mod producer;
+mod progress;
 pub mod validator;
 
 use std::sync::Arc;
@@ -47,6 +48,7 @@ use crate::{
     payload::ArbPayloadServiceBuilder,
     pool::ArbPoolBuilder,
     producer::{ArbBlockProducer, InMemoryStateAccess},
+    progress::run_progress_reporter,
 };
 
 /// Arbitrum RPC add-ons type alias.
@@ -230,17 +232,27 @@ where
         .unwrap_or(producer::DEFAULT_FLUSH_INTERVAL);
     let cross_block_cache_size = ctx.config().engine.tree_config().cross_block_cache_size();
 
-    let block_producer = Arc::new(ArbBlockProducer::new(
+    let head_block = ctx.provider().last_block_number()?;
+
+    let (block_producer, progress_counters) = ArbBlockProducer::new(
         ctx.provider().clone(),
         chain_spec,
         evm_config,
         in_memory_state,
         flush_interval,
         cross_block_cache_size,
-    ));
+        head_block,
+    );
 
-    let nitro_exec =
-        NitroExecutionHandler::new(ctx.provider().clone(), block_producer, genesis_block_num);
+    ctx.node()
+        .task_executor()
+        .spawn_task(run_progress_reporter(progress_counters));
+
+    let nitro_exec = NitroExecutionHandler::new(
+        ctx.provider().clone(),
+        Arc::new(block_producer),
+        genesis_block_num,
+    );
     let nitro_rpc = nitro_exec.into_rpc();
     ctx.modules.merge_configured(nitro_rpc.clone())?;
     ctx.auth_module.merge_auth_methods(nitro_rpc)?;
