@@ -671,30 +671,30 @@ func (b *NodeBuilder) waitForNodeToCatchUpWithParentChain(t *testing.T) {
 	if !posted.IsUint64() || posted.Uint64() == 0 {
 		return
 	}
-	target := posted.Uint64()
+	targetBatch := posted.Uint64()
 
 	deadline := time.Now().Add(time.Minute)
 	for {
-		batches, err := node.InboxTracker.GetBatchCount()
+		trackedBatches, err := node.InboxTracker.GetBatchCount()
 		Require(t, err)
-		var want, executed arbutil.MessageIndex
-		if batches >= target {
-			want, err = node.InboxTracker.GetBatchMessageCount(target - 1)
+		var targetMessage, executedMessage arbutil.MessageIndex
+		if trackedBatches >= targetBatch {
+			targetMessage, err = node.InboxTracker.GetBatchMessageCount(targetBatch - 1)
 			Require(t, err)
-			executed, err = node.TxStreamer.GetMessageCount()
+			executedMessage, err = node.TxStreamer.GetMessageCount()
 			Require(t, err)
 			if b.L2.ExecNode != nil {
 				head, err := b.L2.ExecNode.ExecEngine.HeadMessageIndex()
 				Require(t, err)
-				executed = min(executed, head+1)
+				executedMessage = min(executedMessage, head+1)
 			}
-			if executed >= want {
+			if executedMessage >= targetMessage {
 				return
 			}
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("node did not catch up with the parent chain: read %d/%d batches, executed %d/%d messages",
-				batches, target, executed, want)
+				trackedBatches, targetBatch, executedMessage, targetMessage)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
