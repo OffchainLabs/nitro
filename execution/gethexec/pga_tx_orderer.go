@@ -10,6 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/execution/gethexec/pga"
 )
@@ -37,11 +38,11 @@ func NewPGATxOrderer(ctx context.Context, seq txOrdererSequencer, configFetcher 
 	}
 }
 
-func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize int) (txQueueItem, bool) {
+func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, bool) {
 	for {
-		if p.mempool.PriorityQueueLen() == 0 || p.schedule.RoundIsOver() {
+		if p.mempool.PriorityQueueLen() == 0 || p.schedule.RoundIsOver() || blockGasLeft < params.TxGas {
 			p.mempool.ApplyRoundBoost()
-			if p.schedule.IsLastRound() {
+			if p.schedule.IsLastRound() || blockGasLeft < params.TxGas {
 				return txQueueItem{}, false
 			}
 			err := p.schedule.WaitAndAdvanceRound(p.ctx)

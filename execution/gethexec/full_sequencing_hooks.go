@@ -158,12 +158,12 @@ func (s *FullSequencingHooks) TxAccepted(header *types.Header, tx *types.Transac
 
 // NextTxToSequence returns the next transaction to be included in the block, or nil if there are no more transactions to include.
 // The fetcher decides how to handle a tx too big for the remaining size budget.
-func (s *FullSequencingHooks) NextTxToSequence(statedb *state.StateDB) (*types.Transaction, *arbitrum_types.ConditionalOptions, error) {
+func (s *FullSequencingHooks) NextTxToSequence(statedb *state.StateDB, blockGasLeft uint64) (*types.Transaction, *arbitrum_types.ConditionalOptions, error) {
 	// This is not supposed to happen, if so we have a bug
 	if n := len(s.sequencedTxs); n > 0 && errors.Is(s.sequencedTxs[n-1].err, txNotFinalized) {
 		return nil, nil, fmt.Errorf("NextTxToSequence called before the block processor reported tx %s's result", s.sequencedTxs[n-1].queueItem.tx.Hash())
 	}
-	item, ok := s.fetcher.NextQueueItem(statedb, s.maxSequencedTxsSize-s.sequencedTxsSizeSoFar)
+	item, ok := s.fetcher.NextQueueItem(statedb, s.maxSequencedTxsSize-s.sequencedTxsSizeSoFar, blockGasLeft)
 	if !ok {
 		return nil, nil, nil
 	}

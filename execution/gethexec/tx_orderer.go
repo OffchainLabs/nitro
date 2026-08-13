@@ -8,12 +8,13 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 // nextTxFetcher supplies a block's tx candidates to the sequencing hooks one at a time.
 type nextTxFetcher interface {
 	// NextQueueItem yields the next block candidate, reporting false on exhaustion.
-	NextQueueItem(statedb *state.StateDB, remainingBlockSize int) (txQueueItem, bool)
+	NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, bool)
 
 	// OnTxInclusion notifies the orderer that the last yielded tx made it into the block.
 	OnTxInclusion(queueItem txQueueItem)
@@ -27,8 +28,8 @@ type fixedTxFetcher struct {
 
 var _ nextTxFetcher = (*fixedTxFetcher)(nil)
 
-func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSize int) (txQueueItem, bool) {
-	if len(f.items) == 0 {
+func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, bool) {
+	if len(f.items) == 0 || blockGasLeft < params.TxGas {
 		return txQueueItem{}, false
 	}
 	item := f.items[0]
@@ -37,7 +38,7 @@ func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSiz
 	// If the tx is too big for the remaining block size, we exhaust it and continue to the next one.
 	if item.txSize > remainingBlockSize {
 		f.exhausted = append(f.exhausted, item)
-		return f.NextQueueItem(statedb, remainingBlockSize)
+		return f.NextQueueItem(statedb, remainingBlockSize, blockGasLeft)
 	}
 
 	return item, true

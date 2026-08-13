@@ -254,7 +254,7 @@ type SequencingHooks interface {
 	TxFilter
 	BlockFilter
 	// NextTxToSequence returns the next tx to include, or nil when done.
-	NextTxToSequence(statedb *state.StateDB) (*types.Transaction, *arbitrum_types.ConditionalOptions, error)
+	NextTxToSequence(statedb *state.StateDB, blockGasLeft uint64) (*types.Transaction, *arbitrum_types.ConditionalOptions, error)
 	// CanDiscardTx returns whether failed txs can be excluded from the block.
 	// This is a static property of the implementing type (true for sequencer, false for replay).
 	CanDiscardTx() bool
@@ -275,7 +275,7 @@ type NoopSequencingHooks struct {
 	scheduledTxsCount int
 }
 
-func (n *NoopSequencingHooks) NextTxToSequence(statedb *state.StateDB) (*types.Transaction, *arbitrum_types.ConditionalOptions, error) {
+func (n *NoopSequencingHooks) NextTxToSequence(statedb *state.StateDB, blockGasLeft uint64) (*types.Transaction, *arbitrum_types.ConditionalOptions, error) {
 	// This is not supposed to happen, if so we have a bug
 	if n.scheduledTxsCount > len(n.txs) {
 		return nil, nil, errors.New("noopTxScheduler: requested too many transactions")
@@ -452,7 +452,7 @@ func ProduceBlockAdvanced(
 			}
 			buildState.clearGroupCheckpoint()
 			var conditionalOptions *arbitrum_types.ConditionalOptions
-			tx, conditionalOptions, err = sequencingHooks.NextTxToSequence(statedb)
+			tx, conditionalOptions, err = sequencingHooks.NextTxToSequence(statedb, buildState.blockGasLeft)
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("error fetching next transaction to sequence, userTxsProcessed: %d, err: %w", buildState.userTxsProcessed, err)
 			}
@@ -476,11 +476,6 @@ func ProduceBlockAdvanced(
 		arbosVersion := buildState.arbState.ArbOSVersion()
 		signer := types.MakeSigner(chainConfig, header.Number, header.Time, arbosVersion)
 		receipt, result, err := (func() (*types.Receipt, *core.ExecutionResult, error) {
-			// If we've done too much work in this block, discard the tx as early as possible
-			if buildState.blockGasLeft < params.TxGas && isUserTx {
-				return nil, nil, core.ErrGasLimitReached
-			}
-
 			sender, err = types.Sender(signer, tx)
 			if err != nil {
 				return nil, nil, err
