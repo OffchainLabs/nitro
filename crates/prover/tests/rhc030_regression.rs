@@ -20,14 +20,14 @@
 //! the cap. Lives in its own integration-test binary so the allocator is
 //! isolated from other tests.
 
-use std::alloc::{GlobalAlloc, Layout, System};
-use std::io::Write;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
+use std::{
+    alloc::{GlobalAlloc, Layout, System},
+    io::Write,
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed},
+};
 
-use arbutil::evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES;
-use arbutil::Bytes32;
-use prover::binary::WasmBinary;
-use prover::programs::config::CompileConfig;
+use arbutil::{Bytes32, evm::ARBOS_VERSION_STYLUS_CHARGING_FIXES};
+use prover::{binary::WasmBinary, programs::config::CompileConfig};
 
 /// Catastrophic safety net: abort before a regression can truly OOM the runner.
 /// Set well above the ~0.26 GB a locals-limit regression allocates at this test's
