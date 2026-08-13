@@ -1,2 +1,2 @@
 ### Ignored
-- Fixed a flaky `arb-bench` clock test
+- Fix a flaky `arb-bench` clock test
