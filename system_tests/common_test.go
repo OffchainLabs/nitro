@@ -681,13 +681,9 @@ func (b *NodeBuilder) waitForNodeToCatchUpWithParentChain(t *testing.T) {
 		if trackedBatches >= targetBatch {
 			targetMessage, err = node.InboxTracker.GetBatchMessageCount(targetBatch - 1)
 			Require(t, err)
-			executedMessage, err = node.TxStreamer.GetMessageCount()
+			head, err := b.L2.ExecNode.ExecEngine.HeadMessageIndex()
 			Require(t, err)
-			if b.L2.ExecNode != nil {
-				head, err := b.L2.ExecNode.ExecEngine.HeadMessageIndex()
-				Require(t, err)
-				executedMessage = min(executedMessage, head+1)
-			}
+			executedMessage = head + 1
 			if executedMessage >= targetMessage {
 				return
 			}
