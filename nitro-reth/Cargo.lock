@@ -1654,7 +1654,7 @@ dependencies = [
  "arb-storage",
  "arb-test-utils",
  "arbos-types",
- "cc",
+ "brotli 0.1.0",
  "proptest",
  "revm",
  "revm-database",
