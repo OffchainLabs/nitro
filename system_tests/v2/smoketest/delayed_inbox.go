@@ -19,14 +19,14 @@ var l1Tests = []systest.Scenario{
 // testRunDepositETH drives an ETH deposit through the delayed inbox, resolving
 // it on L2 via LookupL2Tx.
 func testRunDepositETH(env *systest.Env) {
-	txOpts := env.ParentChain().TransactOpts("User")
+	txOpts := env.L1.TransactOpts("User")
 	txOpts.Value = big.NewInt(13)
 	oldBalance := env.L2.BalanceAt(txOpts.From)
 
-	l1tx, err := env.DelayedInbox().DepositEth439370b1(&txOpts)
+	l1tx, err := env.L1.DelayedInbox().DepositEth439370b1(&txOpts)
 	env.Require(err, "DepositEth")
-	l1Receipt := env.ParentChain().EnsureTxSucceeded(l1tx)
-	env.WaitForL1DelayBlocks()
+	l1Receipt := env.L1.EnsureTxSucceeded(l1tx)
+	env.L1.WaitForDelayBlocks()
 
 	env.L2.EnsureTxSucceeded(env.LookupL2Tx(l1Receipt))
 
