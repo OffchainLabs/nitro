@@ -14,26 +14,38 @@ jobs:
   fmt:
     name: rustfmt
     runs-on: ocl-4cpu-16ram
-    timeout-minutes: 5
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
+      # Any cargo invocation (fmt included) loads the manifests of the whole
+      # local path-dep closure, which includes the wasmer submodule.
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt
-      - run: cargo +nightly fmt --all --check
+      # Plain fmt (not --all): --all would also format the path-based deps,
+      # i.e. crates/{prover,arbutil,brotli} and the vendored wasmer.
+      - run: cargo +nightly fmt --check
 
   clippy:
     name: clippy
     runs-on: ocl-16cpu-64ram
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
       - name: Install build deps
         run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
       - uses: dtolnay/rust-toolchain@1.93
@@ -44,10 +56,40 @@ jobs:
           workspaces: nitro-reth
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
+  wasm:
+    # Pins wasm32-wasip1 buildability of the MEL message-extraction core, so that
+    # adding a native-only dependency (tokio/reqwest/c-kzg/revm) to arb-mel or
+    # anything beneath it fails here rather than in the replay binary.
+    #
+    # Deliberately narrow: per-package rather than --workspace, since sibling
+    # crates like arb-blob-client pull c-kzg and reqwest; and no --all-targets,
+    # since arb-mel's tokio dev-dependency is not wasm-buildable.
+    name: wasm
+    runs-on: ocl-4cpu-16ram
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: nitro-reth
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
+      - uses: dtolnay/rust-toolchain@1.93
+        with:
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: nitro-reth
+      - run: >
+          cargo check --locked --target wasm32-wasip1
+          -p arb-mel -p arb-mel-types -p arb-da-provider -p arbos-types
+
   docs:
     name: docs
     runs-on: ocl-16cpu-64ram
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       RUSTDOCFLAGS: "-D warnings"
     defaults:
@@ -55,6 +97,10 @@ jobs:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
       - name: Install build deps
         run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
       - uses: dtolnay/rust-toolchain@1.93

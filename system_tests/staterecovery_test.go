@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/staterecovery"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 )
@@ -56,7 +55,7 @@ func TestRecreateMissingStates(t *testing.T) {
 		stack, err := node.New(builder.l2StackConfig)
 		Require(t, err)
 		defer stack.Close()
-		executionDB, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata")})
+		executionDB, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", PebbleExtraOptions: PebbleExtraOptionsForTest(t, builder.execConfig, "l2chaindata")})
 		Require(t, err)
 		defer executionDB.Close()
 		cachingConfig := gethexec.DefaultCachingConfig
@@ -65,7 +64,7 @@ func TestRecreateMissingStates(t *testing.T) {
 		cacheConfig := gethexec.DefaultCacheConfigFor(&cachingConfig)
 		bc, err := gethexec.GetBlockChain(executionDB, cacheConfig, builder.chainConfig, nil, &builder.execConfig.TxIndexer, builder.execConfig.ExposeMultiGas)
 		Require(t, err)
-		err = staterecovery.RecreateMissingStates(executionDB, bc, cacheConfig, 1)
+		err = staterecovery.RecreateMissingStates(ctx, executionDB, bc, cacheConfig, 1)
 		Require(t, err)
 	}()
 
@@ -88,7 +87,7 @@ func TestRecreateMissingStates(t *testing.T) {
 	currentBlock, err = testClient.Client.BlockNumber(ctx)
 	Require(t, err)
 	bc := testClient.ExecNode.Backend.ArbInterface().BlockChain()
-	triedb := bc.StateCache().TrieDB()
+	triedb := bc.TrieDB()
 	for i := uint64(0); i <= currentBlock; i++ {
 		header := bc.GetHeaderByNumber(i)
 		_, err := bc.StateAt(header.Root)

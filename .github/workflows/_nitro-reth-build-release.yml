@@ -31,7 +31,7 @@ jobs:
   build:
     name: build release binaries
     runs-on: ocl-16cpu-64ram
-    timeout-minutes: 45
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: nitro-reth
@@ -39,6 +39,10 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
       - name: Install build deps
         run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
       - uses: dtolnay/rust-toolchain@1.93

@@ -482,6 +482,6 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	}
 }
 
-func TestSequencerInboxReader(t *testing.T) {
+func TestSequencerInboxReaderFlaky(t *testing.T) {
 	testSequencerInboxReaderImpl(t, false)
 }

@@ -34,3 +34,6 @@ jobs:
             ./nitro-testnode/**
             ./brotli/**
             ./crates/**
+
+      - name: Run CI version selector smoke tests
+        run: ./scripts/test-ci-version-select.sh

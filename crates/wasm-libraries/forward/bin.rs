@@ -3,21 +3,21 @@
 
 use std::{fs::File, path::PathBuf};
 
+use clap::Parser;
 use eyre::Result;
 use forward::{forward, forward_stub};
-use structopt::StructOpt;
 
-#[derive(StructOpt)]
-#[structopt(name = "arbitrator-prover")]
+#[derive(Parser)]
+#[command(name = "forward")]
 struct Opts {
-    #[structopt(long)]
+    #[arg(long)]
     path: PathBuf,
-    #[structopt(long)]
+    #[arg(long)]
     stub: bool,
 }
 
 fn main() -> Result<()> {
-    let opts = Opts::from_args();
+    let opts = Opts::parse();
     let file = &mut File::options()
         .create(true)
         .write(true)

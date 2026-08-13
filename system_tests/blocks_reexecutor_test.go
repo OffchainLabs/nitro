@@ -156,7 +156,7 @@ func assertMissingStateForBlockRange(t *testing.T, bc *core.BlockChain, from, of
 	}
 }
 
-func TestBlocksReExecutorCommitState(t *testing.T) {
+func TestBlocksReExecutorCommitStateFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

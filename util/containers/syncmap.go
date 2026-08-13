@@ -32,6 +32,10 @@ func (m *SyncMap[K, V]) Delete(key K) {
 	m.internal.Delete(key)
 }
 
+func (m *SyncMap[K, V]) Clear() {
+	m.internal.Clear()
+}
+
 // Only used for testing
 func (m *SyncMap[K, V]) Keys() []K {
 	s := make([]K, 0)
