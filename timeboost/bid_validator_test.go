@@ -394,7 +394,7 @@ func TestBidValidator_validateBid_perRoundBidLimitReached(t *testing.T) {
 
 }
 
-func makeValidSignature(t *testing.T, err error, bidHash common.Hash, privateKey *ecdsa.PrivateKey) []byte {
+func makeValidSignature(t *testing.T, _err error, bidHash common.Hash, privateKey *ecdsa.PrivateKey) []byte {
 	signature, err := crypto.Sign(bidHash[:], privateKey)
 	require.NoError(t, err)
 
