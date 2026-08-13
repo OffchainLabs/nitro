@@ -1085,8 +1085,6 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		b.waitForMelToReadInitMsg(t, b.L2)
 	}
 
-	// The node starts behind whenever the parent chain already holds batches, so
-	// settle it before anything reads chain state.
 	b.waitForNodeToCatchUpWithParentChain(t)
 
 	_, hasOwnerAccount := b.L2Info.Accounts["Owner"]
