@@ -38,13 +38,13 @@ func TestRevalidationForSpecifiedRange(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	// 2nd node without sequencer, syncs up to the first node.
+	// 2nd node without sequencer, syncs up to the first node and validates it.
 	// This node will be stopped in middle.
 	testDir := t.TempDir()
 	nodeBStack := testhelpers.CreateStackConfigForTest(testDir)
 	nodeBStack.DBEngine = databaseEngine
 	nodeBConfig := builder.nodeConfig
-	nodeBConfig.BlockValidator.Enable = false
+	nodeBConfig.BlockValidator.Enable = true
 	nodeBConfig.BatchPoster.Enable = false
 	nodeBParams := &SecondNodeParams{
 		stackConfig: nodeBStack,
@@ -60,6 +60,15 @@ func TestRevalidationForSpecifiedRange(t *testing.T) {
 	createTransactionTillBatchCount(ctx, t, builder, 15)
 	// Wait for nodeB to sync up to the first node
 	waitForBlocksToCatchup(ctx, t, builder.L2.Client, nodeB.Client, 10*time.Minute)
+
+	// nodeB has to validate the range before it can be revalidated: revalidation only
+	// ever moves the last validated state backwards.
+	lastBlock, err := nodeB.Client.BlockByNumber(ctx, nil)
+	Require(t, err)
+	// message index is the same as the block number here
+	if !nodeB.ConsensusNode.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlock.NumberU64()), 5*time.Minute) {
+		Fatal(t, "nodeB did not validate up to the chain head")
+	}
 
 	// Create a config with revalidation range and same database directory as the 2nd node
 	nodeConfig := createNodeConfigWithRevalidationRange(builder)
@@ -101,6 +110,61 @@ func TestRevalidationStartBatchDoesNotExist(t *testing.T) {
 	// message index is the same as the block number here
 	if !builder.L2.ConsensusNode.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlock.NumberU64()), time.Minute*2) {
 		Fatal(t, "validation did not progress past the bad revalidation start batch")
+	}
+}
+
+// Revalidation only moves backwards. A start batch that exists but is ahead of the
+// last validated state would mark everything in between as valid without validating
+// it, so it is refused and the node validates normally instead.
+func TestRevalidationDoesNotMoveValidationForward(t *testing.T) {
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
+
+	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
+
+	databaseEngine := rawdb.DBPebble
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise().WithDatabase(databaseEngine)
+	builder.nodeConfig.BlockValidator.Enable = true
+	builder.L2Info = NewBlockChainTestInfo(
+		t,
+		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
+		transferGas,
+	)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// 2nd node syncs the batches but validates none of them, so its last validated
+	// state stays at genesis while the inbox tracker moves ahead.
+	testDir := t.TempDir()
+	nodeBStack := testhelpers.CreateStackConfigForTest(testDir)
+	nodeBStack.DBEngine = databaseEngine
+	nodeBConfig := builder.nodeConfig
+	nodeBConfig.BlockValidator.Enable = false
+	nodeBConfig.BatchPoster.Enable = false
+	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack, nodeConfig: nodeBConfig})
+
+	builder.BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000000)))
+	builder.L2Info.GenerateAccount("BackgroundUser")
+
+	createTransactionTillBatchCount(ctx, t, builder, 5)
+	waitForBlocksToCatchup(ctx, t, builder.L2.Client, nodeB.Client, 10*time.Minute)
+
+	// Cleanup the 2nd node to release the database lock
+	cleanupB()
+
+	// Restart on the same database asking to start from a batch that exists but is
+	// ahead of the last validated state.
+	nodeConfig := *builder.nodeConfig
+	nodeConfig.BlockValidator.Enable = true
+	nodeConfig.BlockValidator.Dangerous.Revalidation.StartBatch = 3
+	nodeC, cleanupC := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack, nodeConfig: &nodeConfig})
+	defer cleanupC()
+
+	lastBlock, err := nodeC.Client.BlockByNumber(ctx, nil)
+	Require(t, err)
+	// message index is the same as the block number here
+	if !nodeC.ConsensusNode.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlock.NumberU64()), 5*time.Minute) {
+		Fatal(t, "validation did not progress after the refused revalidation range")
 	}
 }
 
