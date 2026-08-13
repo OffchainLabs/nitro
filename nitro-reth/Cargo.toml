@@ -34,7 +34,6 @@ members = [
     "bin/arb-reth",
     "bin/arb-test",
 ]
-exclude = ["brotli"]
 resolver = "3"
 
 [workspace.package]
