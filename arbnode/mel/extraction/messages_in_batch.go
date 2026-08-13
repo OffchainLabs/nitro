@@ -192,7 +192,7 @@ func produceL2Message(
 }
 
 func extractDelayedMessageFromSegment(
-	ctx context.Context,
+	_ctx context.Context,
 	melState *mel.State,
 	seqMsg *arbstate.SequencerMessage,
 	delayedMsgDB DelayedMessageDatabase,
