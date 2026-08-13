@@ -1298,11 +1298,17 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 	return nil
 }
 
-var errRevalidationStartBatchNotFound = errors.New("revalidation start batch not found")
+var (
+	errRevalidationStartBatchNotFound = errors.New("revalidation start batch not found")
+	errRevalidationMovesForward       = errors.New("revalidation start batch is ahead of the last validated state")
+)
 
-// rewindValidationToBatch moves the last validated state back to the start of startBatch,
-// so that validation runs again from there. It returns errRevalidationStartBatchNotFound
-// if the inbox tracker doesn't know that batch yet.
+// rewindValidationToBatch moves the last validated state back to the start of
+// startBatch, so that validation runs again from there. Revalidation only ever
+// moves backwards: moving it forward would mark everything in between as validated
+// without validating it, which is what --node.bold.dangerous.assume-valid is for.
+// It returns errRevalidationStartBatchNotFound if the inbox tracker doesn't know
+// that batch yet, or errRevalidationMovesForward if it isn't behind us.
 func (v *BlockValidator) rewindValidationToBatch(startBatch uint64) error {
 	batchCount, err := v.inboxTracker.GetBatchCount()
 	if err != nil {
@@ -1329,7 +1335,11 @@ func (v *BlockValidator) rewindValidationToBatch(startBatch uint64) error {
 	if err != nil {
 		return err
 	}
-	return v.writeLastValidated(BuildGlobalState(*res, endPos), nil)
+	gs := BuildGlobalState(*res, endPos)
+	if v.validGSIsNew(gs) {
+		return fmt.Errorf("%w: batch %d requested, last validated %d (pos %d)", errRevalidationMovesForward, startBatch, v.lastValidGS.Batch, v.lastValidGS.PosInBatch)
+	}
+	return v.writeLastValidated(gs, nil)
 }
 
 // Initialize must be called after SetCurrentWasmModuleRoot sets the current one
@@ -1351,9 +1361,9 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 	}
 	if startBatch := config.Dangerous.Revalidation.StartBatch; startBatch > 0 {
 		err := v.rewindValidationToBatch(startBatch)
-		// A revalidation range pointing at a batch we don't have is a bad dangerous
-		// option, not a broken node: log it and validate from where we left off.
-		if errors.Is(err, errRevalidationStartBatchNotFound) {
+		// An unusable revalidation range is a bad dangerous option, not a broken
+		// node: log it and validate from where we left off.
+		if errors.Is(err, errRevalidationStartBatchNotFound) || errors.Is(err, errRevalidationMovesForward) {
 			log.Error("not revalidating, continuing normal validation", "err", err)
 		} else if err != nil {
 			return err
