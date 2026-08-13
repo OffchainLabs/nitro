@@ -120,50 +120,34 @@ func TestRevalidationDoesNotMoveValidationForward(t *testing.T) {
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
-	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
-
-	databaseEngine := rawdb.DBPebble
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise().WithDatabase(databaseEngine)
-	builder.nodeConfig.BlockValidator.Enable = true
-	builder.L2Info = NewBlockChainTestInfo(
-		t,
-		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
-		transferGas,
-	)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	// 2nd node syncs the batches but validates none of them, so its last validated
-	// state stays at genesis while the inbox tracker moves ahead.
-	testDir := t.TempDir()
-	nodeBStack := testhelpers.CreateStackConfigForTest(testDir)
-	nodeBStack.DBEngine = databaseEngine
-	nodeBConfig := builder.nodeConfig
-	nodeBConfig.BlockValidator.Enable = false
-	nodeBConfig.BatchPoster.Enable = false
-	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack, nodeConfig: nodeBConfig})
+	// 2nd node syncs the batches without validating any of them, so its last
+	// validated state stays at genesis while its inbox tracker moves ahead.
+	nodeBStack := testhelpers.CreateStackConfigForTest(t.TempDir())
+	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
 
-	builder.BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000000)))
 	builder.L2Info.GenerateAccount("BackgroundUser")
-
-	createTransactionTillBatchCount(ctx, t, builder, 5)
-	waitForBlocksToCatchup(ctx, t, builder.L2.Client, nodeB.Client, 10*time.Minute)
-
+	createTransactionTillBatchCount(ctx, t, builder, 3)
+	waitForBlocksToCatchup(ctx, t, builder.L2.Client, nodeB.Client, time.Minute)
 	// Cleanup the 2nd node to release the database lock
 	cleanupB()
 
-	// Restart on the same database asking to start from a batch that exists but is
+	// Restart on the same database, asking to start from a batch that exists but is
 	// ahead of the last validated state.
-	nodeConfig := *builder.nodeConfig
+	nodeConfig := arbnode.ConfigDefaultL1NonSequencerTest()
+	nodeConfig.MessageExtraction.Enable = builder.nodeConfig.MessageExtraction.Enable
 	nodeConfig.BlockValidator.Enable = true
-	nodeConfig.BlockValidator.Dangerous.Revalidation.StartBatch = 3
-	nodeC, cleanupC := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack, nodeConfig: &nodeConfig})
+	nodeConfig.BlockValidator.Dangerous.Revalidation.StartBatch = 2
+	nodeC, cleanupC := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack, nodeConfig: nodeConfig})
 	defer cleanupC()
 
 	lastBlock, err := nodeC.Client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	// message index is the same as the block number here
-	if !nodeC.ConsensusNode.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlock.NumberU64()), 5*time.Minute) {
+	if !nodeC.ConsensusNode.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlock.NumberU64()), time.Minute) {
 		Fatal(t, "validation did not progress after the refused revalidation range")
 	}
 }
