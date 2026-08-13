@@ -9,7 +9,7 @@ permissions:
 jobs:
   validation-tests:
     name: Block validation tests
-    runs-on: ocl-16cpu-64ram-dind
+    runs-on: ocl-16cpu-64ram-dind-500gi
     timeout-minutes: 25
     env:
       # The block input JSON can be generated using following command:

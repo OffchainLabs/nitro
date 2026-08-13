@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   list:
-    runs-on: ocl-16cpu-64ram-dind
+    runs-on: ocl-16cpu-64ram-dind-500gi
     timeout-minutes: 20
     if: github.event_name != 'schedule' || github.repository == 'OffchainLabs/nitro-private'
 
