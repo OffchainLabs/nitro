@@ -663,13 +663,38 @@ func TestMELQueryClientPassesThroughUnknownErrors(t *testing.T) {
 	require.NotErrorIs(t, err, mel.ErrDelayedMessagePreimageNotFound)
 }
 
-// TestMELQueryClientSupportsPushingFinalityDataFalseOnError pins the swallowed-error behavior:
-// the method has no error return, so an unreachable provider degrades to false.
-func TestMELQueryClientSupportsPushingFinalityDataFalseOnError(t *testing.T) {
-	url := startRPC(t, map[string]interface{}{mel.RPCNamespace: &sentinelServer{err: errors.New("provider unavailable")}})
-	client, _ := startQueryClient(t, url)
+// finalityServer replies to SupportsPushingFinalityData with a fixed result and error.
+type finalityServer struct {
+	supports bool
+	err      error
+}
 
-	require.False(t, client.SupportsPushingFinalityData())
+func (s *finalityServer) SupportsPushingFinalityData(ctx context.Context) (bool, error) {
+	return s.supports, s.err
+}
+
+// TestMELQueryClientSupportsPushingFinalityData pins the fail-open contract: the method has no
+// error return, and MEL always supports pushing finality data, so only an explicit false from the
+// provider yields false. An erroring provider must not be mistaken for one lacking the capability.
+func TestMELQueryClientSupportsPushingFinalityData(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		supports  bool
+		serverErr error
+		want      bool
+	}{
+		{name: "ExplicitFalse", supports: false, want: false},
+		{name: "ExplicitTrue", supports: true, want: true},
+		// The distinguishing case: false alongside an error is an error, not a capability answer.
+		{name: "ErrorFailsOpen", supports: false, serverErr: errors.New("provider unavailable"), want: true},
+		{name: "ErrorWithTrueFailsOpen", supports: true, serverErr: errors.New("provider unavailable"), want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			url := startRPC(t, map[string]interface{}{mel.RPCNamespace: &finalityServer{supports: tc.supports, err: tc.serverErr}})
+			client, _ := startQueryClient(t, url)
+			require.Equal(t, tc.want, client.SupportsPushingFinalityData())
+		})
+	}
 }
 
 // fakeConsumer records pushed messages for the sink-service test.
