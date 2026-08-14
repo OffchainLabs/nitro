@@ -194,7 +194,7 @@ func (info *L1Info) L1BlockNumber() uint64 {
 	return info.l1BlockNumber
 }
 
-func createNewHeader(prevHeader *types.Header, l1info *L1Info, baseFee *big.Int, chainConfig *params.ChainConfig) *types.Header {
+func createNewHeader(prevHeader *types.Header, l1info *L1Info, baseFee *big.Int, _chainConfig *params.ChainConfig) *types.Header {
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
 	timestamp := uint64(0)
@@ -254,7 +254,7 @@ type SequencingHooks interface {
 	TxFilter
 	BlockFilter
 	// NextTxToSequence returns the next tx to include, or nil when done.
-	NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error)
+	NextTxToSequence(statedb *state.StateDB) (*types.Transaction, *arbitrum_types.ConditionalOptions, error)
 	// CanDiscardTx returns whether failed txs can be excluded from the block.
 	// This is a static property of the implementing type (true for sequencer, false for replay).
 	CanDiscardTx() bool
@@ -275,7 +275,7 @@ type NoopSequencingHooks struct {
 	scheduledTxsCount int
 }
 
-func (n *NoopSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error) {
+func (n *NoopSequencingHooks) NextTxToSequence(statedb *state.StateDB) (*types.Transaction, *arbitrum_types.ConditionalOptions, error) {
 	// This is not supposed to happen, if so we have a bug
 	if n.scheduledTxsCount > len(n.txs) {
 		return nil, nil, errors.New("noopTxScheduler: requested too many transactions")
@@ -452,7 +452,7 @@ func ProduceBlockAdvanced(
 			}
 			buildState.clearGroupCheckpoint()
 			var conditionalOptions *arbitrum_types.ConditionalOptions
-			tx, conditionalOptions, err = sequencingHooks.NextTxToSequence()
+			tx, conditionalOptions, err = sequencingHooks.NextTxToSequence(statedb)
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("error fetching next transaction to sequence, userTxsProcessed: %d, err: %w", buildState.userTxsProcessed, err)
 			}

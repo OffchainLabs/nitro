@@ -162,7 +162,6 @@ func main() {
 func startup() error {
 	// Some different defaults to AnyTrust config in a node.
 	anytrust.DefaultConfig.Enable = true
-
 	config, err := parseDAProvider(os.Args[1:])
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)

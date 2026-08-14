@@ -408,7 +408,7 @@ func TestSendRawTransactionConditionalPreCheckFlaky(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxBlockSpeed = 5 * time.Millisecond
 	builder.execConfig.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessLikelyCompatible
 	builder.execConfig.TxPreChecker.RequiredStateAge = 1
 	builder.execConfig.TxPreChecker.RequiredStateMaxBlocks = 2

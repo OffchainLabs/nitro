@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -181,7 +182,7 @@ func TestBlocksReExecutorCommitStateFlaky(t *testing.T) {
 	maxRecreateStateDepth := int64(100 * 1000 * 1000)
 
 	builder.execConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
-	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxBlockSpeed = 5 * time.Millisecond
 	builder.execConfig.Sequencer.MaxTxDataSize = 150
 
 	cleanup := builder.Build(t)

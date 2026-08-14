@@ -790,7 +790,7 @@ const (
 	userNativeStackOverflow
 )
 
-func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, error) {
+func (status userStatus) toResult(data []byte, _debug bool) ([]byte, string, error) {
 	msg := arbutil.ToStringOrHex(data)
 	switch status {
 	case userSuccess:

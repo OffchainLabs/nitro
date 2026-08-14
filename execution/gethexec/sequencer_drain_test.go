@@ -126,9 +126,9 @@ func TestDrainQueueItemsConcurrent(t *testing.T) {
 func TestValidateQueueItemAcceptsValidItem(t *testing.T) {
 	config := DefaultSequencerConfig
 	item, _ := makeTestQueueItem(t, 0, testBaseFee)
-	header := &types.Header{Number: big.NewInt(testBlockNumber), BaseFee: big.NewInt(testBaseFee)}
+	header := &types.Header{Number: big.NewInt(testBlockNumber)}
 
-	if err := validateQueueItem(&config, header, item); err != nil {
+	if err := validateQueueItem(&config, header, big.NewInt(testBaseFee), item); err != nil {
 		t.Errorf("validateQueueItem() = %v, want nil", err)
 	}
 }
@@ -139,9 +139,9 @@ func TestValidateQueueItemRejectsCanceledContext(t *testing.T) {
 	cancel()
 	item, _ := makeTestQueueItem(t, 0, testBaseFee)
 	item.ctx = canceledCtx
-	header := &types.Header{Number: big.NewInt(testBlockNumber), BaseFee: big.NewInt(testBaseFee)}
+	header := &types.Header{Number: big.NewInt(testBlockNumber)}
 
-	if err := validateQueueItem(&config, header, item); !errors.Is(err, context.Canceled) {
+	if err := validateQueueItem(&config, header, big.NewInt(testBaseFee), item); !errors.Is(err, context.Canceled) {
 		t.Errorf("validateQueueItem() = %v, want %v", err, context.Canceled)
 	}
 }
@@ -150,9 +150,9 @@ func TestValidateQueueItemRejectsOversizedTx(t *testing.T) {
 	config := DefaultSequencerConfig
 	item, _ := makeTestQueueItem(t, 0, testBaseFee)
 	item.txSize = config.MaxTxDataSize + 1
-	header := &types.Header{Number: big.NewInt(testBlockNumber), BaseFee: big.NewInt(testBaseFee)}
+	header := &types.Header{Number: big.NewInt(testBlockNumber)}
 
-	if err := validateQueueItem(&config, header, item); !errors.Is(err, txpool.ErrOversizedData) {
+	if err := validateQueueItem(&config, header, big.NewInt(testBaseFee), item); !errors.Is(err, txpool.ErrOversizedData) {
 		t.Errorf("validateQueueItem() = %v, want %v", err, txpool.ErrOversizedData)
 	}
 }
@@ -163,9 +163,9 @@ func TestValidateQueueItemRejectsExpiredTimeboostedTx(t *testing.T) {
 	item, _ := makeTestQueueItem(t, 0, testBaseFee)
 	item.isTimeboosted = true
 	item.blockStamp = 1 // testBlockNumber >= 1 + QueueTimeoutInBlocks
-	header := &types.Header{Number: big.NewInt(testBlockNumber), BaseFee: big.NewInt(testBaseFee)}
+	header := &types.Header{Number: big.NewInt(testBlockNumber)}
 
-	err := validateQueueItem(&config, header, item)
+	err := validateQueueItem(&config, header, big.NewInt(testBaseFee), item)
 	if err == nil || !strings.Contains(err.Error(), "block based timeout") {
 		t.Errorf("validateQueueItem() = %v, want block-age expiry error", err)
 	}
@@ -177,9 +177,9 @@ func TestValidateQueueItemAcceptsUnexpiredTimeboostedTx(t *testing.T) {
 	item, _ := makeTestQueueItem(t, 0, testBaseFee)
 	item.isTimeboosted = true
 	item.blockStamp = testBlockNumber - 1 // testBlockNumber < blockStamp + QueueTimeoutInBlocks
-	header := &types.Header{Number: big.NewInt(testBlockNumber), BaseFee: big.NewInt(testBaseFee)}
+	header := &types.Header{Number: big.NewInt(testBlockNumber)}
 
-	if err := validateQueueItem(&config, header, item); err != nil {
+	if err := validateQueueItem(&config, header, big.NewInt(testBaseFee), item); err != nil {
 		t.Errorf("validateQueueItem() = %v, want nil", err)
 	}
 }
@@ -189,9 +189,9 @@ func TestValidateQueueItemAcceptsTimeboostedTxWithoutBlockStamp(t *testing.T) {
 	config.Timeboost.QueueTimeoutInBlocks = 5
 	item, _ := makeTestQueueItem(t, 0, testBaseFee)
 	item.isTimeboosted = true // blockStamp stays 0, which exempts the item from expiry
-	header := &types.Header{Number: big.NewInt(testBlockNumber), BaseFee: big.NewInt(testBaseFee)}
+	header := &types.Header{Number: big.NewInt(testBlockNumber)}
 
-	if err := validateQueueItem(&config, header, item); err != nil {
+	if err := validateQueueItem(&config, header, big.NewInt(testBaseFee), item); err != nil {
 		t.Errorf("validateQueueItem() = %v, want nil", err)
 	}
 }
@@ -199,9 +199,9 @@ func TestValidateQueueItemAcceptsTimeboostedTxWithoutBlockStamp(t *testing.T) {
 func TestValidateQueueItemRejectsFeeCapBelowBasefee(t *testing.T) {
 	config := DefaultSequencerConfig
 	item, _ := makeTestQueueItem(t, 0, testBaseFee-1)
-	header := &types.Header{Number: big.NewInt(testBlockNumber), BaseFee: big.NewInt(testBaseFee)}
+	header := &types.Header{Number: big.NewInt(testBlockNumber)}
 
-	if err := validateQueueItem(&config, header, item); !errors.Is(err, core.ErrFeeCapTooLow) {
+	if err := validateQueueItem(&config, header, big.NewInt(testBaseFee), item); !errors.Is(err, core.ErrFeeCapTooLow) {
 		t.Errorf("validateQueueItem() = %v, want %v", err, core.ErrFeeCapTooLow)
 	}
 }
@@ -214,9 +214,9 @@ func TestDrainAndValidateQueueItemsReturnsResultOnRejection(t *testing.T) {
 	s := makeTestSequencerQueues(2)
 	s.txQueue <- rejectedItem
 	s.txQueue <- validItem
-	header := &types.Header{Number: big.NewInt(testBlockNumber), BaseFee: big.NewInt(testBaseFee)}
+	header := &types.Header{Number: big.NewInt(testBlockNumber)}
 
-	items := s.drainAndValidateQueueItems(&config, header)
+	items := s.drainAndValidateQueueItems(&config, header, big.NewInt(testBaseFee))
 
 	if len(items) != 1 || items[0].tx.Nonce() != 1 {
 		t.Fatalf("drained items = %v, want only the valid item", items)

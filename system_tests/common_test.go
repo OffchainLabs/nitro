@@ -270,7 +270,8 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
 	FilterSetReportingInterval:   time.Minute,
-	ExperimentalPGA:              gethexec.DefaultPGAConfig,
+	// PGA only activates on collect-tips chains (ArbOS >= 60); tests below that run FIFO regardless.
+	ExperimentalPGA: gethexec.DefaultPGAConfig,
 }
 
 func ExecConfigDefaultNonSequencerTest(t *testing.T, stateScheme string) *gethexec.Config {
