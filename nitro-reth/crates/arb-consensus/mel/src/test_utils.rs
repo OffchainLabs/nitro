@@ -1,6 +1,6 @@
 //! Shared helpers for the crate's unit tests.
 
-use std::{collections::BTreeMap, io::Write};
+use std::collections::BTreeMap;
 
 use alloy_consensus::TxLegacy;
 use alloy_primitives::{Address, B256, LogData};
@@ -20,13 +20,8 @@ pub(crate) fn rpc_log(address: Address, data: LogData) -> Log {
 }
 
 pub(crate) fn brotli_compress(raw: &[u8]) -> Vec<u8> {
-    let mut compressed = Vec::new();
-    {
-        let mut c = brotli::CompressorWriter::new(&mut compressed, 4096, 9, 22);
-        c.write_all(raw).expect("brotli fixture write");
-        c.flush().expect("brotli fixture flush");
-    }
-    compressed
+    nitro_brotli::compress(raw, 9, 22, nitro_brotli::Dictionary::Empty)
+        .expect("brotli fixture compress")
 }
 
 pub(crate) fn sequencer_message_with_segments(

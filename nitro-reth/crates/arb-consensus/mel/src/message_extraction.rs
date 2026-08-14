@@ -46,7 +46,7 @@ where
     // LocalMsgAccumulator restarts per block (mirrors nitro's State.Clone).
     post_state.local_msg_accumulator = B256::ZERO;
     post_state.parent_chain_block_hash = parent_chain_header.hash_slow();
-    post_state.parent_chain_prev_block_hash = input_state.parent_chain_block_hash;
+    post_state.parent_chain_previous_block_hash = input_state.parent_chain_block_hash;
     post_state.parent_chain_block_number = parent_chain_header.number;
 
     let (mut batches, batch_txs) = batch_lookup::parse_batches_from_block(
@@ -377,7 +377,7 @@ mod tests {
         assert!(out.delayed_messages.is_empty());
         assert!(out.batch_metas.is_empty());
         assert_eq!(out.post_state.parent_chain_block_hash, header.hash_slow());
-        assert_eq!(out.post_state.parent_chain_prev_block_hash, B256::ZERO);
+        assert_eq!(out.post_state.parent_chain_previous_block_hash, B256::ZERO);
         assert_eq!(out.post_state.parent_chain_block_number, header.number);
         Ok(())
     }
