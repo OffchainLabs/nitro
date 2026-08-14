@@ -41,6 +41,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
+	"github.com/offchainlabs/nitro/execution/gethexec/pga"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -110,11 +111,9 @@ type DangerousConfig struct {
 }
 
 type PGAConfig struct {
-	Enable         bool `koanf:"enable"`
-	RoundsPerBlock uint `koanf:"rounds-per-block"`
+	DangerousForceFIFO bool `koanf:"dangerous-force-fifo"`
+	RoundsPerBlock     uint `koanf:"rounds-per-block"`
 }
-
-const minPGARoundLength = 50 * time.Millisecond
 
 // PGARoundLength returns the length of a PGA round. It is derived from the
 // block time rather than configured directly, so MaxBlockSpeed remains the
@@ -126,6 +125,10 @@ func (c *SequencerConfig) PGARoundLength() time.Duration {
 }
 
 func (c *SequencerConfig) Validate() error {
+	if c.MaxBlockSpeed < 5*time.Millisecond {
+		return fmt.Errorf("max-block-speed must be greater or equal to 5ms, got %s", c.MaxBlockSpeed)
+	}
+
 	for _, address := range c.SenderWhitelist {
 		if len(address) == 0 {
 			continue
@@ -180,14 +183,6 @@ func (c *SequencerConfig) Validate() error {
 	if c.ExperimentalPGA.RoundsPerBlock == 0 {
 		return errors.New("experimental-pga.rounds-per-block must be at least 1")
 	}
-	if c.ExperimentalPGA.Enable {
-		if c.Timeboost.Enable {
-			return errors.New("experimental-pga.enable and timeboost.enable are mutually exclusive")
-		}
-		if roundLength := c.PGARoundLength(); roundLength < minPGARoundLength {
-			return fmt.Errorf("PGA round length %v (max-block-speed / experimental-pga.rounds-per-block) is below the minimum supported %v", roundLength, minPGARoundLength)
-		}
-	}
 	if c.PollInterval <= 0 {
 		return fmt.Errorf("sequencer poll-interval must be positive, got %v", c.PollInterval)
 	}
@@ -228,8 +223,8 @@ var DefaultDangerousConfig = DangerousConfig{
 }
 
 var DefaultPGAConfig = PGAConfig{
-	Enable:         false,
-	RoundsPerBlock: 2,
+	DangerousForceFIFO: false,
+	RoundsPerBlock:     1,
 }
 
 func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -263,7 +258,7 @@ func DangerousAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 func PGAAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultPGAConfig.Enable, "EXPERIMENTAL: enable priority gas auction (PGA) transaction ordering; mutually exclusive with timeboost")
+	f.Bool(prefix+".dangerous-force-fifo", DefaultPGAConfig.DangerousForceFIFO, "EXPERIMENTAL: force FIFO transaction ordering even when the chain collects tips, disabling the priority gas auction (PGA)")
 	f.Uint(prefix+".rounds-per-block", DefaultPGAConfig.RoundsPerBlock, "EXPERIMENTAL: number of PGA rounds per block; the round length is max-block-speed divided by this value")
 }
 
@@ -282,6 +277,17 @@ type txQueueItem struct {
 	isTimeboosted       bool
 	isAuctionResolution bool
 	blockStamp          uint64 // block number at which timeboosted tx was added to the txQueue
+	// Must be a pointer: queue items get copied around, so mutations would otherwise hit a copy.
+	// Must be non-nil: bare literals nil-panic in GetPriority.
+	*pga.Priority
+}
+
+func newBaseTxQueueItem(tx *types.Transaction) txQueueItem {
+	return txQueueItem{
+		tx:             tx,
+		Priority:       &pga.Priority{},
+		returnedResult: &atomic.Bool{},
+	}
 }
 
 func newTxQueueItem(
@@ -290,15 +296,13 @@ func newTxQueueItem(
 	options *arbitrum_types.ConditionalOptions,
 	resultChan chan<- error,
 ) txQueueItem {
-	return txQueueItem{
-		tx:              tx,
-		txSize:          int(tx.Size()), // #nosec G115
-		options:         options,
-		resultChan:      resultChan,
-		returnedResult:  &atomic.Bool{},
-		ctx:             ctx,
-		firstAppearance: time.Now(),
-	}
+	item := newBaseTxQueueItem(tx)
+	item.txSize = int(tx.Size()) // #nosec G115
+	item.options = options
+	item.resultChan = resultChan
+	item.ctx = ctx
+	item.firstAppearance = time.Now()
+	return item
 }
 
 // newRegularTxQueueItem returns a queue item for a regular (possibly timeboosted) transaction.
@@ -444,8 +448,9 @@ func (q *synchronizedTxQueue) Len() int {
 }
 
 type pendingQueueItemsResults struct {
-	block *types.Block
-	hooks *FullSequencingHooks
+	block                   *types.Block
+	hooks                   *FullSequencingHooks
+	ordererSizeLimitReached bool
 }
 
 var _ txOrdererSequencer = (*Sequencer)(nil)
@@ -498,6 +503,10 @@ type Sequencer struct {
 	// sequencingState tracks turn alternation between regular tx and delayed
 	// message sequencing.
 	sequencingState sequencingState
+
+	// The tx orderer of the block under construction,
+	// set for the duration of createBlockWithTxOrderer; guarded by createBlockMutex.
+	blockTxOrderer containers.Option[txOrderer]
 }
 
 func NewSequencer(
@@ -821,8 +830,10 @@ func (s *Sequencer) PostTxFilter(header *types.Header, statedb *state.StateDB, _
 		err := nonceFailure.queueItem.ctx.Err()
 		if err != nil {
 			nonceFailure.queueItem.returnResult(err)
+		} else if s.blockTxOrderer.IsSome() {
+			// Hand this transaction (whose nonce is now correct) back to the orderer
+			s.blockTxOrderer.Unwrap().OnNonceGapResolved(nonceFailure.queueItem)
 		} else {
-			// Add this transaction (whose nonce is now correct) back into the queue
 			s.txRetryQueue.Push(nonceFailure.queueItem)
 		}
 	}
@@ -1003,39 +1014,22 @@ func (s *Sequencer) expireNonceFailures() {
 }
 
 // There's no guarantee that returned tx nonces will be correct
-func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
+func (s *Sequencer) precheckNonces(queueItems []txQueueItem, latestState *state.StateDB) []txQueueItem {
 	bc := s.execEngine.bc
 	latestHeader := bc.CurrentBlock()
-	latestState, err := bc.StateAt(latestHeader.Root)
-	if err != nil {
-		log.Error("failed to get current state to pre-check nonces", "err", err)
-		return queueItems
-	}
 	nextHeaderNumber := arbmath.BigAdd(latestHeader.Number, common.Big1)
 	arbosVersion := types.DeserializeHeaderExtraInformation(latestHeader).ArbOSFormatVersion
 	signer := types.MakeSigner(bc.Config(), nextHeaderNumber, latestHeader.Time, arbosVersion)
 	outputQueueItems := make([]txQueueItem, 0, len(queueItems))
-	var nextQueueItem *txQueueItem
-	var queueItemsIdx int
 	pendingNonces := make(map[common.Address]uint64)
-	for {
-		var queueItem txQueueItem
-		if nextQueueItem != nil {
-			queueItem = *nextQueueItem
-			nextQueueItem = nil
-		} else if queueItemsIdx < len(queueItems) {
-			queueItem = queueItems[queueItemsIdx]
-			queueItemsIdx++
-		} else {
-			break
-		}
+	for _, queueItem := range queueItems {
 		tx := queueItem.tx
 		sender, err := types.Sender(signer, tx)
 		if err != nil {
 			queueItem.returnResult(err)
 			continue
 		}
-		stateNonce := s.nonceCache.Get(latestHeader, latestState, sender)
+		stateNonce := latestState.GetNonce(sender)
 		pendingNonce, pending := pendingNonces[sender]
 		if !pending {
 			pendingNonce = stateNonce
@@ -1043,17 +1037,11 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 		txNonce := tx.Nonce()
 		if txNonce == pendingNonce {
 			pendingNonces[sender] = txNonce + 1
-			nextKey := addressAndNonce{sender, txNonce + 1}
-			revivingFailure, exists := s.nonceFailures.Take(nextKey)
-			if exists {
-				// This tx was the predecessor to one that had failed its nonce check
-				// Re-enqueue the tx whose nonce should now be correct, unless it expired
-				err := revivingFailure.queueItem.ctx.Err()
-				if err != nil {
-					revivingFailure.queueItem.returnResult(err)
-				} else {
-					nextQueueItem = &revivingFailure.queueItem
-				}
+			if txNonce > stateNonce {
+				// The predecessor is in this batch, park the successor so PostTxFilter can revive it
+				// the moment the predecessor lands
+				s.nonceFailures.Add(NonceError{sender, txNonce, stateNonce}, queueItem)
+				continue
 			}
 		} else if txNonce < stateNonce || txNonce > pendingNonce {
 			// It's impossible for this tx to succeed so far,
@@ -1138,7 +1126,7 @@ func validateTimeboostExpiry(config *SequencerConfig, currentHeader *types.Heade
 
 // validateQueueItem returns the reason a drained item must be dropped (canceled item ctx,
 // oversized tx, timeboost block-age expiry, fee cap below basefee), or nil to sequence it.
-func validateQueueItem(config *SequencerConfig, currentHeader *types.Header, queueItem txQueueItem) error {
+func validateQueueItem(config *SequencerConfig, currentHeader *types.Header, baseFee *big.Int, queueItem txQueueItem) error {
 	if err := queueItem.ctx.Err(); err != nil {
 		return err
 	}
@@ -1148,20 +1136,20 @@ func validateQueueItem(config *SequencerConfig, currentHeader *types.Header, que
 	if err := validateTimeboostExpiry(config, currentHeader, queueItem); err != nil {
 		return err
 	}
-	if arbmath.BigLessThan(queueItem.tx.GasFeeCap(), currentHeader.BaseFee) {
-		return fmt.Errorf("%w: maxFeePerGas: %s baseFee: %s", core.ErrFeeCapTooLow, queueItem.tx.GasFeeCap(), currentHeader.BaseFee)
+	if arbmath.BigLessThan(queueItem.tx.GasFeeCap(), baseFee) {
+		return fmt.Errorf("%w: maxFeePerGas: %s baseFee: %s", core.ErrFeeCapTooLow, queueItem.tx.GasFeeCap(), baseFee)
 	}
 	return nil
 }
 
 // drainAndValidateQueueItems drains the queues and filters out the invalid items, returning the
 // validation failure to each dropped item's submitter.
-func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentHeader *types.Header) []txQueueItem {
+func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentHeader *types.Header, baseFee *big.Int) []txQueueItem {
 	unvalidatedItems := s.drainQueueItems()
 	// Filter in place: unvalidatedItems is freshly allocated with no other reference.
 	queueItems := unvalidatedItems[:0]
 	for _, queueItem := range unvalidatedItems {
-		if err := validateQueueItem(config, currentHeader, queueItem); err != nil {
+		if err := validateQueueItem(config, currentHeader, baseFee, queueItem); err != nil {
 			queueItem.returnResult(err)
 		} else {
 			queueItems = append(queueItems, queueItem)
@@ -1170,28 +1158,63 @@ func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentH
 	return queueItems
 }
 
-func (s *Sequencer) drainValidatedTxs() []txQueueItem {
+func (s *Sequencer) drainValidatedTxs(statedb *state.StateDB, baseFee *big.Int) []txQueueItem {
 	// This config snapshot can lag the block creator's if a hot reload lands in between, so the
 	// drain may validate with different limits than the rest of the block; that's acceptable.
-	queueItems := s.drainAndValidateQueueItems(s.config(), s.execEngine.bc.CurrentBlock())
+	queueItems := s.drainAndValidateQueueItems(s.config(), s.execEngine.bc.CurrentBlock(), baseFee)
 	if len(queueItems) == 0 {
 		return nil
 	}
-	return s.precheckNonces(queueItems)
+	return s.precheckNonces(queueItems, statedb)
+}
+
+func (s *Sequencer) readBaseFeeAndCollectTips() (*big.Int, bool, error) {
+	statedb, err := s.execEngine.bc.State()
+	if err != nil {
+		log.Error("failed to get the latest state to sequence a block", "err", err)
+		return nil, false, err
+	}
+	baseFee, err := arbosState.BaseFee(statedb)
+	if err != nil {
+		log.Error("failed to read the base fee from the latest state", "err", err)
+		return nil, false, err
+	}
+	collectTips, err := arbosState.CollectTips(statedb)
+	if err != nil {
+		log.Error("failed to read the collect-tips flag from the latest state", "err", err)
+		return nil, false, err
+	}
+
+	return baseFee, collectTips, nil
 }
 
 func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
-	return s.createBlockWithTxOrderer(ctx, newFIFOTxOrderer(s))
+	s.createBlockMutex.Lock()
+	defer s.createBlockMutex.Unlock()
+
+	config := s.config()
+	baseFee, collectTips, err := s.readBaseFeeAndCollectTips()
+	if err != nil {
+		return nil, config.MaxBlockSpeed
+	}
+
+	var orderer txOrderer = newFIFOTxOrderer(s, baseFee)
+	if collectTips && !config.ExperimentalPGA.DangerousForceFIFO {
+		orderer = NewPGATxOrderer(ctx, s, s.config, baseFee)
+	}
+
+	s.blockTxOrderer = containers.Some(orderer)
+	defer func() {
+		s.blockTxOrderer = containers.None[txOrderer]()
+	}()
+
+	return s.createBlockWithTxOrderer(ctx, orderer)
 }
 
 // createBlockWithTxOrderer creates one block from the txs yielded by the orderer; split from
 // createBlockWithRegularTxs so tests can inject the orderer.
 func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrderer) (sequencedMsg *execution.SequencedMsg, throttleRegularSequencingFor time.Duration) {
-	s.createBlockMutex.Lock()
-	defer s.createBlockMutex.Unlock()
-
 	s.pendingQueueItemsResults = nil
-
 	forwarder := s.getForwarder()
 
 	var hooks *FullSequencingHooks
@@ -1241,7 +1264,12 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrde
 	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
 	s.nonceCache.BeginNewBlock()
 
-	if !orderer.StartBlock() {
+	statedb, stateErr := s.execEngine.bc.State()
+	if stateErr != nil {
+		log.Error("failed to get the latest state to start a block", "err", stateErr)
+		return nil, config.MaxBlockSpeed
+	}
+	if !orderer.StartBlock(statedb) {
 		// No regular txs to sequence right now; re-check on the idle poll
 		// cadence rather than waiting a full block interval. This matches the
 		// wait decideSequencingTurn uses when there is no pending work.
@@ -1338,8 +1366,9 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrde
 	}
 
 	s.pendingQueueItemsResults = &pendingQueueItemsResults{
-		block: block,
-		hooks: hooks,
+		block:                   block,
+		hooks:                   hooks,
+		ordererSizeLimitReached: orderer.SizeLimitReached(),
 	}
 
 	if madeBlock {
@@ -1429,7 +1458,7 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 
 		if madeBlock {
 			blockTxSizeHistogram.Update(blockTxSize)
-			if hooks.txSizeLimitReached {
+			if s.pendingQueueItemsResults.ordererSizeLimitReached {
 				dataLimitedBlocksCounter.Inc(1)
 			} else if blockGasLimitReached {
 				gasLimitedBlocksCounter.Inc(1)

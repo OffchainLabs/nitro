@@ -147,6 +147,13 @@ license-files = []
 multiple-versions = "warn"
 wildcards = "allow"
 
+# Pure-Rust brotli might diverge from Go's C decoder/encoder — a consensus hazard
+# (NIT-5405); use nitro-brotli.
+[[bans.deny]]
+name = "brotli"
+version = "8"
+wrappers = ["compression-codecs"]
+
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
