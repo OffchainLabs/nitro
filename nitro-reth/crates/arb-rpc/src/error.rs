@@ -10,7 +10,7 @@ use jsonrpsee::types::{
     error::{INTERNAL_ERROR_CODE, INTERNAL_ERROR_MSG, INVALID_PARAMS_CODE},
 };
 
-use crate::BlockProducerError;
+use crate::{BlockProducerError, mel::MelProviderError};
 
 /// Result alias for [`RpcError`].
 pub type RpcResult<T> = Result<T, RpcError>;
@@ -74,6 +74,32 @@ impl RpcError {
     }
 }
 
+impl From<MelProviderError> for RpcError {
+    fn from(err: MelProviderError) -> Self {
+        match err {
+            // Nitro sentinels: the message MUST reach the wire verbatim so the
+            // client's `strings.Contains(err.Error(), sentinel)` can re-inflate the
+            // typed error, and BOLD's state provider can match "not found" in the
+            // batch-metadata bounds message. Route through an on-wire (non-redacted)
+            // variant that adds no prefix.
+            MelProviderError::AccumulatorMismatch
+            | MelProviderError::FindDelayedNotImplemented
+            | MelProviderError::DelayedMessageOutOfBounds { .. }
+            | MelProviderError::BatchMetadataNotFound { .. }
+            | MelProviderError::MessageOriginNotFound => RpcError::InvalidParams(err.to_string()),
+            MelProviderError::NotFound(msg) => RpcError::NotFound(msg),
+            // Internal backing failures (DB read, L1 fetch, extraction): redacted.
+            MelProviderError::Backing(msg) => RpcError::Internal(msg),
+        }
+    }
+}
+
+impl From<MelProviderError> for ErrorObjectOwned {
+    fn from(err: MelProviderError) -> Self {
+        RpcError::from(err).into()
+    }
+}
+
 impl From<RpcError> for ErrorObjectOwned {
     fn from(err: RpcError) -> Self {
         match err {
@@ -85,7 +111,9 @@ impl From<RpcError> for ErrorObjectOwned {
                 format!("base64 decode: {msg}"),
                 None::<()>,
             ),
-            RpcError::NotFound(msg) => ErrorObject::owned(INVALID_PARAMS_CODE, msg, None::<()>),
+            err @ RpcError::NotFound(_) => {
+                ErrorObject::owned(INVALID_PARAMS_CODE, err.to_string(), None::<()>)
+            }
             RpcError::Arb(_)
             | RpcError::BlockProducer(_)
             | RpcError::Provider(_)
@@ -125,7 +153,7 @@ mod tests {
     fn not_found_maps_to_invalid_params_code() {
         let obj = into_obj(RpcError::not_found("block 7"));
         assert_eq!(obj.code(), INVALID_PARAMS_CODE);
-        assert_eq!(obj.message(), "block 7");
+        assert_eq!(obj.message(), "resource not found: block 7");
     }
 
     #[test]
@@ -141,5 +169,30 @@ mod tests {
         let obj = into_obj(RpcError::Provider(ProviderError::BestBlockNotFound));
         assert_eq!(obj.code(), INTERNAL_ERROR_CODE);
         assert!(!obj.message().contains("Best block"));
+    }
+
+    #[test]
+    fn accumulator_mismatch_reaches_wire_verbatim() {
+        let obj = into_obj(MelProviderError::AccumulatorMismatch.into());
+        assert!(
+            obj.message()
+                .contains("delayed message accumulator mismatch")
+        );
+    }
+
+    #[test]
+    fn find_delayed_not_implemented_reaches_wire_verbatim() {
+        let obj = into_obj(MelProviderError::FindDelayedNotImplemented.into());
+        assert!(
+            obj.message()
+                .contains("FindParentChainBlockContainingDelayed is not implemented by MEL")
+        );
+    }
+
+    #[test]
+    fn mel_backing_is_redacted() {
+        let obj = into_obj(MelProviderError::Backing("db connection lost".into()).into());
+        assert_eq!(obj.code(), INTERNAL_ERROR_CODE);
+        assert!(!obj.message().contains("db connection lost"));
     }
 }

@@ -104,7 +104,7 @@ func aggConfigForBackend(backendConfig anytrust.BackendConfig) anytrust.Aggregat
 	}
 }
 
-func TestAnyTrustRekeyFlaky(t *testing.T) {
+func TestAnyTrustRekey(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

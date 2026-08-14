@@ -80,7 +80,7 @@ permissions:
 jobs:
   go-tests:
     name: Go tests
-    runs-on: ocl-16cpu-64ram-dind
+    runs-on: ocl-16cpu-64ram-dind-500gi
     # Hard cap so a hung job is killed at 1.5h instead of GitHub's 6h default.
     # Kept above every per-step Go `--timeout` (<=70m) plus the ~15m build, so on
     # a hung test the Go timeout fires first and prints a goroutine stack trace

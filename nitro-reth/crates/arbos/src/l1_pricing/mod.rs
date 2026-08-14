@@ -748,77 +748,20 @@ pub fn poster_units_from_bytes(tx_bytes: &[u8], brotli_compression_level: u64) -
 }
 
 /// Brotli window size matching the reference C implementation.
-const BROTLI_DEFAULT_WINDOW_SIZE: i32 = 22;
+const BROTLI_DEFAULT_WINDOW_SIZE: u32 = 22;
 
 /// Computes the brotli-compressed size at a given compression level.
+///
+/// Compresses with the vendored C brotli (quality clamped to 11, window 22,
+/// no dictionary) via the nitro-brotli wrapper, falling back to the
+/// uncompressed length if the encoder fails.
 pub fn byte_count_after_brotli_level(data: &[u8], level: u64) -> u64 {
-    use std::{ffi::c_int, os::raw::c_void, ptr};
-
-    type BrotliBool = c_int;
-    const BROTLI_PARAM_QUALITY: u32 = 1;
-    const BROTLI_PARAM_LGWIN: u32 = 2;
-    const BROTLI_OPERATION_FINISH: u32 = 2;
-
-    unsafe extern "C" {
-        fn BrotliEncoderCreateInstance(
-            alloc: Option<extern "C" fn(*mut c_void, usize) -> *mut c_void>,
-            free: Option<extern "C" fn(*mut c_void, *mut c_void)>,
-            opaque: *mut c_void,
-        ) -> *mut c_void;
-        fn BrotliEncoderSetParameter(state: *mut c_void, param: u32, value: u32) -> BrotliBool;
-        fn BrotliEncoderCompressStream(
-            state: *mut c_void,
-            op: u32,
-            available_in: *mut usize,
-            next_in: *mut *const u8,
-            available_out: *mut usize,
-            next_out: *mut *mut u8,
-            total_out: *mut usize,
-        ) -> BrotliBool;
-        fn BrotliEncoderIsFinished(state: *const c_void) -> BrotliBool;
-        fn BrotliEncoderDestroyInstance(state: *mut c_void);
-        fn BrotliEncoderMaxCompressedSize(input_size: usize) -> usize;
-    }
-
-    // SAFETY: FFI into libbrotlienc. The encoder state is created,
-    // configured, fed, then unconditionally destroyed in this block;
-    // input and output buffers are stack/heap allocations whose lifetime
-    // exceeds the encoder. Null state is checked before any use.
-    unsafe {
-        let state = BrotliEncoderCreateInstance(None, None, ptr::null_mut());
-        if state.is_null() {
-            return data.len() as u64;
-        }
-
-        BrotliEncoderSetParameter(state, BROTLI_PARAM_QUALITY, level.min(11) as u32);
-        BrotliEncoderSetParameter(state, BROTLI_PARAM_LGWIN, BROTLI_DEFAULT_WINDOW_SIZE as u32);
-
-        let max_size = BrotliEncoderMaxCompressedSize(data.len());
-        let max_size = max_size.max(data.len() + (data.len() >> 10) * 8 + 64);
-        let mut output = vec![0u8; max_size];
-
-        let mut in_len = data.len();
-        let mut in_ptr = data.as_ptr();
-        let mut out_left = output.len();
-        let mut out_ptr = output.as_mut_ptr();
-        let mut out_len = 0usize;
-
-        let ok = BrotliEncoderCompressStream(
-            state,
-            BROTLI_OPERATION_FINISH,
-            &mut in_len,
-            &mut in_ptr,
-            &mut out_left,
-            &mut out_ptr,
-            &mut out_len,
-        );
-        let finished = BrotliEncoderIsFinished(state);
-        BrotliEncoderDestroyInstance(state);
-
-        if ok != 0 && finished != 0 {
-            out_len as u64
-        } else {
-            data.len() as u64
-        }
-    }
+    nitro_brotli::compress(
+        data,
+        level.min(11) as u32,
+        BROTLI_DEFAULT_WINDOW_SIZE,
+        nitro_brotli::Dictionary::Empty,
+    )
+    .map(|compressed| compressed.len() as u64)
+    .unwrap_or(data.len() as u64)
 }

@@ -4,7 +4,7 @@
 package systest
 
 // Default configuration values + generic config-fetcher plumbing. Knobs
-// that don't fit defaults are mutated via overrides applied in build_l2.go
+// that don't fit defaults are mutated via overrides applied in build_common.go
 // after defaults are seeded.
 
 import (

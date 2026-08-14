@@ -14,6 +14,8 @@ pub mod builder;
 pub mod conditional_tx;
 pub mod error;
 pub mod header;
+pub mod mel;
+pub mod mel_handler;
 pub mod nitro_execution;
 pub mod nitro_execution_handler;
 pub mod nodeinterface_rpc;
@@ -32,6 +34,10 @@ pub use block_producer::{BlockProducer, BlockProducerError, BlockProductionInput
 pub use builder::{ArbEthApiBuilder, ArbRpcConvert};
 pub use error::{RpcError, RpcResult};
 pub use header::ArbHeaderConverter;
+pub use mel::{
+    L1BlockTag, MelApiServer, MelFinalizedDelayed, MelProvider, MelProviderError, MelProviderResult,
+};
+pub use mel_handler::MelApiHandler;
 pub use nitro_execution::{NitroExecutionApiServer, RpcMessageResult, RpcMessageWithMetadata};
 pub use nitro_execution_handler::NitroExecutionHandler;
 pub use receipt::ArbReceiptConverter;

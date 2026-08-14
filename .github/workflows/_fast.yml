@@ -9,7 +9,7 @@ permissions:
 jobs:
   lint-and-build:
     name: Lint and Build
-    runs-on: ocl-16cpu-64ram-dind
+    runs-on: ocl-16cpu-64ram-dind-500gi
     timeout-minutes: 30
     steps:
       - name: Checkout
