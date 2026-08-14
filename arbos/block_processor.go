@@ -476,6 +476,11 @@ func ProduceBlockAdvanced(
 		arbosVersion := buildState.arbState.ArbOSVersion()
 		signer := types.MakeSigner(chainConfig, header.Number, header.Time, arbosVersion)
 		receipt, result, err := (func() (*types.Receipt, *core.ExecutionResult, error) {
+			// If we've done too much work in this block, discard the tx as early as possible
+			if buildState.blockGasLeft < params.TxGas && isUserTx {
+				return nil, nil, core.ErrGasLimitReached
+			}
+
 			sender, err = types.Sender(signer, tx)
 			if err != nil {
 				return nil, nil, err

@@ -11,6 +11,12 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
+type ordererStats struct {
+	blockSizeLimitReached bool
+	blockGasLimitReached  bool
+	exhaustedQueue        bool
+}
+
 // nextTxFetcher supplies a block's tx candidates to the sequencing hooks one at a time.
 type nextTxFetcher interface {
 	// NextQueueItem yields the next block candidate, reporting false on exhaustion.
@@ -22,21 +28,32 @@ type nextTxFetcher interface {
 
 // fixedTxFetcher yields a pre-set candidate list.
 type fixedTxFetcher struct {
-	items     []txQueueItem
-	exhausted []txQueueItem
+	items        []txQueueItem
+	exhausted    []txQueueItem
+	ordererStats ordererStats
 }
 
 var _ nextTxFetcher = (*fixedTxFetcher)(nil)
 
 func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, bool) {
-	if len(f.items) == 0 || blockGasLeft < params.TxGas {
+	if len(f.items) == 0 {
+		f.ordererStats.exhaustedQueue = len(f.exhausted) == 0
 		return txQueueItem{}, false
 	}
+
+	if blockGasLeft < params.TxGas {
+		f.ordererStats.blockGasLimitReached = true
+		f.exhausted = append(f.exhausted, f.items...)
+		f.items = nil
+		return txQueueItem{}, false
+	}
+
 	item := f.items[0]
 	f.items = f.items[1:]
 
 	// If the tx is too big for the remaining block size, we exhaust it and continue to the next one.
 	if item.txSize > remainingBlockSize {
+		f.ordererStats.blockSizeLimitReached = true
 		f.exhausted = append(f.exhausted, item)
 		return f.NextQueueItem(statedb, remainingBlockSize, blockGasLeft)
 	}
@@ -56,10 +73,6 @@ func (f *fixedTxFetcher) TakeRemaining() []txQueueItem {
 	return items
 }
 
-func (f *fixedTxFetcher) RemainingLen() int {
-	return len(f.items)
-}
-
 // txOrderer decides the tx order of one block. The sequencer creates an orderer per regular-tx
 // block and drives it under the createBlockMutex, so implementations don't need to be
 // thread-safe.
@@ -75,8 +88,8 @@ type txOrderer interface {
 	// dispose of.
 	TakeRemaining() []txQueueItem
 
-	// RemainingLen returns the number of candidates that have not yet been yielded.
-	RemainingLen() int
+	// OrdererStats reports the orderer's statistics.
+	OrdererStats() ordererStats
 
 	// OnNonceGapResolved hands the orderer a parked tx whose nonce gap the last
 	// inclusion just closed, so it can re-enter the block's candidates.
@@ -118,6 +131,10 @@ func (o *fifoTxOrderer) StartBlock(statedb *state.StateDB) bool {
 
 // OnTxInclusion is a no-op: FIFO ordering doesn't react to inclusions.
 func (o *fifoTxOrderer) OnTxInclusion(queueItem txQueueItem) {}
+
+func (o *fifoTxOrderer) OrdererStats() ordererStats {
+	return o.ordererStats
+}
 
 // OnNonceGapResolved appends the revived tx to the block's candidates: its nonce is valid
 // against the in-progress state, so it can follow its predecessor into the same block.
