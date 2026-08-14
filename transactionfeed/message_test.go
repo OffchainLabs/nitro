@@ -74,6 +74,7 @@ func TestBuildFeedMessagePGARoundHandling(t *testing.T) {
 	receipt := &types.Receipt{Status: types.ReceiptStatusSuccessful, EffectiveGasPrice: big.NewInt(1)}
 
 	for pgaRound, expected := range []bool{false, true} {
+		// #nosec G115
 		msg, err := BuildFeedMessage(header, tx, receipt, uint64(pgaRound))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)

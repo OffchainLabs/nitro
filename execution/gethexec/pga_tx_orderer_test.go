@@ -57,6 +57,8 @@ func newTestPGATxOrderer(seq txOrdererSequencer) *pgaTxOrderer {
 // newTestPGATxOrdererWithRounds builds an orderer for a 300ms block split into the given number
 // of rounds.
 func newTestPGATxOrdererWithRounds(seq txOrdererSequencer, rounds uint) *pgaTxOrderer {
+	// Test round counts are tiny; the conversion cannot overflow.
+	// #nosec G115
 	return NewPGATxOrderer(context.Background(), seq, rounds, 300*time.Millisecond/time.Duration(rounds), big.NewInt(testBaseFee))
 }
 

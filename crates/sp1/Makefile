@@ -50,9 +50,13 @@ brotli: # Build brotli for RISC-V (SP1); artifacts go to $(BROTLI_LIB_DIR).
 		echo "FAIL — see $(BROTLI_BUILD_DIR)/build.log" >&2; exit 1; \
 	fi
 
+$(BROTLI_LIB_DIR)/lib/libbrotlienc-static.a:
+	@$(MAKE) brotli
+
 .PHONY: nitro-deps
-nitro-deps: # Build necessary nitro dependencies, including replay.wasm
-nitro-deps: brotli
+nitro-deps: # Build necessary nitro dependencies, including contract bindings and replay.wasm
+nitro-deps: $(BROTLI_LIB_DIR)/lib/libbrotlienc-static.a
+	@cd $(TOP) && $(MAKE) contracts
 	@cd $(TOP) && $(MAKE) test-go-deps
 
 .PHONY: record-blocks
@@ -96,15 +100,26 @@ record-blocks: nitro-deps
 
 .PHONY: build
 build: # Build the SP1 workspace; replay artifacts go to $(OUTPUT_DIR).
-build: brotli
+build: $(BROTLI_LIB_DIR)/lib/libbrotlienc-static.a
 	@mkdir -p $(OUTPUT_DIR)
+	@# replay.wasm needs the contract Go bindings (solgen).
+	@cd $(TOP) && $(MAKE) contracts
+	@# Rebuild replay.wasm without running `./scripts/remove_reference_types.sh`.
+	@cd $(TOP) && GOOS=wasip1 GOARCH=wasm go build -o $(OUTPUT_DIR)/replay.wasm $(TOP)/cmd/replay/...
 	@cargo build --locked --release
-	@cargo run --locked --release -p replay-builder -- --output-folder $(OUTPUT_DIR)
+	@cargo run --locked --release -p replay-builder -- \
+		--replay-wasm $(OUTPUT_DIR)/replay.wasm \
+		--output-folder $(OUTPUT_DIR)
 	@cp $(CURDIR)/target/release/replay-runner $(OUTPUT_DIR)
 
 .PHONY: run
 run: # Validate a block with the SP1 replay runner.
 	$(OUTPUT_DIR)/replay-runner --program $(OUTPUT_DIR)/replay-program.elf
+
+.PHONY: test
+test: # Run the sp1 workspace unit tests.
+test: build
+	@cargo test --locked --release
 
 .PHONY: clippy
 clippy: # Run clippy on the sp1 workspace crates.

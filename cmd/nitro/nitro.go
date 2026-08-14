@@ -553,11 +553,11 @@ func mainImpl() int {
 			stack,
 			executionDB,
 			l2BlockChain,
-			l1ClientOpt,
 			&config.ExecutionNodeConfigFetcher{LiveConfig: liveNodeConfig},
-			liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
-			parentChain,
-			fatalErrChan,
+			gethexec.WithL1Client(l1ClientOpt),
+			gethexec.WithSyncTillBlock(liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock),
+			gethexec.WithParentChain(parentChain),
+			gethexec.WithFatalErrChan(fatalErrChan),
 		)
 		if err != nil {
 			log.Error("failed to create execution node", "err", err)
