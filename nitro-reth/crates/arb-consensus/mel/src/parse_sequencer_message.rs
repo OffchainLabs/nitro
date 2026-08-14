@@ -14,10 +14,11 @@
 // The parser and its header-byte helpers are a complete, tested port that is not
 // yet wired into a caller; allow dead code until the MEL pipeline consumes it.
 #![allow(dead_code)]
-use std::io::Read;
+use std::mem::MaybeUninit;
 
 use alloy_primitives::B256;
 use arb_da_provider::DaReaderSource;
+use tracing::warn;
 
 use crate::{MelError, MelResult};
 
@@ -162,22 +163,23 @@ pub(crate) async fn parse_sequencer_message(
     }
 
     if is_brotli(header_byte) {
-        let decompressed = decompress_brotli(&payload[1..], max_uncompressed_batch_size)?;
-        parsed.segments = parse_segments(&decompressed);
+        match decompress_brotli(&payload[1..], max_uncompressed_batch_size) {
+            Ok(decompressed) => parsed.segments = parse_segments(&decompressed),
+            Err(error) => warn!("Sequencer msg decompression failed: {error:?}"),
+        }
         return Ok(parsed);
     }
 
     Ok(parsed)
 }
 
-/// Brotli-decompresses `compressed`, capping output at `max_size` bytes.
+/// Brotli-decompresses `compressed`, failing if the stream is malformed or the
+/// output exceeds `max_size` bytes.
 pub(crate) fn decompress_brotli(compressed: &[u8], max_size: usize) -> MelResult<Vec<u8>> {
-    let mut out = Vec::new();
-    brotli::Decompressor::new(compressed, 4096)
-        .take(max_size as u64)
-        .read_to_end(&mut out)
+    let mut buf = vec![MaybeUninit::<u8>::uninit(); max_size];
+    let out = nitro_brotli::decompress_fixed(compressed, &mut buf, nitro_brotli::Dictionary::Empty)
         .map_err(|_| MelError::BatchDecompressionFailed)?;
-    Ok(out)
+    Ok(out.to_vec())
 }
 
 fn parse_segments(decompressed: &[u8]) -> Vec<Vec<u8>> {
@@ -297,13 +299,56 @@ mod tests {
 
     #[tokio::test]
     async fn oversized_decompression_yields_no_segments() -> MelResult<()> {
-        // Cap decompression below the real output; the reader is truncated so no
-        // complete segment can be parsed, but the call still succeeds.
+        // Cap decompression below the real output; the decode fails (Go
+        // parity: no truncation) and the batch parses as empty segments.
         let raw = rlp_segments(&[b"aaaaaaaaaaaaaaaaaaaa"]);
         let mut payload = vec![BROTLI_HEADER_BYTE];
         payload.extend_from_slice(&brotli_compress(&raw));
         let data = frame([0; 5], &payload);
         let msg = parse_sequencer_message(1, B256::ZERO, &data, 1, &no_da()).await?;
+        assert!(msg.segments.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oversized_decompression_does_not_yield_truncated_segments() -> MelResult<()> {
+        // Cap decompression at exactly the encoded length of the first segment,
+        // so a decode that truncated to the buffer instead of failing would
+        // still parse into one well-formed segment. The batch must come back
+        // empty rather than half-parsed.
+        let first: &[u8] = b"first-segment-payload";
+        let second: &[u8] = b"second-segment-payload";
+        let cap = alloy_rlp::encode(first).len();
+        let raw = rlp_segments(&[first, second]);
+        assert!(raw.len() > cap, "fixture must decompress past the cap");
+        // The prefix the buffer would hold is itself a valid single segment,
+        // which is what makes truncation observable here.
+        assert_eq!(parse_segments(&raw[..cap]), vec![first.to_vec()]);
+
+        let mut payload = vec![BROTLI_HEADER_BYTE];
+        payload.extend_from_slice(&brotli_compress(&raw));
+        let data = frame([0; 5], &payload);
+
+        let msg = parse_sequencer_message(1, B256::ZERO, &data, cap, &no_da()).await?;
+        assert!(msg.segments.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn malformed_brotli_payload_yields_empty_batch_not_error() -> MelResult<()> {
+        let garbage: &[u8] = b"\xff\xfe\xfd definitely not a brotli stream";
+        // Premise: the payload really is undecodable.
+        assert!(decompress_brotli(garbage, 1024).is_err());
+
+        let mut payload = vec![BROTLI_HEADER_BYTE];
+        payload.extend_from_slice(garbage);
+        let data = frame([0; 5], &payload);
+        let msg = parse_sequencer_message(1, B256::ZERO, &data, 1024, &no_da()).await?;
+        assert!(msg.segments.is_empty());
+
+        // Same for a brotli header byte with no stream behind it at all.
+        let data = frame([0; 5], &[BROTLI_HEADER_BYTE]);
+        let msg = parse_sequencer_message(2, B256::ZERO, &data, 1024, &no_da()).await?;
         assert!(msg.segments.is_empty());
         Ok(())
     }

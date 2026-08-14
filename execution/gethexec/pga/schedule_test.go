@@ -29,6 +29,31 @@ func TestScheduleInitialState(t *testing.T) {
 	})
 }
 
+func TestScheduleRoundIsOver(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := NewSchedule(2, testRoundLength)
+		if s.RoundIsOver() {
+			t.Error("round reported over at its start")
+		}
+		// RoundIsOver is a strict after: exactly at the deadline the round is still on.
+		time.Sleep(testRoundLength)
+		if s.RoundIsOver() {
+			t.Error("round reported over exactly at its deadline")
+		}
+		time.Sleep(time.Nanosecond)
+		if !s.RoundIsOver() {
+			t.Error("round not reported over past its deadline")
+		}
+		// Advancing to the next round renews the deadline.
+		if err := s.WaitAndAdvanceRound(context.Background()); err != nil {
+			t.Fatalf("WaitAndAdvanceRound returned %v, want nil", err)
+		}
+		if s.RoundIsOver() {
+			t.Error("new round reported over at its start")
+		}
+	})
+}
+
 func TestScheduleWaitAndAdvanceRoundWaitsForBoundary(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		start := time.Now()
