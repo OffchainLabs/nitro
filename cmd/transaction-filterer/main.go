@@ -21,6 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/nitroversion"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 )
 
@@ -155,6 +156,7 @@ func mainImpl() int {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
+	nitroVersion := nitroversion.Current()
 	config, err := parseConfig(os.Args[1:])
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
@@ -165,8 +167,7 @@ func mainImpl() int {
 	config.WS.Apply(&stackConf)
 	config.IPC.Apply(&stackConf)
 	config.Auth.Apply(&stackConf)
-	_, strippedRevision, _ := confighelpers.GetVersion()
-	stackConf.Version = strippedRevision
+	stackConf.Version = nitroVersion.GethVersion()
 
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
 		filename := genericconf.DefaultPathResolver(config.Persistent.GlobalConfig)("jwtsecret")

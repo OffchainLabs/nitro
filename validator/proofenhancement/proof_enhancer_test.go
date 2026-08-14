@@ -80,7 +80,7 @@ func (m *mockValidator) GenerateCertificateValidityProof(certificate []byte) con
 	}, nil)
 }
 
-func createTestCertificate(t *testing.T, data []byte) []byte {
+func createTestCertificate(_t *testing.T, data []byte) []byte {
 	// Create a simple test certificate
 	// Format: [header(1), providerType(1), dataHash(32), v(1), r(32), s(32)]
 	cert := make([]byte, 1+1+32+1+32+32)

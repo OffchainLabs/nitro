@@ -103,6 +103,7 @@ jobs:
   # --- Ensure changelog is updated (required by can_proceed) ---
   changelog:
     needs: changes
+    if: needs.changes.outputs.reth_only != 'true'
     uses: ./.github/workflows/_changelog.yml
     secrets: inherit
     with:
@@ -113,11 +114,15 @@ jobs:
     runs-on: ubuntu-4
     timeout-minutes: 5
     if: always()
-    needs: [fast, changelog]
+    needs: [changes, fast, changelog]
     steps:
       - name: Verify required jobs passed
         run: |
-          [[ "${{ needs.changelog.result }}" == "success" ]] || exit 1
+          if [[ "${{ needs.changelog.result }}" == "skipped" && "${{ needs.changes.outputs.reth_only }}" == "true" ]]; then
+            echo "Changelog skipped: reth-only PR"
+          elif [[ "${{ needs.changelog.result }}" != "success" ]]; then
+            exit 1
+          fi
           [[ "${{ needs.fast.result }}" =~ ^(success|skipped)$ ]] || exit 1
 
   can_see_status:

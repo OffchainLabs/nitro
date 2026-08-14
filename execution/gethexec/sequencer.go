@@ -125,6 +125,10 @@ func (c *SequencerConfig) PGARoundLength() time.Duration {
 }
 
 func (c *SequencerConfig) Validate() error {
+	if c.MaxBlockSpeed < 5*time.Millisecond {
+		return fmt.Errorf("max-block-speed must be greater or equal to 5ms, got %s", c.MaxBlockSpeed)
+	}
+
 	for _, address := range c.SenderWhitelist {
 		if len(address) == 0 {
 			continue
@@ -1194,9 +1198,9 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 		return nil, config.MaxBlockSpeed
 	}
 
-	var orderer txOrderer = newFIFOTxOrderer(s, s.config, baseFee)
+	var orderer txOrderer = newFIFOTxOrderer(s, config.MaxBlockSpeed, baseFee)
 	if collectTips && !config.ExperimentalPGA.DangerousForceFIFO {
-		orderer = NewPGATxOrderer(ctx, s, s.config, baseFee)
+		orderer = NewPGATxOrderer(ctx, s, config.ExperimentalPGA.RoundsPerBlock, config.PGARoundLength(), baseFee)
 	}
 
 	s.blockTxOrderer = containers.Some(orderer)

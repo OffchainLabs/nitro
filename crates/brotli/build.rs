@@ -66,5 +66,5 @@ fn main() {
         .compile("brotli");
 
     println!("cargo:include={}", include_dir.display());
-    println!("cargo:rerun-if-changed=brotli/c");
+    println!("cargo:rerun-if-changed=../../brotli/c");
 }

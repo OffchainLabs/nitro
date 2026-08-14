@@ -16,7 +16,7 @@ on:
 jobs:
   analyze:
     name: Analyze
-    runs-on: ocl-16cpu-64ram-dind
+    runs-on: ocl-16cpu-64ram-dind-500gi
     timeout-minutes: 35
     if: github.repository == 'OffchainLabs/nitro'  # avoid forks without "Advanced Security" enabled
     permissions:

@@ -21,7 +21,8 @@ type Scenario func(*Env)
 // prevents passing a Scenario where a Hook is expected (and vice versa).
 type Hook func(*Env) error
 
-// weight is how many scheduler slots a scenario consumes. Never set directly.
+// weight is how many scheduler slots a scenario consumes, derived from its
+// topology and capabilities (see specWeight). Never set directly.
 type weight int
 
 const (
@@ -30,6 +31,14 @@ const (
 	weightHeavy                    // multi-node
 	weightMax                      // full stack, or any validating run
 )
+
+// specWeight projects a topology onto a scheduler-slot cost.
+func specWeight(topology Topology) weight {
+	if topology == TopologyL1L2 {
+		return weightMedium
+	}
+	return weightLight
+}
 
 // StateScheme is the geth trie storage backend.
 type StateScheme string
@@ -71,6 +80,7 @@ type Topology int
 
 const (
 	TopologyL2Only Topology = iota // L2-only sequencer, no parent chain
+	TopologyL1L2                   // L1 + sequencer L2 (batch posting + inbox reading)
 )
 
 // Spec is the resolved per-variant config. Scenarios receive it by value on
