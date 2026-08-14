@@ -1981,12 +1981,26 @@ func TestGetInitInlineGenesisWrongChainId(t *testing.T) {
 	nodeConfig.Chain.ID = 42161
 	nodeConfig.Init.GenesisJson = makeInlineTestGenesis(t, 42162, 0)
 
-	_, _, _, err := GetInit(&nodeConfig, nil)
+	// GetInit is faithful to the init source; the mismatch against the
+	// configured chain id is caught at boot by validateConfiguredChainId
+	_, chainConfig, _, err := GetInit(&nodeConfig, nil)
+	Require(t, err)
+	if chainConfig.ChainID.Uint64() != 42162 {
+		t.Fatal("expected genesis chain id 42162, got:", chainConfig.ChainID)
+	}
+
+	err = validateConfiguredChainId(chainConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID))
 	if err == nil {
 		t.Fatal("expected error when genesis chain id does not match configured chain id")
 	}
-	if !strings.Contains(err.Error(), "does not match configured chain id") {
+	if !strings.Contains(err.Error(), "but configured chain ID is") {
 		t.Fatal("expected chain id mismatch error, got:", err.Error())
+	}
+
+	Require(t, validateConfiguredChainId(chainConfig, new(big.Int).SetUint64(42162)))
+
+	if err := validateConfiguredChainId(&params.ChainConfig{}, new(big.Int).SetUint64(42161)); err == nil {
+		t.Fatal("expected error for chain config without chain id")
 	}
 }
 

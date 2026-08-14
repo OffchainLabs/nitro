@@ -350,6 +350,15 @@ func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chai
 	return nil
 }
 
+// validateConfiguredChainId errors when the chain config the database was
+// opened or initialized with does not target the configured chain.id.
+func validateConfiguredChainId(chainConfig *params.ChainConfig, chainId *big.Int) error {
+	if chainConfig.ChainID == nil || !arbmath.BigEquals(chainConfig.ChainID, chainId) {
+		return fmt.Errorf("database contains chain ID %v but configured chain ID is %v; if the database was just initialized from a mismatched init source (genesis document or snapshot), delete the data directory and initialize again", chainConfig.ChainID, chainId)
+	}
+	return nil
+}
+
 func ValidateBlockChain(blockChain *core.BlockChain, chainConfig *params.ChainConfig) error {
 	statedb, err := blockChain.State()
 	if err != nil {
@@ -726,7 +735,7 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 // Opens the execution DB, falling back to download+genesis initialization when no existing
 // DB is found. The returned bool reports whether the DB was freshly created on this call.
 func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *config.NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, statetransfer.InitDataReader, *core.BlockChain, bool, error) {
-	executionDB, wasmDB, l2BlockChain, chainConfig, err := OpenExistingExecutionDB(stack, config, chainId, cacheConfig, tracer, persistentConfig)
+	executionDB, wasmDB, l2BlockChain, chainConfig, err := OpenExistingExecutionDB(stack, config, cacheConfig, tracer, persistentConfig)
 	if err != nil {
 		return nil, nil, nil, false, err
 	}
@@ -764,6 +773,10 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 		if err != nil {
 			return executionDB, nil, nil, false, err
 		}
+	}
+
+	if err := validateConfiguredChainId(chainConfig, chainId); err != nil {
+		return executionDB, nil, l2BlockChain, false, err
 	}
 
 	err = pruneExecutionDB(ctx, executionDB, stack, config, cacheConfig, persistentConfig, l1Client, rollupAddrs)
@@ -855,7 +868,7 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 		if initDataReader != nil {
 			return nil, nil, nil, errors.New("multiple init methods supplied")
 		}
-		initDataReader, chainConfig, genesisArbOSInit, err = initDataFromGenesis(gen, config.Chain.ID)
+		initDataReader, chainConfig, genesisArbOSInit, err = initDataFromGenesis(gen)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -945,14 +958,11 @@ func resolveGenesisDocument(initConfig *conf.InitConfig, chainId uint64, otherIn
 }
 
 // initDataFromGenesis converts a genesis document into init data and the
-// chain config it carries, verifying that it targets the configured chain.
-func initDataFromGenesis(gen *core.Genesis, chainId uint64) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, error) {
+// chain config it carries.
+func initDataFromGenesis(gen *core.Genesis) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, error) {
 	chainConfig, _, err := cmd_util.ReadChainConfig(gen)
 	if err != nil {
 		return nil, nil, nil, err
-	}
-	if chainConfig.ChainID == nil || !chainConfig.ChainID.IsUint64() || chainConfig.ChainID.Uint64() != chainId {
-		return nil, nil, nil, fmt.Errorf("genesis chain id %v does not match configured chain id %d", chainConfig.ChainID, chainId)
 	}
 	var accounts []statetransfer.AccountInitializationInfo
 	for address, account := range gen.Alloc {
@@ -1204,15 +1214,11 @@ func openExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *c
 	return &openedExecutionDB{executionDB: executionDB, wasmDB: wasmDB, wavmPurged: wavmPurged}, nil
 }
 
-func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, *core.BlockChain, *params.ChainConfig, error) {
+func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, *core.BlockChain, *params.ChainConfig, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{AncientsDirectory: config.Persistent.Ancient, MetricsNamespace: "l2chaindata/", ReadOnly: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("l2chaindata")}); err == nil {
 			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
 				readOnlyDb.Close()
-				if !arbmath.BigEquals(chainConfig.ChainID, chainId) {
-					return nil, nil, nil, chainConfig, fmt.Errorf("database has chain ID %v but config has chain ID %v (are you sure this database is for the right chain?)", chainConfig.ChainID, chainId)
-				}
-
 				opened, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
 				if err != nil {
 					return nil, nil, nil, chainConfig, err
