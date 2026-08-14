@@ -722,6 +722,12 @@ func TestBidValidatorAPI_InternalMethodsNotExposedOverRPC(t *testing.T) {
 	require.NoError(t, err)
 	defer client.Close()
 
+	// Positive control: submitBid is reached and actually runs, proving the
+	// namespace is served and that the assertions below fail for the right
+	// reason. The omitted *JsonBid argument arrives as nil.
+	err = client.CallContext(ctx, nil, "auctioneer_submitBid")
+	require.ErrorContains(t, err, "nil bid")
+
 	err = client.CallContext(ctx, nil, "auctioneer_setReservePrice", big.NewInt(0))
 	require.ErrorContains(t, err, "does not exist", "auctioneer_setReservePrice must not be exposed on the endpoint")
 
