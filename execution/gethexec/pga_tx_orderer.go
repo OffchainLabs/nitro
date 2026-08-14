@@ -16,25 +16,27 @@ import (
 
 // pgaTxOrderer is the priority-gas-auction TxOrderer.
 type pgaTxOrderer struct {
-	seq           txOrdererSequencer
-	configFetcher SequencerConfigFetcher
-	ctx           context.Context // bounds the round-boundary waits
+	seq txOrdererSequencer
+	ctx context.Context // bounds the round-boundary waits
 
 	mempool  *pga.Mempool[txQueueItem]
 	schedule *pga.Schedule
 
 	baseFee          *big.Int
+	roundsPerBlock   uint
+	roundLength      time.Duration
 	sizeLimitReached bool
 }
 
 var _ txOrderer = (*pgaTxOrderer)(nil)
 
-func NewPGATxOrderer(ctx context.Context, seq txOrdererSequencer, configFetcher SequencerConfigFetcher, baseFee *big.Int) *pgaTxOrderer {
+func NewPGATxOrderer(ctx context.Context, seq txOrdererSequencer, roundsPerBlock uint, roundLength time.Duration, baseFee *big.Int) *pgaTxOrderer {
 	return &pgaTxOrderer{
-		seq:           seq,
-		configFetcher: configFetcher,
-		ctx:           ctx,
-		baseFee:       baseFee,
+		seq:            seq,
+		ctx:            ctx,
+		roundsPerBlock: roundsPerBlock,
+		roundLength:    roundLength,
+		baseFee:        baseFee,
 	}
 }
 
@@ -70,9 +72,8 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 }
 
 func (p *pgaTxOrderer) StartBlock(statedb *state.StateDB) (hasWork bool) {
-	config := p.configFetcher()
-	p.schedule = pga.NewSchedule(config.ExperimentalPGA.RoundsPerBlock, config.PGARoundLength())
-	p.mempool = pga.NewMempool[txQueueItem](config.ExperimentalPGA.RoundsPerBlock, p.baseFee)
+	p.schedule = pga.NewSchedule(p.roundsPerBlock, p.roundLength)
+	p.mempool = pga.NewMempool[txQueueItem](p.roundsPerBlock, p.baseFee)
 
 	p.mempool.PushBatch(p.seq.drainValidatedTxs(statedb, p.baseFee))
 
