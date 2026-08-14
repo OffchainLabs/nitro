@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
@@ -707,6 +708,33 @@ func TestBidValidator_validateBid_concurrentRoundReset(t *testing.T) {
 		require.True(t, count < 200, "count %d suggests underflow", count)
 	}
 	bv.mu.RUnlock()
+}
+
+func TestBidValidatorAPI_InternalMethodsNotExposedOverRPC(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	testSetup := setupAuctionTest(t, ctx)
+	redisURL := redisutil.CreateTestRedis(ctx, t)
+	_, endpoint := setupBidValidator(t, ctx, redisURL, testSetup)
+
+	client, err := rpc.DialContext(ctx, endpoint)
+	require.NoError(t, err)
+	defer client.Close()
+
+	err = client.CallContext(ctx, nil, "auctioneer_setReservePrice", big.NewInt(0))
+	require.ErrorContains(t, err, "does not exist", "auctioneer_setReservePrice must not be exposed on the endpoint")
+
+	for _, method := range []string{
+		"auctioneer_stopAndWait",
+		"auctioneer_stopOnly",
+		"auctioneer_start",
+		"auctioneer_initialize",
+	} {
+		err := client.CallContext(ctx, nil, method)
+		require.ErrorContains(t, err, "does not exist",
+			"%s must not be exposed on the endpoint", method)
+	}
 }
 
 func buildValidBid(t *testing.T, auctionContractAddr common.Address) *Bid {
