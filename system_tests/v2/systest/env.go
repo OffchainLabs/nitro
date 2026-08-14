@@ -19,6 +19,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -150,24 +151,38 @@ func (e *Env) requireFollower() {
 }
 
 // waitFollowersSynced blocks until every follower executes the sequencer's
-// message count, mining an L1 block each poll so batches post and heads advance.
+// message count, mining an L1 block while behind so batches post and heads advance.
 func (e *Env) waitFollowersSynced() error {
 	target, err := e.L2.Consensus.TxStreamer.GetMessageCount()
 	if err != nil {
 		return err
 	}
 	for _, f := range e.L2Followers {
-		var lastErr error
+		var lastErr, sendErr error
 		var lastGot uint64
 		werr := waitFor(e.Ctx, "follower to execute sequencer message count", func() bool {
-			// The follower has no feed: it syncs from the L1 inbox, and the
-			// simulated L1 only mines on demand.
-			e.L1.AdvanceBlocks(1)
 			got, err := f.Consensus.TxStreamer.GetProcessedMessageCount()
 			lastErr = err
 			lastGot = uint64(got)
-			return err == nil && got >= target
+			if err != nil {
+				return false
+			}
+			if got >= target {
+				return true
+			}
+			// The follower has no feed: it syncs from the L1 inbox, and the
+			// simulated L1 only mines on demand.
+			tx := e.L1.Info.PrepareTx("Faucet", "Faucet", e.L1.Info.TransferGas, common.Big1, nil)
+			if err := e.L1.Client.SendTransaction(e.Ctx, tx); err != nil {
+				sendErr = err
+				return true
+			}
+			_, _ = ensureTxSucceededWithin(e.Ctx, e.L1.Client, tx, DefaultTxWaitTimeout)
+			return false
 		})
+		if sendErr != nil {
+			return fmt.Errorf("%s: advance L1: %w (at %d, want %d)", f.name, sendErr, lastGot, uint64(target))
+		}
 		if werr == nil {
 			continue
 		}
