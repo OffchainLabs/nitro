@@ -26,41 +26,41 @@ const (
 )
 
 type InitConfig struct {
-	Force                         bool          `koanf:"force"`
-	Url                           string        `koanf:"url"`
-	Latest                        string        `koanf:"latest"`
-	LatestBase                    string        `koanf:"latest-base"`
-	ValidateChecksum              bool          `koanf:"validate-checksum"`
-	DownloadPath                  string        `koanf:"download-path"`
-	DownloadPoll                  time.Duration `koanf:"download-poll"`
-	DevInit                       bool          `koanf:"dev-init"`
-	DevInitAddress                string        `koanf:"dev-init-address"`
-	DevMaxCodeSize                uint64        `koanf:"dev-max-code-size"`
-	DevInitBlockNum               uint64        `koanf:"dev-init-blocknum"`
-	Empty                         bool          `koanf:"empty"`
-	ImportWasm                    bool          `koanf:"import-wasm"`
-	AccountsPerSync               uint          `koanf:"accounts-per-sync"`
-	ImportFile                    string        `koanf:"import-file"`
-	GenesisJson                   string        `koanf:"genesis-json"`
-	GenesisMode                   string        `koanf:"genesis-mode"`
-	GenesisJsonFile               string        `koanf:"genesis-json-file"`
-	GenesisJsonFileDirectory      string        `koanf:"genesis-json-file-directory"`
+	Force                    bool          `koanf:"force"`
+	Url                      string        `koanf:"url"`
+	Latest                   string        `koanf:"latest"`
+	LatestBase               string        `koanf:"latest-base"`
+	ValidateChecksum         bool          `koanf:"validate-checksum"`
+	DownloadPath             string        `koanf:"download-path"`
+	DownloadPoll             time.Duration `koanf:"download-poll"`
+	DevInit                  bool          `koanf:"dev-init"`
+	DevInitAddress           string        `koanf:"dev-init-address"`
+	DevMaxCodeSize           uint64        `koanf:"dev-max-code-size"`
+	DevInitBlockNum          uint64        `koanf:"dev-init-blocknum"`
+	Empty                    bool          `koanf:"empty"`
+	ImportWasm               bool          `koanf:"import-wasm"`
+	AccountsPerSync          uint          `koanf:"accounts-per-sync"`
+	ImportFile               string        `koanf:"import-file"`
+	GenesisJson              string        `koanf:"genesis-json"`
+	GenesisMode              string        `koanf:"genesis-mode"`
+	GenesisJsonFile          string        `koanf:"genesis-json-file"`
+	GenesisJsonFileDirectory string        `koanf:"genesis-json-file-directory"`
 	// resolvedGenesisJsonFile holds the file discovered in
 	// GenesisJsonFileDirectory at config parse time. Unexported on purpose:
 	// koanf skips it, so no config layer can set it.
-	resolvedGenesisJsonFile string
-	ThenQuit                      bool          `koanf:"then-quit"`
-	Prune                         string        `koanf:"prune"`
-	PruneParallelStorageTraversal bool          `koanf:"prune-parallel-storage-traversal"`
-	PruneBloomSize                uint64        `koanf:"prune-bloom-size"`
-	PruneThreads                  int           `koanf:"prune-threads"`
-	PruneTrieCleanCache           int           `koanf:"prune-trie-clean-cache"`
-	RecreateMissingStateFrom      uint64        `koanf:"recreate-missing-state-from"`
-	RebuildLocalWasm              string        `koanf:"rebuild-local-wasm"`
-	ReorgToBatch                  int64         `koanf:"reorg-to-batch"`
-	ReorgToMessageBatch           int64         `koanf:"reorg-to-message-batch"`
-	ReorgToBlockBatch             int64         `koanf:"reorg-to-block-batch"`
-	ValidateGenesisAssertion      bool          `koanf:"validate-genesis-assertion"`
+	resolvedGenesisJsonFile       string
+	ThenQuit                      bool   `koanf:"then-quit"`
+	Prune                         string `koanf:"prune"`
+	PruneParallelStorageTraversal bool   `koanf:"prune-parallel-storage-traversal"`
+	PruneBloomSize                uint64 `koanf:"prune-bloom-size"`
+	PruneThreads                  int    `koanf:"prune-threads"`
+	PruneTrieCleanCache           int    `koanf:"prune-trie-clean-cache"`
+	RecreateMissingStateFrom      uint64 `koanf:"recreate-missing-state-from"`
+	RebuildLocalWasm              string `koanf:"rebuild-local-wasm"`
+	ReorgToBatch                  int64  `koanf:"reorg-to-batch"`
+	ReorgToMessageBatch           int64  `koanf:"reorg-to-message-batch"`
+	ReorgToBlockBatch             int64  `koanf:"reorg-to-block-batch"`
+	ValidateGenesisAssertion      bool   `koanf:"validate-genesis-assertion"`
 }
 
 var InitConfigDefault = InitConfig{
