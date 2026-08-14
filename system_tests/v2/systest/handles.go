@@ -20,6 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	arbtest "github.com/offchainlabs/nitro/system_tests"
 	"github.com/offchainlabs/nitro/util/containers"
 )
@@ -185,12 +186,31 @@ type L1Handle struct {
 	wasmRoot   common.Hash
 }
 
-// EnsureTxSucceeded waits for tx to succeed, then until its block is safe so
-// later reads observe its state (the simulated parent chain mines instantly).
-// Methods promoted from ChainHandle skip this wait (no virtual dispatch).
+// EnsureTxSucceeded waits for tx to succeed, then until its block is tagged safe:
+// the simulated beacon tags blocks safe asynchronously, and components that poll
+// the safe tag would race a return at latest (v1 flake fix from 2023, kept for parity).
 func (h *L1Handle) EnsureTxSucceeded(tx *types.Transaction) *types.Receipt {
 	h.e.t.Helper()
 	receipt := h.ChainHandle.EnsureTxSucceeded(tx)
 	h.e.Require(waitForSafeBlock(h.e.Ctx, h.Client, receipt.BlockNumber, DefaultTxWaitTimeout), "%s wait safe block for tx %s", h.name, tx.Hash())
 	return receipt
+}
+
+// l1DelayBlocks is how many parent-chain blocks to mine so a delayed-inbox
+// message clears its delay and gets sequenced.
+const l1DelayBlocks = 30
+
+// DelayedInbox binds the deployed Inbox contract on this chain.
+func (h *L1Handle) DelayedInbox() *bridgegen.Inbox {
+	h.e.t.Helper()
+	inbox, err := bridgegen.NewInbox(h.Info.GetAddress("Inbox"), h.Client)
+	h.e.Require(err, "NewInbox")
+	return inbox
+}
+
+// WaitForDelayBlocks mines enough blocks to release pending delayed-inbox
+// messages.
+func (h *L1Handle) WaitForDelayBlocks() {
+	h.e.t.Helper()
+	h.AdvanceBlocks(l1DelayBlocks)
 }

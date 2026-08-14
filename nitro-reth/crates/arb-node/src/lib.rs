@@ -15,6 +15,7 @@ pub mod network;
 pub mod payload;
 pub mod pool;
 pub mod producer;
+mod progress;
 pub mod validator;
 
 use std::sync::Arc;
@@ -24,7 +25,8 @@ use arb_evm::ArbEvmConfig;
 use arb_payload::ArbEngineTypes;
 use arb_primitives::{ArbPrimitives, ArbTransactionSigned};
 use arb_rpc::{
-    ArbApiHandler, ArbApiServer, ArbEthApiBuilder, NitroExecutionApiServer, NitroExecutionHandler,
+    ArbApiHandler, ArbApiServer, ArbEthApiBuilder, MelApiHandler, MelApiServer, MelProvider,
+    NitroExecutionApiServer, NitroExecutionHandler,
     stylus_debug::{StylusDebugHandler, StylusDebugServer},
 };
 pub use error::{GenesisError, LauncherError};
@@ -46,6 +48,7 @@ use crate::{
     payload::ArbPayloadServiceBuilder,
     pool::ArbPoolBuilder,
     producer::{ArbBlockProducer, InMemoryStateAccess},
+    progress::run_progress_reporter,
 };
 
 /// Arbitrum RPC add-ons type alias.
@@ -229,20 +232,40 @@ where
         .unwrap_or(producer::DEFAULT_FLUSH_INTERVAL);
     let cross_block_cache_size = ctx.config().engine.tree_config().cross_block_cache_size();
 
-    let block_producer = Arc::new(ArbBlockProducer::new(
+    let head_block = ctx.provider().last_block_number()?;
+
+    let (block_producer, progress_counters) = ArbBlockProducer::new(
         ctx.provider().clone(),
         chain_spec,
         evm_config,
         in_memory_state,
         flush_interval,
         cross_block_cache_size,
-    ));
+        head_block,
+    );
 
-    let nitro_exec =
-        NitroExecutionHandler::new(ctx.provider().clone(), block_producer, genesis_block_num);
+    ctx.node()
+        .task_executor()
+        .spawn_task(run_progress_reporter(progress_counters));
+
+    let nitro_exec = NitroExecutionHandler::new(
+        ctx.provider().clone(),
+        Arc::new(block_producer),
+        genesis_block_num,
+    );
     let nitro_rpc = nitro_exec.into_rpc();
     ctx.modules.merge_configured(nitro_rpc.clone())?;
     ctx.auth_module.merge_auth_methods(nitro_rpc)?;
+
+    // MEL data-provider RPC (`meldataprovider_*`), served on both the public and auth
+    // modules like `nitroexecution`.
+    // TODO(NIT-5115): wire the real MelProvider backing; None = no-op.
+    let mel_provider: Option<Arc<dyn MelProvider>> = None;
+    if let Some(provider) = mel_provider {
+        let mel_rpc = MelApiHandler::new(provider).into_rpc();
+        ctx.modules.merge_configured(mel_rpc.clone())?;
+        ctx.auth_module.merge_auth_methods(mel_rpc)?;
+    }
 
     Ok(())
 }

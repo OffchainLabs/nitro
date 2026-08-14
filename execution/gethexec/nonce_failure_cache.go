@@ -56,6 +56,8 @@ func onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
 }
 
 func (c *nonceFailureCache) Add(err NonceError, queueItem txQueueItem) {
+	// A parked tx forfeits its anti-starvation boost: it re-enters the PGA auction fresh when revived.
+	queueItem.ResetBoost()
 	expiry := queueItem.firstAppearance.Add(c.getExpiry())
 	key := addressAndNonce{err.sender, err.txNonce}
 	c.mutex.Lock()

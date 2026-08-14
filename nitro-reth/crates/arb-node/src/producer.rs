@@ -48,7 +48,7 @@ use revm::database::{BundleState, StateBuilder};
 use revm_database::states::bundle_state::BundleRetention;
 use tracing::{debug, info, warn};
 
-use crate::genesis;
+use crate::{genesis, progress::ProgressCounters};
 
 /// Trait to access the in-memory canonical state from a provider.
 ///
@@ -171,6 +171,7 @@ pub struct ArbBlockProducer<Provider> {
     cross_block_cache_size: usize,
     cached_execution: Mutex<Option<CachedExecution>>,
     cached_prestate: Mutex<Option<CachedPrestate>>,
+    progress_counters: Arc<ProgressCounters>,
     metrics: ArbBlockProducerMetrics,
 }
 
@@ -195,21 +196,22 @@ impl<Provider> ArbBlockProducer<Provider>
 where
     Provider: BlockNumReader,
 {
-    pub fn new(
+    pub(crate) fn new(
         provider: Provider,
         chain_spec: Arc<ChainSpec>,
         evm_config: ArbEvmConfig,
         in_memory_state: CanonicalInMemoryState<ArbPrimitives>,
         flush_interval: u64,
         cross_block_cache_size: usize,
-    ) -> Self {
-        let head = provider.last_block_number().unwrap_or(0);
-        Self {
+        head_block: u64,
+    ) -> (Self, Arc<ProgressCounters>) {
+        let progress_counters = Arc::new(ProgressCounters::new(head_block));
+        let producer = Self {
             provider,
             chain_spec,
             evm_config,
             in_memory_state,
-            head_block_num: AtomicU64::new(head),
+            head_block_num: AtomicU64::new(head_block),
             blocks_since_flush: AtomicU64::new(0),
             scheduler: Mutex::new(FlushScheduler::new(flush_interval)),
             accumulated_trie_input: Mutex::new(Arc::new(TrieInputSorted::default())),
@@ -219,11 +221,13 @@ where
             cached_init: Mutex::new(None),
             finality: Mutex::new(FinalityMarkers::default()),
             validated_watcher: Mutex::new(None),
+            progress_counters: Arc::clone(&progress_counters),
             cross_block_cache_size,
             cached_execution: Mutex::new(None),
             cached_prestate: Mutex::new(None),
             metrics: ArbBlockProducerMetrics::default(),
-        }
+        };
+        (producer, progress_counters)
     }
 
     fn get_or_create_execution_cache(&self, parent_hash: B256) -> ExecutionCache {
@@ -379,7 +383,7 @@ where
             .head_state()
             .map(|s| s.chain().count())
             .unwrap_or(0) as u64;
-        info!(
+        debug!(
             target: "block_producer",
             flushed = result.count,
             last_block = result.last_num_hash.number,
@@ -388,6 +392,14 @@ where
             flush_interval_current,
             chain_len_unflushed,
             "block flush"
+        );
+        self.progress_counters.record_flush(
+            result.last_num_hash.number,
+            result.count as u64,
+            commit_latency_ms,
+            dirty_pages_mb,
+            flush_interval_current,
+            chain_len_unflushed,
         );
         true
     }
@@ -1175,7 +1187,7 @@ where
             self.start_async_flush();
         }
 
-        info!(
+        debug!(
             target: "block_producer",
             block_num = l2_block_number,
             ?block_hash,
@@ -1185,6 +1197,8 @@ where
             gas_used,
             "Produced block"
         );
+        self.progress_counters
+            .record_block(l2_block_number, num_txs as u64, gas_used);
 
         Ok(ProducedBlock {
             block_hash,

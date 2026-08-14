@@ -246,7 +246,7 @@ func TestL1HelperOnL2OnlyEnvFails(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		e.ParentChain()
+		e.LookupL2Tx(nil)
 	}()
 	<-done
 	if tb.errCount() != 1 {
