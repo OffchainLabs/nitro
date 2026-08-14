@@ -50,9 +50,12 @@ brotli: # Build brotli for RISC-V (SP1); artifacts go to $(BROTLI_LIB_DIR).
 		echo "FAIL — see $(BROTLI_BUILD_DIR)/build.log" >&2; exit 1; \
 	fi
 
+$(BROTLI_LIB_DIR)/lib/libbrotlienc-static.a:
+	@$(MAKE) brotli
+
 .PHONY: nitro-deps
 nitro-deps: # Build necessary nitro dependencies, including contract bindings and replay.wasm
-nitro-deps: brotli
+nitro-deps: $(BROTLI_LIB_DIR)/lib/libbrotlienc-static.a
 	@cd $(TOP) && $(MAKE) contracts
 	@cd $(TOP) && $(MAKE) test-go-deps
 
@@ -97,8 +100,10 @@ record-blocks: nitro-deps
 
 .PHONY: build
 build: # Build the SP1 workspace; replay artifacts go to $(OUTPUT_DIR).
-build: nitro-deps
+build: $(BROTLI_LIB_DIR)/lib/libbrotlienc-static.a
 	@mkdir -p $(OUTPUT_DIR)
+	@# replay.wasm needs the contract Go bindings (solgen).
+	@cd $(TOP) && $(MAKE) contracts
 	@# Rebuild replay.wasm without running `./scripts/remove_reference_types.sh`.
 	@cd $(TOP) && GOOS=wasip1 GOARCH=wasm go build -o $(OUTPUT_DIR)/replay.wasm $(TOP)/cmd/replay/...
 	@cargo build --locked --release
