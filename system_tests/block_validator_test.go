@@ -362,7 +362,7 @@ func TestBlockValidatorSimpleOnchainFlaky(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleJITOnchainWithPublishedMachine(t *testing.T) {
+func TestBlockValidatorSimpleJITOnchainWithPublishedMachineFlaky(t *testing.T) {
 	cr, err := github.LatestConsensusRelease(context.Background())
 	Require(t, err)
 	machPath := populateMachineDir(t, cr)
@@ -377,7 +377,7 @@ func TestBlockValidatorSimpleJITOnchainWithPublishedMachine(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleOnchainWithPublishedMachine(t *testing.T) {
+func TestBlockValidatorSimpleOnchainWithPublishedMachineFlaky(t *testing.T) {
 	cr, err := github.LatestConsensusRelease(context.Background())
 	Require(t, err)
 	machPath := populateMachineDir(t, cr)
@@ -413,7 +413,7 @@ func TestBlockValidatorSimpleLocalAnyTrustFlaky(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleJITOnchain(t *testing.T) {
+func TestBlockValidatorSimpleJITOnchainFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:  "files",
 		workloadLoops: 8,
@@ -434,9 +434,9 @@ func TestBlockValidatorReferenceDAWithProverFlaky(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-// TestBlockValidatorReferenceDAWithJIT tests the block validator with JIT
+// TestBlockValidatorReferenceDAWithJITFlaky tests the block validator with JIT
 // with the embedded reference DA
-func TestBlockValidatorReferenceDAWithJIT(t *testing.T) {
+func TestBlockValidatorReferenceDAWithJITFlaky(t *testing.T) {
 	opts := Options{
 		daModeString:  "referenceda",
 		workloadLoops: 1,

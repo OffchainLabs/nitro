@@ -22,9 +22,9 @@ arb-primitives = { workspace = true }
 arb-test-utils = { workspace = true }
 # Subprocess runner
 base64 = { workspace = true }
-brotli = { workspace = true, features = ["std"] }
 chrono = { workspace = true, features = ["clock", "serde"] }
 clap = { workspace = true, features = ["derive"] }
+nitro-brotli = { workspace = true, features = ["cc_brotli"] }
 # Reporting
 csv = { workspace = true }
 eyre = { workspace = true }

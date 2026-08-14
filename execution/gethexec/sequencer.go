@@ -125,6 +125,10 @@ func (c *SequencerConfig) PGARoundLength() time.Duration {
 }
 
 func (c *SequencerConfig) Validate() error {
+	if c.MaxBlockSpeed < 5*time.Millisecond {
+		return fmt.Errorf("max-block-speed must be greater or equal to 5ms, got %s", c.MaxBlockSpeed)
+	}
+
 	for _, address := range c.SenderWhitelist {
 		if len(address) == 0 {
 			continue
@@ -444,9 +448,9 @@ func (q *synchronizedTxQueue) Len() int {
 }
 
 type pendingQueueItemsResults struct {
-	block                *types.Block
-	hooks                *FullSequencingHooks
-	exhaustedOrdererList bool
+	block                   *types.Block
+	hooks                   *FullSequencingHooks
+	ordererSizeLimitReached bool
 }
 
 var _ txOrdererSequencer = (*Sequencer)(nil)
@@ -1194,9 +1198,9 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 		return nil, config.MaxBlockSpeed
 	}
 
-	var orderer txOrderer = newFIFOTxOrderer(s, s.config, baseFee)
+	var orderer txOrderer = newFIFOTxOrderer(s, config.MaxBlockSpeed, baseFee)
 	if collectTips && !config.ExperimentalPGA.DangerousForceFIFO {
-		orderer = NewPGATxOrderer(ctx, s, s.config, baseFee)
+		orderer = NewPGATxOrderer(ctx, s, config.ExperimentalPGA.RoundsPerBlock, config.PGARoundLength(), baseFee)
 	}
 
 	s.blockTxOrderer = containers.Some(orderer)
@@ -1362,9 +1366,9 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrde
 	}
 
 	s.pendingQueueItemsResults = &pendingQueueItemsResults{
-		block:                block,
-		hooks:                hooks,
-		exhaustedOrdererList: orderer.RemainingLen() == 0,
+		block:                   block,
+		hooks:                   hooks,
+		ordererSizeLimitReached: orderer.SizeLimitReached(),
 	}
 
 	if madeBlock {
@@ -1453,13 +1457,13 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 
 		if madeBlock {
 			blockTxSizeHistogram.Update(blockTxSize)
-			if s.pendingQueueItemsResults.exhaustedOrdererList {
-				// no transactions were skipped due to block size or gas limit
-				txExhaustedBlocksCounter.Inc(1)
+			if s.pendingQueueItemsResults.ordererSizeLimitReached {
+				dataLimitedBlocksCounter.Inc(1)
 			} else if blockGasLimitReached {
 				gasLimitedBlocksCounter.Inc(1)
 			} else {
-				dataLimitedBlocksCounter.Inc(1)
+				// no transactions were skipped due to block size or gas limit
+				txExhaustedBlocksCounter.Inc(1)
 			}
 		}
 	}

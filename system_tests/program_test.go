@@ -2786,7 +2786,7 @@ func TestWasmRecreate(t *testing.T) {
 	}
 }
 
-func testWasmRecreateWithCall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDBBetween bool, databaseEngine string, builderOpts ...func(*NodeBuilder)) {
+func testWasmRecreateWithCall(t *testing.T, _targetsBefore, _targetsAfter []string, _removeWasmDBBetween bool, databaseEngine string, builderOpts ...func(*NodeBuilder)) {
 	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithDatabase(rawdb.DBPebble)
 	})
@@ -2807,7 +2807,7 @@ func testWasmRecreateWithCall(t *testing.T, targetsBefore, targetsAfter []string
 	testWasmRecreate(t, builder, localTargetOnly, allWasmTargets, 1, false, storeTx, loadTx, val[:], databaseEngine)
 }
 
-func testWasmRecreateWithDelegatecall(t *testing.T, targetsBefore, targetsAfter []string, removeWasmDBBetween bool, databaseEngine string, builderOpts ...func(*NodeBuilder)) {
+func testWasmRecreateWithDelegatecall(t *testing.T, _targetsBefore, _targetsAfter []string, _removeWasmDBBetween bool, databaseEngine string, builderOpts ...func(*NodeBuilder)) {
 	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithDatabase(rawdb.DBPebble)
 	})

@@ -21,7 +21,10 @@ mod opt_u256_dec_or_hex {
         S: Serializer,
     {
         match value {
-            Some(v) => serde::Serialize::serialize(v, serializer),
+            Some(v) => match u128::try_from(*v) {
+                Ok(n) => serializer.serialize_u128(n),
+                Err(_) => Err(serde::ser::Error::custom("baseFeeL1 exceeds u128")),
+            },
             None => serializer.serialize_none(),
         }
     }
@@ -71,14 +74,9 @@ pub struct RpcL1IncomingMessageHeader {
     #[serde(rename = "blockNumber")]
     pub block_number: u64,
     pub timestamp: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "requestId")]
+    #[serde(default, rename = "requestId")]
     pub request_id: Option<B256>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        rename = "baseFeeL1",
-        with = "opt_u256_dec_or_hex"
-    )]
+    #[serde(default, rename = "baseFeeL1", with = "opt_u256_dec_or_hex")]
     pub base_fee_l1: Option<U256>,
 }
 
@@ -112,6 +110,29 @@ pub struct RpcL1IncomingMessage {
         rename = "batchDataTokens"
     )]
     pub batch_data_tokens: Option<RpcBatchDataStats>,
+}
+
+impl From<&arbos::types::L1IncomingMessage> for RpcL1IncomingMessage {
+    fn from(msg: &arbos::types::L1IncomingMessage) -> Self {
+        use base64::Engine as _;
+        Self {
+            header: RpcL1IncomingMessageHeader {
+                kind: msg.header.kind,
+                sender: msg.header.poster,
+                block_number: msg.header.block_number,
+                timestamp: msg.header.timestamp,
+                request_id: msg.header.request_id,
+                base_fee_l1: msg.header.l1_base_fee,
+            },
+            l2_msg: (!msg.l2_msg.is_empty())
+                .then(|| base64::engine::general_purpose::STANDARD.encode(msg.l2_msg.as_ref())),
+            batch_gas_cost: msg.legacy_batch_gas_cost,
+            batch_data_tokens: msg.batch_data_stats.as_ref().map(|s| RpcBatchDataStats {
+                length: s.length,
+                nonzeros: s.non_zeros,
+            }),
+        }
+    }
 }
 
 /// Message with metadata, sent by the consensus layer to the execution client.

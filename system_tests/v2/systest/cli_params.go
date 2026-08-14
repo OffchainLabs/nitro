@@ -32,10 +32,6 @@ var (
 
 	flagDryRun = flag.Bool("systest.dry-run", false, "print resolved specs and exit without running")
 
-	flagValidate = flag.Bool("systest.validate", false, "enable block validation (JIT) for every eligible test")
-
-	flagFollowerExec = flag.String("systest.follower-exec", "", "external execution client (URL or command) for the parity follower; empty = in-process geth (not yet wired)")
-
 	flagTestTimeout = flag.Duration("systest.test-timeout", defaultTestTimeout, "per-scenario wall-clock backstop against hangs (0 = none); keep below the package -timeout so a hang fails one test, not the whole binary")
 )
 
@@ -50,11 +46,6 @@ func parseCLI() scheduleParams {
 	if err != nil {
 		panic(err.Error())
 	}
-	p.Validate = *flagValidate
-	if *flagFollowerExec != "" {
-		panic("systest: -systest.follower-exec is not yet wired")
-	}
-	p.FollowerExec = *flagFollowerExec
 	p.DefaultStateScheme = envDefaultScheme()
 	return p
 }
@@ -126,22 +117,13 @@ func isDryRun() bool { return *flagDryRun }
 // -systest.test-timeout. A test's own WithTimeout overrides it; 0 means no deadline.
 func testTimeout() time.Duration { return *flagTestTimeout }
 
-// capacity returns -systest.max-weight, or GOMAXPROCS if unset.
-func capacity() int {
+// configuredCapacity returns -systest.max-weight, or GOMAXPROCS if unset.
+func configuredCapacity() int {
 	c := *flagMaxWeight
 	if c <= 0 {
 		c = runtime.GOMAXPROCS(0)
 	}
 	return c
-}
-
-// capacityFor returns the worker-pool capacity. Validate mode serializes
-// (capacity = one full-stack slot) unless -systest.max-weight is set.
-func capacityFor(cli scheduleParams) int {
-	if cli.Validate && *flagMaxWeight <= 0 {
-		return int(weightMax)
-	}
-	return capacity()
 }
 
 func printDryRun(items []scheduledTest) {

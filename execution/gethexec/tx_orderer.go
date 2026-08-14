@@ -55,8 +55,8 @@ func (f *fixedTxFetcher) TakeRemaining() []txQueueItem {
 	return items
 }
 
-func (f *fixedTxFetcher) RemainingLen() int {
-	return len(f.items)
+func (f *fixedTxFetcher) SizeLimitReached() bool {
+	return len(f.exhausted) > 0
 }
 
 // txOrderer decides the tx order of one block. The sequencer creates an orderer per regular-tx
@@ -74,8 +74,8 @@ type txOrderer interface {
 	// dispose of.
 	TakeRemaining() []txQueueItem
 
-	// RemainingLen returns the number of candidates that have not yet been yielded.
-	RemainingLen() int
+	// SizeLimitReached reports whether the orderer reached its size limit.
+	SizeLimitReached() bool
 
 	// OnNonceGapResolved hands the orderer a parked tx whose nonce gap the last
 	// inclusion just closed, so it can re-enter the block's candidates.
@@ -96,7 +96,7 @@ type txOrdererSequencer interface {
 type fifoTxOrderer struct {
 	seq           txOrdererSequencer
 	baseFee       *big.Int
-	configFetcher SequencerConfigFetcher
+	blockInterval time.Duration
 	// The embedded fetcher holds the not-yet-yielded candidates; set by StartBlock, consumed
 	// through NextQueueItem, and emptied by TakeRemaining.
 	fixedTxFetcher
@@ -104,8 +104,8 @@ type fifoTxOrderer struct {
 
 var _ txOrderer = (*fifoTxOrderer)(nil)
 
-func newFIFOTxOrderer(seq txOrdererSequencer, configFetcher SequencerConfigFetcher, baseFee *big.Int) *fifoTxOrderer {
-	return &fifoTxOrderer{seq: seq, configFetcher: configFetcher, baseFee: baseFee}
+func newFIFOTxOrderer(seq txOrdererSequencer, blockInterval time.Duration, baseFee *big.Int) *fifoTxOrderer {
+	return &fifoTxOrderer{seq: seq, blockInterval: blockInterval, baseFee: baseFee}
 }
 
 // StartBlock drains the sequencer's pending txs as the block's candidates.
@@ -125,5 +125,5 @@ func (o *fifoTxOrderer) OnNonceGapResolved(queueItem txQueueItem) {
 }
 
 func (o *fifoTxOrderer) BlockInterval() time.Duration {
-	return o.configFetcher().MaxBlockSpeed
+	return o.blockInterval
 }
