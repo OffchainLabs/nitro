@@ -44,6 +44,7 @@ func TestSpecWeightDerivation(t *testing.T) {
 	}{
 		{"L2-only", TopologyL2Only, weightLight},
 		{"L1L2", TopologyL1L2, weightMedium},
+		{"multi-node", TopologyMultiNode, weightHeavy},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -211,6 +212,9 @@ func TestTopologyConflictPanics(t *testing.T) {
 		want string
 	}{
 		{"WithL1 twice", []TestOption{WithL1(), WithL1()}, "WithL1 applied twice"},
+		{"WithMultiNode twice", []TestOption{WithMultiNode(), WithMultiNode()}, "WithMultiNode applied twice"},
+		{"WithL1 then WithMultiNode", []TestOption{WithL1(), WithMultiNode()}, "conflicts with another topology"},
+		{"WithMultiNode then WithL1", []TestOption{WithMultiNode(), WithL1()}, "conflicts with another topology"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
