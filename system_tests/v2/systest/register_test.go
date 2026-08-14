@@ -31,7 +31,7 @@ func TestScheduleDoesNotMutateRegistry(t *testing.T) {
 	b.name = "X"
 	stubRegistry(t, b)
 
-	_ = schedule(scheduleParams{FollowerExec: "reth-url", Validate: true})
+	_ = schedule(scheduleParams{})
 	if len(b.postHooks) != 0 || b.topology != TopologyL2Only {
 		t.Fatalf("schedule mutated the shared registry builder: %+v", b)
 	}

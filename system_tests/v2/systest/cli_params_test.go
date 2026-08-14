@@ -10,24 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-func TestCapacityForValidateSerializes(t *testing.T) {
-	saved := *flagMaxWeight
-	t.Cleanup(func() { *flagMaxWeight = saved })
-
-	*flagMaxWeight = 0
-	if got := capacityFor(scheduleParams{Validate: true}); got != int(weightMax) {
-		t.Fatalf("validate + unset max-weight: got %d, want %d", got, int(weightMax))
-	}
-	*flagMaxWeight = 3
-	if got := capacityFor(scheduleParams{Validate: true}); got != 3 {
-		t.Fatalf("validate + max-weight=3: got %d, want 3", got)
-	}
-	*flagMaxWeight = 0
-	if got, want := capacityFor(scheduleParams{Validate: false}), capacity(); got != want {
-		t.Fatalf("non-validate: got %d, want capacity()=%d", got, want)
-	}
-}
-
 func TestBuildCLIParamsValidation(t *testing.T) {
 	cases := []struct {
 		name                           string

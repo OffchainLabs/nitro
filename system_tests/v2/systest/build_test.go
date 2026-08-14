@@ -21,7 +21,7 @@ func TestChainConfigForSpec(t *testing.T) {
 }
 
 func TestStackConfigForSpec(t *testing.T) {
-	def := testStackConfig(t, Spec{})
+	def := stackConfigForSpec(t, Spec{})
 	if def.HTTPHost != "" || def.WSHost != "" {
 		t.Fatalf("hosts must stay unset without ExposeRPC: %q %q", def.HTTPHost, def.WSHost)
 	}
@@ -29,10 +29,10 @@ func TestStackConfigForSpec(t *testing.T) {
 	if def.DBEngine == string(engine) {
 		engine = DBEngineLevelDB
 	}
-	if got := testStackConfig(t, Spec{DBEngine: containers.Some(engine)}).DBEngine; got != string(engine) {
+	if got := stackConfigForSpec(t, Spec{DBEngine: containers.Some(engine)}).DBEngine; got != string(engine) {
 		t.Fatalf("pinned db engine: got %q, want %q", got, engine)
 	}
-	rpc := testStackConfig(t, Spec{ExposeRPC: true})
+	rpc := stackConfigForSpec(t, Spec{ExposeRPC: true})
 	if rpc.HTTPHost != "127.0.0.1" || rpc.WSHost != "127.0.0.1" {
 		t.Fatalf("ExposeRPC hosts: got %q %q", rpc.HTTPHost, rpc.WSHost)
 	}
