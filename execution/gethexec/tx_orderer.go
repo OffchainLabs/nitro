@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
+// ordererStats records the block limits hit while yielding a block's candidates.
 type ordererStats struct {
 	blockSizeLimitReached bool
 	blockGasLimitReached  bool
@@ -28,21 +29,21 @@ type nextTxFetcher interface {
 
 // fixedTxFetcher yields a pre-set candidate list.
 type fixedTxFetcher struct {
-	items        []txQueueItem
-	exhausted    []txQueueItem
-	ordererStats ordererStats
+	items     []txQueueItem
+	exhausted []txQueueItem
+	stats     ordererStats
 }
 
 var _ nextTxFetcher = (*fixedTxFetcher)(nil)
 
 func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, bool) {
 	if len(f.items) == 0 {
-		f.ordererStats.exhaustedQueue = len(f.exhausted) == 0
+		f.stats.exhaustedQueue = len(f.exhausted) == 0
 		return txQueueItem{}, false
 	}
 
 	if blockGasLeft < params.TxGas {
-		f.ordererStats.blockGasLimitReached = true
+		f.stats.blockGasLimitReached = true
 		f.exhausted = append(f.exhausted, f.items...)
 		f.items = nil
 		return txQueueItem{}, false
@@ -53,7 +54,7 @@ func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSiz
 
 	// If the tx is too big for the remaining block size, we exhaust it and continue to the next one.
 	if item.txSize > remainingBlockSize {
-		f.ordererStats.blockSizeLimitReached = true
+		f.stats.blockSizeLimitReached = true
 		f.exhausted = append(f.exhausted, item)
 		return f.NextQueueItem(statedb, remainingBlockSize, blockGasLeft)
 	}
@@ -133,7 +134,7 @@ func (o *fifoTxOrderer) StartBlock(statedb *state.StateDB) bool {
 func (o *fifoTxOrderer) OnTxInclusion(queueItem txQueueItem) {}
 
 func (o *fifoTxOrderer) OrdererStats() ordererStats {
-	return o.ordererStats
+	return o.stats
 }
 
 // OnNonceGapResolved appends the revived tx to the block's candidates: its nonce is valid

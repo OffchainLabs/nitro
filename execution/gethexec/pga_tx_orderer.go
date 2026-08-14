@@ -26,7 +26,7 @@ type pgaTxOrderer struct {
 	baseFee        *big.Int
 	roundsPerBlock uint
 	roundLength    time.Duration
-	ordererStats   ordererStats
+	stats          ordererStats
 }
 
 var _ txOrderer = (*pgaTxOrderer)(nil)
@@ -43,7 +43,7 @@ func NewPGATxOrderer(ctx context.Context, seq txOrdererSequencer, roundsPerBlock
 
 func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, bool) {
 	if blockGasLeft < params.TxGas {
-		p.ordererStats.blockGasLimitReached = true
+		p.stats.blockGasLimitReached = true
 		p.mempool.ApplyRoundBoost()
 		return txQueueItem{}, false
 	}
@@ -52,7 +52,7 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 		if p.mempool.PriorityQueueLen() == 0 || p.schedule.RoundIsOver() {
 			p.mempool.ApplyRoundBoost()
 			if p.schedule.IsLastRound() {
-				p.ordererStats.exhaustedQueue = p.mempool.PriorityQueueLen() == 0
+				p.stats.exhaustedQueue = p.mempool.PriorityQueueLen() == 0
 				return txQueueItem{}, false
 			}
 			err := p.schedule.WaitAndAdvanceRound(p.ctx)
@@ -70,8 +70,9 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 		// If the next tx is too big to fit in the remaining block space, we add it back to the mempool and stop sequencing.
 		// The sequencer will finalize the block and start a new one, which will have a fresh mempool and schedule.
 		if item.txSize > remainingBlockSize {
-			p.ordererStats.blockSizeLimitReached = true
+			p.stats.blockSizeLimitReached = true
 			p.mempool.Push(item)
+			p.mempool.ApplyRoundBoost()
 			return txQueueItem{}, false
 		}
 
@@ -82,7 +83,7 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 }
 
 func (p *pgaTxOrderer) StartBlock(statedb *state.StateDB) (hasWork bool) {
-	p.schedule = pga.NewSchedule(p.roundsPerBlock, p.roundLength)
+	p.schedule = pga.NewSchedule(uint64(p.roundsPerBlock), p.roundLength)
 	p.mempool = pga.NewMempool[txQueueItem](p.roundsPerBlock, p.baseFee)
 
 	p.mempool.PushBatch(p.seq.drainValidatedTxs(statedb, p.baseFee))
@@ -99,7 +100,7 @@ func (p *pgaTxOrderer) TakeRemaining() []txQueueItem {
 }
 
 func (p *pgaTxOrderer) OrdererStats() ordererStats {
-	return p.ordererStats
+	return p.stats
 }
 
 func (p *pgaTxOrderer) OnTxInclusion(queueItem txQueueItem) {

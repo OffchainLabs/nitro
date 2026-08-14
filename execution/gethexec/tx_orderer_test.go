@@ -153,7 +153,7 @@ func TestFIFOTxOrdererGasLimitEndsBlock(t *testing.T) {
 		item, _ := makeTestQueueItem(t, nonce, testBaseFee)
 		items = append(items, item)
 	}
-	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items}, nil, nil)
+	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items}, 0, nil)
 
 	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")

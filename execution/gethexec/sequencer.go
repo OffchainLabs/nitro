@@ -69,7 +69,7 @@ var (
 	callDataUnitsBacklogGauge               = metrics.NewRegisteredGauge("arb/sequencer/calldataunitsbacklog", nil)
 	currentSurplusGauge                     = metrics.NewRegisteredGauge("arb/sequencer/currentsurplus", nil)
 	expectedSurplusGauge                    = metrics.NewRegisteredGauge("arb/sequencer/expectedsurplus", nil)
-	// number of blocks ended because of block gas limit at least one tx wasn't included in block because of gas limit)
+	// number of blocks ended because of block gas limit at least one tx wasn't included in block because of gas limit
 	gasLimitedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/gaslimited", nil)
 	// number of blocks ended because of txes data size limit
 	dataLimitedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/datalimited", nil)
@@ -448,9 +448,9 @@ func (q *synchronizedTxQueue) Len() int {
 }
 
 type pendingQueueItemsResults struct {
-	block        *types.Block
-	hooks        *FullSequencingHooks
-	ordererStats ordererStats
+	block *types.Block
+	hooks *FullSequencingHooks
+	stats ordererStats
 }
 
 var _ txOrdererSequencer = (*Sequencer)(nil)
@@ -1366,9 +1366,9 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrde
 	}
 
 	s.pendingQueueItemsResults = &pendingQueueItemsResults{
-		block:        block,
-		hooks:        hooks,
-		ordererStats: orderer.OrdererStats(),
+		block: block,
+		hooks: hooks,
+		stats: orderer.OrdererStats(),
 	}
 
 	if madeBlock {
@@ -1457,15 +1457,13 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 
 		if madeBlock {
 			blockTxSizeHistogram.Update(blockTxSize)
-			ordererStats := s.pendingQueueItemsResults.ordererStats
-			if ordererStats.exhaustedQueue {
-				// no transactions were skipped due to block size or gas limit
+			stats := s.pendingQueueItemsResults.stats
+			if stats.exhaustedQueue {
+				// the orderer drained its queue without skipping any candidate
 				txExhaustedBlocksCounter.Inc(1)
-			}
-			if ordererStats.blockGasLimitReached || blockGasLimitReached {
+			} else if stats.blockGasLimitReached || blockGasLimitReached {
 				gasLimitedBlocksCounter.Inc(1)
-			}
-			if ordererStats.blockSizeLimitReached {
+			} else if stats.blockSizeLimitReached {
 				dataLimitedBlocksCounter.Inc(1)
 			}
 		}
