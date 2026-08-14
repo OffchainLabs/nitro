@@ -203,3 +203,24 @@ func TestScheduleSingleRoundPerBlock(t *testing.T) {
 		t.Error("round 1 of 1 should be the last round")
 	}
 }
+
+func TestScheduleElapsedInterval(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := NewSchedule(3, testRoundLength)
+		if got := s.ElapsedInterval(); got != testRoundLength {
+			t.Errorf("round 1 ElapsedInterval = %v, want %v", got, testRoundLength)
+		}
+		if err := s.WaitAndAdvanceRound(context.Background()); err != nil {
+			t.Fatalf("WaitAndAdvanceRound returned %v, want nil", err)
+		}
+		if got := s.ElapsedInterval(); got != 2*testRoundLength {
+			t.Errorf("round 2 ElapsedInterval = %v, want %v", got, 2*testRoundLength)
+		}
+		if err := s.WaitAndAdvanceRound(context.Background()); err != nil {
+			t.Fatalf("WaitAndAdvanceRound returned %v, want nil", err)
+		}
+		if got := s.ElapsedInterval(); got != 3*testRoundLength {
+			t.Errorf("last round ElapsedInterval = %v, want the block time %v", got, 3*testRoundLength)
+		}
+	})
+}
