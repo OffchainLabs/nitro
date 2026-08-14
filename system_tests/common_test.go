@@ -959,7 +959,7 @@ func buildOnParentChain(
 
 	execConfigFetcher := NewCommonConfigFetcher(execConfig)
 	fatalErrChan := make(chan error, 10)
-	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, executionDB, blockchain, containers.Some(parentChainTestClient.Client), execConfigFetcher, 0, parentChain, fatalErrChan)
+	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, executionDB, blockchain, execConfigFetcher, gethexec.WithL1Client(containers.Some(parentChainTestClient.Client)), gethexec.WithParentChain(parentChain), gethexec.WithFatalErrChan(fatalErrChan))
 	Require(t, err)
 	chainTestClient.ExecutionConfigFetcher = execConfigFetcher
 
@@ -1170,7 +1170,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
 	fatalErrChan := make(chan error, 10)
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, executionDB, blockchain, containers.None[*ethclient.Client](), execConfigFetcher, 0, nil, fatalErrChan)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, executionDB, blockchain, execConfigFetcher, gethexec.WithFatalErrChan(fatalErrChan))
 	Require(t, err)
 	b.L2.ExecutionConfigFetcher = execConfigFetcher
 
@@ -1254,7 +1254,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
 	feedErrChan := make(chan error, 10)
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, executionDB, blockchain, containers.None[*ethclient.Client](), execConfigFetcher, 0, b.L2.ExecNode.ParentChain, feedErrChan)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, executionDB, blockchain, execConfigFetcher, gethexec.WithParentChain(b.L2.ExecNode.ParentChain), gethexec.WithFatalErrChan(feedErrChan))
 	Require(t, err)
 
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
@@ -2572,7 +2572,7 @@ func Create2ndNodeWithConfig(
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
 	execConfigFetcher := NewCommonConfigFetcher(execConfig)
-	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, executionDB, blockchain, containers.Some(parentChainClient), execConfigFetcher, 0, parentChain, feedErrChan)
+	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, executionDB, blockchain, execConfigFetcher, gethexec.WithL1Client(containers.Some(parentChainClient)), gethexec.WithParentChain(parentChain), gethexec.WithFatalErrChan(feedErrChan))
 	Require(t, err)
 
 	var currentNode *arbnode.Node

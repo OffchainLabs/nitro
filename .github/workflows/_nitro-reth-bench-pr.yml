@@ -99,6 +99,12 @@ jobs:
             --genesis "$PWD/genesis/arbitrum-sepolia.json" \
             --out target/bench/abba \
             --markdown-out target/bench/abba/summary.md
+      - name: Surface regression verdict as a warning
+        if: always()
+        run: |
+          if [ -f target/bench/abba/summary.md ] && grep -q '\*\*REGRESSION\*\*' target/bench/abba/summary.md; then
+            echo "::warning::ABBA reports a performance regression beyond tolerance — advisory only; see the PR comment for details."
+          fi
       - name: Upload ABBA artifacts
         if: always()
         uses: actions/upload-artifact@v7
