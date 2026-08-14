@@ -82,6 +82,9 @@ var (
 	BlockNumBeforeGenesis = errors.New("block number is before genesis")
 )
 
+// filteredTxLogInterval throttles the repeated logs emitted while halted on a filtered tx.
+const filteredTxLogInterval = 5 * time.Minute
+
 // ErrFilteredDelayedMessage is returned when a delayed message contains transactions
 // that touch filtered addresses. The sequencer should halt and wait for the tx hashes
 // to be added to the onchain filter before retrying.
@@ -287,11 +290,12 @@ type delayedMsg struct {
 // FilteredTxWaitState tracks a halt while waiting for filtered transactions
 // to be added to the onchain filter
 type FilteredTxWaitState struct {
-	TxHashes      []common.Hash
-	DelayedMsgIdx uint64
-	FirstSeen     time.Time
-	LastLogTime   time.Time
-	LastFullRetry time.Time
+	TxHashes       []common.Hash
+	DelayedMsgIdx  uint64
+	FirstSeen      time.Time
+	LastLogTime    time.Time
+	LastErrLogTime time.Time
+	LastFullRetry  time.Time
 }
 
 type ExecutionEngine struct {
@@ -985,7 +989,7 @@ func (s *ExecutionEngine) shouldAttemptWhileWaitingForFilteredTx() bool {
 	now := time.Now()
 	waitDuration := now.Sub(s.waitingForFilteredTx.FirstSeen)
 	delayedSequencerFilteredTxWaitSeconds.Update(int64(waitDuration.Seconds()))
-	if now.Sub(s.waitingForFilteredTx.LastLogTime) >= 5*time.Minute {
+	if now.Sub(s.waitingForFilteredTx.LastLogTime) >= filteredTxLogInterval {
 		logLevel := log.Warn
 		if waitDuration > 1*time.Hour {
 			logLevel = log.Error
@@ -1008,7 +1012,12 @@ func (s *ExecutionEngine) shouldAttemptWhileWaitingForFilteredTx() bool {
 	for _, txHash := range s.waitingForFilteredTx.TxHashes {
 		isInFilter, err := s.isTxHashInOnchainFilter(txHash)
 		if err != nil {
-			log.Error("error checking onchain filter", "err", err, "txHash", txHash)
+			if now.Sub(s.waitingForFilteredTx.LastErrLogTime) >= filteredTxLogInterval {
+				log.Error("error checking onchain filter", "err", err, "txHash", txHash,
+					"delayedMsgIdx", s.waitingForFilteredTx.DelayedMsgIdx,
+					"waitingSince", s.waitingForFilteredTx.FirstSeen)
+				s.waitingForFilteredTx.LastErrLogTime = now
+			}
 			return false
 		}
 		if !isInFilter {
