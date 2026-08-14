@@ -59,6 +59,9 @@ jobs:
       - name: Clippy check (SP1 crates)
         run: make -C crates/sp1 clippy
 
+      - name: Run SP1 unit tests
+        run: make -C crates/sp1 test
+
       - name: Run stylus-compiler-runner compare
         # Compare compilation consistency between running it natively and in the SP1 execution mode.
         run: make -C crates/sp1 stylus-compiler-compare
