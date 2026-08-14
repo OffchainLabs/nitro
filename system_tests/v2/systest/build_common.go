@@ -59,6 +59,8 @@ func buildNode(t *testing.T, ctx context.Context, spec Spec, overrides overrides
 		return buildL2Node(t, ctx, spec, overrides)
 	case TopologyL1L2:
 		return buildL1L2Node(t, ctx, spec, overrides)
+	case TopologyMultiNode:
+		return buildMultiNodeStack(t, ctx, spec, overrides)
 	default:
 		t.Fatalf("systest: unknown topology %d", spec.Topology)
 		return nil, nil
@@ -235,8 +237,8 @@ func newExecNode(t *testing.T, ctx context.Context, name string, stack *node.Nod
 	if parentClient != nil {
 		parentClientOpt = containers.Some(parentClient)
 	}
-	execNode, err := gethexec.CreateExecutionNode(ctx, stack, executionDB, blockchain,
-		parentClientOpt, newConfigFetcher(execCfg), 0, parentChain, fatalCh)
+	execNode, err := gethexec.CreateExecutionNode(ctx, stack, executionDB, blockchain, newConfigFetcher(execCfg),
+		gethexec.WithL1Client(parentClientOpt), gethexec.WithParentChain(parentChain), gethexec.WithFatalErrChan(fatalCh))
 	if err != nil {
 		t.Fatalf("%s CreateExecutionNode: %v", name, err)
 	}
