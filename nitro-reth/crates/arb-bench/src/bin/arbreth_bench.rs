@@ -103,8 +103,10 @@ struct AbbaCommand {
     /// Optional path used to record what we ran for CI artifacts.
     #[arg(long)]
     markdown_out: Option<PathBuf>,
-    /// Exit non-zero if any manifest verdict is `Regression`.
-    #[arg(long, default_value_t = true)]
+    /// Exit non-zero if any manifest verdict is `Regression`. Off by
+    /// default: single-run deltas on shared CI runners are too noisy to
+    /// gate a workflow on; the verdict is still reported in the summary.
+    #[arg(long, default_value_t = false)]
     fail_on_regression: bool,
     /// Baseline `arb-reth` binary. Requires `--feature-bin`.
     #[arg(long)]
