@@ -5,6 +5,7 @@ package gethexec
 
 import (
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/core/state"
 )
@@ -79,6 +80,9 @@ type txOrderer interface {
 	// OnNonceGapResolved hands the orderer a parked tx whose nonce gap the last
 	// inclusion just closed, so it can re-enter the block's candidates.
 	OnNonceGapResolved(queueItem txQueueItem)
+
+	// BlockInterval reports the time interval between the start of the block and the start of the next block.
+	BlockInterval() time.Duration
 }
 
 // txOrdererSequencer is the sequencer functionality the tx orderers depend on.
@@ -90,8 +94,9 @@ type txOrdererSequencer interface {
 
 // fifoTxOrderer yields the block's candidates in the order the sequencer drained them.
 type fifoTxOrderer struct {
-	seq     txOrdererSequencer
-	baseFee *big.Int
+	seq           txOrdererSequencer
+	baseFee       *big.Int
+	blockInterval time.Duration
 	// The embedded fetcher holds the not-yet-yielded candidates; set by StartBlock, consumed
 	// through NextQueueItem, and emptied by TakeRemaining.
 	fixedTxFetcher
@@ -99,8 +104,8 @@ type fifoTxOrderer struct {
 
 var _ txOrderer = (*fifoTxOrderer)(nil)
 
-func newFIFOTxOrderer(seq txOrdererSequencer, baseFee *big.Int) *fifoTxOrderer {
-	return &fifoTxOrderer{seq: seq, baseFee: baseFee}
+func newFIFOTxOrderer(seq txOrdererSequencer, blockInterval time.Duration, baseFee *big.Int) *fifoTxOrderer {
+	return &fifoTxOrderer{seq: seq, blockInterval: blockInterval, baseFee: baseFee}
 }
 
 // StartBlock drains the sequencer's pending txs as the block's candidates.
@@ -117,4 +122,8 @@ func (o *fifoTxOrderer) OnTxInclusion(queueItem txQueueItem) {}
 // against the in-progress state, so it can follow its predecessor into the same block.
 func (o *fifoTxOrderer) OnNonceGapResolved(queueItem txQueueItem) {
 	o.items = append(o.items, queueItem)
+}
+
+func (o *fifoTxOrderer) BlockInterval() time.Duration {
+	return o.blockInterval
 }

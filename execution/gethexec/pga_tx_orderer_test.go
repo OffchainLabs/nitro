@@ -17,15 +17,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-// testPGARoundLength is the round length pgaTestConfigFetcher yields: 250ms block / 2 rounds.
+// testPGARoundLength is the round length newTestPGATxOrderer uses: 250ms block / 2 rounds.
 const testPGARoundLength = 125 * time.Millisecond
-
-func pgaTestConfigFetcher() *SequencerConfig {
-	c := DefaultSequencerConfig
-	c.MaxBlockSpeed = 250 * time.Millisecond
-	c.ExperimentalPGA.RoundsPerBlock = 2
-	return &c
-}
 
 // makePGAQueueItem builds a queue item whose PGA priority is gasTipCap: the fee cap sits far
 // enough above the test basefee that the tip is never cap-bound.
@@ -57,17 +50,15 @@ func makeExpiredPGAQueueItem(t *testing.T, nonce uint64, gasTipCap int64) (txQue
 }
 
 func newTestPGATxOrderer(seq txOrdererSequencer) *pgaTxOrderer {
-	return NewPGATxOrderer(context.Background(), seq, pgaTestConfigFetcher, big.NewInt(testBaseFee))
+	return NewPGATxOrderer(context.Background(), seq, 2, testPGARoundLength, big.NewInt(testBaseFee))
 }
 
-// pgaConfigFetcherWithRounds yields a 300ms block split into the given number of rounds.
-func pgaConfigFetcherWithRounds(rounds uint) SequencerConfigFetcher {
-	return func() *SequencerConfig {
-		c := DefaultSequencerConfig
-		c.MaxBlockSpeed = 300 * time.Millisecond
-		c.ExperimentalPGA.RoundsPerBlock = rounds
-		return &c
-	}
+// newTestPGATxOrdererWithRounds builds an orderer for a 300ms block split into the given number
+// of rounds.
+func newTestPGATxOrdererWithRounds(seq txOrdererSequencer, rounds uint) *pgaTxOrderer {
+	// Test round counts are tiny; the conversion cannot overflow.
+	// #nosec G115
+	return NewPGATxOrderer(context.Background(), seq, rounds, 300*time.Millisecond/time.Duration(rounds), big.NewInt(testBaseFee))
 }
 
 // TakeRemaining runs in a deferred cleanup that can fire before StartBlock arms the mempool; it
@@ -295,7 +286,7 @@ func TestPGATxOrdererCtxCancelEndsBlock(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		seq := &stubOrdererSequencer{items: []txQueueItem{makePGAQueueItem(t, 0, 10)}}
-		o := NewPGATxOrderer(ctx, seq, pgaTestConfigFetcher, big.NewInt(testBaseFee))
+		o := NewPGATxOrderer(ctx, seq, 2, testPGARoundLength, big.NewInt(testBaseFee))
 
 		if !o.StartBlock(nil) {
 			t.Fatal("StartBlock = false, want true")
@@ -325,7 +316,7 @@ func TestPGATxOrdererWaitsThroughIdleRounds(t *testing.T) {
 			items:   []txQueueItem{makePGAQueueItem(t, 0, 10)},
 			batches: [][]txQueueItem{nil, {makePGAQueueItem(t, 1, 10)}}, // round 2 idle, round 3 delivers
 		}
-		o := NewPGATxOrderer(context.Background(), seq, pgaConfigFetcherWithRounds(3), big.NewInt(testBaseFee))
+		o := newTestPGATxOrdererWithRounds(seq, 3)
 
 		if !o.StartBlock(nil) {
 			t.Fatal("StartBlock = false, want true")
@@ -352,7 +343,7 @@ func TestPGATxOrdererEndsBlockAfterIdleRounds(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const roundLength = 100 * time.Millisecond // 300ms block / 3 rounds
 		seq := &stubOrdererSequencer{items: []txQueueItem{makePGAQueueItem(t, 0, 10)}}
-		o := NewPGATxOrderer(context.Background(), seq, pgaConfigFetcherWithRounds(3), big.NewInt(testBaseFee))
+		o := newTestPGATxOrdererWithRounds(seq, 3)
 
 		if !o.StartBlock(nil) {
 			t.Fatal("StartBlock = false, want true")
@@ -476,7 +467,7 @@ func TestPGATxOrdererSingleRoundPerBlock(t *testing.T) {
 			makePGAQueueItem(t, 1, 0),
 		}
 		seq := &stubOrdererSequencer{items: items}
-		o := NewPGATxOrderer(context.Background(), seq, pgaConfigFetcherWithRounds(1), big.NewInt(testBaseFee))
+		o := newTestPGATxOrdererWithRounds(seq, 1)
 
 		if !o.StartBlock(nil) {
 			t.Fatal("StartBlock = false, want true")
@@ -642,7 +633,7 @@ func TestPGATxOrdererMidBlockRejectedDrainKeepsWaiting(t *testing.T) {
 			items:   []txQueueItem{makePGAQueueItem(t, 0, 10)},
 			batches: [][]txQueueItem{{rejected}, {makePGAQueueItem(t, 2, 10)}},
 		}
-		o := NewPGATxOrderer(context.Background(), seq, pgaConfigFetcherWithRounds(3), big.NewInt(testBaseFee))
+		o := newTestPGATxOrdererWithRounds(seq, 3)
 
 		if !o.StartBlock(nil) {
 			t.Fatal("StartBlock = false, want true")
@@ -667,6 +658,98 @@ func TestPGATxOrdererMidBlockRejectedDrainKeepsWaiting(t *testing.T) {
 			}
 		default:
 			t.Fatal("rejected tx got no result, want fee-cap-too-low")
+		}
+	})
+}
+
+func TestPGATxOrdererBlockIntervalAllRounds(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		seq := &stubOrdererSequencer{items: []txQueueItem{makePGAQueueItem(t, 0, 10)}}
+		o := newTestPGATxOrdererWithRounds(seq, 3)
+
+		if !o.StartBlock(nil) {
+			t.Fatal("StartBlock = false, want true")
+		}
+		if item, ok := o.NextQueueItem(nil, math.MaxInt); !ok || item.tx.Nonce() != 0 {
+			t.Fatalf("yield = (nonce %d, %v), want nonce 0", item.tx.Nonce(), ok)
+		}
+		if _, ok := o.NextQueueItem(nil, math.MaxInt); ok {
+			t.Fatal("NextQueueItem yielded with nothing queued, want end of block")
+		}
+		if got := o.BlockInterval(); got != 300*time.Millisecond {
+			t.Fatalf("BlockInterval = %v, want the full block time 300ms", got)
+		}
+	})
+}
+
+func TestPGATxOrdererBlockIntervalPartialBlock(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const roundLength = 60 * time.Millisecond // 300ms block / 5 rounds
+		oversized := makePGAQueueItem(t, 2, 10)
+		oversized.txSize = 11
+		seq := &stubOrdererSequencer{
+			items:   []txQueueItem{makePGAQueueItem(t, 0, 10)},
+			batches: [][]txQueueItem{{makePGAQueueItem(t, 1, 10)}, {oversized}},
+		}
+		o := newTestPGATxOrdererWithRounds(seq, 5)
+
+		if !o.StartBlock(nil) {
+			t.Fatal("StartBlock = false, want true")
+		}
+		// Rounds 1 and 2 each yield their drained tx; round 3's arrival doesn't fit and ends the block.
+		for _, wantNonce := range []uint64{0, 1} {
+			if item, ok := o.NextQueueItem(nil, math.MaxInt); !ok || item.tx.Nonce() != wantNonce {
+				t.Fatalf("yield = (nonce %d, %v), want nonce %d", item.tx.Nonce(), ok, wantNonce)
+			}
+		}
+		if item, ok := o.NextQueueItem(nil, 10); ok {
+			t.Fatalf("NextQueueItem yielded nonce %d, want end of block on the oversized tx", item.tx.Nonce())
+		}
+		if got := o.BlockInterval(); got != 3*roundLength {
+			t.Fatalf("BlockInterval = %v, want three rounds at %v", got, 3*roundLength)
+		}
+	})
+}
+
+func TestPGATxOrdererBlockIntervalPartialFirstRound(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		oversized := makePGAQueueItem(t, 0, 10)
+		oversized.txSize = 11
+		o := newTestPGATxOrderer(&stubOrdererSequencer{items: []txQueueItem{oversized}})
+
+		if !o.StartBlock(nil) {
+			t.Fatal("StartBlock = false, want true")
+		}
+		if _, ok := o.NextQueueItem(nil, 10); ok {
+			t.Fatal("NextQueueItem yielded, want end of block on the oversized tx")
+		}
+		if got := o.BlockInterval(); got != testPGARoundLength {
+			t.Fatalf("BlockInterval = %v, want one round at %v", got, testPGARoundLength)
+		}
+	})
+}
+
+func TestPGATxOrdererBlockIntervalOverrun(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		o := newTestPGATxOrderer(&stubOrdererSequencer{items: []txQueueItem{makePGAQueueItem(t, 0, 10)}})
+
+		if !o.StartBlock(nil) {
+			t.Fatal("StartBlock = false, want true")
+		}
+		if item, ok := o.NextQueueItem(nil, math.MaxInt); !ok || item.tx.Nonce() != 0 {
+			t.Fatalf("yield = (nonce %d, %v), want nonce 0", item.tx.Nonce(), ok)
+		}
+
+		time.Sleep(500 * time.Millisecond)
+		start := time.Now()
+		if _, ok := o.NextQueueItem(nil, math.MaxInt); ok {
+			t.Fatal("NextQueueItem yielded past the schedule, want end of block")
+		}
+		if waited := time.Since(start); waited != 0 {
+			t.Fatalf("NextQueueItem waited %v after the overrun, want immediate return", waited)
+		}
+		if got := o.BlockInterval(); got != 250*time.Millisecond {
+			t.Fatalf("BlockInterval = %v, want MaxBlockSpeed (250ms) despite the overrun", got)
 		}
 	})
 }
