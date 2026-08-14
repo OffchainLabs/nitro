@@ -34,7 +34,6 @@ members = [
     "bin/arb-reth",
     "bin/arb-test",
 ]
-exclude = ["brotli"]
 resolver = "3"
 
 [workspace.package]
@@ -212,7 +211,6 @@ sha2 = { version = "0.11" }
 base64 = { version = "0.22" }
 jsonrpsee = { version = "0.26.0" }
 jsonrpsee-http-client = { version = "0.26.0" }
-brotli = { version = "8", default-features = false }
 axum = { version = "0.7", default-features = false }
 chrono = { version = "0.4", default-features = false }
 csv = { version = "1" }

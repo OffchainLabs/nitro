@@ -4,7 +4,6 @@
 package gethexec
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"math/big"
@@ -17,27 +16,30 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-// txQueueItem implements pga.Tx so it can drive the PGA priority mempool (execution/gethexec/pga) without that package
-// depending on gethexec. The methods use value receivers so the mempool can hold txQueueItems by value, matching the
-// txQueue channel.
 var _ pga.Tx = txQueueItem{}
 
-func (i txQueueItem) ComputePgaPriority(baseFee *big.Int) (uint64, error) {
+func (i txQueueItem) ComputePgaPriority(baseFee *big.Int) bool {
 	tip, err := i.tx.EffectiveGasTip(baseFee)
 	if err != nil {
 		if errors.Is(err, types.ErrGasFeeCapTooLow) {
 			// Preserve the existing fee-cap-too-low error message from sequencer.go.
-			return 0, fmt.Errorf("%w: maxFeePerGas: %s baseFee: %s", core.ErrFeeCapTooLow, i.tx.GasFeeCap(), baseFee)
+			err = fmt.Errorf("%w: maxFeePerGas: %s baseFee: %s", core.ErrFeeCapTooLow, i.tx.GasFeeCap(), baseFee)
+		} else {
+			err = fmt.Errorf("unexpected EffectiveGasTip error for tx %v: %w", i.tx.Hash(), err)
 		}
-		return 0, fmt.Errorf("unexpected EffectiveGasTip error for tx %v: %w", i.tx.Hash(), err)
+		i.returnResult(err)
+		return false
 	}
-	return arbmath.BigToUintSaturating(tip), nil
+	i.SetPriority(arbmath.SaturatingCastToUint(tip))
+	return true
 }
 
-func (i txQueueItem) ReportError(err error) { i.returnResult(err) }
-
-func (i txQueueItem) GetContext() context.Context { return i.ctx }
-
-func (i txQueueItem) GetSize() int { return i.txSize }
+func (i txQueueItem) Validate() bool {
+	if err := i.ctx.Err(); err != nil {
+		i.returnResult(err)
+		return false
+	}
+	return true
+}
 
 func (i txQueueItem) GetFirstAppearance() time.Time { return i.firstAppearance }

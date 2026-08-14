@@ -40,7 +40,7 @@ func testRunSelfDestruct(env *systest.Env) {
 	auth.GasLimit = 32000000
 	balance := big.NewInt(params.Ether)
 	balance.Mul(balance, big.NewInt(100))
-	env.L2.SendWaitTxs("Faucet", "SelfDestruct", 1, balance)
+	env.L2.TransferBalance("Faucet", "SelfDestruct", balance)
 
 	// Test self-destruct with recipient same as the contract (contract is created and destroyed in the same transaction)
 	auth.Value = big.NewInt(params.Ether)

@@ -9,7 +9,7 @@ permissions:
 jobs:
   rust:
     name: Run Rust tests
-    runs-on: ocl-16cpu-64ram-dind
+    runs-on: ocl-16cpu-64ram-dind-500gi
     timeout-minutes: 35
     env:
       RUST_BACKTRACE: 1

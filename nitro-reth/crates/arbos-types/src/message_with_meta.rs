@@ -19,17 +19,9 @@ pub struct MessageWithMetadataAndBlockInfo {
 }
 
 impl MessageWithMetadata {
-    /// ABI-style commitment hash fed into the MEL local message accumulator.
-    /// Only includes MEL (minimum execution layer) consensus fields.
-    ///
-    /// TODO: packed concatenation, not yet reconciled with the on-chain
-    /// `abi.encode` layout (Nitro's `MessageWithMetadata` hashing uses RLP).
-    pub fn abi_hash(&self) -> B256 {
-        let serialized = self.message.serialize();
-        let mut data = Vec::new();
-        data.extend_from_slice(&serialized);
-        data.extend_from_slice(&self.delayed_messages_read.to_be_bytes());
-        keccak256(&data)
+    /// RLP commitment hash fed into the MEL local message accumulator.
+    pub fn rlp_hash(&self) -> B256 {
+        keccak256(alloy_rlp::encode(self))
     }
 
     /// Returns a shallow copy with only consensus-relevant fields.
