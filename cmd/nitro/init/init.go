@@ -924,8 +924,9 @@ func resolveGenesisDocument(initConfig *conf.InitConfig, chainId uint64, otherIn
 	case conf.GenesisModeFile:
 		return readGenesisFile(initConfig.GenesisJsonFile)
 	case conf.GenesisModeDirectory:
-		// normally already resolved into GenesisJsonFile at config parse time
-		genesisJsonFile := initConfig.GenesisJsonFile
+		// normally already resolved at config parse time; the lookup below
+		// serves callers that build the config directly
+		genesisJsonFile := initConfig.ResolvedGenesisJsonFile()
 		if genesisJsonFile == "" {
 			var err error
 			genesisJsonFile, err = GetGenesisFileNameFromDirectory(initConfig.GenesisJsonFileDirectory, chainId)
@@ -943,6 +944,9 @@ func resolveGenesisDocument(initConfig *conf.InitConfig, chainId uint64, otherIn
 	}
 	if initConfig.GenesisJsonFile != "" {
 		return readGenesisFile(initConfig.GenesisJsonFile)
+	}
+	if resolvedGenesisJsonFile := initConfig.ResolvedGenesisJsonFile(); resolvedGenesisJsonFile != "" {
+		return readGenesisFile(resolvedGenesisJsonFile)
 	}
 	if otherInitMethodSupplied && initConfig.GenesisJsonFileDirectory != "" {
 		// lookup kept so that a directory match while another init method is

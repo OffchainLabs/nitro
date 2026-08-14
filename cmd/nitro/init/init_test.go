@@ -2021,6 +2021,33 @@ func TestGetInitInlineGenesisConflictsWithDevInit(t *testing.T) {
 	}
 }
 
+func TestGetInitResolvedGenesisJsonFile(t *testing.T) {
+	t.Parallel()
+
+	chainId := uint64(42161)
+	genesisFile := filepath.Join(t.TempDir(), "genesis.json")
+	Require(t, os.WriteFile(genesisFile, []byte(makeInlineTestGenesis(t, chainId, 333)), 0600))
+
+	// default mode: the directory file resolved at config parse time is used
+	nodeConfig := config.NodeConfigDefault
+	nodeConfig.Chain.ID = chainId
+	nodeConfig.Init.SetResolvedGenesisJsonFile(genesisFile)
+	_, chainConfig, _, err := GetInit(&nodeConfig, nil)
+	Require(t, err)
+	if *chainConfig.CancunTime != 333 {
+		t.Fatalf("expected genesis from resolved directory file, got CancunTime %d", *chainConfig.CancunTime)
+	}
+
+	// explicit directory mode uses the resolved file without rescanning the directory
+	nodeConfig.Init.GenesisMode = conf.GenesisModeDirectory
+	nodeConfig.Init.GenesisJsonFileDirectory = "/nonexistent"
+	_, chainConfig, _, err = GetInit(&nodeConfig, nil)
+	Require(t, err)
+	if *chainConfig.CancunTime != 333 {
+		t.Fatalf("expected genesis-mode directory to use the resolved file, got CancunTime %d", *chainConfig.CancunTime)
+	}
+}
+
 func TestInitConfigInlineGenesisValidation(t *testing.T) {
 	gen := makeInlineTestGenesis(t, 42161, 0)
 
@@ -2030,6 +2057,14 @@ func TestInitConfigInlineGenesisValidation(t *testing.T) {
 	err := initConfig.Validate()
 	if err == nil || !strings.Contains(err.Error(), "cannot be both empty") {
 		t.Fatal("expected conflict between empty and inline genesis, got:", err)
+	}
+
+	initConfig = conf.InitConfigDefault
+	initConfig.Empty = true
+	initConfig.SetResolvedGenesisJsonFile("/some/genesis.json")
+	err = initConfig.Validate()
+	if err == nil || !strings.Contains(err.Error(), "cannot be both empty") {
+		t.Fatal("expected conflict between empty and discovered genesis, got:", err)
 	}
 
 	for _, mode := range []string{conf.GenesisModeInline, conf.GenesisModeFile, conf.GenesisModeDirectory} {

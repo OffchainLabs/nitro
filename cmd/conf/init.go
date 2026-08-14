@@ -45,6 +45,10 @@ type InitConfig struct {
 	GenesisMode                   string        `koanf:"genesis-mode"`
 	GenesisJsonFile               string        `koanf:"genesis-json-file"`
 	GenesisJsonFileDirectory      string        `koanf:"genesis-json-file-directory"`
+	// resolvedGenesisJsonFile holds the file discovered in
+	// GenesisJsonFileDirectory at config parse time. Unexported on purpose:
+	// koanf skips it, so no config layer can set it.
+	resolvedGenesisJsonFile string
 	ThenQuit                      bool          `koanf:"then-quit"`
 	Prune                         string        `koanf:"prune"`
 	PruneParallelStorageTraversal bool          `koanf:"prune-parallel-storage-traversal"`
@@ -131,12 +135,23 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".validate-genesis-assertion", InitConfigDefault.ValidateGenesisAssertion, "tests genesis assertion posted on parent chain against the genesis block created on init")
 }
 
+func (c *InitConfig) ResolvedGenesisJsonFile() string {
+	return c.resolvedGenesisJsonFile
+}
+
+func (c *InitConfig) SetResolvedGenesisJsonFile(genesisJsonFile string) {
+	c.resolvedGenesisJsonFile = genesisJsonFile
+}
+
 func (c *InitConfig) Validate() error {
 	if c.Empty && c.GenesisJsonFile != "" {
 		return fmt.Errorf("init config cannot be both empty and have a genesis json file specified")
 	}
 	if c.Empty && c.GenesisJson != "" {
 		return fmt.Errorf("init config cannot be both empty and have an inline genesis (genesis-json) specified")
+	}
+	if c.Empty && c.resolvedGenesisJsonFile != "" {
+		return fmt.Errorf("init config cannot be both empty and have a genesis json file discovered in genesis-json-file-directory")
 	}
 	c.GenesisMode = strings.ToLower(c.GenesisMode)
 	switch c.GenesisMode {

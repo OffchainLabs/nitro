@@ -134,7 +134,7 @@ func TestCompressionLevelsConflict(t *testing.T) {
 	}
 }
 
-func TestGenesisJsonFileDirectoryClearsDefaultEmptyInit(t *testing.T) {
+func TestGenesisJsonFileDirectorySuppressesDefaultEmptyInit(t *testing.T) {
 	chainId := uint64(42170)
 	tempDir := t.TempDir()
 	genesisFile := filepath.Join(tempDir, fmt.Sprintf("%d.json", chainId))
@@ -144,11 +144,29 @@ func TestGenesisJsonFileDirectoryClearsDefaultEmptyInit(t *testing.T) {
 	nodeConfig, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
-	if nodeConfig.Init.GenesisJsonFile != genesisFile {
-		Fail(t, "expected genesis file from directory", genesisFile, "got", nodeConfig.Init.GenesisJsonFile)
+	if nodeConfig.Init.ResolvedGenesisJsonFile() != genesisFile {
+		Fail(t, "expected genesis file resolved from directory", genesisFile, "got", nodeConfig.Init.ResolvedGenesisJsonFile())
+	}
+	if nodeConfig.Init.GenesisJsonFile != "" {
+		Fail(t, "expected genesis-json-file to stay untouched by directory discovery, got", nodeConfig.Init.GenesisJsonFile)
 	}
 	if nodeConfig.Init.Empty {
-		Fail(t, "expected genesis file from directory to disable empty init")
+		Fail(t, "expected genesis file from directory to suppress the empty init default")
+	}
+}
+
+func TestExplicitEmptyInitConflictsWithDirectoryDiscovery(t *testing.T) {
+	chainId := uint64(42170)
+	tempDir := t.TempDir()
+	Require(t, os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("%d.json", chainId)), []byte("{}"), 0600))
+
+	args := strings.Split(fmt.Sprintf("--persistent.chain /tmp/data --chain.id %d --init.empty --init.genesis-json-file-directory %s", chainId, tempDir), " ")
+	_, _, err := ParseNode(context.Background(), args)
+	if err == nil {
+		Fail(t, "expected error when explicit init.empty is combined with a discovered genesis file")
+	}
+	if !strings.Contains(err.Error(), "cannot be both empty") {
+		Fail(t, "expected empty init conflict error, got:", err.Error())
 	}
 }
 
@@ -288,8 +306,11 @@ func TestGenesisModeDirectoryForcesLookup(t *testing.T) {
 	args := strings.Split(fmt.Sprintf("--persistent.chain /tmp/data --chain.id 42170 --init.genesis-mode directory --init.genesis-json-file /nonexistent.json --init.genesis-json-file-directory %s", tempDir), " ")
 	nodeConfig, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
-	if nodeConfig.Init.GenesisJsonFile != genesisFile {
-		Fail(t, "expected genesis-mode directory to override genesis-json-file, got", nodeConfig.Init.GenesisJsonFile)
+	if nodeConfig.Init.ResolvedGenesisJsonFile() != genesisFile {
+		Fail(t, "expected genesis-mode directory to resolve the directory file, got", nodeConfig.Init.ResolvedGenesisJsonFile())
+	}
+	if nodeConfig.Init.GenesisJsonFile != "/nonexistent.json" {
+		Fail(t, "expected the ignored genesis-json-file to stay untouched, got", nodeConfig.Init.GenesisJsonFile)
 	}
 }
 
