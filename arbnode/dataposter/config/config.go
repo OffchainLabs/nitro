@@ -176,7 +176,7 @@ func addExternalSignerOptions(prefix string, f *pflag.FlagSet) {
 
 var DefaultDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:       []time.Duration{5 * time.Minute, 10 * time.Minute, 20 * time.Minute, 30 * time.Minute, time.Hour, 2 * time.Hour, 4 * time.Hour, 6 * time.Hour, 8 * time.Hour, 12 * time.Hour, 16 * time.Hour, 18 * time.Hour, 20 * time.Hour, 22 * time.Hour},
-	BlobTxReplacementTimes: []time.Duration{5 * time.Minute, 10 * time.Minute, 30 * time.Minute, time.Hour, 4 * time.Hour, 8 * time.Hour, 16 * time.Hour, 22 * time.Hour},
+	BlobTxReplacementTimes: []time.Duration{2 * time.Minute, 4 * time.Minute, 6 * time.Minute, 8 * time.Minute, 10 * time.Minute, 12 * time.Minute, 16 * time.Minute, 22 * time.Minute, 30 * time.Minute, time.Hour, 2 * time.Hour, 4 * time.Hour, 8 * time.Hour, 16 * time.Hour},
 	WaitForL1Finality:      true,
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
@@ -184,7 +184,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MaxMempoolWeight:       18,
 	MaxQueuedTransactions:  0,
 	MinTipCapGwei:          0.05,
-	MinBlobTxTipCapGwei:    1, // default geth minimum, and relays aren't likely to accept lower values given propagation time
+	MinBlobTxTipCapGwei:    0.01,
 	MaxTipCapGwei:          1.2,
 	MaxBlobTxTipCapGwei:    1, // lower than normal because 4844 rbf is a minimum of a 2x
 	MaxFeeBidMultipleBips:  arbmath.OneInUBips * 10,
