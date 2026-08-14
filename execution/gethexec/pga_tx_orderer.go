@@ -74,7 +74,7 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 }
 
 func (p *pgaTxOrderer) StartBlock(statedb *state.StateDB) (hasWork bool) {
-	p.schedule = pga.NewSchedule(p.roundsPerBlock, p.roundLength)
+	p.schedule = pga.NewSchedule(uint64(p.roundsPerBlock), p.roundLength)
 	p.mempool = pga.NewMempool[txQueueItem](p.roundsPerBlock, p.baseFee)
 
 	p.mempool.PushBatch(p.seq.drainValidatedTxs(statedb, p.baseFee))
