@@ -59,12 +59,12 @@ func (c *Client) StopAndWait() {
 }
 
 func (c *Client) waitForCaughtUp(ctx context.Context) {
-	defer close(c.caughtUpChan)
 	for {
 		caughtUp, err := call[bool](c, ctx, "_caughtUp")
 		if err != nil {
 			log.Error("meldataprovider_caughtUp failed", "err", err)
 		} else if caughtUp {
+			close(c.caughtUpChan)
 			return
 		}
 		select {
@@ -196,10 +196,10 @@ func (c *Client) GetSyncProgress(ctx context.Context) (mel.MessageSyncProgress, 
 func (c *Client) SupportsPushingFinalityData() bool {
 	// Always true for MEL; best-effort over RPC.
 	res, err := call[bool](c, c.callCtx(), "_supportsPushingFinalityData")
-	if err != nil {
+	if err == nil && !res {
 		return false
 	}
-	return res
+	return true
 }
 
 func (c *Client) GetState(parentChainBlockNumber uint64) (*mel.State, error) {
