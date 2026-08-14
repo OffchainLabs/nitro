@@ -18,6 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/nitroversion"
 	"github.com/offchainlabs/nitro/relay"
 )
 
@@ -34,6 +35,7 @@ func printSampleUsage(progname string) {
 
 func startup() error {
 	ctx := context.Background()
+	nitroVersion := nitroversion.Current()
 
 	relayConfig, err := relay.ParseRelay(ctx, os.Args[1:])
 	if err != nil || len(relayConfig.Node.Feed.Input.URL) == 0 || relayConfig.Node.Feed.Input.URL[0] == "" || relayConfig.Chain.ID == 0 {
@@ -53,8 +55,7 @@ func startup() error {
 	glogger.Verbosity(logLevel)
 	log.SetDefault(log.NewLogger(glogger))
 
-	vcsRevision, _, vcsTime := confighelpers.GetVersion()
-	log.Info("Running Arbitrum nitro relay", "revision", vcsRevision, "vcs.time", vcsTime)
+	log.Info("Running Arbitrum nitro relay", "version", nitroVersion)
 
 	defer log.Info("Cleanly shutting down relay")
 

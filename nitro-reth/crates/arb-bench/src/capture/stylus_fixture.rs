@@ -23,11 +23,10 @@ pub const STYLUS_FIXTURE_ADDRESS: Address =
 
 pub fn stylus_runtime_code_for(module: StylusModule) -> eyre::Result<Vec<u8>> {
     let wasm = wat::parse_bytes(module.wat().as_bytes())?.into_owned();
-    let mut compressed = Vec::new();
-    let mut encoder = brotli::CompressorWriter::new(&mut compressed, 4096, 11, 22);
-    use std::io::Write as _;
-    encoder.write_all(&wasm)?;
-    drop(encoder);
+    // Same C encoder and parameters as real Stylus activation, so the
+    // fixture bytes are faithful to on-chain runtime code.
+    let compressed = nitro_brotli::compress(&wasm, 11, 22, nitro_brotli::Dictionary::Empty)
+        .map_err(|status| eyre::eyre!("brotli compression failed: {status:?}"))?;
     let mut code = Vec::with_capacity(STYLUS_DISCRIMINANT.len() + 1 + compressed.len());
     code.extend_from_slice(&STYLUS_DISCRIMINANT);
     code.push(BROTLI_DICT_TAG);

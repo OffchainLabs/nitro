@@ -134,7 +134,7 @@ func (ds *DataStreamer[Result]) startStream(ctx context.Context, params streamPa
 	return MessageId(result.MessageId), err
 }
 
-func (ds *DataStreamer[Result]) doStream(ctx context.Context, data []byte, messageId MessageId, params streamParams) error {
+func (ds *DataStreamer[Result]) doStream(ctx context.Context, data []byte, messageId MessageId, _params streamParams) error {
 	chunkRoutines := new(errgroup.Group)
 	for i, chunkData := range slices.Collect(slices.Chunk(data, int(ds.chunkSize))) { //nolint:gosec
 		chunkRoutines.Go(func() error {

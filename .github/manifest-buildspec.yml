@@ -7,13 +7,9 @@ env:
 phases:
   pre_build:
     commands:
-      - COMMIT_HASH=$(git rev-parse --short=7 HEAD || echo "latest")
-      - >-
-        VERSION_TAG=$(git tag --points-at HEAD | sed '/-/!s/$/_/' | sort -rV |
-        sed 's/_$//' | head -n 1 | grep ^ || git show -s --pretty=%D | sed 's/, /\n/g' |
-        grep -v '^origin/' |grep -v '^grafted\|HEAD\|master\|main$' || echo "dev")
-      - NITRO_VERSION=${VERSION_TAG}-${COMMIT_HASH}
-      - IMAGE_TAG=${NITRO_VERSION}
+      # Sets NITRO_TAG, NITRO_BRANCH, NITRO_COMMIT, and the Docker-safe
+      # IMAGE_TAG; must select the same image tag as buildspec.yml.
+      - . scripts/ci-version-select.sh
 
       # Log IMAGE_TAG environment variable
       - echo "Using IMAGE_TAG environment variable $IMAGE_TAG"

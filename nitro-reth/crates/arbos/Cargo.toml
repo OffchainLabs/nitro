@@ -21,9 +21,6 @@ revm = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
-[build-dependencies]
-cc = { workspace = true }
-
 [dev-dependencies]
 arb-test-utils = { workspace = true }
 proptest = { workspace = true }
@@ -34,3 +31,9 @@ serde_json = { workspace = true }
 
 [lints]
 workspace = true
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+nitro-brotli = { workspace = true, features = ["cc_brotli"] }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+nitro-brotli = { workspace = true }

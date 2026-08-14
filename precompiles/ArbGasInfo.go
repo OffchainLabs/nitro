@@ -69,7 +69,7 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 func (con ArbGasInfo) _preVersion4_GetPricesInWeiWithAggregator(
 	c ctx,
 	evm mech,
-	aggregator addr,
+	_aggregator addr,
 ) (huge, huge, huge, huge, huge, huge, error) {
 	l1GasPrice, err := c.State.L1PricingState().PricePerUnit()
 	if err != nil {
@@ -130,7 +130,7 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 	return gasPerL2Tx, gasForL1Calldata, storageArbGas, nil
 }
 
-func (con ArbGasInfo) _preVersion4_GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregator addr) (huge, huge, huge, error) {
+func (con ArbGasInfo) _preVersion4_GetPricesInArbGasWithAggregator(c ctx, evm mech, _aggregator addr) (huge, huge, huge, error) {
 	l1GasPrice, err := c.State.L1PricingState().PricePerUnit()
 	if err != nil {
 		return nil, nil, nil, err

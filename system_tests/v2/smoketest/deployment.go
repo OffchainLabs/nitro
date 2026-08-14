@@ -57,7 +57,7 @@ func deployContract(env *systest.Env, size int, expectedErr error) {
 	receipt := env.L2.EnsureTxSucceeded(tx)
 
 	deployedCode := env.L2.CodeAt(receipt.ContractAddress, receipt.BlockNumber)
-	env.Zero(bytes.Compare(contractCode, deployedCode), "deployed code mismatch: want len %d, got len %d", len(contractCode), len(deployedCode))
+	env.True(bytes.Equal(contractCode, deployedCode), "deployed code mismatch: want len %d, got len %d", len(contractCode), len(deployedCode))
 
 	callResult := env.L2.CallContract(ethereum.CallMsg{To: &receipt.ContractAddress}, nil)
 	env.Empty(callResult, "somehow got a non-empty result from contract")

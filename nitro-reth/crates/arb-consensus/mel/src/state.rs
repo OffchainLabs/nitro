@@ -29,7 +29,7 @@ pub fn accumulate_delayed_message(
 // recording required for MEL validation-mode replay.
 pub fn accumulate_message(state: &mut MelState, message: &MessageWithMetadata) -> MelResult<()> {
     state.local_msg_accumulator =
-        chain_accumulator(state.local_msg_accumulator, message.abi_hash());
+        chain_accumulator(state.local_msg_accumulator, message.rlp_hash());
     Ok(())
 }
 
