@@ -271,7 +271,7 @@ func TestCreateBlockRequeuesNeverAttemptedTxs(t *testing.T) {
 	}
 
 	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
-	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}}, configFetcher, big.NewInt(testBaseFee))
+	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}}, DefaultSequencerConfig.MaxBlockSpeed, big.NewInt(testBaseFee))
 
 	sequencedMsg, _ := seq.createBlockWithTxOrderer(context.Background(), orderer)
 
@@ -308,7 +308,7 @@ func TestCreateBlockPanicFailsTxsInsteadOfRequeueing(t *testing.T) {
 	}
 
 	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
-	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}}, nil, big.NewInt(testBaseFee))
+	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}}, DefaultSequencerConfig.MaxBlockSpeed, big.NewInt(testBaseFee))
 
 	sequencedMsg, throttle := seq.createBlockWithTxOrderer(context.Background(), panicAfterArmOrderer{orderer})
 

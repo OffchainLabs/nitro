@@ -1198,7 +1198,7 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 		return nil, config.MaxBlockSpeed
 	}
 
-	var orderer txOrderer = newFIFOTxOrderer(s, s.config, baseFee)
+	var orderer txOrderer = newFIFOTxOrderer(s, config.MaxBlockSpeed, baseFee)
 	if collectTips && !config.ExperimentalPGA.DangerousForceFIFO {
 		orderer = NewPGATxOrderer(ctx, s, s.config, baseFee)
 	}
