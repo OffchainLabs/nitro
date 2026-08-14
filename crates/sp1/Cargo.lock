@@ -3880,9 +3880,12 @@ name = "replay-builder"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "clap 4.5.53",
+ "clap",
+ "serde_json",
  "sp1-build",
  "sp1-sdk",
+ "wasm-encoder 0.245.1",
+ "wasmparser 0.245.1",
 ]
 
 [[package]]
@@ -3897,7 +3900,7 @@ name = "replay-runner"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "clap 4.5.53",
+ "clap",
  "sp1-core-executor",
 ]
 
