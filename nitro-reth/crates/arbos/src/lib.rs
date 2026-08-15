@@ -6,11 +6,11 @@
 pub mod address_set;
 pub mod address_table;
 pub mod arbos_state;
-pub mod block_bookkeeping;
 pub mod block_metadata;
 pub mod block_processor;
 pub mod blockhash;
 pub mod burn;
+pub mod compute_budget;
 pub mod engine;
 pub mod features;
 pub mod filtered_transactions;
