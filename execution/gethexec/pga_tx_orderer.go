@@ -40,6 +40,10 @@ func NewPGATxOrderer(ctx context.Context, seq txOrdererSequencer, roundsPerBlock
 	}
 }
 
+func (p *pgaTxOrderer) CurrentRound() uint64 {
+	return p.schedule.Round()
+}
+
 func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize int) (txQueueItem, bool) {
 	for {
 		if p.mempool.PriorityQueueLen() == 0 || p.schedule.RoundIsOver() {
@@ -66,8 +70,6 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 			p.mempool.Push(item)
 			return txQueueItem{}, false
 		}
-
-		item.SetPGARound(p.schedule.Round())
 
 		return item, true
 	}

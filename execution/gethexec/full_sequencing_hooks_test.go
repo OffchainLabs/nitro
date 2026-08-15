@@ -8,6 +8,8 @@ import (
 	"math"
 	"math/big"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
 
@@ -25,16 +27,60 @@ func (r *recordingBroadcaster) BroadcastTransaction(msg *transactionfeed.Transac
 
 // TestFullSequencingHooksTxAcceptedReportsPGARound covers the feed's round attribution
 func TestFullSequencingHooksTxAcceptedReportsPGARound(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		items := []txQueueItem{
+			makePGAQueueItem(t, 0, 100),
+			makePGAQueueItem(t, 1, 0),
+		}
+		orderer := newTestPGATxOrderer(&stubOrdererSequencer{items: items})
+		if !orderer.StartBlock(nil) {
+			t.Fatal("StartBlock = false, want true")
+		}
+		feed := &recordingBroadcaster{}
+		hooks := MakeSequencingHooks(orderer, math.MaxInt, nil, feed)
+
+		header := &types.Header{Number: big.NewInt(testBlockNumber), BaseFee: big.NewInt(testBaseFee)}
+		receipt := &types.Receipt{Status: types.ReceiptStatusSuccessful, EffectiveGasPrice: big.NewInt(testBaseFee)}
+
+		pull := func() *types.Transaction {
+			t.Helper()
+			tx, _, err := hooks.NextTxToSequence(nil)
+			if err != nil || tx == nil {
+				t.Fatalf("NextTxToSequence = (%v, %v), want a tx", tx, err)
+			}
+			return tx
+		}
+
+		tx := pull()
+		hooks.TxSucceeded()
+		hooks.TxAccepted(header, tx, receipt)
+
+		// Round 1 expires: the leftover is pulled and accepted in round 2.
+		time.Sleep(testPGARoundLength + time.Millisecond)
+		tx = pull()
+		hooks.TxSucceeded()
+		hooks.TxAccepted(header, tx, receipt)
+
+		if len(feed.msgs) != 2 {
+			t.Fatalf("broadcast %d messages, want 2", len(feed.msgs))
+		}
+		if got := feed.msgs[0].PGARound; got != 1 {
+			t.Errorf("round-1 tx pga_round = %d, want 1", got)
+		}
+		if got := feed.msgs[1].PGARound; got != 2 {
+			t.Errorf("round-2 tx pga_round = %d, want 2", got)
+		}
+	})
+}
+
+// A non-PGA fetcher has no rounds: the feed message carries pga_round 0.
+func TestFullSequencingHooksTxAcceptedNonPGARoundIsZero(t *testing.T) {
 	item, _ := makeTestQueueItem(t, 0, testBaseFee)
-	item.SetPGARound(2)
 	feed := &recordingBroadcaster{}
 	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item}}, math.MaxInt, nil, feed)
 
 	header := &types.Header{Number: big.NewInt(testBlockNumber), BaseFee: big.NewInt(testBaseFee)}
 	receipt := &types.Receipt{Status: types.ReceiptStatusSuccessful, EffectiveGasPrice: big.NewInt(testBaseFee)}
-
-	internalTx := types.NewTx(&types.ArbitrumInternalTx{ChainId: big.NewInt(1)})
-	hooks.TxAccepted(header, internalTx, receipt)
 
 	tx, _, err := hooks.NextTxToSequence(nil)
 	if err != nil || tx == nil {
@@ -43,14 +89,11 @@ func TestFullSequencingHooksTxAcceptedReportsPGARound(t *testing.T) {
 	hooks.TxSucceeded()
 	hooks.TxAccepted(header, tx, receipt)
 
-	if len(feed.msgs) != 2 {
-		t.Fatalf("broadcast %d messages, want 2", len(feed.msgs))
+	if len(feed.msgs) != 1 {
+		t.Fatalf("broadcast %d messages, want 1", len(feed.msgs))
 	}
 	if got := feed.msgs[0].PGARound; got != 0 {
-		t.Errorf("internal tx pga_round = %d, want 0", got)
-	}
-	if got := feed.msgs[1].PGARound; got != 2 {
-		t.Errorf("user tx pga_round = %d, want 2", got)
+		t.Errorf("pga_round = %d, want 0", got)
 	}
 }
 
