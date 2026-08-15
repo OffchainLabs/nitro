@@ -53,13 +53,22 @@ impl ComputeBudget {
         compute_gas > self.gas_left
     }
 
-    /// Charges compute gas against the budget and counts the transaction. Callers derive the
-    /// amount via [`adjust_for_scheduled_retries`] and [`compute_used`].
-    pub fn charge(&mut self, compute_used: u64, is_user_tx: bool) {
+    /// Charges a committed transaction and counts it; returns the compute gas charged.
+    pub fn charge(
+        &mut self,
+        arbos_version: u64,
+        gas_used: u64,
+        data_gas: u64,
+        scheduled_retry_gas: &[u64],
+        is_user_tx: bool,
+    ) -> u64 {
+        let adjusted = adjust_for_scheduled_retries(arbos_version, gas_used, scheduled_retry_gas);
+        let compute_used = compute_used(adjusted, data_gas);
         self.gas_left = self.gas_left.saturating_sub(compute_used);
         if is_user_tx {
             self.user_txs_processed += 1;
         }
+        compute_used
     }
 
     /// Charges a failed transaction ([`TX_GAS`]) and counts it.
@@ -73,7 +82,7 @@ impl ComputeBudget {
 
 /// From ArbOS >= FixRedeemGas, gas reserved by scheduled retry txs is subtracted from a tx's gas
 /// used — it is charged when the retry itself executes.
-pub fn adjust_for_scheduled_retries(
+fn adjust_for_scheduled_retries(
     arbos_version: u64,
     gas_used: u64,
     scheduled_retry_gas: &[u64],
@@ -87,6 +96,6 @@ pub fn adjust_for_scheduled_retries(
 }
 
 /// The compute portion of a tx's gas: `gas_used - data_gas`, floored at [`TX_GAS`].
-pub fn compute_used(gas_used: u64, data_gas: u64) -> u64 {
+fn compute_used(gas_used: u64, data_gas: u64) -> u64 {
     gas_used.saturating_sub(data_gas).max(TX_GAS)
 }
