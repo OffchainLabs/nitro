@@ -119,31 +119,34 @@ mod tests {
     }
 
     #[test]
-    fn compute_gas_rejection_pre_arbos_50() {
-        let mut budget = ComputeBudget::new(100_000);
-        // Consume the first-tx bypass.
-        budget.charge(ARBOS_VERSION_50 - 1, 50_000, 0, &[], true);
-
-        // Oversized tx: compute gas (1M) exceeds what's left.
-        assert!(budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 1_000_000, 0));
-        // Same tx passes on ArbOS >= 50 (per-tx clamping handles it instead).
-        assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50, 1_000_000, 0));
-        // Fitting tx passes.
-        assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 10_000, 0));
-    }
-
-    #[test]
     fn first_user_tx_bypasses_compute_gas_rejection() {
-        let budget = ComputeBudget::new(TX_GAS);
+        let budget = ComputeBudget::new(1_000);
         for v in [ARBOS_VERSION_50 - 1, ARBOS_VERSION_50, ARBOS_VERSION_50 + 1] {
             assert!(!budget.rejects_compute_gas(v, 1_000_000, 0));
         }
     }
 
     #[test]
-    fn compute_gas_rejection_subtracts_poster_gas_and_floors_at_tx_gas() {
+    fn user_tx_can_bypass_compute_gas_rejection_based_on_arbos_version() {
+        let mut budget = ComputeBudget::new(100_000);
+        // Consume the first-tx (to avoid unconditional bypass). Version doesn't matter.
+        budget.charge(0, 50_000, 0, &[], true);
+
+        // Arbos >= 50
+        assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50, 1_000_000, 0));
+        assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50 + 1, 1_000_000, 0));
+
+        // Arbos < 50
+        // Oversized tx: compute gas (1M) exceeds what's left.
+        assert!(budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 1_000_000, 0));
+        // Fitting tx passes.
+        assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 10_000, 0));
+    }
+
+    #[test]
+    fn compute_gas_rejection_subtracts_poster_gas_and_floors_at_tx_gas_pre_arbos_50() {
         let mut budget = ComputeBudget::new(1_000_000);
-        budget.charge(ARBOS_VERSION_50 - 1, 50_000, 0, &[], true);
+        budget.charge(0, 50_000, 0, &[], true);
 
         // Poster gas eats most of the limit: compute = max(1M - 990k, TX_GAS) = TX_GAS.
         assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 1_000_000, 990_000));
