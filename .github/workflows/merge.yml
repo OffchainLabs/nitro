@@ -23,6 +23,13 @@ jobs:
     uses: ./.github/workflows/_rust-tests.yml
     secrets: inherit
 
+  # --- Check Cargo.lock files are in sync ---
+  cargo-lock-check:
+    needs: changes
+    if: needs.changes.outputs.rust_changed == 'true' || needs.changes.outputs.nitro_reth_changed == 'true'
+    uses: ./.github/workflows/_cargo-lock-check.yml
+    secrets: inherit
+
   # --- Run Bold Legacy challenge tests ---
   bold-legacy:
     needs: changes
