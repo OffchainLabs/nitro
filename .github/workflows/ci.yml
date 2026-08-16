@@ -121,7 +121,7 @@ jobs:
     runs-on: ubuntu-4
     timeout-minutes: 5
     if: always()
-    needs: [changes, fast, changelog]
+    needs: [changes, fast, changelog, cargo-lock-check]
     steps:
       - name: Verify required jobs passed
         run: |
@@ -131,6 +131,8 @@ jobs:
             exit 1
           fi
           [[ "${{ needs.fast.result }}" =~ ^(success|skipped)$ ]] || exit 1
+          # Skipped when no Rust manifest changed, which is a pass.
+          [[ "${{ needs['cargo-lock-check'].result }}" =~ ^(success|skipped)$ ]] || exit 1
 
   can_see_status:
     # Depends on nothing, so it always runs and always reports a status on the
