@@ -1,8 +1,9 @@
 //! Per-block ledger of expected balance changes, mirroring the `expectedBalanceDelta` accounting
 //! of Go's `blockBuildState` (`arbos/block_processor.go`).
 
-use alloy_primitives::{U256, U512, aliases::I512};
 use std::cmp::Ordering;
+
+use alloy_primitives::{U256, U512, aliases::I512};
 
 /// Mismatch between the balance delta observed in state and the delta implied by the block's
 /// deposits and withdrawals.
