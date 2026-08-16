@@ -1,0 +1,32 @@
+---
+name: cargo-lock-check
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  cargo-lock:
+    name: Check Cargo.lock files are up to date
+    runs-on: ubuntu-4
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
+
+      - name: Install rust
+        uses: ./.github/actions/install-rust
+
+      - name: Check Cargo.lock files
+        run: ./scripts/check-cargo-locks.sh
