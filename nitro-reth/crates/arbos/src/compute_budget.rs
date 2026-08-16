@@ -64,10 +64,12 @@ impl ComputeBudget {
     ) -> u64 {
         let adjusted = adjust_for_scheduled_retries(arbos_version, gas_used, scheduled_retry_gas);
         let compute_used = compute_used(adjusted, data_gas);
+
         self.gas_left = self.gas_left.saturating_sub(compute_used);
         if is_user_tx {
             self.user_txs_processed += 1;
         }
+
         compute_used
     }
 
@@ -157,29 +159,28 @@ mod tests {
     #[test]
     fn charge_deducts_compute_portion_and_counts_user_txs() {
         let mut budget = ComputeBudget::new(1_000_000);
-        let charged = budget.charge(ARBOS_VERSION_50, 100_000, 30_000, &[], true);
+        let charged = budget.charge(0, 100_000, 30_000, &[], true);
         assert_eq!(charged, 70_000);
         assert_eq!(budget.gas_left(), 930_000);
         assert_eq!(budget.user_txs_processed(), 1);
 
         // Non-user txs are charged but not counted.
-        budget.charge(ARBOS_VERSION_50, 100_000, 30_000, &[], false);
+        budget.charge(0, 100_000, 30_000, &[], false);
+        assert_eq!(budget.gas_left(), 860_000);
         assert_eq!(budget.user_txs_processed(), 1);
     }
 
     #[test]
     fn charge_floors_at_tx_gas() {
         let mut budget = ComputeBudget::new(1_000_000);
-        // Compute portion below TX_GAS floors at TX_GAS.
-        assert_eq!(
-            budget.charge(ARBOS_VERSION_50, 25_000, 10_000, &[], true),
-            TX_GAS
-        );
-        // Gas used below data gas also charges TX_GAS.
-        assert_eq!(
-            budget.charge(ARBOS_VERSION_50, 10_000, 50_000, &[], true),
-            TX_GAS
-        );
+
+        for (gas_used, data_gas, user_tx) in [
+            (25_000, 10_000, true),
+            (25_000, 10_000, false),
+            (25_000, 30_000, true),
+        ] {
+            assert_eq!(budget.charge(0, gas_used, data_gas, &[], user_tx), TX_GAS);
+        }
     }
 
     #[test]
@@ -217,14 +218,13 @@ mod tests {
     #[test]
     fn charge_saturates_at_zero() {
         let mut budget = ComputeBudget::new(30_000);
-        budget.charge(ARBOS_VERSION_50, 100_000, 0, &[], true);
+        budget.charge(0, 100_000, 0, &[], true);
         assert_eq!(budget.gas_left(), 0);
         assert!(budget.exhausted_for_user_tx());
     }
 
     #[test]
     fn failed_tx_charges_tx_gas_and_counts_user_txs() {
-        // Ported from the deleted block_processor tests.
         let mut budget = ComputeBudget::new(100_000);
         budget.charge_failed_tx(true);
         assert_eq!(budget.gas_left(), 100_000 - TX_GAS);
