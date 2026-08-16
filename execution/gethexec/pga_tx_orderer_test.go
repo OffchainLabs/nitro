@@ -226,9 +226,9 @@ func TestPGATxOrdererRoundExpiryAdvancesAndBoosts(t *testing.T) {
 	})
 }
 
-// Yielded items are stamped with the round they were popped in; a revived tx joining mid-round
-// gets the active round, not a stale stamp.
-func TestPGATxOrdererStampsRoundOnYield(t *testing.T) {
+// CurrentRound tracks the round yields come from: it starts at 1, advances at round boundaries,
+// and a tx revived mid-round is yielded without moving it.
+func TestPGATxOrdererCurrentRoundTracksYields(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		items := []txQueueItem{
 			makePGAQueueItem(t, 0, 100),
@@ -239,24 +239,22 @@ func TestPGATxOrdererStampsRoundOnYield(t *testing.T) {
 		if !o.StartBlock(nil) {
 			t.Fatal("StartBlock = false, want true")
 		}
-		item, ok := o.NextQueueItem(nil, math.MaxInt, math.MaxUint64)
-		if !ok || item.GetPGARound() != 1 {
-			t.Fatalf("round-1 yield = (round %d, %v), want round 1", item.GetPGARound(), ok)
+		item, ok := o.NextQueueItem(nil, math.MaxInt, math.MaxInt)
+		if !ok || o.CurrentRound() != 1 {
+			t.Fatalf("round-1 yield = (round %d, %v), want round 1", o.CurrentRound(), ok)
 		}
 		o.OnTxInclusion(item)
 
-		// Round 1 expires: the leftover is yielded in round 2 and stamped accordingly.
+		// Round 1 expires: the leftover is yielded in round 2.
 		time.Sleep(testPGARoundLength + time.Millisecond)
-		item, ok = o.NextQueueItem(nil, math.MaxInt, math.MaxUint64)
-		if !ok || item.GetPGARound() != 2 {
-			t.Fatalf("round-2 yield = (round %d, %v), want round 2", item.GetPGARound(), ok)
+		if _, ok := o.NextQueueItem(nil, math.MaxInt, math.MaxInt); !ok || o.CurrentRound() != 2 {
+			t.Fatalf("round-2 yield = (round %d, %v), want round 2", o.CurrentRound(), ok)
 		}
 
-		// A tx revived mid-round is stamped with the active round.
+		// A tx revived mid-round is yielded in the active round.
 		o.OnNonceGapResolved(makePGAQueueItem(t, 2, 10))
-		item, ok = o.NextQueueItem(nil, math.MaxInt, math.MaxUint64)
-		if !ok || item.GetPGARound() != 2 {
-			t.Fatalf("revived yield = (round %d, %v), want round 2", item.GetPGARound(), ok)
+		if _, ok := o.NextQueueItem(nil, math.MaxInt, math.MaxInt); !ok || o.CurrentRound() != 2 {
+			t.Fatalf("revived yield = (round %d, %v), want round 2", o.CurrentRound(), ok)
 		}
 	})
 }

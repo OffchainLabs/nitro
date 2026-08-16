@@ -143,11 +143,12 @@ func (s *FullSequencingHooks) TxAccepted(header *types.Header, tx *types.Transac
 	if s.transactionFeedServer == nil {
 		return
 	}
-	// The internal startBlock tx is accepted before any queue item is pulled; it carries no PGA round.
+
 	var pgaRound uint64
-	if n := len(s.sequencedTxs); n > 0 {
-		pgaRound = s.sequencedTxs[n-1].queueItem.GetPGARound()
+	if pgaOrderer, ok := s.fetcher.(*pgaTxOrderer); ok {
+		pgaRound = pgaOrderer.CurrentRound()
 	}
+
 	msg, err := transactionfeed.BuildFeedMessage(header, tx, receipt, pgaRound)
 	if err != nil {
 		log.Error("Transaction feed: failed to build message", "block", header.Number, "err", err)

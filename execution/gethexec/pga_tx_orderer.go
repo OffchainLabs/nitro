@@ -41,6 +41,10 @@ func NewPGATxOrderer(ctx context.Context, seq txOrdererSequencer, roundsPerBlock
 	}
 }
 
+func (p *pgaTxOrderer) CurrentRound() uint64 {
+	return p.schedule.Round()
+}
+
 func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, bool) {
 	if blockGasLeft < params.TxGas {
 		p.stats.blockGasLimitReached = true
@@ -75,8 +79,6 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 			p.mempool.ApplyRoundBoost()
 			return txQueueItem{}, false
 		}
-
-		item.SetPGARound(p.schedule.Round())
 
 		return item, true
 	}
