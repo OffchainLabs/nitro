@@ -135,8 +135,9 @@ mod tests {
     #[test]
     fn first_user_tx_bypasses_compute_gas_rejection() {
         let budget = ComputeBudget::new(TX_GAS);
-        // Would exceed the budget, but no user tx was processed yet.
-        assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 1_000_000, 0));
+        for v in [ARBOS_VERSION_50 - 1, ARBOS_VERSION_50, ARBOS_VERSION_50 + 1] {
+            assert!(!budget.rejects_compute_gas(v, 1_000_000, 0));
+        }
     }
 
     #[test]
