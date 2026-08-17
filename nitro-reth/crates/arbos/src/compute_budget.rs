@@ -103,6 +103,12 @@ fn adjust_for_scheduled_retries(
 
 /// The compute portion of a tx's gas: `gas_used - poster_gas`, floored at [`TX_GAS`].
 fn compute_used(gas_used: u64, poster_gas: u64) -> u64 {
+    if gas_used < poster_gas {
+        tracing::error!(
+            delta = poster_gas - gas_used,
+            "tx used less gas than its poster component"
+        );
+    }
     gas_used.saturating_sub(poster_gas).max(TX_GAS)
 }
 
