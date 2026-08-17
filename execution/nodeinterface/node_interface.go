@@ -151,7 +151,7 @@ func (n NodeInterface) EstimateRetryableTicket(
 		From:             util.RemapL1Address(sender),
 		L1BaseFee:        l1BaseFee,
 		DepositValue:     deposit,
-		GasFeeCap:        n.sourceMessage.GasPrice,
+		GasFeeCap:        n.sourceMessage.GasPrice.ToBig(),
 		Gas:              n.sourceMessage.GasLimit,
 		RetryTo:          pRetryTo,
 		RetryValue:       l2CallValue,

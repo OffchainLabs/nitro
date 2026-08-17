@@ -296,7 +296,7 @@ func TestTransactionStreamer(t *testing.T) {
 				Fail(t, "missing state block", state.blockNumber)
 			}
 			for acct, balance := range state.balances {
-				state, err := bc.StateAt(block.Root())
+				state, err := bc.StateAt(block.Header())
 				if err != nil {
 					Fail(t, "error getting block state", err)
 				}
