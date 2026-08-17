@@ -54,16 +54,20 @@ impl ComputeBudget {
     }
 
     /// Charges a committed transaction and counts it; returns the compute gas charged.
+    /// `header_arbos_version` is the post-execution header version — it differs from the pre-tx
+    /// state version (used by [`Self::rejects_compute_gas`]) in the block applying an ArbOS
+    /// upgrade.
     pub fn charge(
         &mut self,
-        arbos_version: u64,
+        header_arbos_version: u64,
         gas_used: u64,
-        data_gas: u64,
+        poster_gas: u64,
         scheduled_retry_gas: &[u64],
         is_user_tx: bool,
     ) -> u64 {
-        let adjusted = adjust_for_scheduled_retries(arbos_version, gas_used, scheduled_retry_gas);
-        let compute_used = compute_used(adjusted, data_gas);
+        let adjusted =
+            adjust_for_scheduled_retries(header_arbos_version, gas_used, scheduled_retry_gas);
+        let compute_used = compute_used(adjusted, poster_gas);
 
         self.gas_left = self.gas_left.saturating_sub(compute_used);
         if is_user_tx {
@@ -85,11 +89,11 @@ impl ComputeBudget {
 /// From ArbOS >= FixRedeemGas, gas reserved by scheduled retry txs is subtracted from a tx's gas
 /// used — it is charged when the retry itself executes.
 fn adjust_for_scheduled_retries(
-    arbos_version: u64,
+    header_arbos_version: u64,
     gas_used: u64,
     scheduled_retry_gas: &[u64],
 ) -> u64 {
-    if arbos_version < ARBOS_VERSION_FIX_REDEEM_GAS {
+    if header_arbos_version < ARBOS_VERSION_FIX_REDEEM_GAS {
         return gas_used;
     }
     scheduled_retry_gas
@@ -97,9 +101,9 @@ fn adjust_for_scheduled_retries(
         .fold(gas_used, |gas, retry| gas.saturating_sub(*retry))
 }
 
-/// The compute portion of a tx's gas: `gas_used - data_gas`, floored at [`TX_GAS`].
-fn compute_used(gas_used: u64, data_gas: u64) -> u64 {
-    gas_used.saturating_sub(data_gas).max(TX_GAS)
+/// The compute portion of a tx's gas: `gas_used - poster_gas`, floored at [`TX_GAS`].
+fn compute_used(gas_used: u64, poster_gas: u64) -> u64 {
+    gas_used.saturating_sub(poster_gas).max(TX_GAS)
 }
 
 #[cfg(test)]
@@ -184,12 +188,12 @@ mod tests {
     fn charge_floors_at_tx_gas() {
         let mut budget = ComputeBudget::new(1_000_000);
 
-        for (gas_used, data_gas, user_tx) in [
+        for (gas_used, poster_gas, user_tx) in [
             (25_000, 10_000, true),
             (25_000, 10_000, false),
             (25_000, 30_000, true),
         ] {
-            assert_eq!(budget.charge(0, gas_used, data_gas, &[], user_tx), TX_GAS);
+            assert_eq!(budget.charge(0, gas_used, poster_gas, &[], user_tx), TX_GAS);
         }
     }
 
