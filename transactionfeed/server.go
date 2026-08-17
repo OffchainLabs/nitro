@@ -196,6 +196,7 @@ func (s *Server) run(ctx context.Context) {
 		}
 		s.clientCount.Store(0)
 		clientsCurrentGauge.Update(0)
+		broadcastQueueDepthGauge.Update(0)
 	}()
 
 	for {
@@ -214,7 +215,7 @@ func (s *Server) run(ctx context.Context) {
 			}
 
 		case data := <-s.broadcast:
-			broadcastQueueDepthGauge.Update(int64(len(s.broadcast)))
+			broadcastQueueDepthGauge.Dec(1)
 			for cc := range clients {
 				select {
 				case cc.out <- data:
@@ -254,7 +255,7 @@ func (s *Server) BroadcastTransaction(msg *TransactionFeedMessage) {
 	select {
 	case s.broadcast <- data:
 		broadcastSentCounter.Inc(1)
-		broadcastQueueDepthGauge.Update(int64(len(s.broadcast)))
+		broadcastQueueDepthGauge.Inc(1)
 	default:
 		broadcastDroppedCounter.Inc(1)
 		s.maybeLogBroadcastDrop()

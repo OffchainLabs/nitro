@@ -35,6 +35,7 @@ func TestBroadcastDroppedCounter(t *testing.T) {
 	droppedStart := broadcastDroppedCounter.Snapshot().Count()
 	sentStart := broadcastSentCounter.Snapshot().Count()
 	sizeCountStart := messageSizeBytesHistogram.Snapshot().Count()
+	broadcastQueueDepthGauge.Update(0)
 
 	s.BroadcastTransaction(msg)
 	s.BroadcastTransaction(msg)
@@ -49,8 +50,8 @@ func TestBroadcastDroppedCounter(t *testing.T) {
 	if delta := messageSizeBytesHistogram.Snapshot().Count() - sizeCountStart; delta < 3 {
 		t.Fatalf("expected >= 3 size samples, got delta=%d", delta)
 	}
-	if depth := broadcastQueueDepthGauge.Snapshot().Value(); depth < 1 {
-		t.Fatalf("expected queue depth >= 1, got %d", depth)
+	if depth := broadcastQueueDepthGauge.Snapshot().Value(); depth != 1 {
+		t.Fatalf("expected queue depth 1, got %d", depth)
 	}
 }
 
