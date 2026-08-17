@@ -1,2 +1,2 @@
 ### Fixed
-- Fixed the nightly `execution-spec-tests` CI job failing with `uv: command not found` by adding the uv install dir to PATH in `runExecutionSpecTests.sh`.
+- Fixed the nightly `execution-spec-tests` CI job: add the uv install dir to PATH and wait for the devnode RPC to be ready instead of a fixed sleep in `runExecutionSpecTests.sh`.
