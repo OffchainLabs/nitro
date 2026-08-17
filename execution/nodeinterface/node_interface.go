@@ -440,8 +440,8 @@ func (n NodeInterface) messageArgs(
 	from := msg.From
 	gas := msg.GasLimit
 	nonce := msg.Nonce
-	maxFeePerGas := msg.GasFeeCap
-	maxPriorityFeePerGas := msg.GasTipCap
+	maxFeePerGas := msg.GasFeeCap.ToBig()
+	maxPriorityFeePerGas := msg.GasTipCap.ToBig()
 	chainid := evm.ChainConfig().ChainID
 
 	args := arbitrum.TransactionArgs{
