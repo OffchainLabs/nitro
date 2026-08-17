@@ -206,10 +206,14 @@ RUN ./download-machine.sh consensus-v61 0xc10cd7ec6acaf1c441a3f6bd0900ad20f15855
 # Factored out of node-builder so the stripped variant doesn't depend on it.
 FROM golang:1.25-bookworm AS node-builder-base
 WORKDIR /workspace
-ARG version=""
+ARG tag=""
+ARG branch=""
+ARG commit=""
 ARG datetime=""
 ARG modified=""
-ENV NITRO_VERSION=$version
+ENV NITRO_TAG=$tag
+ENV NITRO_BRANCH=$branch
+ENV NITRO_COMMIT=$commit
 ENV NITRO_DATETIME=$datetime
 ENV NITRO_MODIFIED=$modified
 RUN export DEBIAN_FRONTEND=noninteractive && \

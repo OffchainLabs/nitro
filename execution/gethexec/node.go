@@ -385,17 +385,44 @@ type ExecutionNode struct {
 	TransactionFeedServer    *transactionfeed.Server
 }
 
+type executionNodeOptions struct {
+	l1Client      containers.Option[*ethclient.Client]
+	syncTillBlock uint64
+	parentChain   *parent.ParentChain
+	fatalErrChan  chan error
+}
+
+type ExecutionNodeOption func(*executionNodeOptions)
+
+func WithL1Client(l1Client containers.Option[*ethclient.Client]) ExecutionNodeOption {
+	return func(o *executionNodeOptions) { o.l1Client = l1Client }
+}
+
+func WithSyncTillBlock(syncTillBlock uint64) ExecutionNodeOption {
+	return func(o *executionNodeOptions) { o.syncTillBlock = syncTillBlock }
+}
+
+func WithParentChain(parentChain *parent.ParentChain) ExecutionNodeOption {
+	return func(o *executionNodeOptions) { o.parentChain = parentChain }
+}
+
+func WithFatalErrChan(fatalErrChan chan error) ExecutionNodeOption {
+	return func(o *executionNodeOptions) { o.fatalErrChan = fatalErrChan }
+}
+
 func CreateExecutionNode(
 	ctx context.Context,
 	stack *node.Node,
 	executionDB ethdb.Database,
 	l2BlockChain *core.BlockChain,
-	l1client containers.Option[*ethclient.Client],
 	configFetcher ConfigFetcher,
-	syncTillBlock uint64,
-	seqParentChain *parent.ParentChain,
-	fatalErrChan chan error,
+	opts ...ExecutionNodeOption,
 ) (*ExecutionNode, error) {
+	var options executionNodeOptions
+	for _, opt := range opts {
+		opt(&options)
+	}
+
 	config := configFetcher.Get()
 
 	var err error
@@ -422,7 +449,7 @@ func CreateExecutionNode(
 		filteringReportRPCClient = NewFilteringReportRPCClient(filteringReportConfigFetcher)
 	}
 
-	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, config.TransactionFiltering.DisableDelayedSequencingFilter, addressChecker, filteringReportRPCClient, config.TransactionFiltering.FilteredTxFullRetryInterval)
+	execEngine := NewExecutionEngine(l2BlockChain, options.syncTillBlock, config.ExposeMultiGas, config.TransactionFiltering.DisableDelayedSequencingFilter, addressChecker, filteringReportRPCClient, config.TransactionFiltering.FilteredTxFullRetryInterval)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
@@ -470,8 +497,8 @@ func CreateExecutionNode(
 	var sequencer *Sequencer
 
 	var parentChainReader *headerreader.HeaderReader
-	if l1client.IsSome() {
-		l1clientUnwrapped := l1client.Unwrap()
+	if options.l1Client.IsSome() {
+		l1clientUnwrapped := options.l1Client.Unwrap()
 		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1clientUnwrapped)
 		parentChainReader, err = headerreader.New(ctx, l1clientUnwrapped, func() *headerreader.Config { return &configFetcher.Get().ParentChainReader }, arbSys)
 		if err != nil {
@@ -495,7 +522,7 @@ func CreateExecutionNode(
 			return nil, errors.New("transaction filtering enabled but transaction-filterer-rpc-client.url is not set; set it to \"none\" to run without a transaction-filterer (filtered delayed messages will halt the delayed sequencer)")
 		}
 		sequencer, err = NewSequencer(
-			execEngine, parentChainReader, seqConfigFetcher, seqParentChain, eventFilter, addressFilterService)
+			execEngine, parentChainReader, seqConfigFetcher, options.parentChain, eventFilter, addressFilterService)
 		if err != nil {
 			return nil, err
 		}
@@ -555,7 +582,7 @@ func CreateExecutionNode(
 
 	var transactionFeedServer *transactionfeed.Server
 	if config.TransactionFeed.Enable {
-		transactionFeedServer = transactionfeed.NewServer(config.TransactionFeed, fatalErrChan)
+		transactionFeedServer = transactionfeed.NewServer(config.TransactionFeed, options.fatalErrChan)
 		execEngine.SetTransactionBroadcaster(transactionFeedServer)
 	}
 
@@ -572,7 +599,7 @@ func CreateExecutionNode(
 		configFetcher:            configFetcher,
 		SyncMonitor:              syncMon,
 		ParentChainReader:        parentChainReader,
-		ParentChain:              seqParentChain,
+		ParentChain:              options.parentChain,
 		ClassicOutbox:            classicOutbox,
 		bulkBlockMetadataFetcher: bulkBlockMetadataFetcher,
 		filteringReportRPCClient: filteringReportRPCClient,

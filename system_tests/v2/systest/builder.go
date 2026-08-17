@@ -64,10 +64,10 @@ func newBuilder() *builder {
 func (b *builder) clone() *builder {
 	out := *b
 	if len(b.skipStateSchemes) > 0 {
-		out.skipStateSchemes = append([]StateScheme(nil), b.skipStateSchemes...)
+		out.skipStateSchemes = append([]StateScheme{}, b.skipStateSchemes...)
 	}
 	if len(b.postHooks) > 0 {
-		out.postHooks = append([]Hook(nil), b.postHooks...)
+		out.postHooks = append([]Hook{}, b.postHooks...)
 	}
 	if len(b.nodeOverrides) > 0 {
 		out.nodeOverrides = append([]func(*arbnode.Config){}, b.nodeOverrides...)
@@ -178,7 +178,7 @@ func (b *builder) freeze(nameSuffix string) Spec {
 	}
 	return Spec{
 		Name:           name,
-		Weight:         weightLight,
+		Weight:         specWeight(b.topology),
 		ArbOSVersion:   b.arbOS,
 		StateScheme:    b.stateScheme,
 		DBEngine:       b.dbEngine,

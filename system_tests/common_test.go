@@ -270,7 +270,8 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
 	FilterSetReportingInterval:   time.Minute,
-	ExperimentalPGA:              gethexec.DefaultPGAConfig,
+	// PGA only activates on collect-tips chains (ArbOS >= 60); tests below that run FIFO regardless.
+	ExperimentalPGA: gethexec.DefaultPGAConfig,
 }
 
 func ExecConfigDefaultNonSequencerTest(t *testing.T, stateScheme string) *gethexec.Config {
@@ -651,6 +652,51 @@ func (b *NodeBuilder) waitForMelToReadInitMsg(t *testing.T, tc *TestClient) {
 	}
 }
 
+// waitForNodeToCatchUpWithParentChain blocks until the node has executed every
+// message from the batches already posted to the parent chain. A node built on
+// a parent chain that already holds batches starts behind and catches up in the
+// background, so reading chain state before it settles samples a value that is
+// still moving.
+func (b *NodeBuilder) waitForNodeToCatchUpWithParentChain(t *testing.T) {
+	t.Helper()
+	node := b.L2.ConsensusNode
+	if node == nil || node.InboxTracker == nil || b.L1 == nil || b.addresses == nil {
+		return
+	}
+	// The target has to come from the parent chain; the node's own batch count
+	// only covers what it has read, so it is already reached mid-catch-up.
+	seqInbox, err := bridgegen.NewSequencerInboxCaller(b.addresses.SequencerInbox, b.L1.Client)
+	Require(t, err)
+	posted, err := seqInbox.BatchCount(&bind.CallOpts{Context: b.ctx})
+	Require(t, err)
+	if !posted.IsUint64() || posted.Uint64() == 0 {
+		return
+	}
+	targetBatch := posted.Uint64()
+
+	deadline := time.Now().Add(time.Minute)
+	for {
+		trackedBatches, err := node.InboxTracker.GetBatchCount()
+		Require(t, err)
+		var targetMessage, executedMessage arbutil.MessageIndex
+		if trackedBatches >= targetBatch {
+			targetMessage, err = node.InboxTracker.GetBatchMessageCount(targetBatch - 1)
+			Require(t, err)
+			head, err := b.L2.ExecNode.ExecEngine.HeadMessageIndex()
+			Require(t, err)
+			executedMessage = head + 1
+			if executedMessage >= targetMessage {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("node did not catch up with the parent chain: read %d/%d batches, executed %d/%d messages",
+				trackedBatches, targetBatch, executedMessage, targetMessage)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func (b *NodeBuilder) WithEventFilterRules(rules []eventfilter.EventRule) *NodeBuilder {
 	if b.execConfig == nil {
 		panic("execConfig must be initialised before setting event filter rules")
@@ -913,7 +959,7 @@ func buildOnParentChain(
 
 	execConfigFetcher := NewCommonConfigFetcher(execConfig)
 	fatalErrChan := make(chan error, 10)
-	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, executionDB, blockchain, containers.Some(parentChainTestClient.Client), execConfigFetcher, 0, parentChain, fatalErrChan)
+	execNode, err := gethexec.CreateExecutionNode(ctx, chainTestClient.Stack, executionDB, blockchain, execConfigFetcher, gethexec.WithL1Client(containers.Some(parentChainTestClient.Client)), gethexec.WithParentChain(parentChain), gethexec.WithFatalErrChan(fatalErrChan))
 	Require(t, err)
 	chainTestClient.ExecutionConfigFetcher = execConfigFetcher
 
@@ -1036,11 +1082,10 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		b.waitForMelToReadInitMsg(t, b.L2)
 	}
 
+	b.waitForNodeToCatchUpWithParentChain(t)
+
 	_, hasOwnerAccount := b.L2Info.Accounts["Owner"]
 	if b.takeOwnership && hasOwnerAccount {
-		// Sync the Owner nonce tracker with the actual on-chain state.
-		// This avoids nonce races when BuildL2OnL1 is called multiple times
-		// (e.g., in TestAnyTrustRekeyFlaky where the L2 is rebuilt on the same L1).
 		ownerAddr := b.L2Info.GetAddress("Owner")
 		onChainNonce, err := b.L2.Client.PendingNonceAt(b.ctx, ownerAddr)
 		Require(t, err)
@@ -1051,10 +1096,10 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 
 		// make auth a chain owner
 		arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), b.L2.Client)
-		Require(t, err, "failed to deploy ArbDebug")
+		Require(t, err, "failed to bind ArbDebug precompile")
 
 		tx, err := arbdebug.BecomeChainOwner(&debugAuth)
-		Require(t, err, "failed to deploy ArbDebug")
+		Require(t, err, "failed to send BecomeChainOwner tx")
 
 		_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
 		Require(t, err)
@@ -1125,7 +1170,7 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
 	fatalErrChan := make(chan error, 10)
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, executionDB, blockchain, containers.None[*ethclient.Client](), execConfigFetcher, 0, nil, fatalErrChan)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, executionDB, blockchain, execConfigFetcher, gethexec.WithFatalErrChan(fatalErrChan))
 	Require(t, err)
 	b.L2.ExecutionConfigFetcher = execConfigFetcher
 
@@ -1152,10 +1197,10 @@ func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 
 		// make auth a chain owner
 		arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), b.L2.Client)
-		Require(t, err, "failed to deploy ArbDebug")
+		Require(t, err, "failed to bind ArbDebug precompile")
 
 		tx, err := arbdebug.BecomeChainOwner(&debugAuth)
-		Require(t, err, "failed to deploy ArbDebug")
+		Require(t, err, "failed to send BecomeChainOwner tx")
 
 		_, err = EnsureTxSucceeded(b.ctx, b.L2.Client, tx)
 		Require(t, err)
@@ -1209,7 +1254,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 
 	execConfigFetcher := NewCommonConfigFetcher(b.execConfig)
 	feedErrChan := make(chan error, 10)
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, executionDB, blockchain, containers.None[*ethclient.Client](), execConfigFetcher, 0, b.L2.ExecNode.ParentChain, feedErrChan)
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, executionDB, blockchain, execConfigFetcher, gethexec.WithParentChain(b.L2.ExecNode.ParentChain), gethexec.WithFatalErrChan(feedErrChan))
 	Require(t, err)
 
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
@@ -2527,7 +2572,7 @@ func Create2ndNodeWithConfig(
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
 	execConfigFetcher := NewCommonConfigFetcher(execConfig)
-	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, executionDB, blockchain, containers.Some(parentChainClient), execConfigFetcher, 0, parentChain, feedErrChan)
+	currentExec, err := gethexec.CreateExecutionNode(ctx, chainStack, executionDB, blockchain, execConfigFetcher, gethexec.WithL1Client(containers.Some(parentChainClient)), gethexec.WithParentChain(parentChain), gethexec.WithFatalErrChan(feedErrChan))
 	Require(t, err)
 
 	var currentNode *arbnode.Node

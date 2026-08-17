@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // Schedule tracks which PGA round of the block is active and decides when each execute phase begins.
@@ -38,6 +40,14 @@ func (s *Schedule) IsLastRound() bool {
 
 func (s *Schedule) Deadline() time.Time {
 	return s.deadline
+}
+
+func (s *Schedule) RoundIsOver() bool {
+	return time.Now().After(s.deadline)
+}
+
+func (s *Schedule) ElapsedInterval() time.Duration {
+	return arbmath.SaturatingCast[time.Duration](s.activeRound) * s.roundLength
 }
 
 // ErrNoMoreRounds is returned by WaitAndAdvanceRound when the schedule is already on the last round of the block, so

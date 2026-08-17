@@ -21,7 +21,7 @@ func TestTrieDBCommitRace(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
-	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxBlockSpeed = 5 * time.Millisecond
 	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	builder.execConfig.Caching.Archive = true
 	builder.execConfig.Caching.BlockCount = 127
