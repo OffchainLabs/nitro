@@ -39,9 +39,21 @@ fn main() -> anyhow::Result<()> {
         .with_context(|| format!("read replay.wasm from {}", cli.replay_wasm.display()))?;
 
     write_function_names(&wasm, &cli.output_folder)?;
-    compile_wasmu(wasm, &cli.replay_wasm, &cli.output_folder)?;
-    write_replay_elf(&cli.output_folder)?;
+    compile_wasmu(wasm, &cli.output_folder)?;
+    write_artifact(&cli.output_folder, "replay-program.elf", REPLAY_ELF.as_ref())?;
 
+    Ok(())
+}
+
+/// Writes an artifact to `output_folder/name` and reports the destination.
+fn write_artifact(
+    output_folder: &Path,
+    name: &str,
+    contents: impl AsRef<[u8]>,
+) -> anyhow::Result<()> {
+    let output = output_folder.join(name);
+    fs::write(&output, contents).with_context(|| format!("write {name}"))?;
+    println!("{name} written to {}", output.display());
     Ok(())
 }
 
@@ -50,17 +62,13 @@ fn main() -> anyhow::Result<()> {
 fn write_function_names(wasm: &[u8], output_folder: &Path) -> anyhow::Result<()> {
     let names = extract_function_names(wasm)?;
     let names_json = serde_json::to_string_pretty(&names).context("serialize function names")?;
-
-    let output = output_folder.join("function_names.json");
-    fs::write(&output, &names_json).context("write function_names.json")?;
-    println!("Wasm function names written to {}", output.display());
-    Ok(())
+    write_artifact(output_folder, "function_names.json", &names_json)
 }
 
 /// Compiles replay.wasm for the riscv64 target with wasmer's LLVM backend and
 /// writes the serialized module to `replay.wasmu`; the bootloading step will
 /// consume the returned bytes.
-fn compile_wasmu(wasm: Vec<u8>, replay_wasm: &Path, output_folder: &Path) -> anyhow::Result<Bytes> {
+fn compile_wasmu(wasm: Vec<u8>, output_folder: &Path) -> anyhow::Result<Bytes> {
     let target = Target::new(
         Triple::from_str("riscv64").map_err(|e| anyhow::anyhow!("riscv64 triple: {e}"))?,
         CpuFeature::set(),
@@ -73,16 +81,6 @@ fn compile_wasmu(wasm: Vec<u8>, replay_wasm: &Path, output_folder: &Path) -> any
     let module = Module::new(&store, wasm).context("compile replay.wasm")?;
     let wasmu = module.serialize().context("serialize module")?;
 
-    let output = output_folder.join("replay.wasmu");
-    fs::write(&output, &wasmu).context("write replay.wasmu")?;
-    println!("Compiled {} to {}", replay_wasm.display(), output.display());
+    write_artifact(output_folder, "replay.wasmu", &wasmu)?;
     Ok(wasmu)
-}
-
-/// Materializes the guest ELF so the runner has something to execute.
-fn write_replay_elf(output_folder: &Path) -> anyhow::Result<()> {
-    let output = output_folder.join("replay-program.elf");
-    fs::write(&output, REPLAY_ELF.as_ref()).context("write replay-program.elf")?;
-    println!("Replay program ELF written to {}", output.display());
-    Ok(())
 }
