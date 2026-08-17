@@ -160,14 +160,34 @@ mod tests {
     }
 
     #[test]
-    fn compute_gas_rejection_subtracts_poster_gas_and_floors_at_tx_gas_pre_arbos_50() {
+    fn compute_gas_rejection_subtracts_poster_gas_pre_arbos_50() {
         let mut budget = ComputeBudget::new(1_000_000);
         budget.charge(0, 50_000, 0, &[], true);
 
-        // Poster gas eats most of the limit: compute = max(1M - 990k, TX_GAS) = TX_GAS.
+        // Compute gas = max(1M - 990k, TX_GAS) = TX_GAS fits; without the subtraction the full 1M
+        // limit would be rejected.
         assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 1_000_000, 990_000, true));
-        // Even with poster gas above the limit, the TX_GAS floor applies.
+        // Poster gas above the limit saturates to the TX_GAS floor.
         assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 10_000, 20_000, true));
+    }
+
+    #[test]
+    fn compute_gas_rejection_floor_applies_when_poster_gas_eats_limit() {
+        let mut budget = ComputeBudget::new(31_000);
+        budget.charge(0, 21_000, 0, &[], true);
+
+        // Compute gas = max(25k - 20k, TX_GAS) = TX_GAS > gas left (10k): only the floored value
+        // is rejected.
+        assert!(budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 25_000, 20_000, true));
+    }
+
+    #[test]
+    fn tx_exactly_filling_remaining_gas_is_not_rejected() {
+        let mut budget = ComputeBudget::new(71_000);
+        budget.charge(0, 21_000, 0, &[], true);
+
+        // Compute gas (50k) equals gas left (50k); Go uses strict `>`, so this must be admitted.
+        assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 50_000, 0, true));
     }
 
     #[test]

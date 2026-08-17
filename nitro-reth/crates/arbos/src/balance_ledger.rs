@@ -98,6 +98,8 @@ mod tests {
         let err = ledger.verify(I512::ONE, false).unwrap_err();
         assert_eq!(err.actual, I512::ONE);
         assert_eq!(err.expected, I512::ZERO);
+        // Minted funds are also an error in debug mode.
+        assert!(ledger.verify(I512::ONE, true).is_err());
     }
 
     #[test]
