@@ -26,6 +26,8 @@ sleep 10
 git clone https://github.com/OffchainLabs/execution-specs.git
 cd execution-specs
 curl -LsSf --retry 3 https://astral.sh/uv/install.sh | sh
+# The installer puts uv in ~/.local/bin, which is not on PATH on the CI runners.
+export PATH="$HOME/.local/bin:$PATH"
 uv python install 3.11
 uv python pin 3.11
 uv sync --all-extras
