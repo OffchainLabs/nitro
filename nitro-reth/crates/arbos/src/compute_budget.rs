@@ -45,8 +45,9 @@ impl ComputeBudget {
         arbos_version: u64,
         tx_gas_limit: u64,
         poster_gas: u64,
+        is_user_tx: bool,
     ) -> bool {
-        if arbos_version >= ARBOS_VERSION_50 || self.user_txs_processed == 0 {
+        if arbos_version >= ARBOS_VERSION_50 || !is_user_tx || self.user_txs_processed == 0 {
             return false;
         }
         let compute_gas = tx_gas_limit.saturating_sub(poster_gas).max(TX_GAS);
@@ -124,7 +125,7 @@ mod tests {
     fn first_user_tx_bypasses_compute_gas_rejection() {
         let budget = ComputeBudget::new(1_000);
         for v in [ARBOS_VERSION_50 - 1, ARBOS_VERSION_50, ARBOS_VERSION_50 + 1] {
-            assert!(!budget.rejects_compute_gas(v, 1_000_000, 0));
+            assert!(!budget.rejects_compute_gas(v, 1_000_000, 0, true));
         }
     }
 
@@ -135,14 +136,24 @@ mod tests {
         budget.charge(0, 50_000, 0, &[], true);
 
         // Arbos >= 50
-        assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50, 1_000_000, 0));
-        assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50 + 1, 1_000_000, 0));
+        assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50, 1_000_000, 0, true));
+        assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50 + 1, 1_000_000, 0, true));
 
         // Arbos < 50
         // Oversized tx: compute gas (1M) exceeds what's left.
-        assert!(budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 1_000_000, 0));
+        assert!(budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 1_000_000, 0, true));
         // Fitting tx passes.
-        assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 10_000, 0));
+        assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 10_000, 0, true));
+    }
+
+    #[test]
+    fn non_user_tx_is_never_rejected() {
+        let mut budget = ComputeBudget::new(100_000);
+        budget.charge(0, 50_000, 0, &[], true);
+
+        // Same oversized tx: rejected as a user tx, admitted as a non-user tx.
+        assert!(budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 1_000_000, 0, true));
+        assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 1_000_000, 0, false));
     }
 
     #[test]
@@ -151,9 +162,9 @@ mod tests {
         budget.charge(0, 50_000, 0, &[], true);
 
         // Poster gas eats most of the limit: compute = max(1M - 990k, TX_GAS) = TX_GAS.
-        assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 1_000_000, 990_000));
+        assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 1_000_000, 990_000, true));
         // Even with poster gas above the limit, the TX_GAS floor applies.
-        assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 10_000, 20_000));
+        assert!(!budget.rejects_compute_gas(ARBOS_VERSION_50 - 1, 10_000, 20_000, true));
     }
 
     #[test]
