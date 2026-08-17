@@ -18,9 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # TEMP (NIT-5439): trimmed to execution-spec-tests only to verify the
-        # uv PATH fix via workflow_dispatch. Revert before merge.
-        test-mode: [execution-spec-tests]
+        test-mode: [legacychallenge, long, challenge-A, challenge-B, l3challenge, execution-spec-tests, pebble-a, pebble-b]
     uses: ./.github/workflows/_go-tests.yml
     secrets: inherit
     with:
@@ -37,8 +35,7 @@ jobs:
   # MEL test modes are gated out of default CI; run them nightly so master
   # coverage is preserved without blocking every PR.
   mel-tests-scheduled:
-    # TEMP (NIT-5439): disabled for the verification dispatch. Revert before merge.
-    if: false
+    if: github.event_name != 'schedule' || github.repository == 'OffchainLabs/nitro-private' || github.repository == 'OffchainLabs/nitro'
     uses: ./.github/workflows/_mel-go-test-suite.yml
     secrets: inherit
 
@@ -58,9 +55,7 @@ jobs:
     needs: [tests-scheduled, mel-tests-scheduled]
     runs-on: ubuntu-4
     timeout-minutes: 10
-    # TEMP (NIT-5439): disabled to avoid Slack noise from the verification
-    # dispatch. Revert before merge.
-    if: false
+    if: ${{ failure() }}
     env:
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
