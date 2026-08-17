@@ -56,7 +56,7 @@ type rustSlice = C.RustSlice
 // with cranelift (at the original or doubled stack size, depending on whether
 // this is the first overflow).
 type savedState struct {
-	gas          uint64
+	gas          vm.GasBudget
 	usedMultiGas multigas.MultiGas
 	openPages    uint16
 	everPages    uint16
@@ -556,7 +556,7 @@ func doStylusCall(
 		evmData.encode(),
 		cbool(debug),
 		output,
-		(*u64)(&scope.Contract.Gas),
+		(*u64)(&scope.Contract.Gas.RegularGas),
 		u32(runCtx.WasmCacheTag()),
 	))
 	return status, rustBytesIntoBytes(output)
@@ -630,7 +630,7 @@ func callProgram(
 		log.Warn("program failure", "err", err, "msg", msg, "program", address, "depth", depth)
 	}
 	if tracingInfo != nil {
-		tracingInfo.CaptureStylusExit(uint8(status), data, err, scope.Contract.Gas)
+		tracingInfo.CaptureStylusExit(uint8(status), data, err, scope.Contract.Gas.RegularGas)
 	}
 	return data, err
 }

@@ -58,7 +58,7 @@ func TransferBalance(
 			info := &TracingInfo{
 				Tracer:   evm.Config.Tracer,
 				Scenario: scenario,
-				Contract: vm.NewContract(*toCopy, *fromCopy, uint256.NewInt(0), 0, evm.JumpDests()),
+				Contract: vm.NewContract(*toCopy, *fromCopy, uint256.NewInt(0), vm.NewGasBudget(0), evm.JumpDests()),
 				Depth:    evm.Depth(),
 			}
 			info.MockCall([]byte{}, 0, *fromCopy, *toCopy, amount)
