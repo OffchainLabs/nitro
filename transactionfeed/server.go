@@ -25,7 +25,7 @@ var (
 	clientsCurrentGauge          = metrics.NewRegisteredGauge("arb/transactionfeed/clients/current", nil)
 	clientsConnectedTotalCounter = metrics.NewRegisteredCounter("arb/transactionfeed/clients/connected/total", nil)
 	clientsDisconnectedSlow      = metrics.NewRegisteredCounter("arb/transactionfeed/clients/disconnected/slow", nil)
-	broadcastSentCounter         = metrics.NewRegisteredCounter("arb/transactionfeed/broadcast/sent", nil)
+	broadcastQueuedCounter       = metrics.NewRegisteredCounter("arb/transactionfeed/broadcast/queued", nil)
 	broadcastDroppedCounter      = metrics.NewRegisteredCounter("arb/transactionfeed/broadcast/dropped", nil)
 	broadcastQueueDepthGauge     = metrics.NewRegisteredGauge("arb/transactionfeed/broadcast/queuedepth", nil)
 	messageSizeBytesHistogram    = metrics.NewRegisteredHistogram("arb/transactionfeed/message/sizebytes", nil, metrics.NewBoundedHistogramSample())
@@ -254,7 +254,7 @@ func (s *Server) BroadcastTransaction(msg *TransactionFeedMessage) {
 
 	select {
 	case s.broadcast <- data:
-		broadcastSentCounter.Inc(1)
+		broadcastQueuedCounter.Inc(1)
 		broadcastQueueDepthGauge.Inc(1)
 	default:
 		broadcastDroppedCounter.Inc(1)

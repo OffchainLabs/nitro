@@ -33,7 +33,7 @@ func TestBroadcastDroppedCounter(t *testing.T) {
 
 	msg := &TransactionFeedMessage{Version: TransactionFeedV1}
 	droppedStart := broadcastDroppedCounter.Snapshot().Count()
-	sentStart := broadcastSentCounter.Snapshot().Count()
+	queuedStart := broadcastQueuedCounter.Snapshot().Count()
 	sizeCountStart := messageSizeBytesHistogram.Snapshot().Count()
 	broadcastQueueDepthGauge.Update(0)
 
@@ -44,8 +44,8 @@ func TestBroadcastDroppedCounter(t *testing.T) {
 	if delta := broadcastDroppedCounter.Snapshot().Count() - droppedStart; delta < 2 {
 		t.Fatalf("expected >= 2 drops, got delta=%d", delta)
 	}
-	if delta := broadcastSentCounter.Snapshot().Count() - sentStart; delta < 1 {
-		t.Fatalf("expected >= 1 sent, got delta=%d", delta)
+	if delta := broadcastQueuedCounter.Snapshot().Count() - queuedStart; delta < 1 {
+		t.Fatalf("expected >= 1 queued, got delta=%d", delta)
 	}
 	if delta := messageSizeBytesHistogram.Snapshot().Count() - sizeCountStart; delta < 3 {
 		t.Fatalf("expected >= 3 size samples, got delta=%d", delta)
