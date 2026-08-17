@@ -26,8 +26,7 @@ impl ComputeBudget {
         self.gas_left
     }
 
-    /// User transactions processed so far (internal, deposit, submit-retryable and retry txs are
-    /// not user txs).
+    /// User transactions processed so far.
     pub fn user_txs_processed(&self) -> u64 {
         self.user_txs_processed
     }
