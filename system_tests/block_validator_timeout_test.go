@@ -81,7 +81,8 @@ func createProxyValidationNode(t *testing.T, ctx context.Context, spawner *proxy
 	}
 	// Use mockSpawner for the ExecutionSpawner parameter — it won't be called
 	// during normal block validation (only used for BOLD execution runs).
-	serverAPI := valnode.NewExecutionServerAPI(spawner, &mockSpawner{}, configFetcher)
+	execServer := valnode.NewExecServer(&mockSpawner{}, configFetcher)
+	serverAPI := valnode.NewExecServerAPI(spawner, execServer)
 
 	valAPIs := []rpc.API{{
 		Namespace:     server_api.Namespace,
@@ -95,12 +96,12 @@ func createProxyValidationNode(t *testing.T, ctx context.Context, spawner *proxy
 	err = stack.Start()
 	Require(t, err)
 
-	serverAPI.Start(ctx)
+	execServer.Start(ctx)
 
 	go func() {
 		<-ctx.Done()
 		stack.Close()
-		serverAPI.StopOnly()
+		execServer.StopOnly()
 	}()
 
 	return stack
