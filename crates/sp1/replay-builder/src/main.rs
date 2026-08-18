@@ -14,7 +14,7 @@ use replay_builder::extract_function_names;
 use sp1_sdk::{Elf, include_elf};
 use wasmer::{
     Module, Store,
-    sys::{CpuFeature, EngineBuilder, LLVM, Target, Triple},
+    sys::{CompilerConfig, CpuFeature, EngineBuilder, LLVM, Target, Triple},
 };
 
 const REPLAY_ELF: Elf = include_elf!("replay-program");
@@ -78,8 +78,11 @@ fn compile_wasmu(wasm: Vec<u8>) -> anyhow::Result<Bytes> {
         Triple::from_str("riscv64").map_err(|e| anyhow::anyhow!("riscv64 triple: {e}"))?,
         CpuFeature::set(),
     );
+    let mut compiler = LLVM::new();
+    compiler.canonicalize_nans(true);
+    compiler.enable_verifier();
     let store = Store::new(
-        EngineBuilder::new(LLVM::new())
+        EngineBuilder::new(compiler)
             .set_target(Some(target))
             .engine(),
     );
