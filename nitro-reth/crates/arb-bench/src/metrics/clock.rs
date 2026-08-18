@@ -187,12 +187,28 @@ mod tests {
                 .expect("spawn idle child"),
         );
 
-        let busy_sw = Stopwatch::start_with(
-            CpuClock::for_pid(busy.0.id()).expect("cpu clock resolves on linux"),
-        );
-        let idle_sw = Stopwatch::start_with(
-            CpuClock::for_pid(idle.0.id()).expect("cpu clock resolves on linux"),
-        );
+        let busy_clock = CpuClock::for_pid(busy.0.id()).expect("cpu clock resolves on linux");
+        let idle_clock = CpuClock::for_pid(idle.0.id()).expect("cpu clock resolves on linux");
+
+        // A child burns real CPU before it ever sleeps — exec, dynamic linking,
+        // libc init, and the page faults those take — and a stopwatch started at
+        // spawn bills all of it to the window. On a cold runner that startup cost
+        // alone reaches milliseconds, enough to look like a sleeping process
+        // burning CPU. Two identical samples mean the child has stopped running,
+        // so open the window only once it has settled into its sleep.
+        let mut last = idle_clock.now_ns();
+        let settled_by = Instant::now() + Duration::from_secs(5);
+        loop {
+            thread::sleep(Duration::from_millis(20));
+            let now = idle_clock.now_ns();
+            if now == last || Instant::now() >= settled_by {
+                break;
+            }
+            last = now;
+        }
+
+        let busy_sw = Stopwatch::start_with(busy_clock);
+        let idle_sw = Stopwatch::start_with(idle_clock);
 
         // Wait for the busy child to accrue an absolute amount of CPU rather
         // than asserting a share of a fixed window, which a loaded CI machine

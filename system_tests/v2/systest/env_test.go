@@ -221,6 +221,23 @@ func TestEnvWaitTimeoutReportsAndMarksDead(t *testing.T) {
 	}
 }
 
+func TestFollowerHelperOnSingleNodeEnvFails(t *testing.T) {
+	tb := &recordingT{}
+	e := &Env{t: tb}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		e.Follower()
+	}()
+	<-done
+	if tb.errCount() != 1 {
+		t.Fatalf("follower helper on a single-node env must record exactly 1 error, got %d", tb.errCount())
+	}
+	if !strings.Contains(tb.errors[0], "systest.WithMultiNode()") {
+		t.Fatalf("failure must point at WithMultiNode, got %q", tb.errors[0])
+	}
+}
+
 // TestL1HelperOnL2OnlyEnvFails pins the requireL1 guard: L1 helpers on an
 // L2-only scenario fail with a pointer to WithL1.
 func TestL1HelperOnL2OnlyEnvFails(t *testing.T) {

@@ -192,7 +192,7 @@ func NewBidValidator(
 		auctioneerAddr:                 auctioneerAddr,
 		auctionContractAbi:             auctionContractAbi,
 	}
-	api := &BidValidatorAPI{bidValidator}
+	api := &BidValidatorAPI{bidValidator: bidValidator}
 	valAPIs := []rpc.API{{
 		Namespace: AuctioneerNamespace,
 		Version:   "1.0",
@@ -300,10 +300,10 @@ func (bv *BidValidator) Start(ctx_in context.Context) {
 }
 
 type BidValidatorAPI struct {
-	*BidValidator
+	bidValidator *BidValidator
 }
 
-func (bv *BidValidatorAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {
+func (a *BidValidatorAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {
 	start := time.Now()
 	receivedBidsCounter.Inc(1)
 	if bid == nil {
@@ -318,7 +318,7 @@ func (bv *BidValidatorAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {
 	if bid.Signature == nil {
 		return errors.Wrap(ErrMalformedData, "nil signature")
 	}
-	validatedBid, err := bv.validateBid(
+	validatedBid, err := a.bidValidator.validateBid(
 		&Bid{
 			ChainId:                bid.ChainId.ToInt(),
 			ExpressLaneController:  bid.ExpressLaneController,
@@ -327,17 +327,17 @@ func (bv *BidValidatorAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {
 			Amount:                 bid.Amount.ToInt(),
 			Signature:              bid.Signature,
 		},
-		bv.auctionContract.BalanceOf,
+		a.bidValidator.auctionContract.BalanceOf,
 	)
 	if err != nil {
 		return err
 	}
 	validatedBidsCounter.Inc(1)
 	log.Info("Validated bid", "bidder", validatedBid.Bidder.Hex(), "amount", validatedBid.Amount.String(), "round", validatedBid.Round, "elapsed", time.Since(start))
-	_, err = bv.producer.Produce(ctx, validatedBid)
+	_, err = a.bidValidator.producer.Produce(ctx, validatedBid)
 	if err != nil {
 		// Roll back the rate-limit slot so a failed Produce doesn't penalize the bidder.
-		bv.rollbackBidCount(validatedBid.Bidder)
+		a.bidValidator.rollbackBidCount(validatedBid.Bidder)
 		log.Error("Failed to publish validated bid to Redis stream", "bidder", validatedBid.Bidder, "round", validatedBid.Round, "error", err)
 		return fmt.Errorf("bid validated but could not be queued for processing, please retry: %w", err)
 	}
