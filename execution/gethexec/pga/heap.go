@@ -65,6 +65,11 @@ func (h *txHeap[T]) popConcrete() T {
 	return entry
 }
 
+// peekConcrete returns the highest-priority entry without removing it. The caller must ensure the heap is non-empty.
+func (h txHeap[T]) peekConcrete() T {
+	return h[0]
+}
+
 // pushBatch appends entries and re-establishes the heap invariant in a single O(n) pass, cheaper than pushing one at a
 // time when promoting a whole round. It always re-heapifies, so an empty batch still leaves a valid heap.
 func (h *txHeap[T]) pushBatch(entries []T) {
@@ -72,12 +77,11 @@ func (h *txHeap[T]) pushBatch(entries []T) {
 	heap.Init(h)
 }
 
-// addBoost adds delta to every entry's accumulated boost and priority key, applying the anti-starvation boost to the
-// whole queue. Adding the same delta to every key preserves the relative order, so the heap invariant holds without a
-// re-heapify.
-func (h txHeap[T]) addBoost(delta uint64) {
+// applyRoundBoundary marks a round boundary on every entry, adding delta to its accumulated boost and priority key.
+// Adding the same delta to every key preserves the relative order, so the heap invariant holds without a re-heapify.
+func (h txHeap[T]) applyRoundBoundary(delta uint64) {
 	for i := range h {
-		h[i].AddBoost(delta)
+		h[i].ApplyRoundBoundary(delta)
 	}
 }
 

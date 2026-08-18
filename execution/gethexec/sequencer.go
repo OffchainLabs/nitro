@@ -77,6 +77,10 @@ var (
 	txExhaustedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/txexhausted", nil)
 	// forwarder/pause wait + validation before sequencing an express lane submission
 	expressLanePreSequenceWaitHistogram = metrics.NewRegisteredHistogram("arb/sequencer/timeboost/expresslane/presequencewait", nil, metrics.NewBoundedHistogramSample())
+	// number of successful blocks sequenced with FIFO ordering
+	fifoBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/fifo", nil)
+	// number of successful blocks sequenced with PGA ordering
+	pgaBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/pga", nil)
 )
 
 type SequencerConfig struct {
@@ -279,13 +283,13 @@ type txQueueItem struct {
 	blockStamp          uint64 // block number at which timeboosted tx was added to the txQueue
 	// Must be a pointer: queue items get copied around, so mutations would otherwise hit a copy.
 	// Must be non-nil: bare literals nil-panic in GetPriority.
-	*pga.Priority
+	*pga.PGAState
 }
 
 func newBaseTxQueueItem(tx *types.Transaction) txQueueItem {
 	return txQueueItem{
 		tx:             tx,
-		Priority:       &pga.Priority{},
+		PGAState:       &pga.PGAState{},
 		returnedResult: &atomic.Bool{},
 	}
 }
@@ -1420,6 +1424,11 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 	} else {
 		if s.pendingQueueItemsResults.block != nil {
 			successfulBlocksCounter.Inc(1)
+			if s.pendingQueueItemsResults.stats.pgaOrdering {
+				pgaBlocksCounter.Inc(1)
+			} else {
+				fifoBlocksCounter.Inc(1)
+			}
 			s.nonceCache.Finalize(s.pendingQueueItemsResults.block)
 		}
 

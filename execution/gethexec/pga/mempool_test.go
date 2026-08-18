@@ -35,20 +35,22 @@ func (env *pgaMempoolTestEnv) makePgaTestItem(fee priorityFeeFunc) mockTx {
 	id := env.currId
 	env.currId++
 	return mockTx{
-		Priority:        &Priority{},
+		PGAState:        &PGAState{},
 		id:              id,
 		fee:             fee,
+		expired:         new(bool),
 		firstAppearance: defaultArrival,
 	}
 }
 
-// mustPop pops the next valid transaction, failing the test if the mempool has none left.
+// mustPop peeks and removes the next valid transaction, failing the test if the mempool has none left.
 func mustPop(t *testing.T, m *Mempool[mockTx]) mockTx {
 	t.Helper()
-	item, ok := m.Pop()
+	item, ok := m.Peek()
 	if !ok {
-		t.Fatal("Pop returned ok=false, want a transaction")
+		t.Fatal("Peek returned ok=false, want a transaction")
 	}
+	m.PopPeeked()
 	return item
 }
 
@@ -167,10 +169,11 @@ func TestPgaMempoolNextBlockDropsRequeuedFeeCapTooLow(t *testing.T) {
 	// The next block re-keys the requeued txs against base 60: A stays, B drops.
 	next := NewMempool[mockTx](testRoundsPerBlock, big.NewInt(60))
 	for {
-		item, ok := env.mempool.Pop()
+		item, ok := env.mempool.Peek()
 		if !ok {
 			break
 		}
+		env.mempool.PopPeeked()
 		next.Push(item)
 	}
 
@@ -182,14 +185,14 @@ func TestPgaMempoolNextBlockDropsRequeuedFeeCapTooLow(t *testing.T) {
 	}
 }
 
-func TestPgaMempoolPopSkipsMultipleInvalidInOneCall(t *testing.T) {
+func TestPgaMempoolPeekSkipsMultipleInvalidInOneCall(t *testing.T) {
 	env := newPgaMempoolTestEnv(40)
 
-	// Two expired entries outrank the valid one, so a single Pop must skip both.
+	// Two expired entries outrank the valid one, so a single Peek must skip both.
 	expired1 := env.makePgaTestItem(constFee(30))
-	expired1.expired = true
+	*expired1.expired = true
 	expired2 := env.makePgaTestItem(constFee(20))
-	expired2.expired = true
+	*expired2.expired = true
 	good := env.makePgaTestItem(constFee(10))
 	env.mempool.Push(expired1)
 	env.mempool.Push(expired2)
@@ -199,7 +202,7 @@ func TestPgaMempoolPopSkipsMultipleInvalidInOneCall(t *testing.T) {
 		t.Fatalf("len = %d, want 3 (lazy validation queues all three)", env.mempool.PriorityQueueLen())
 	}
 
-	// One Pop walks past both expired entries and returns the valid one.
+	// One Peek walks past both expired entries and returns the valid one.
 	if got := mustPop(t, env.mempool); got.id != good.id {
 		t.Fatalf("pop = %d, want good", got.id)
 	}
@@ -238,26 +241,54 @@ func TestPgaMempoolPushBackKeepsPriority(t *testing.T) {
 	}
 }
 
-func TestPgaMempoolPopReturnsFalseWhenEmpty(t *testing.T) {
+func TestPgaMempoolPeekReturnsFalseWhenEmpty(t *testing.T) {
 	env := newPgaMempoolTestEnv(40)
-	if _, ok := env.mempool.Pop(); ok {
-		t.Fatal("Pop on an empty mempool returned ok=true, want false")
+	if _, ok := env.mempool.Peek(); ok {
+		t.Fatal("Peek on an empty mempool returned ok=true, want false")
 	}
 }
 
-func TestPgaMempoolPopDropsAllInvalidThenReturnsFalse(t *testing.T) {
+func TestPgaMempoolPeekDropsAllInvalidThenReturnsFalse(t *testing.T) {
 	env := newPgaMempoolTestEnv(40)
 
 	bad := env.makePgaTestItem(constFee(5))
-	bad.expired = true
+	*bad.expired = true
 	env.mempool.Push(bad)
 
-	// Lazy validation: the expired tx is queued and only dropped when Pop reaches it.
+	// Lazy validation: the expired tx is queued and only dropped when Peek reaches it.
 	if env.mempool.PriorityQueueLen() != 1 {
 		t.Fatalf("len = %d, want 1", env.mempool.PriorityQueueLen())
 	}
-	if _, ok := env.mempool.Pop(); ok {
-		t.Fatal("Pop returned ok=true, want false (the only tx is invalid)")
+	if _, ok := env.mempool.Peek(); ok {
+		t.Fatal("Peek returned ok=true, want false (the only tx is invalid)")
+	}
+	if env.mempool.PriorityQueueLen() != 0 {
+		t.Fatalf("len = %d after Peek discarded the expired tx, want 0", env.mempool.PriorityQueueLen())
+	}
+}
+
+func TestPgaMempoolPopPeekedRemovesPeekedEvenIfExpired(t *testing.T) {
+	env := newPgaMempoolTestEnv(40)
+
+	itemA := env.makePgaTestItem(constFee(20))
+	itemB := env.makePgaTestItem(constFee(10))
+	env.mempool.Push(itemA)
+	env.mempool.Push(itemB)
+
+	peeked, ok := env.mempool.Peek()
+	if !ok || peeked.id != itemA.id {
+		t.Fatalf("peek = (id %d, ok %v), want A", peeked.id, ok)
+	}
+	// A expires between Peek and PopPeeked, as a queue timeout can. PopPeeked must not revalidate: it removes the
+	// peeked tx, never the next valid one.
+	*peeked.expired = true
+	env.mempool.PopPeeked()
+
+	if got := mustPop(t, env.mempool); got.id != itemB.id {
+		t.Fatalf("survivor = %d, want B", got.id)
+	}
+	if env.mempool.PriorityQueueLen() != 0 {
+		t.Fatalf("len = %d after draining, want 0", env.mempool.PriorityQueueLen())
 	}
 }
 

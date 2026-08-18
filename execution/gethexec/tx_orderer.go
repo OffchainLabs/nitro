@@ -11,8 +11,9 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// ordererStats records the block limits hit while yielding a block's candidates.
+// ordererStats records the ordering policy used and the block limits hit while yielding a block's candidates.
 type ordererStats struct {
+	pgaOrdering           bool
 	blockSizeLimitReached bool
 	blockGasLimitReached  bool
 	exhaustedQueue        bool
