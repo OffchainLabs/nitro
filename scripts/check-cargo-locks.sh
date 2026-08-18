@@ -3,28 +3,35 @@
 
 set -euo pipefail
 
-workspaces=(
-    "."
-    "crates/sp1"
-    "crates/stylus/tests"
-    "crates/tools/module_roots"
-    "crates/tools/stylus_benchmark"
-    "crates/wasm-testsuite"
-    "crates/prover/test-cases/rust"
-    "nitro-reth"
-)
+cd "$(git rev-parse --show-toplevel)"
 
 status=0
-for workspace in "${workspaces[@]}"; do
-    manifest="${workspace}/Cargo.toml"
+checked=0
+
+# git ls-files rather than find: it lists only tracked lockfiles, without submodules
+while IFS= read -r lockfile; do
+    manifest="${lockfile%Cargo.lock}Cargo.toml"
+    if [ ! -f "$manifest" ]; then
+        echo "no manifest for ${lockfile}; either delete the lockfile or add ${manifest}"
+        status=1
+        continue
+    fi
+    checked=$((checked + 1))
     if cargo metadata --locked --format-version 1 --manifest-path "$manifest" >/dev/null; then
-        echo "ok       ${workspace}/Cargo.lock"
+        echo "ok       ${lockfile}"
     else
-        echo "outdated ${workspace}/Cargo.lock"
+        echo "outdated ${lockfile}"
         echo "         regenerate with: cargo metadata --manifest-path ${manifest} >/dev/null"
         status=1
     fi
-done
+done < <(git ls-files '*Cargo.lock')
+
+# Guards against the discovery silently finding nothing, which would otherwise
+# look identical to every lockfile being in sync.
+if [ "$checked" -eq 0 ]; then
+    echo "found no Cargo.lock files to check, which should never happen"
+    exit 1
+fi
 
 if [ "$status" -ne 0 ]; then
     echo
