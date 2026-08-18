@@ -810,44 +810,48 @@ func FinalizeBlock(header *types.Header, statedb vm.StateDB, chainConfig *params
 		panic("cannot finalize blocks before genesis")
 	}
 
-	var sendRoot common.Hash
-	var sendCount uint64
-	var nextL1BlockNumber uint64
-	var arbosVersion uint64
+	var arbitrumHeader *types.HeaderInfo
+	if header.Number.Uint64() == chainConfig.ArbitrumChainParams.GenesisBlockNum {
+		arbitrumHeader = &types.HeaderInfo{
+			ArbOSFormatVersion: chainConfig.ArbitrumChainParams.InitialArbOSVersion,
+		}
+	} else {
+		arbitrumHeader = arbitrumHeaderPostGenesis(statedb, header)
+	}
+
+	arbitrumHeader.UpdateHeaderWithInfo(header)
+	header.Root = statedb.IntermediateRoot(true)
+}
+
+func arbitrumHeaderPostGenesis(statedb vm.StateDB, header *types.Header) *types.HeaderInfo {
 	collectTips := false
 
-	if header.Number.Uint64() == chainConfig.ArbitrumChainParams.GenesisBlockNum {
-		arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
-	} else {
-		state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
-		if err != nil {
-			newErr := fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root)
-			panic(newErr)
-		}
-		collectTips, err = state.CollectTips()
-		if err != nil {
-			newErr := fmt.Errorf("%w while reading collect tips setting. Block: %d root: %v", err, header.Number, header.Root)
-			panic(newErr)
-		}
-		// Delayed-message blocks never collect tips, regardless of the chain-wide setting.
-		// All transactions in a block share the same Coinbase, so this is a block-level property.
-		if collectTips && header.Coinbase != l1pricing.BatchPosterAddress {
-			collectTips = false
-		}
-		// Add outbox info to the header for client-side proving
-		acc := state.SendMerkleAccumulator()
-		sendRoot, _ = acc.Root()
-		sendCount, _ = acc.Size()
-		nextL1BlockNumber, _ = state.Blockhashes().L1BlockNumber()
-		arbosVersion = state.ArbOSVersion()
+	state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	if err != nil {
+		newErr := fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root)
+		panic(newErr)
 	}
-	arbitrumHeader := types.HeaderInfo{
+	collectTips, err = state.CollectTips()
+	if err != nil {
+		newErr := fmt.Errorf("%w while reading collect tips setting. Block: %d root: %v", err, header.Number, header.Root)
+		panic(newErr)
+	}
+	// Delayed-message blocks never collect tips, regardless of the chain-wide setting.
+	// All transactions in a block share the same Coinbase, so this is a block-level property.
+	if collectTips && header.Coinbase != l1pricing.BatchPosterAddress {
+		collectTips = false
+	}
+	// Add outbox info to the header for client-side proving
+	acc := state.SendMerkleAccumulator()
+	sendRoot, _ := acc.Root()
+	sendCount, _ := acc.Size()
+	nextL1BlockNumber, _ := state.Blockhashes().L1BlockNumber()
+
+	return &types.HeaderInfo{
 		SendRoot:           sendRoot,
 		SendCount:          sendCount,
 		L1BlockNumber:      nextL1BlockNumber,
-		ArbOSFormatVersion: arbosVersion,
+		ArbOSFormatVersion: state.ArbOSVersion(),
 		CollectTips:        collectTips,
 	}
-	arbitrumHeader.UpdateHeaderWithInfo(header)
-	header.Root = statedb.IntermediateRoot(true)
 }
