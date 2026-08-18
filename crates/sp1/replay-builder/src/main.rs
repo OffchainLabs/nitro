@@ -37,13 +37,7 @@ fn main() -> anyhow::Result<()> {
     let wasm = fs::read(&cli.replay_wasm)
         .with_context(|| format!("read replay.wasm from {}", cli.replay_wasm.display()))?;
 
-    let names = extract_function_names(&wasm)?;
-    let artifacts = Artifacts {
-        function_names_json: serde_json::to_string_pretty(&names)
-            .context("serialize function names")?,
-        wasmu: compile_wasmu(wasm)?,
-    };
-    artifacts.save(&cli.output_folder)
+    Artifacts::build(wasm)?.save(&cli.output_folder)
 }
 
 struct Artifacts {
@@ -54,6 +48,15 @@ struct Artifacts {
 }
 
 impl Artifacts {
+    fn build(wasm: Vec<u8>) -> anyhow::Result<Self> {
+        let names = extract_function_names(&wasm)?;
+        Ok(Self {
+            function_names_json: serde_json::to_string_pretty(&names)
+                .context("serialize function names")?,
+            wasmu: compile_wasmu(wasm)?,
+        })
+    }
+
     fn save(&self, output_folder: &Path) -> anyhow::Result<()> {
         fs::create_dir_all(output_folder).context("create output folder")?;
         for (name, contents) in [
@@ -69,8 +72,7 @@ impl Artifacts {
     }
 }
 
-/// Compiles replay.wasm for the riscv64 target with wasmer's LLVM backend
-/// into a serialized module.
+/// Compiles replay.wasm for the riscv64 target with wasmer's LLVM backend into a serialized module.
 fn compile_wasmu(wasm: Vec<u8>) -> anyhow::Result<Bytes> {
     let target = Target::new(
         Triple::from_str("riscv64").map_err(|e| anyhow::anyhow!("riscv64 triple: {e}"))?,
