@@ -826,12 +826,12 @@ func FinalizeBlock(header *types.Header, statedb vm.StateDB, chainConfig *params
 func arbitrumHeaderPostGenesis(statedb vm.StateDB, header *types.Header) *types.HeaderInfo {
 	collectTips := false
 
-	state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 	if err != nil {
 		newErr := fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root)
 		panic(newErr)
 	}
-	collectTips, err = state.CollectTips()
+	collectTips, err = arbState.CollectTips()
 	if err != nil {
 		newErr := fmt.Errorf("%w while reading collect tips setting. Block: %d root: %v", err, header.Number, header.Root)
 		panic(newErr)
@@ -842,16 +842,16 @@ func arbitrumHeaderPostGenesis(statedb vm.StateDB, header *types.Header) *types.
 		collectTips = false
 	}
 	// Add outbox info to the header for client-side proving
-	acc := state.SendMerkleAccumulator()
+	acc := arbState.SendMerkleAccumulator()
 	sendRoot, _ := acc.Root()
 	sendCount, _ := acc.Size()
-	nextL1BlockNumber, _ := state.Blockhashes().L1BlockNumber()
+	nextL1BlockNumber, _ := arbState.Blockhashes().L1BlockNumber()
 
 	return &types.HeaderInfo{
 		SendRoot:           sendRoot,
 		SendCount:          sendCount,
 		L1BlockNumber:      nextL1BlockNumber,
-		ArbOSFormatVersion: state.ArbOSVersion(),
+		ArbOSFormatVersion: arbState.ArbOSVersion(),
 		CollectTips:        collectTips,
 	}
 }
