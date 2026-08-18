@@ -948,7 +948,7 @@ func testActivateWithCraneliftTarget() error {
 	_, asmMap, err := activateProgramInternal(
 		common.Address{}, common.Hash{}, wasm, 128, 1, 0, true, &gas,
 		[]rawdb.WasmTarget{craneliftTarget},
-		false, false,
+		false, false, &StylusTargetConfig{}, &core.MessageRunContext{},
 	)
 	if err != nil {
 		return fmt.Errorf("activation with cranelift target failed: %w", err)
@@ -962,7 +962,7 @@ func testActivateWithCraneliftTarget() error {
 	_, asmMap, err = activateProgramInternal(
 		common.Address{}, common.Hash{}, wasm, 128, 1, 0, true, &gas,
 		[]rawdb.WasmTarget{localTarget, craneliftTarget},
-		false, false,
+		false, false, &StylusTargetConfig{}, &core.MessageRunContext{},
 	)
 	if err != nil {
 		return fmt.Errorf("activation with both targets failed: %w", err)

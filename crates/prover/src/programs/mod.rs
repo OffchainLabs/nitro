@@ -454,6 +454,7 @@ impl Module {
         page_limit: u16,
         debug: bool,
         gas: &mut u64,
+        op_limit: usize,
     ) -> Result<(Self, StylusData)> {
         let compile = CompileConfig::version(stylus_version, debug);
         let (bin, stylus_data) = WasmBinary::parse_user(
@@ -519,6 +520,7 @@ impl Module {
             compile.debug.debug_funcs,
             Some(stylus_data),
             compile.version,
+            op_limit,
         )
         .wrap_err("failed to build user module")?;
 

@@ -512,7 +512,7 @@ func enforceStylusPageLimit(evm *vm.EVM, statedb vm.StateDB, runCtx *core.Messag
 	}
 
 	var limit uint16
-	if cfg := GetArbNodeConfig(statedb); cfg != nil {
+	if cfg := getStylusConfigOrNil(statedb); cfg != nil {
 		limit = cfg.MaxOpenPages
 	} else {
 		log.Debug("ArbNodeConfig not set; page limit inactive")

@@ -44,10 +44,10 @@ type TxProcessor struct {
 	computeHoldGas   uint64 // amount of gas temporarily held to prevent compute from exceeding the gas limit
 	delayedInbox     bool   // whether this tx was submitted through the delayed inbox
 	Contracts        []*vm.Contract
-	Programs         map[common.Address]uint // # of distinct context spans for each program
-	stylusCallDepth  uint16                  // # of Stylus frames currently on the call stack
-	arbNodeConfig    *programs.ArbNodeConfig // resolved once at construction; nil if unset
-	TopTxType        *byte                   // set once in StartTxHook
+	Programs         map[common.Address]uint      // # of distinct context spans for each program
+	stylusCallDepth  uint16                       // # of Stylus frames currently on the call stack
+	arbNodeConfig    *programs.StylusTargetConfig // resolved once at construction; nil if unset
+	TopTxType        *byte                        // set once in StartTxHook
 	evm              *vm.EVM
 	CurrentRetryable *common.Hash
 	CurrentRefundTo  *common.Address
@@ -69,7 +69,7 @@ func NewTxProcessor(evm *vm.EVM, msg *core.Message) *TxProcessor {
 		delayedInbox:        evm.Context.Coinbase != l1pricing.BatchPosterAddress,
 		Contracts:           []*vm.Contract{},
 		Programs:            make(map[common.Address]uint),
-		arbNodeConfig:       programs.GetArbNodeConfig(evm.StateDB),
+		arbNodeConfig:       programs.GetStylusConfig(evm.StateDB),
 		TopTxType:           nil,
 		evm:                 evm,
 		CurrentRetryable:    nil,
