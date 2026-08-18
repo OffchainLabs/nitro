@@ -96,7 +96,8 @@ type txOrderer interface {
 	// inclusion just closed, so it can re-enter the block's candidates.
 	OnNonceGapResolved(queueItem txQueueItem)
 
-	// BlockInterval reports the time interval between the start of the block and the start of the next block.
+	// BlockInterval reports the time interval between the start of this block and the start of
+	// the next one, it includes the time spent building the block.
 	BlockInterval() time.Duration
 }
 
@@ -111,7 +112,9 @@ type txOrdererSequencer interface {
 type fifoTxOrderer struct {
 	seq           txOrdererSequencer
 	baseFee       *big.Int
+	pollInterval  time.Duration
 	blockInterval time.Duration
+	started       bool
 	// The embedded fetcher holds the not-yet-yielded candidates; set by StartBlock, consumed
 	// through NextQueueItem, and emptied by TakeRemaining.
 	fixedTxFetcher
@@ -119,15 +122,21 @@ type fifoTxOrderer struct {
 
 var _ txOrderer = (*fifoTxOrderer)(nil)
 
-func newFIFOTxOrderer(seq txOrdererSequencer, blockInterval time.Duration, baseFee *big.Int) *fifoTxOrderer {
-	return &fifoTxOrderer{seq: seq, blockInterval: blockInterval, baseFee: baseFee}
+func newFIFOTxOrderer(seq txOrdererSequencer, pollInterval time.Duration, blockInterval time.Duration, baseFee *big.Int) *fifoTxOrderer {
+	return &fifoTxOrderer{
+		seq:           seq,
+		pollInterval:  pollInterval,
+		blockInterval: blockInterval,
+		baseFee:       baseFee,
+	}
 }
 
 // StartBlock drains the sequencer's pending txs as the block's candidates.
 func (o *fifoTxOrderer) StartBlock(statedb *state.StateDB) bool {
 	items := o.seq.drainValidatedTxs(statedb, o.baseFee)
 	o.fixedTxFetcher = fixedTxFetcher{items: items}
-	return len(items) > 0
+	o.started = len(items) > 0
+	return o.started
 }
 
 // OnTxInclusion is a no-op: FIFO ordering doesn't react to inclusions.
@@ -143,6 +152,12 @@ func (o *fifoTxOrderer) OnNonceGapResolved(queueItem txQueueItem) {
 	o.items = append(o.items, queueItem)
 }
 
+// BlockInterval is the full block interval once StartBlock has found work; until then it is
+// the idle poll cadence, matching the wait decideSequencingTurn uses when there is no pending work.
 func (o *fifoTxOrderer) BlockInterval() time.Duration {
+	if !o.started {
+		return min(o.pollInterval, o.blockInterval)
+	}
+
 	return o.blockInterval
 }

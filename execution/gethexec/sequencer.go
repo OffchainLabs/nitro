@@ -1198,7 +1198,7 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 		return nil, config.MaxBlockSpeed
 	}
 
-	var orderer txOrderer = newFIFOTxOrderer(s, config.MaxBlockSpeed, baseFee)
+	var orderer txOrderer = newFIFOTxOrderer(s, config.PollInterval, config.MaxBlockSpeed, baseFee)
 	if collectTips && !config.ExperimentalPGA.DangerousForceFIFO {
 		orderer = NewPGATxOrderer(ctx, s, config.ExperimentalPGA.RoundsPerBlock, config.PGARoundLength(), baseFee)
 	}
@@ -1270,10 +1270,7 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrde
 		return nil, config.MaxBlockSpeed
 	}
 	if !orderer.StartBlock(statedb) {
-		// No regular txs to sequence right now; re-check on the idle poll
-		// cadence rather than waiting a full block interval. This matches the
-		// wait decideSequencingTurn uses when there is no pending work.
-		return nil, min(config.PollInterval, config.MaxBlockSpeed)
+		return nil, orderer.BlockInterval()
 	}
 
 	hooks = MakeSequencingHooks(

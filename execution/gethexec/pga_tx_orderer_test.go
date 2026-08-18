@@ -716,6 +716,18 @@ func TestPGATxOrdererMidBlockRejectedDrainKeepsWaiting(t *testing.T) {
 	})
 }
 
+// A no-work block never leaves round 1, so the sequencer retries on the round cadence.
+func TestPGATxOrdererBlockIntervalNoWork(t *testing.T) {
+	o := newTestPGATxOrderer(&stubOrdererSequencer{})
+
+	if o.StartBlock(nil) {
+		t.Fatal("StartBlock on empty = true, want false")
+	}
+	if got := o.BlockInterval(); got != testPGARoundLength {
+		t.Fatalf("BlockInterval = %v, want one round at %v", got, testPGARoundLength)
+	}
+}
+
 func TestPGATxOrdererBlockIntervalAllRounds(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		seq := &stubOrdererSequencer{items: []txQueueItem{makePGAQueueItem(t, 0, 10)}}

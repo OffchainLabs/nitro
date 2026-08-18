@@ -44,7 +44,7 @@ func queueItemNonces(items []txQueueItem) []uint64 {
 }
 
 func TestFIFOTxOrdererStartBlockEmpty(t *testing.T) {
-	o := newFIFOTxOrderer(&stubOrdererSequencer{}, 0, nil)
+	o := newFIFOTxOrderer(&stubOrdererSequencer{}, 0, 0, nil)
 	if o.StartBlock(nil) {
 		t.Fatal("StartBlock on empty = true, want false")
 	}
@@ -65,7 +65,7 @@ func TestFIFOTxOrdererBlockLifecycle(t *testing.T) {
 		item, _ := makeTestQueueItem(t, nonce, testBaseFee)
 		items = append(items, item)
 	}
-	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items}, 0, nil)
+	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items}, 0, 0, nil)
 
 	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")
@@ -102,7 +102,7 @@ func TestFIFOTxOrdererSkipsOversizedTxs(t *testing.T) {
 	}
 	items[1].txSize = 11 // oversized for the block space below
 	items[2].txSize = 11
-	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items}, 0, nil)
+	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items}, 0, 0, nil)
 
 	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")
@@ -129,7 +129,7 @@ func TestFIFOTxOrdererAllOversizedExhausts(t *testing.T) {
 		item.txSize = 100
 		items = append(items, item)
 	}
-	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items}, 0, nil)
+	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items}, 0, 0, nil)
 
 	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")
@@ -153,7 +153,7 @@ func TestFIFOTxOrdererGasLimitEndsBlock(t *testing.T) {
 		item, _ := makeTestQueueItem(t, nonce, testBaseFee)
 		items = append(items, item)
 	}
-	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items}, 0, nil)
+	o := newFIFOTxOrderer(&stubOrdererSequencer{items: items}, 0, 0, nil)
 
 	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")
@@ -172,7 +172,15 @@ func TestFIFOTxOrdererGasLimitEndsBlock(t *testing.T) {
 
 func TestFIFOTxOrdererBlockInterval(t *testing.T) {
 	blockInterval := 200 * time.Millisecond
-	o := newFIFOTxOrderer(&stubOrdererSequencer{}, blockInterval, nil)
+	pollInterval := 100 * time.Millisecond
+	item, _ := makeTestQueueItem(t, 0, testBaseFee)
+	o := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}}, pollInterval, blockInterval, nil)
+	if got := o.BlockInterval(); got != pollInterval {
+		t.Fatalf("BlockInterval = %v, want %v", got, pollInterval)
+	}
+	if !o.StartBlock(nil) {
+		t.Fatal("StartBlock = false, want true")
+	}
 	if got := o.BlockInterval(); got != blockInterval {
 		t.Fatalf("BlockInterval = %v, want %v", got, blockInterval)
 	}
@@ -182,7 +190,7 @@ func TestFIFOTxOrdererBlockInterval(t *testing.T) {
 // predecessor into the same block; if never yielded it leaves through TakeRemaining.
 func TestFIFOTxOrdererNonceGapResolvedJoinsCandidates(t *testing.T) {
 	drained, _ := makeTestQueueItem(t, 0, testBaseFee)
-	o := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{drained}}, 0, nil)
+	o := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{drained}}, 0, 0, nil)
 
 	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")

@@ -109,6 +109,8 @@ func (p *pgaTxOrderer) OnTxInclusion(queueItem txQueueItem) {
 	p.mempool.RecordIncludedTx(queueItem.GetPriority())
 }
 
+// BlockInterval spans the block's elapsed rounds; a no-work block never leaves round 1, so
+// empty attempts retry on the round cadence.
 func (p *pgaTxOrderer) BlockInterval() time.Duration {
 	return p.schedule.ElapsedInterval()
 }
