@@ -1139,7 +1139,7 @@ func (s *ExecutionEngine) broadcastBlockTxs(block *types.Block, receipts types.R
 	header := block.Header()
 
 	for i, tx := range block.Transactions() {
-		msg, err := transactionfeed.BuildFeedMessage(header, tx, receipts[i])
+		msg, err := transactionfeed.BuildFeedMessage(header, tx, receipts[i], 0)
 		if err != nil {
 			log.Error("Transaction feed: failed to build message", "block", header.Number, "err", err)
 			continue

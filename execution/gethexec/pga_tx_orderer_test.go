@@ -205,6 +205,39 @@ func TestPGATxOrdererRoundExpiryAdvancesAndBoosts(t *testing.T) {
 	})
 }
 
+// CurrentRound tracks the round yields come from: it starts at 1, advances at round boundaries,
+// and a tx revived mid-round is yielded without moving it.
+func TestPGATxOrdererCurrentRoundTracksYields(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		items := []txQueueItem{
+			makePGAQueueItem(t, 0, 100),
+			makePGAQueueItem(t, 1, 0),
+		}
+		o := newTestPGATxOrderer(&stubOrdererSequencer{items: items})
+
+		if !o.StartBlock(nil) {
+			t.Fatal("StartBlock = false, want true")
+		}
+		item, ok := o.NextQueueItem(nil, math.MaxInt)
+		if !ok || o.CurrentRound() != 1 {
+			t.Fatalf("round-1 yield = (round %d, %v), want round 1", o.CurrentRound(), ok)
+		}
+		o.OnTxInclusion(item)
+
+		// Round 1 expires: the leftover is yielded in round 2.
+		time.Sleep(testPGARoundLength + time.Millisecond)
+		if _, ok := o.NextQueueItem(nil, math.MaxInt); !ok || o.CurrentRound() != 2 {
+			t.Fatalf("round-2 yield = (round %d, %v), want round 2", o.CurrentRound(), ok)
+		}
+
+		// A tx revived mid-round is yielded in the active round.
+		o.OnNonceGapResolved(makePGAQueueItem(t, 2, 10))
+		if _, ok := o.NextQueueItem(nil, math.MaxInt); !ok || o.CurrentRound() != 2 {
+			t.Fatalf("revived yield = (round %d, %v), want round 2", o.CurrentRound(), ok)
+		}
+	})
+}
+
 // When the last round expires the block ends, and the never-yielded txs keep their accumulated
 // boost for the next block.
 func TestPGATxOrdererLastRoundExpiryEndsBlock(t *testing.T) {
