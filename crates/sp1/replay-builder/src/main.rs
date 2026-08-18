@@ -34,23 +34,39 @@ struct Cli {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    fs::create_dir_all(&cli.output_folder).context("create output folder")?;
     let wasm = fs::read(&cli.replay_wasm)
         .with_context(|| format!("read replay.wasm from {}", cli.replay_wasm.display()))?;
 
     let names = extract_function_names(&wasm)?;
-    let names_json = serde_json::to_string_pretty(&names).context("serialize function names")?;
-    let wasmu = compile_wasmu(wasm)?;
+    let artifacts = Artifacts {
+        function_names_json: serde_json::to_string_pretty(&names)
+            .context("serialize function names")?,
+        wasmu: compile_wasmu(wasm)?,
+    };
+    artifacts.save(&cli.output_folder)
+}
 
-    write_artifact(&cli.output_folder, "function_names.json", &names_json)?;
-    write_artifact(&cli.output_folder, "replay.wasmu", &wasmu)?;
-    write_artifact(
-        &cli.output_folder,
-        "replay-program.elf",
-        REPLAY_ELF.as_ref(),
-    )?;
+struct Artifacts {
+    /// Function names of replay.wasm (lost in wasmer's compiled output).
+    function_names_json: String,
+    /// replay.wasm compiled for riscv64.
+    wasmu: Bytes,
+}
 
-    Ok(())
+impl Artifacts {
+    fn save(&self, output_folder: &Path) -> anyhow::Result<()> {
+        fs::create_dir_all(output_folder).context("create output folder")?;
+        for (name, contents) in [
+            ("function_names.json", self.function_names_json.as_bytes()),
+            ("replay.wasmu", self.wasmu.as_ref()),
+            ("replay-program.elf", REPLAY_ELF.as_ref()),
+        ] {
+            let output = output_folder.join(name);
+            fs::write(&output, contents).with_context(|| format!("write {name}"))?;
+            println!("{name} written to {}", output.display());
+        }
+        Ok(())
+    }
 }
 
 /// Compiles replay.wasm for the riscv64 target with wasmer's LLVM backend
@@ -67,16 +83,4 @@ fn compile_wasmu(wasm: Vec<u8>) -> anyhow::Result<Bytes> {
     );
     let module = Module::new(&store, wasm).context("compile replay.wasm")?;
     module.serialize().context("serialize module")
-}
-
-/// Writes an artifact to `output_folder/name` and reports the destination.
-fn write_artifact(
-    output_folder: &Path,
-    name: &str,
-    contents: impl AsRef<[u8]>,
-) -> anyhow::Result<()> {
-    let output = output_folder.join(name);
-    fs::write(&output, contents).with_context(|| format!("write {name}"))?;
-    println!("{name} written to {}", output.display());
-    Ok(())
 }
