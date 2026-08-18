@@ -65,9 +65,9 @@ impl ComputeBudget {
         scheduled_retry_gas: &[u64],
         is_user_tx: bool,
     ) -> u64 {
-        let adjusted =
+        let adjusted_gas_used =
             adjust_for_scheduled_retries(header_arbos_version, gas_used, scheduled_retry_gas);
-        let compute_used = compute_used(adjusted, poster_gas);
+        let compute_used = compute_used(adjusted_gas_used, poster_gas);
 
         self.gas_left = self.gas_left.saturating_sub(compute_used);
         if is_user_tx {
