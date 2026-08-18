@@ -769,7 +769,7 @@ func ProduceBlockAdvanced(
 
 	binary.BigEndian.PutUint64(header.Nonce[:], delayedMessagesRead)
 
-	FinalizeBlock(header, buildState.complete, buildState.statedb, chainConfig)
+	FinalizeBlock(header, buildState.statedb, chainConfig)
 
 	// Touch up the block hashes in receipts
 	tmpBlock := types.NewBlock(header, &types.Body{Transactions: buildState.complete}, buildState.receipts, trie.NewStackTrie(nil))
@@ -802,7 +802,7 @@ func ProduceBlockAdvanced(
 }
 
 // Also sets header.Root
-func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.StateDB, chainConfig *params.ChainConfig) {
+func FinalizeBlock(header *types.Header, statedb vm.StateDB, chainConfig *params.ChainConfig) {
 	if header != nil {
 		if header.Number.Uint64() < chainConfig.ArbitrumChainParams.GenesisBlockNum {
 			panic("cannot finalize blocks before genesis")
