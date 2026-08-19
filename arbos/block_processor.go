@@ -801,7 +801,7 @@ func ProduceBlockAdvanced(
 	return block, buildState.statedb, buildState.receipts, nil
 }
 
-// Also sets header.Root
+// FinalizeBlock writes the Arbitrum header info into header and sets header.Root; no-op if header is nil.
 func FinalizeBlock(header *types.Header, statedb vm.StateDB, chainConfig *params.ChainConfig) {
 	if header == nil {
 		return
