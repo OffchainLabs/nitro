@@ -282,7 +282,6 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     /// Per-receipt multi-dimensional gas, parallel to the receipts vector.
     pub multi_gas_used: Vec<MultiGas>,
     /// Ledger of expected balance changes from deposits and L2→L1 withdrawals.
-    /// Only trace-logged in `finish`; `verify` wiring is a follow-up.
     balance_ledger: BalanceLedger,
     /// Zombie accounts: empty accounts preserved from EIP-161 deletion because
     /// they were touched by a zero-value transfer on pre-Stylus ArbOS.
@@ -1090,12 +1089,11 @@ where
             &arb_state,
         );
 
-        // Intentionally stricter than Go, which swallows this read error.
         self.compute_budget = ComputeBudget::new(
             arb_state
                 .l2_pricing_state
                 .per_block_gas_limit(state_ref)
-                .map_err(BlockExecutionError::other)?,
+                .unwrap_or(0),
         );
 
         if let Ok(l1_block_number) = arb_state.blockhashes.l1_block_number(state_ref) {
