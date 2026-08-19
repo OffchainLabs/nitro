@@ -11,9 +11,12 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
+
+var messageBuildFailedCounter = metrics.NewRegisteredCounter("arb/transactionfeed/message/buildfailed", nil)
 
 type TransactionFeedMessageVersion uint32
 
@@ -54,6 +57,14 @@ type Log struct {
 }
 
 func BuildFeedMessage(header *types.Header, tx *types.Transaction, receipt *types.Receipt, pgaRound uint64) (*TransactionFeedMessage, error) {
+	msg, err := buildFeedMessage(header, tx, receipt, pgaRound)
+	if err != nil {
+		messageBuildFailedCounter.Inc(1)
+	}
+	return msg, err
+}
+
+func buildFeedMessage(header *types.Header, tx *types.Transaction, receipt *types.Receipt, pgaRound uint64) (*TransactionFeedMessage, error) {
 	if tx == nil {
 		return nil, errors.New("nil transaction")
 	}

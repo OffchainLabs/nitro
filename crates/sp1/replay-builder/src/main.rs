@@ -4,12 +4,18 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    str::FromStr,
 };
 
 use anyhow::Context;
+use bytes::Bytes;
 use clap::Parser;
 use replay_builder::extract_function_names;
 use sp1_sdk::{Elf, include_elf};
+use wasmer::{
+    Module, Store,
+    sys::{CompilerConfig, CpuFeature, EngineBuilder, LLVM, Target, Triple},
+};
 
 const REPLAY_ELF: Elf = include_elf!("replay-program");
 
@@ -28,31 +34,58 @@ struct Cli {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    fs::create_dir_all(&cli.output_folder).context("create output folder")?;
-    write_function_names(&cli.replay_wasm, &cli.output_folder)?;
-    write_replay_elf(&cli.output_folder)?;
+    let wasm = fs::read(&cli.replay_wasm)
+        .with_context(|| format!("read replay.wasm from {}", cli.replay_wasm.display()))?;
 
-    Ok(())
+    Artifacts::build(wasm)?.save(&cli.output_folder)
 }
 
-/// Writes replay.wasm's function names (lost in wasmer's compiled output) to
-/// `function_names.json` for the guest's profiler symbols.
-fn write_function_names(replay_wasm: &Path, output_folder: &Path) -> anyhow::Result<()> {
-    let wasm = fs::read(replay_wasm)
-        .with_context(|| format!("read replay.wasm from {}", replay_wasm.display()))?;
-    let names = extract_function_names(&wasm)?;
-    let names_json = serde_json::to_string_pretty(&names).context("serialize function names")?;
-
-    let output = output_folder.join("function_names.json");
-    fs::write(&output, &names_json).context("write function_names.json")?;
-    println!("Wasm function names written to {}", output.display());
-    Ok(())
+struct Artifacts {
+    /// Function names of replay.wasm (lost in wasmer's compiled output).
+    function_names_json: String,
+    /// replay.wasm compiled for riscv64.
+    wasmu: Bytes,
 }
 
-/// Materializes the guest ELF so the runner has something to execute.
-fn write_replay_elf(output_folder: &Path) -> anyhow::Result<()> {
-    let output = output_folder.join("replay-program.elf");
-    fs::write(&output, REPLAY_ELF.as_ref()).context("write replay-program.elf")?;
-    println!("Replay program ELF written to {}", output.display());
-    Ok(())
+impl Artifacts {
+    fn build(wasm: Vec<u8>) -> anyhow::Result<Self> {
+        let names = extract_function_names(&wasm)?;
+        Ok(Self {
+            function_names_json: serde_json::to_string_pretty(&names)
+                .context("serialize function names")?,
+            wasmu: compile_wasmu(wasm)?,
+        })
+    }
+
+    fn save(&self, output_folder: &Path) -> anyhow::Result<()> {
+        fs::create_dir_all(output_folder).context("create output folder")?;
+        for (name, contents) in [
+            ("function_names.json", self.function_names_json.as_bytes()),
+            ("replay.wasmu", self.wasmu.as_ref()),
+            ("replay-program.elf", REPLAY_ELF.as_ref()),
+        ] {
+            let output = output_folder.join(name);
+            fs::write(&output, contents).with_context(|| format!("write {name}"))?;
+            println!("{name} written to {}", output.display());
+        }
+        Ok(())
+    }
+}
+
+/// Compiles replay.wasm for the riscv64 target with wasmer's LLVM backend into a serialized module.
+fn compile_wasmu(wasm: Vec<u8>) -> anyhow::Result<Bytes> {
+    let target = Target::new(
+        Triple::from_str("riscv64").map_err(|e| anyhow::anyhow!("riscv64 triple: {e}"))?,
+        CpuFeature::set(),
+    );
+    let mut compiler = LLVM::new();
+    compiler.canonicalize_nans(true);
+    compiler.enable_verifier();
+    let store = Store::new(
+        EngineBuilder::new(compiler)
+            .set_target(Some(target))
+            .engine(),
+    );
+    let module = Module::new(&store, wasm).context("compile replay.wasm")?;
+    module.serialize().context("serialize module")
 }

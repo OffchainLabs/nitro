@@ -19,10 +19,10 @@ type DelayedReportData struct {
 }
 
 // lint:require-exhaustive-initialization
-type FilterSetIDReport struct {
-	FilterSetID uuid.UUID `json:"filterSetId"`
-	ChainID     uint64    `json:"chainId"`
-	ReportedAt  time.Time `json:"reportedAt"`
+type FilterSetIDsReport struct {
+	FilterSetIDs []uuid.UUID `json:"filterSetIds"`
+	ChainID      uint64      `json:"chainId"`
+	ReportedAt   time.Time   `json:"reportedAt"`
 }
 
 // lint:require-exhaustive-initialization

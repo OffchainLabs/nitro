@@ -249,7 +249,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
-	f.Duration(prefix+".filter-set-reporting-interval", DefaultSequencerConfig.FilterSetReportingInterval, "interval at which the active sequencer reports its current address-filter set id to the filtering-report service")
+	f.Duration(prefix+".filter-set-reporting-interval", DefaultSequencerConfig.FilterSetReportingInterval, "interval at which the active sequencer reports its current address-filter set ids to the filtering-report service")
 }
 
 func DangerousAddOptions(prefix string, f *pflag.FlagSet) {
@@ -557,7 +557,7 @@ func (s *Sequencer) FilteringReady() bool {
 	if service == nil {
 		return true
 	}
-	return !service.GetLoadedAt().IsZero()
+	return service.AllFilesLoaded()
 }
 
 func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.Header, filteredAddresses []filter.FilteredAddressRecord, positionInBlock int) {
@@ -1708,23 +1708,23 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	return nil
 }
 
-func (s *Sequencer) reportFilterSetID(ctx context.Context, rpcClient *FilteringReportRPCClient) error {
+func (s *Sequencer) reportFilterSetIDs(ctx context.Context, rpcClient *FilteringReportRPCClient) error {
 	service := s.addressFilterService.Load()
 	if service == nil {
-		log.Debug("skipping filter-set id report: address-filter service not configured")
+		log.Debug("skipping filter-set ids report: address-filter service not configured")
 		return nil
 	}
-	filterSetID := service.CurrentFilterSetID()
-	if filterSetID == uuid.Nil {
+	if !service.AllFilesLoaded() {
 		// When address filtering is set, the node blocks on the initial S3
-		// hash-list download during initialization (AddressFilterService.Initialize),
-		// so a running sequencer should always have a filter-set id loaded.
-		return errors.New("no filter-set id loaded yet")
+		// hash-list downloads during initialization (AddressFilterService.Initialize),
+		// so a running sequencer should always have every filter-set id loaded.
+		return errors.New("not all filter-set ids loaded yet")
 	}
-	_, err := rpcClient.ReportCurrentFilterSetID(&addressfilter.FilterSetIDReport{
-		FilterSetID: filterSetID,
-		ChainID:     s.execEngine.ChainID().Uint64(),
-		ReportedAt:  time.Now().UTC(),
+	filterSetIDs := service.CurrentFilterSetIDs()
+	_, err := rpcClient.ReportCurrentFilterSetIDs(&addressfilter.FilterSetIDsReport{
+		FilterSetIDs: filterSetIDs,
+		ChainID:      s.execEngine.ChainID().Uint64(),
+		ReportedAt:   time.Now().UTC(),
 	}).Await(ctx)
 	return err
 }
@@ -1742,8 +1742,8 @@ func (s *Sequencer) startFilterSetReporting() {
 		if !s.IsActive() {
 			return interval
 		}
-		if err := s.reportFilterSetID(ctx, rpcClient); err != nil {
-			log.Warn("failed to report current filter-set id", "err", err)
+		if err := s.reportFilterSetIDs(ctx, rpcClient); err != nil {
+			log.Warn("failed to report current filter-set ids", "err", err)
 		}
 		return interval
 	})

@@ -92,7 +92,7 @@ func buildPrecheckerFilterNodes(t *testing.T, ctx context.Context, withDelayedSe
 	if reportURL != "" {
 		execConfigB.TransactionFiltering.FilteringReportRPCClient.URL = reportURL
 	}
-	s3Filter = setupFakeS3AddressFilterForConfig(t, execConfigB, addressfilter.HashingSchemeRawBytesInput)
+	s3Filter = setupFakeS3AddressFilterForConfig(t, execConfigB, addressfilter.HashingSchemeRawBytesInput, 1)
 
 	forwarder, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{
 		nodeConfig: nodeConfigB,

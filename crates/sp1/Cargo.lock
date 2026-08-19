@@ -3880,11 +3880,13 @@ name = "replay-builder"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "clap",
  "serde_json",
  "sp1-build",
  "sp1-sdk",
  "wasm-encoder 0.245.1",
+ "wasmer",
  "wasmparser 0.245.1",
 ]
 

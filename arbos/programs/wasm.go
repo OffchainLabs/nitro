@@ -202,8 +202,8 @@ func callProgram(
 	_ Program,
 ) ([]byte, error) {
 	reqHandler := newApiClosures(evm, tracingInfo, scope, memoryModel, runCtx, stylusParams)
-	gasLeft, retData, err := CallProgramLoop(moduleHash, calldata, scope.Contract.Gas, evmData, progParams, reqHandler)
-	scope.Contract.Gas = gasLeft
+	gasLeft, retData, err := CallProgramLoop(moduleHash, calldata, scope.Contract.Gas.RegularGas, evmData, progParams, reqHandler)
+	scope.Contract.Gas.RegularGas = gasLeft
 	return retData, err
 }
 

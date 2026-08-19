@@ -32,6 +32,8 @@ func TestBuildFeedMessageNilInputs(t *testing.T) {
 		{"receipt missing EffectiveGasPrice", header, tx, &types.Receipt{}, "missing EffectiveGasPrice"},
 	}
 
+	buildFailedStart := messageBuildFailedCounter.Snapshot().Count()
+
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			msg, err := BuildFeedMessage(tc.header, tc.tx, tc.receipt, 0)
@@ -45,6 +47,11 @@ func TestBuildFeedMessageNilInputs(t *testing.T) {
 				t.Fatalf("error %q does not contain %q", err.Error(), tc.wantErr)
 			}
 		})
+	}
+
+	want := int64(len(tests))
+	if delta := messageBuildFailedCounter.Snapshot().Count() - buildFailedStart; delta < want {
+		t.Fatalf("buildfailed counter delta = %d, want >= %d", delta, want)
 	}
 }
 
