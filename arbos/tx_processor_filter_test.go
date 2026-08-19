@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
@@ -88,9 +89,9 @@ func TestEndTxHookTouchesRefundTo(t *testing.T) {
 				TxRunContext: core.NewMessageReplayContext(),
 				From:         from,
 				GasLimit:     gasLimit,
-				GasPrice:     big.NewInt(0),
-				GasFeeCap:    baseFee,
-				GasTipCap:    big.NewInt(0),
+				GasPrice:     uint256.NewInt(0),
+				GasFeeCap:    uint256.MustFromBig(baseFee),
+				GasTipCap:    uint256.NewInt(0),
 			}
 			txProcessor := NewTxProcessor(evm, msg)
 			txProcessor.PosterFee = big.NewInt(0)
@@ -153,8 +154,8 @@ func TestStartTxHookTouchesFeeRefundAddrOnce(t *testing.T) {
 	msg := &core.Message{
 		TxRunContext: core.NewMessageReplayContext(),
 		From:         from,
-		GasFeeCap:    baseFee,
-		GasTipCap:    big.NewInt(0),
+		GasFeeCap:    uint256.MustFromBig(baseFee),
+		GasTipCap:    uint256.NewInt(0),
 	}
 	inner := &types.ArbitrumSubmitRetryableTx{
 		From:             from,

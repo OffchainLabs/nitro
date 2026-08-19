@@ -137,7 +137,7 @@ func assertStateExistForBlockRange(t *testing.T, bc *core.BlockChain, from, offs
 	t.Helper()
 	for i := from; i <= from+offset; i++ {
 		header := bc.GetHeaderByNumber(i)
-		_, err := bc.StateAt(header.Root)
+		_, err := bc.StateAt(header)
 		Require(t, err)
 	}
 }
@@ -147,7 +147,7 @@ func assertMissingStateForBlockRange(t *testing.T, bc *core.BlockChain, from, of
 	expectedErr := &trie.MissingNodeError{}
 	for blockNum := from; blockNum <= from+offset; blockNum++ {
 		header := bc.GetHeaderByNumber(blockNum)
-		_, err := bc.StateAt(header.Root)
+		_, err := bc.StateAt(header)
 		if err == nil {
 			Fatal(t, "expeted StateAt to fail for blockNumber:", header.Number)
 		}

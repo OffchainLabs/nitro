@@ -202,7 +202,7 @@ func (p Programs) CallProgram(
 ) ([]byte, error) {
 	contract := scope.Contract
 	codeHash := contract.CodeHash
-	startingGas := contract.Gas
+	startingGas := contract.Gas.RegularGas
 	debugMode := evm.ChainConfig().DebugMode()
 
 	params, err := p.Params()
@@ -291,7 +291,7 @@ func (p Programs) CallProgram(
 		evmCost := evmMemoryCost(uint64(len(ret)))
 		if startingGas < evmCost {
 			// burn all remaining gas for this call
-			contract.Gas = 0
+			contract.Gas.Exhaust()
 			attributeWasmComputation(contract, startingGas)
 			// #nosec G115
 			metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas))
@@ -299,19 +299,19 @@ func (p Programs) CallProgram(
 		}
 
 		maxGasToReturn := startingGas - evmCost
-		contract.Gas = arbmath.MinInt(contract.Gas, maxGasToReturn)
+		contract.Gas.RegularGas = arbmath.MinInt(contract.Gas.RegularGas, maxGasToReturn)
 	}
 	attributeWasmComputation(contract, startingGas)
 
 	// #nosec G115
-	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas - contract.Gas))
+	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas - contract.Gas.RegularGas))
 	return ret, err
 }
 
 // attributeWasmComputation attributes the residual WASM computation gas so that
 // UsedMultiGas.SingleGas() matches the gross used gas for this stylus call.
 func attributeWasmComputation(contract *vm.Contract, startingGas uint64) {
-	usedGas := startingGas - contract.Gas
+	usedGas := startingGas - contract.Gas.RegularGas
 	accountedGas := contract.UsedMultiGas.SingleGas()
 
 	var residual uint64
