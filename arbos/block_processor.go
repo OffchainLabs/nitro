@@ -837,7 +837,6 @@ func arbitrumHeaderPostGenesis(statedb vm.StateDB, header *types.Header) *types.
 	if collectTips && header.Coinbase != l1pricing.BatchPosterAddress {
 		collectTips = false
 	}
-	// Add outbox info to the header for client-side proving
 	acc := arbState.SendMerkleAccumulator()
 	sendRoot, _ := acc.Root()
 	sendCount, _ := acc.Size()
