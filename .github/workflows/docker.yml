@@ -76,9 +76,14 @@ jobs:
             echo "=== Last 200 lines of testnode.log ==="
             tail -200 /tmp/testnode.log
           fi
-          # test-node.bash only relays docker compose's own progress output, so a
-          # container that dies on startup shows up as a bare "exited (1)" with no
-          # reason. Dump the container states and their stderr as well.
+
+      # The testnode script launched above (output in /tmp/testnode.log) only relays
+      # docker compose's progress lines, so a container that dies on startup shows up
+      # as a bare "exited (1)" with no reason. Dump container states and stderr too.
+      - name: Dump testnode container logs
+        if: failure() || cancelled()
+        shell: bash
+        run: |
           cd nitro-testnode
           echo "=== docker compose ps ==="
           docker compose ps --all || true
