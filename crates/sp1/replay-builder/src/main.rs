@@ -1,10 +1,8 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-//! Builds the SP1 replay artifacts from replay.wasm: the riscv64 `wasmu`
-//! module and the function-name mapping are built in memory; saving writes
-//! them and generates `dumped_replay_wasm.elf` in place by bootloading the
-//! guest (executing it with both loaded, up to its ELF dump point).
+//! Builds the artifacts from replay.wasm: the riscv64 `wasmu` module and the function-name mapping.
+//! Then, it generates `dumped_replay_wasm.elf` by bootloading the guest (fed with the artifacts).
 
 use std::{
     fs,
@@ -18,14 +16,17 @@ use bytes::Bytes;
 use clap::Parser;
 use replay_builder::extract_function_names;
 use sp1_core_executor::{MinimalExecutor, Program, UserMode};
-use sp1_sdk::{Elf, include_elf};
+use sp1_sdk::{Elf, artifacts, include_elf};
 use validation::SP1_BOOTLOAD_SENTINEL;
 use wasmer::{
     Module, Store,
     sys::{CompilerConfig, CpuFeature, EngineBuilder, LLVM, Target, Triple},
 };
 
+/// The ELF of the replay guest program.
 const REPLAY_ELF: Elf = include_elf!("replay-program");
+/// The SP1 executor reads the dump destination from this env var.
+const SP1_DUMP_TARGET_ENV: &str = "DUMP_ELF_OUTPUT";
 
 #[derive(Parser)]
 #[command(about = "Build the SP1 replay-program artifacts")]
@@ -45,8 +46,10 @@ fn main() -> Result<()> {
     let wasm = fs::read(&cli.replay_wasm)
         .with_context(|| format!("read replay.wasm from {}", cli.replay_wasm.display()))?;
 
-    Artifacts::build(&wasm)?.save(&cli.output_folder)?;
-    bootload()?;
+    let artifacts = Artifacts::build(&wasm)?;
+    artifacts.save(&cli.output_folder)?;
+
+    bootload(&artifacts, &cli.output_folder)
 }
 
 /// Artifacts generated from the original `replay.wasm`.
@@ -100,29 +103,32 @@ fn compile_wasmu(wasm: &[u8]) -> Result<Bytes> {
     module.serialize().context("serialize module")
 }
 
-/// Executes the guest with the wasmu and name mapping loaded up to its
-/// ELF dump point, writing the initialized guest to `dump_target`.
-fn bootload(dump_target: &Path) -> Result<()> {
-    // The SP1 executor reads the dump destination from this env var at
-    // the guest's dump syscall.
-    unsafe { std::env::set_var("DUMP_ELF_OUTPUT", dump_target) };
-    // Remove any stale dump so the check below certifies this run.
-    let _ = fs::remove_file(dump_target);
+/// Executes the guest with the wasmu and name mapping loaded up to its ELF dump point. Ensures that
+/// the dumped state is saved in `dump_target`.
+fn bootload(artifacts: &Artifacts, dump_target: &Path) -> Result<()> {
+    prepare_bootload(dump_target);
 
     let program = Arc::new(
         Program::from(&REPLAY_ELF).map_err(|e| anyhow::anyhow!("parse replay ELF: {e:#}"))?,
     );
     let mut executor = MinimalExecutor::<UserMode>::simple(program);
-    executor.with_input(self.wasmu.as_ref());
-    executor.with_input(self.function_names_json.as_bytes());
-    // Bincode-encode the sentinel to match the runner's SP1Stdin wire
-    // format; the guest recognizes it and halts cleanly after the dump.
+    executor.with_input(&artifacts.wasmu);
+    executor.with_input(artifacts.function_names_json.as_bytes());
     let bootload_input = bincode::serialize(&SP1_BOOTLOAD_SENTINEL.to_vec())
         .context("serialize bootload sentinel")?;
     executor.with_input(&bootload_input);
 
     let _ = executor.execute_chunk();
 
+    check_bootload_output(dump_target)
+}
+
+fn prepare_bootload(dump_target: &Path) {
+    unsafe { std::env::set_var(SP1_DUMP_TARGET_ENV, dump_target) };
+    let _ = fs::remove_file(dump_target);
+}
+
+fn check_bootload_output(dump_target: &Path) -> Result<()> {
     if !fs::exists(dump_target).context("check bootload output")? {
         bail!(
             "SP1 bootloading failed: expected output at '{}' was not produced",
