@@ -6,12 +6,25 @@ package transactionfeed
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/ethereum/go-ethereum/metrics"
 )
+
+// Histogram samples silently no-op unless metrics are enabled, so enable them
+// for the metric assertions in this package.
+//
+// Tests in this package must not use t.Parallel(): they assert on the shared
+// package-level metrics, which would race across concurrently running tests.
+func TestMain(m *testing.M) {
+	metrics.Enable()
+	os.Exit(m.Run())
+}
 
 func TestBroadcastDroppedCounter(t *testing.T) {
 	cfg := DefaultServerConfig
@@ -19,14 +32,26 @@ func TestBroadcastDroppedCounter(t *testing.T) {
 	s := NewServer(cfg, make(chan error, 1))
 
 	msg := &TransactionFeedMessage{Version: TransactionFeedV1}
-	start := broadcastDroppedCounter.Snapshot().Count()
+	droppedStart := broadcastDroppedCounter.Snapshot().Count()
+	queuedStart := broadcastQueuedCounter.Snapshot().Count()
+	sizeCountStart := messageSizeBytesHistogram.Snapshot().Count()
+	broadcastQueueDepthGauge.Update(0)
 
 	s.BroadcastTransaction(msg)
 	s.BroadcastTransaction(msg)
 	s.BroadcastTransaction(msg)
 
-	if delta := broadcastDroppedCounter.Snapshot().Count() - start; delta < 2 {
+	if delta := broadcastDroppedCounter.Snapshot().Count() - droppedStart; delta < 2 {
 		t.Fatalf("expected >= 2 drops, got delta=%d", delta)
+	}
+	if delta := broadcastQueuedCounter.Snapshot().Count() - queuedStart; delta < 1 {
+		t.Fatalf("expected >= 1 queued, got delta=%d", delta)
+	}
+	if delta := messageSizeBytesHistogram.Snapshot().Count() - sizeCountStart; delta < 3 {
+		t.Fatalf("expected >= 3 size samples, got delta=%d", delta)
+	}
+	if depth := broadcastQueueDepthGauge.Snapshot().Value(); depth != 1 {
+		t.Fatalf("expected queue depth 1, got %d", depth)
 	}
 }
 
@@ -66,6 +91,7 @@ func TestServerConcurrentClients(t *testing.T) {
 	}()
 
 	const numClients = 20
+	connectedTotalStart := clientsConnectedTotalCounter.Snapshot().Count()
 	var clientWg sync.WaitGroup
 	for i := 0; i < numClients; i++ {
 		clientWg.Add(1)
@@ -93,12 +119,18 @@ func TestServerConcurrentClients(t *testing.T) {
 	close(stopBroadcast)
 	broadcasterWg.Wait()
 
+	connectedTotalDelta := func() int64 {
+		return clientsConnectedTotalCounter.Snapshot().Count() - connectedTotalStart
+	}
 	deadline := time.Now().Add(3 * time.Second)
-	for s.ClientCount() != 0 && time.Now().Before(deadline) {
+	for (s.ClientCount() != 0 || connectedTotalDelta() < numClients) && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if c := s.ClientCount(); c != 0 {
 		t.Fatalf("ClientCount = %d after all clients disconnected, want 0", c)
+	}
+	if delta := connectedTotalDelta(); delta < numClients {
+		t.Fatalf("connected total counter delta = %d, want >= %d", delta, numClients)
 	}
 }
 

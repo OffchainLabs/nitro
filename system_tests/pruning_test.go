@@ -157,7 +157,7 @@ func runPruningDBSizeReductionTest(t *testing.T, mode string, pruneParallelStora
 		if header == nil {
 			t.Fatalf("missing header for block %d", i)
 		}
-		_, err := bc.StateAt(header.Root)
+		_, err := bc.StateAt(header)
 		Require(t, err)
 		tr, err := trie.New(trie.TrieID(header.Root), triedb)
 		Require(t, err)
