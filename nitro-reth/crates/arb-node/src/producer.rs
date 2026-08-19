@@ -1618,7 +1618,7 @@ fn drain_scheduled_txs(
             break;
         }
         for encoded in scheduled {
-            let Some(retry_tx) = ArbTransactionSigned::decode_2718(&mut &encoded[..]).ok() else {
+            let Ok(retry_tx) = ArbTransactionSigned::decode_2718(&mut &encoded[..]) else {
                 continue;
             };
 
@@ -1652,20 +1652,18 @@ fn drain_scheduled_txs(
                 }
             };
 
-            match executor.commit_transaction(retry_result) {
-                Ok(_) => {
-                    all_txs.push(retry_signed);
-                    if !retry_records.is_empty() {
-                        arb_rpc::stylus_tracer::cache_trace(retry_hash, retry_records);
-                    }
-                }
-                Err(e) => {
-                    warn!(
-                        target: "block_producer",
-                        error = %e,
-                        "Failed to commit auto-redeem tx"
-                    );
-                }
+            if let Err(e) = executor.commit_transaction(retry_result) {
+                warn!(
+                    target: "block_producer",
+                    error = %e,
+                    "Failed to commit auto-redeem tx"
+                );
+                continue;
+            }
+
+            all_txs.push(retry_signed);
+            if !retry_records.is_empty() {
+                arb_rpc::stylus_tracer::cache_trace(retry_hash, retry_records);
             }
         }
     }
