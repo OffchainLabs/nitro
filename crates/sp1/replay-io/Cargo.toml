@@ -1,0 +1,20 @@
+[package]
+name = "replay-io"
+description = "Host-guest input protocol for the SP1 replay pipeline"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+sp1-zkvm = { workspace = true }
+
+[target.'cfg(not(target_os = "zkvm"))'.dependencies]
+sp1-sdk = { workspace = true }
