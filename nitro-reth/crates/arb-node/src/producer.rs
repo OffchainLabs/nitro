@@ -1609,14 +1609,14 @@ fn drain_scheduled_txs(
 ) {
     loop {
         let scheduled = executor.drain_scheduled_txs();
+        if scheduled.is_empty() {
+            break;
+        }
         debug!(
             target: "block_producer",
             count = scheduled.len(),
             "Draining scheduled txs"
         );
-        if scheduled.is_empty() {
-            break;
-        }
         for encoded in scheduled {
             let Ok(retry_tx) = ArbTransactionSigned::decode_2718(&mut &encoded[..]) else {
                 continue;
