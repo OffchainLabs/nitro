@@ -30,6 +30,15 @@ impl<T> RedeemQueue<T> {
         self.queue.extend(txs);
     }
 
+    pub fn clear(&mut self) {
+        self.queue.clear();
+    }
+
+    /// Iterates the pending retries in FIFO order without consuming them.
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.queue.iter()
+    }
+
     /// Pops the next scheduled retry whose ticket is still live; dead tickets (already redeemed,
     /// deleted or expired) are dropped. The caller answers the liveness question, keeping this type
     /// state-free.
@@ -91,6 +100,25 @@ mod tests {
         assert_eq!(queue.pop_live(is_live), Some("live-1"));
         assert_eq!(queue.pop_live(is_live), Some("live-2"));
         assert!(queue.is_empty());
+    }
+
+    #[test]
+    fn iter_walks_fifo_without_consuming() {
+        let mut queue = RedeemQueue::new();
+        queue.schedule(["a", "b"]);
+
+        assert_eq!(queue.iter().collect::<Vec<_>>(), [&"a", &"b"]);
+        assert_eq!(queue.len(), 2);
+        assert_eq!(queue.pop_live(|_| true), Some("a"));
+    }
+
+    #[test]
+    fn clear_empties_the_queue() {
+        let mut queue = RedeemQueue::new();
+        queue.schedule(["a", "b"]);
+        queue.clear();
+        assert!(queue.is_empty());
+        assert_eq!(queue.pop_live(|_| true), None);
     }
 
     #[test]
