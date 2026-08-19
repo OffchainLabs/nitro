@@ -75,7 +75,6 @@ impl Artifacts {
         for (name, contents) in [
             ("function_names.json", self.function_names_json.as_bytes()),
             ("replay.wasmu", self.wasmu.as_ref()),
-            ("replay-program.elf", REPLAY_ELF.as_ref()),
         ] {
             let output = output_folder.join(name);
             fs::write(&output, contents).with_context(|| format!("write {name}"))?;
