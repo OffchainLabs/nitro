@@ -69,26 +69,6 @@ impl ArbTransactionEnv for TxEnv {
     }
 }
 
-/// Extension trait for draining scheduled transactions from the executor.
-///
-/// After executing a SubmitRetryable or a manual Redeem precompile call,
-/// auto-redeem retry transactions may be queued. The block producer must
-/// drain and re-inject them in the same block.
-pub trait ArbScheduledTxDrain {
-    /// Drain any scheduled transactions (e.g. auto-redeem retry txs) produced
-    /// by the most recently committed transaction.
-    fn drain_scheduled_txs(&mut self) -> Vec<Vec<u8>>;
-}
-
-impl<'a, Evm, Spec, R: ReceiptBuilder> ArbScheduledTxDrain for ArbBlockExecutor<'a, Evm, Spec, R> {
-    fn drain_scheduled_txs(&mut self) -> Vec<Vec<u8>> {
-        self.arb_hooks
-            .as_mut()
-            .map(|hooks| std::mem::take(&mut hooks.tx_proc.scheduled_txs))
-            .unwrap_or_default()
-    }
-}
-
 /// Arbitrum block executor factory.
 ///
 /// Wraps an `EthBlockExecutor` with ArbOS-specific hooks for gas charging,
