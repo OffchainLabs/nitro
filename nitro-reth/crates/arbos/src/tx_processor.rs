@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use alloy_primitives::{Address, B256, U256};
 use arb_chainspec::arbos_version as arb_ver;
 
-use crate::{l1_pricing, retryables, util::BalanceError};
+use crate::{l1_pricing, redeem_queue::RedeemQueue, retryables, util::BalanceError};
 
 /// ArbOS system address (0x00000000000000000000000000000000000a4b05).
 pub const ARBOS_ADDRESS: Address = {
@@ -38,8 +38,8 @@ pub struct TxProcessor {
     pub current_retryable: Option<B256>,
     /// The refund-to address for retryable redeems.
     pub current_refund_to: Option<Address>,
-    /// Scheduled transactions (e.g., retryable auto-redeems).
-    pub scheduled_txs: Vec<Vec<u8>>,
+    /// Retry txs scheduled by redeems.
+    pub redeem_queue: RedeemQueue<Vec<u8>>,
     /// Count of open Stylus program contexts per contract address.
     /// Used to detect reentrance.
     pub programs_depth: HashMap<Address, usize>,
@@ -55,7 +55,7 @@ impl Default for TxProcessor {
             top_tx_type: None,
             current_retryable: None,
             current_refund_to: None,
-            scheduled_txs: Vec::new(),
+            redeem_queue: RedeemQueue::new(),
             programs_depth: HashMap::new(),
         }
     }
