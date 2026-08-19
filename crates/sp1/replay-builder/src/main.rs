@@ -118,6 +118,10 @@ fn bootload(artifacts: &Artifacts, dump_target: &Path) -> Result<()> {
     executor.with_input(&bootload_input);
 
     let _ = executor.execute_chunk();
+    let exit_code = executor.exit_code();
+    if exit_code != 0 {
+        bail!("bootload execution exited with code {exit_code}");
+    }
 
     check_bootload_output(dump_target)
 }
