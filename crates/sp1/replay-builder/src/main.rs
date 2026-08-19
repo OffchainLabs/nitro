@@ -13,7 +13,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{Context, bail};
+use anyhow::{Context, Result, bail};
 use bytes::Bytes;
 use clap::Parser;
 use replay_builder::extract_function_names;
@@ -39,7 +39,7 @@ struct Cli {
     output_folder: PathBuf,
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let wasm = fs::read(&cli.replay_wasm)
@@ -57,7 +57,7 @@ struct Artifacts {
 }
 
 impl Artifacts {
-    fn build(wasm: &[u8]) -> anyhow::Result<Self> {
+    fn build(wasm: &[u8]) -> Result<Self> {
         let names = extract_function_names(wasm)?;
         Ok(Self {
             function_names_json: serde_json::to_string_pretty(&names)
@@ -69,7 +69,7 @@ impl Artifacts {
     /// Writes everything the builder produces into `output_folder`: bootloads
     /// the guest (dumping the initialized ELF) and writes the in-memory
     /// artifacts.
-    fn save(&self, output_folder: &Path) -> anyhow::Result<()> {
+    fn save(&self, output_folder: &Path) -> Result<()> {
         fs::create_dir_all(output_folder).context("create output folder")?;
 
         self.bootload(&output_folder.join("dumped_replay_wasm.elf"))?;
@@ -88,7 +88,7 @@ impl Artifacts {
 
     /// Executes the guest with the wasmu and name mapping loaded up to its
     /// ELF dump point, writing the initialized guest to `dump_target`.
-    fn bootload(&self, dump_target: &Path) -> anyhow::Result<()> {
+    fn bootload(&self, dump_target: &Path) -> Result<()> {
         // The SP1 executor reads the dump destination from this env var at
         // the guest's dump syscall.
         unsafe { std::env::set_var("DUMP_ELF_OUTPUT", dump_target) };
@@ -124,7 +124,7 @@ impl Artifacts {
 }
 
 /// Compiles replay.wasm for the riscv64 target with wasmer's LLVM backend into a serialized module.
-fn compile_wasmu(wasm: &[u8]) -> anyhow::Result<Bytes> {
+fn compile_wasmu(wasm: &[u8]) -> Result<Bytes> {
     let target = Target::new(
         Triple::from_str("riscv64").map_err(|e| anyhow::anyhow!("riscv64 triple: {e}"))?,
         CpuFeature::set(),
