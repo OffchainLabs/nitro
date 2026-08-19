@@ -12,11 +12,11 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// finishBlockReason expresses why the block was ended
-type finishBlockReason int
+// ordererStatus enumerates the reasons a block's tx orderer can stop yielding candidates.
+type ordererStatus int
 
 const (
-	blockNotFinished finishBlockReason = iota
+	fetchedTx ordererStatus = iota
 	exhaustedQueue
 	blockSizeLimitReached
 	blockGasLimitReached
@@ -27,7 +27,7 @@ const (
 // nextTxFetcher supplies a block's tx candidates to the sequencing hooks one at a time.
 type nextTxFetcher interface {
 	// NextQueueItem yields the next block candidate, reporting the finishBlockReason otherwise.
-	NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, finishBlockReason)
+	NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, ordererStatus)
 
 	// OnTxInclusion notifies the orderer that the last yielded tx made it into the block.
 	OnTxInclusion(queueItem txQueueItem)
@@ -35,14 +35,14 @@ type nextTxFetcher interface {
 
 // fixedTxFetcher yields a pre-set candidate list.
 type fixedTxFetcher struct {
-	items       []txQueueItem
-	exhausted   []txQueueItem
-	limitReason finishBlockReason
+	items         []txQueueItem
+	exhausted     []txQueueItem
+	ordererStatus ordererStatus
 }
 
 var _ nextTxFetcher = (*fixedTxFetcher)(nil)
 
-func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, finishBlockReason) {
+func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, ordererStatus) {
 	if len(f.items) == 0 {
 		return txQueueItem{}, cmp.Or(f.limitReason, exhaustedQueue)
 	}
@@ -63,7 +63,7 @@ func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSiz
 		return f.NextQueueItem(statedb, remainingBlockSize, blockGasLeft)
 	}
 
-	return item, blockNotFinished
+	return item, fetchedTx
 }
 
 // OnTxInclusion is a no-op: the fixed fetcher doesn't react to inclusions.

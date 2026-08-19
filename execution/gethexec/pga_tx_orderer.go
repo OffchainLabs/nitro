@@ -44,7 +44,7 @@ func (p *pgaTxOrderer) CurrentRound() uint64 {
 	return p.schedule.Round()
 }
 
-func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, finishBlockReason) {
+func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, ordererStatus) {
 	if blockGasLeft < params.TxGas {
 		p.mempool.ApplyRoundBoost()
 		return txQueueItem{}, blockGasLimitReached
@@ -80,7 +80,7 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 			return txQueueItem{}, blockSizeLimitReached
 		}
 
-		return item, blockNotFinished
+		return item, fetchedTx
 	}
 }
 
