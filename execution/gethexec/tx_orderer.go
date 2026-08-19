@@ -4,7 +4,6 @@
 package gethexec
 
 import (
-	"cmp"
 	"math/big"
 	"time"
 
@@ -35,16 +34,18 @@ type nextTxFetcher interface {
 
 // fixedTxFetcher yields a pre-set candidate list.
 type fixedTxFetcher struct {
-	items         []txQueueItem
-	exhausted     []txQueueItem
-	ordererStatus ordererStatus
+	items     []txQueueItem
+	exhausted []txQueueItem
 }
 
 var _ nextTxFetcher = (*fixedTxFetcher)(nil)
 
 func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, ordererStatus) {
 	if len(f.items) == 0 {
-		return txQueueItem{}, cmp.Or(f.limitReason, exhaustedQueue)
+		if len(f.exhausted) > 0 {
+			return txQueueItem{}, blockSizeLimitReached
+		}
+		return txQueueItem{}, exhaustedQueue
 	}
 
 	if blockGasLeft < params.TxGas {
@@ -58,7 +59,6 @@ func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSiz
 
 	// If the tx is too big for the remaining block size, we exhaust it and continue to the next one.
 	if item.txSize > remainingBlockSize {
-		f.limitReason = blockSizeLimitReached
 		f.exhausted = append(f.exhausted, item)
 		return f.NextQueueItem(statedb, remainingBlockSize, blockGasLeft)
 	}
