@@ -15,8 +15,10 @@ import (
 )
 
 const (
-	testHashHex1 = "1111111111111111111111111111111111111111111111111111111111111111"
-	testHashHex2 = "2222222222222222222222222222222222222222222222222222222222222222"
+	testHashHex1    = "1111111111111111111111111111111111111111111111111111111111111111"
+	testHashHex2    = "2222222222222222222222222222222222222222222222222222222222222222"
+	testAddressHex1 = "d3cda913deb6f67967b99d67acdfa1712c293601"
+	testAddressHex2 = "5aeda56215b167893e80b4fe645ba6d5bab767de"
 )
 
 func makeHashesJSON(t *testing.T, salt string, hashes []string) []byte {
@@ -35,28 +37,39 @@ func parseHashListBytes(data []byte) (*ListMeta, []common.Hash, error) {
 }
 
 func TestJSONHashUnmarshalText(t *testing.T) {
-	want := common.HexToHash("0x" + testHashHex1)
+	wantHash := common.HexToHash("0x" + testHashHex1)
+	wantAddr := common.BytesToHash(common.HexToAddress("0x" + testAddressHex1).Bytes())
 	cases := []struct {
-		name    string
-		in      string
-		wantErr bool
+		name          string
+		input         string
+		wantHash      common.Hash
+		wantIsAddress bool
+		wantErr       bool
 	}{
-		{"bare", testHashHex1, false},
-		{"0x prefix", "0x" + testHashHex1, false},
-		{"0X prefix", "0X" + testHashHex1, false},
-		{"too short", "1234", true},
-		{"bad hex", "zz" + testHashHex1[2:], true},
+		{"bare", testHashHex1, wantHash, false, false},
+		{"0x prefix", "0x" + testHashHex1, wantHash, false, false},
+		{"0X prefix", "0X" + testHashHex1, wantHash, false, false},
+		{"address bare", testAddressHex1, wantAddr, true, false},
+		{"address 0x prefix", "0x" + testAddressHex1, wantAddr, true, false},
+		{"address 0X prefix", "0X" + testAddressHex1, wantAddr, true, false},
+		{"address checksummed case", "0xD3CdA913deB6f67967B99D67aCDFa1712C293601", common.BytesToHash(common.HexToAddress("0xD3CdA913deB6f67967B99D67aCDFa1712C293601").Bytes()), true, false},
+		{name: "too short", input: "1234", wantErr: true},
+		{name: "39 hex", input: testAddressHex1[1:], wantErr: true},
+		{name: "41 hex", input: testAddressHex1 + "a", wantErr: true},
+		{name: "63 hex", input: testHashHex1[1:], wantErr: true},
+		{name: "bad hex", input: "zz" + testHashHex1[2:], wantErr: true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			var h jsonHash
-			err := h.UnmarshalText([]byte(c.in))
+			err := h.UnmarshalText([]byte(c.input))
 			if c.wantErr {
 				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, want, common.Hash(h))
+			require.Equal(t, c.wantHash, h.hash)
+			require.Equal(t, c.wantIsAddress, h.isAddress)
 		})
 	}
 }
@@ -177,6 +190,92 @@ func TestParseHashListStreamUnknownFields(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uuid.MustParse(salt), meta.Salt)
 	require.Len(t, hashes, 1)
+}
+
+func TestParseHashListStreamPlaintext(t *testing.T) {
+	const id = "0fa6d8c0-0000-0000-0000-000000000002"
+	wantAddrs := []common.Hash{
+		common.BytesToHash(common.HexToAddress("0x" + testAddressHex1).Bytes()),
+		common.BytesToHash(common.HexToAddress("0x" + testAddressHex2).Bytes()),
+	}
+
+	t.Run("no salt", func(t *testing.T) {
+		jsonDoc := `{"id":"` + id + `","hashing_scheme":"plaintext","hashes":["0x` + testAddressHex1 + `","0x` + testAddressHex2 + `"]}`
+		meta, hashes, err := parseHashListBytes([]byte(jsonDoc))
+		require.NoError(t, err)
+		require.Equal(t, uuid.MustParse(id), meta.ID)
+		require.Equal(t, uuid.Nil, meta.Salt)
+		require.Equal(t, HashingSchemePlaintext, meta.Scheme)
+		require.Equal(t, wantAddrs, hashes)
+	})
+
+	t.Run("salt present is ignored", func(t *testing.T) {
+		jsonDoc := `{"id":"` + id + `","salt":"2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6","hashing_scheme":"plaintext","hashes":["0x` + testAddressHex1 + `"]}`
+		meta, _, err := parseHashListBytes([]byte(jsonDoc))
+		require.NoError(t, err)
+		require.Equal(t, uuid.Nil, meta.Salt)
+	})
+
+	t.Run("invalid salt is ignored", func(t *testing.T) {
+		jsonDoc := `{"id":"` + id + `","salt":"not-a-uuid","hashing_scheme":"plaintext","hashes":["0x` + testAddressHex1 + `"]}`
+		meta, _, err := parseHashListBytes([]byte(jsonDoc))
+		require.NoError(t, err)
+		require.Equal(t, uuid.Nil, meta.Salt)
+	})
+
+	t.Run("hashes before scheme", func(t *testing.T) {
+		// The load-bearing case for streaming: entries decode before the scheme is known.
+		jsonDoc := `{"hashes":["0x` + testAddressHex1 + `","0x` + testAddressHex2 + `"],"id":"` + id + `","hashing_scheme":"plaintext"}`
+		meta, hashes, err := parseHashListBytes([]byte(jsonDoc))
+		require.NoError(t, err)
+		require.Equal(t, HashingSchemePlaintext, meta.Scheme)
+		require.Equal(t, wantAddrs, hashes)
+	})
+
+	t.Run("hash entry rejected", func(t *testing.T) {
+		jsonDoc := `{"id":"` + id + `","hashing_scheme":"plaintext","hashes":["0x` + testHashHex1 + `"]}`
+		_, _, err := parseHashListBytes([]byte(jsonDoc))
+		require.ErrorContains(t, err, "requires 40-hex address entries")
+	})
+
+	t.Run("mixed entries rejected", func(t *testing.T) {
+		jsonDoc := `{"id":"` + id + `","hashing_scheme":"plaintext","hashes":["0x` + testAddressHex1 + `","0x` + testHashHex1 + `"]}`
+		_, _, err := parseHashListBytes([]byte(jsonDoc))
+		require.ErrorContains(t, err, "requires 40-hex address entries")
+	})
+
+	t.Run("missing id rejected", func(t *testing.T) {
+		jsonDoc := `{"hashing_scheme":"plaintext","hashes":["0x` + testAddressHex1 + `"]}`
+		_, _, err := parseHashListBytes([]byte(jsonDoc))
+		require.ErrorContains(t, err, "invalid filter set ID UUID")
+	})
+}
+
+func TestParseHashListStreamAddressEntriesRejectedForSHA256Schemes(t *testing.T) {
+	const salt = "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6"
+	for _, scheme := range []string{"", "sha256-stringinput", "sha256-rawbytesinput"} {
+		t.Run("scheme "+scheme, func(t *testing.T) {
+			schemeField := ""
+			if scheme != "" {
+				schemeField = `"hashing_scheme":"` + scheme + `",`
+			}
+			jsonDoc := `{"id":"` + uuid.NewString() + `","salt":"` + salt + `",` + schemeField + `"hashes":["0x` + testAddressHex1 + `"]}`
+			_, _, err := parseHashListBytes([]byte(jsonDoc))
+			require.ErrorContains(t, err, "requires 64-hex hash entries")
+		})
+	}
+
+	t.Run("mixed entries rejected", func(t *testing.T) {
+		jsonDoc := `{"id":"` + uuid.NewString() + `","salt":"` + salt + `","hashing_scheme":"sha256-stringinput","hashes":["0x` + testHashHex1 + `","0x` + testAddressHex1 + `"]}`
+		_, _, err := parseHashListBytes([]byte(jsonDoc))
+		require.ErrorContains(t, err, "requires 64-hex hash entries")
+	})
+
+	t.Run("missing salt still rejected for default scheme", func(t *testing.T) {
+		jsonDoc := `{"id":"` + uuid.NewString() + `","hashes":["0x` + testHashHex1 + `"]}`
+		_, _, err := parseHashListBytes([]byte(jsonDoc))
+		require.ErrorContains(t, err, "invalid UUID")
+	})
 }
 
 func TestParseHashListStreamMalformed(t *testing.T) {

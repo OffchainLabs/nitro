@@ -16,30 +16,30 @@ import (
 )
 
 var (
-	filterSetIDPostFailuresCounter = metrics.NewRegisteredCounter(
-		"arb/filter_report/api/filter_set_id_post_failure_total", nil,
+	filterSetIDsPostFailuresCounter = metrics.NewRegisteredCounter(
+		"arb/filter_report/api/filter_set_ids_post_failure_total", nil,
 	)
-	filterSetIDPostSuccessesCounter = metrics.NewRegisteredCounter(
-		"arb/filter_report/api/filter_set_id_post_success_total", nil,
+	filterSetIDsPostSuccessesCounter = metrics.NewRegisteredCounter(
+		"arb/filter_report/api/filter_set_ids_post_success_total", nil,
 	)
 )
 
-func (a *FilteringReportAPI) ReportCurrentFilterSetID(ctx context.Context, report *addressfilter.FilterSetIDReport) error {
+func (a *FilteringReportAPI) ReportCurrentFilterSetIDs(ctx context.Context, report *addressfilter.FilterSetIDsReport) error {
 	if a.filterSetReporter == nil {
 		return nil
 	}
 	if report == nil {
-		return errors.New("nil filter-set id report")
+		return errors.New("nil filter-set ids report")
 	}
 	body, err := json.Marshal(report)
 	if err != nil {
-		return fmt.Errorf("marshal filter-set id report: %w", err)
+		return fmt.Errorf("marshal filter-set ids report: %w", err)
 	}
 	reporter := a.filterSetReporter
 	if err := httpclient.PostJSON(ctx, reporter.httpClient, reporter.url, body, reporter.signer.SignHTTPRequest); err != nil {
-		filterSetIDPostFailuresCounter.Inc(1)
+		filterSetIDsPostFailuresCounter.Inc(1)
 		return err
 	}
-	filterSetIDPostSuccessesCounter.Inc(1)
+	filterSetIDsPostSuccessesCounter.Inc(1)
 	return nil
 }
