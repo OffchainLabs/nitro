@@ -37,7 +37,7 @@ func newTxProcessorWithDepthLimit(t *testing.T, limit uint16, runCtx *core.Messa
 }
 
 func dummyScope() *vm.ScopeContext {
-	contract := vm.NewContract(common.Address{}, common.Address{1}, new(uint256.Int), 1_000_000, nil)
+	contract := vm.NewContract(common.Address{}, common.Address{1}, new(uint256.Int), vm.NewGasBudget(1_000_000), nil)
 	return &vm.ScopeContext{Contract: contract}
 }
 

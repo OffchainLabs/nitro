@@ -40,7 +40,7 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 	filterSetID := uuid.New()
 	storeHashes(t, store, filterSetID, salt, HashingSchemeStringInput, []common.Hash{hash, hash2}, "test")
 
-	checker := NewHashedAddressChecker(store, 4, 8192)
+	checker := NewHashedAddressChecker(NewHashStoreSet([]*HashStore{store}), 4, 8192)
 	checker.Start(context.Background())
 
 	// Tx 1: filtered address
@@ -96,7 +96,7 @@ func TestHashedAddressCheckerSimple(t *testing.T) {
 
 	// Tx 6: unbuffered channel (synchronous send) should not panic
 	overflowChecker := NewHashedAddressChecker(
-		store,
+		NewHashStoreSet([]*HashStore{store}),
 		/* workerCount */ 1,
 		/* queueSize */ 0,
 	)
@@ -134,7 +134,7 @@ func TestHashedAddressCheckerHeavy(t *testing.T) {
 	filterSetID := uuid.New()
 	storeHashes(t, store, filterSetID, salt, HashingSchemeStringInput, filteredHashes, "heavy")
 
-	checker := NewHashedAddressChecker(store, 4, 8192)
+	checker := NewHashedAddressChecker(NewHashStoreSet([]*HashStore{store}), 4, 8192)
 	checker.Start(context.Background())
 
 	const txCount = 100

@@ -16,9 +16,11 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+bytes = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sp1-sdk = { workspace = true }
+wasmer = { workspace = true, features = ["llvm", "sp1"] }
 wasmparser = { workspace = true }
 
 [dev-dependencies]

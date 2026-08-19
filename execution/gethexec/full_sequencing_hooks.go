@@ -143,7 +143,13 @@ func (s *FullSequencingHooks) TxAccepted(header *types.Header, tx *types.Transac
 	if s.transactionFeedServer == nil {
 		return
 	}
-	msg, err := transactionfeed.BuildFeedMessage(header, tx, receipt)
+
+	var pgaRound uint64
+	if pgaOrderer, ok := s.fetcher.(*pgaTxOrderer); ok {
+		pgaRound = pgaOrderer.CurrentRound()
+	}
+
+	msg, err := transactionfeed.BuildFeedMessage(header, tx, receipt, pgaRound)
 	if err != nil {
 		log.Error("Transaction feed: failed to build message", "block", header.Number, "err", err)
 		return
