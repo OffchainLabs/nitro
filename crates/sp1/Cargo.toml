@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "replay-builder",
+    "replay-io",
     "replay-program",
     "replay-runner",
     "stylus-compiler-program",
@@ -34,6 +35,7 @@ wasm-encoder = { version = "0.245.0" }
 wasmparser = { version = "0.245.0" }
 
 prover = { path = "../prover", default-features = false }
+replay-io = { path = "replay-io" }
 stylus-compiler-program = { path = "stylus-compiler-program" }
 validation = { path = "../validation", default-features = false }
 
