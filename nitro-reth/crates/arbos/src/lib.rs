@@ -21,6 +21,7 @@ pub mod l2_pricing;
 pub mod merkle_accumulator;
 pub mod parse_l2;
 pub mod programs;
+pub mod redeem_queue;
 pub mod retryables;
 pub mod reverted_tx_gas;
 pub mod tx_processor;
