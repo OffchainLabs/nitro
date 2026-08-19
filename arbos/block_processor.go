@@ -769,7 +769,7 @@ func ProduceBlockAdvanced(
 
 	binary.BigEndian.PutUint64(header.Nonce[:], delayedMessagesRead)
 
-	FinalizeBlock(header, buildState.complete, buildState.statedb, chainConfig)
+	FinalizeBlock(header, buildState.statedb, chainConfig)
 
 	// Touch up the block hashes in receipts
 	tmpBlock := types.NewBlock(header, &types.Body{Transactions: buildState.complete}, buildState.receipts, trie.NewStackTrie(nil))
@@ -801,52 +801,50 @@ func ProduceBlockAdvanced(
 	return block, buildState.statedb, buildState.receipts, nil
 }
 
-// Also sets header.Root
-func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.StateDB, chainConfig *params.ChainConfig) {
-	if header != nil {
-		if header.Number.Uint64() < chainConfig.ArbitrumChainParams.GenesisBlockNum {
-			panic("cannot finalize blocks before genesis")
-		}
+// FinalizeBlock writes the Arbitrum header info into header and sets header.Root; no-op if header is nil.
+func FinalizeBlock(header *types.Header, statedb vm.StateDB, chainConfig *params.ChainConfig) {
+	if header == nil {
+		return
+	}
+	var arbitrumHeader *types.HeaderInfo
+	genesisBlockNum := chainConfig.ArbitrumChainParams.GenesisBlockNum
+	switch blockNum := header.Number.Uint64(); {
+	case blockNum < genesisBlockNum:
+		panic("cannot finalize blocks before genesis")
+	case blockNum == genesisBlockNum:
+		arbitrumHeader = &types.HeaderInfo{ArbOSFormatVersion: chainConfig.ArbitrumChainParams.InitialArbOSVersion}
+	default:
+		arbitrumHeader = postGenesisHeaderInfo(statedb, header)
+	}
 
-		var sendRoot common.Hash
-		var sendCount uint64
-		var nextL1BlockNumber uint64
-		var arbosVersion uint64
-		collectTips := false
+	arbitrumHeader.UpdateHeaderWithInfo(header)
+	header.Root = statedb.IntermediateRoot(true)
+}
 
-		if header.Number.Uint64() == chainConfig.ArbitrumChainParams.GenesisBlockNum {
-			arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
-		} else {
-			state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
-			if err != nil {
-				newErr := fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root)
-				panic(newErr)
-			}
-			collectTips, err = state.CollectTips()
-			if err != nil {
-				newErr := fmt.Errorf("%w while reading collect tips setting. Block: %d root: %v", err, header.Number, header.Root)
-				panic(newErr)
-			}
-			// Delayed-message blocks never collect tips, regardless of the chain-wide setting.
-			// All transactions in a block share the same Coinbase, so this is a block-level property.
-			if collectTips && header.Coinbase != l1pricing.BatchPosterAddress {
-				collectTips = false
-			}
-			// Add outbox info to the header for client-side proving
-			acc := state.SendMerkleAccumulator()
-			sendRoot, _ = acc.Root()
-			sendCount, _ = acc.Size()
-			nextL1BlockNumber, _ = state.Blockhashes().L1BlockNumber()
-			arbosVersion = state.ArbOSVersion()
-		}
-		arbitrumHeader := types.HeaderInfo{
-			SendRoot:           sendRoot,
-			SendCount:          sendCount,
-			L1BlockNumber:      nextL1BlockNumber,
-			ArbOSFormatVersion: arbosVersion,
-			CollectTips:        collectTips,
-		}
-		arbitrumHeader.UpdateHeaderWithInfo(header)
-		header.Root = statedb.IntermediateRoot(true)
+func postGenesisHeaderInfo(statedb vm.StateDB, header *types.Header) *types.HeaderInfo {
+	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	if err != nil {
+		panic(fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root))
+	}
+	collectTips, err := arbState.CollectTips()
+	if err != nil {
+		panic(fmt.Errorf("%w while reading collect tips setting. Block: %d root: %v", err, header.Number, header.Root))
+	}
+	// Delayed-message blocks never collect tips, regardless of the chain-wide setting.
+	// All transactions in a block share the same Coinbase, so this is a block-level property.
+	if collectTips && header.Coinbase != l1pricing.BatchPosterAddress {
+		collectTips = false
+	}
+	acc := arbState.SendMerkleAccumulator()
+	sendRoot, _ := acc.Root()
+	sendCount, _ := acc.Size()
+	nextL1BlockNumber, _ := arbState.Blockhashes().L1BlockNumber()
+
+	return &types.HeaderInfo{
+		SendRoot:           sendRoot,
+		SendCount:          sendCount,
+		L1BlockNumber:      nextL1BlockNumber,
+		ArbOSFormatVersion: arbState.ArbOSVersion(),
+		CollectTips:        collectTips,
 	}
 }
