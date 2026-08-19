@@ -25,9 +25,9 @@ impl<T> RedeemQueue<T> {
         self.queue.len()
     }
 
-    /// Appends the retries scheduled by the tx that just executed.
-    pub fn schedule(&mut self, txs: impl IntoIterator<Item = T>) {
-        self.queue.extend(txs);
+    /// Appends a retry scheduled by the tx that just executed.
+    pub fn schedule(&mut self, tx: T) {
+        self.queue.push_back(tx);
     }
 
     pub fn clear(&mut self) {
@@ -66,7 +66,9 @@ mod tests {
     #[test]
     fn pops_in_fifo_order() {
         let mut queue = RedeemQueue::new();
-        queue.schedule(["a", "b", "c"]);
+        for tx in ["a", "b", "c"] {
+            queue.schedule(tx);
+        }
         assert_eq!(queue.len(), 3);
 
         assert_eq!(queue.pop_live(|_| true), Some("a"));
@@ -81,10 +83,11 @@ mod tests {
         // Go appends ScheduledTxes after each execution: with [a, b] pending, a retry scheduled
         // while executing "a" runs after "b".
         let mut queue = RedeemQueue::new();
-        queue.schedule(["a", "b"]);
+        queue.schedule("a");
+        queue.schedule("b");
 
         assert_eq!(queue.pop_live(|_| true), Some("a"));
-        queue.schedule(["scheduled-by-a"]);
+        queue.schedule("scheduled-by-a");
 
         assert_eq!(queue.pop_live(|_| true), Some("b"));
         assert_eq!(queue.pop_live(|_| true), Some("scheduled-by-a"));
@@ -94,7 +97,9 @@ mod tests {
     #[test]
     fn pop_live_drops_dead_tickets() {
         let mut queue = RedeemQueue::new();
-        queue.schedule(["live-1", "dead-1", "dead-2", "live-2"]);
+        for tx in ["live-1", "dead-1", "dead-2", "live-2"] {
+            queue.schedule(tx);
+        }
 
         let is_live = |tx: &&str| tx.starts_with("live");
         assert_eq!(queue.pop_live(is_live), Some("live-1"));
@@ -105,7 +110,8 @@ mod tests {
     #[test]
     fn iter_walks_fifo_without_consuming() {
         let mut queue = RedeemQueue::new();
-        queue.schedule(["a", "b"]);
+        queue.schedule("a");
+        queue.schedule("b");
 
         assert_eq!(queue.iter().collect::<Vec<_>>(), [&"a", &"b"]);
         assert_eq!(queue.len(), 2);
@@ -115,7 +121,8 @@ mod tests {
     #[test]
     fn clear_empties_the_queue() {
         let mut queue = RedeemQueue::new();
-        queue.schedule(["a", "b"]);
+        queue.schedule("a");
+        queue.schedule("b");
         queue.clear();
         assert!(queue.is_empty());
         assert_eq!(queue.pop_live(|_| true), None);
@@ -124,7 +131,8 @@ mod tests {
     #[test]
     fn pop_live_returns_none_when_all_dead() {
         let mut queue = RedeemQueue::new();
-        queue.schedule(["dead-1", "dead-2"]);
+        queue.schedule("dead-1");
+        queue.schedule("dead-2");
 
         assert_eq!(queue.pop_live(|_| false), None);
         assert!(queue.is_empty());
