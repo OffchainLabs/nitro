@@ -46,6 +46,7 @@ func TestEmptyCliConfig(t *testing.T) {
 	var emptyCliNodeConfig NodeConfig
 	err = confighelpers.EndCommonParse(k, &emptyCliNodeConfig)
 	Require(t, err)
+	emptyCliNodeConfig.Execution.StylusTarget.SetUnconfigurableDefaults()
 	if !reflect.DeepEqual(emptyCliNodeConfig, NodeConfigDefault) {
 		changelog, err := diff.Diff(emptyCliNodeConfig, NodeConfigDefault)
 		Require(t, err)
