@@ -75,6 +75,8 @@ var (
 	dataLimitedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/datalimited", nil)
 	// number of blocks ended because of exhausting the transactions to sequence
 	txExhaustedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/txexhausted", nil)
+	// number of blocks ended because the block's time was up with txs still queued
+	timeLimitedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/timelimited", nil)
 	// forwarder/pause wait + validation before sequencing an express lane submission
 	expressLanePreSequenceWaitHistogram = metrics.NewRegisteredHistogram("arb/sequencer/timeboost/expresslane/presequencewait", nil, metrics.NewBoundedHistogramSample())
 )
@@ -448,9 +450,8 @@ func (q *synchronizedTxQueue) Len() int {
 }
 
 type pendingQueueItemsResults struct {
-	block       *types.Block
-	hooks       *FullSequencingHooks
-	limitReason blockLimitReason
+	block *types.Block
+	hooks *FullSequencingHooks
 }
 
 var _ txOrdererSequencer = (*Sequencer)(nil)
@@ -1363,9 +1364,8 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrde
 	}
 
 	s.pendingQueueItemsResults = &pendingQueueItemsResults{
-		block:       block,
-		hooks:       hooks,
-		limitReason: orderer.LimitReason(),
+		block: block,
+		hooks: hooks,
 	}
 
 	if madeBlock {
@@ -1454,13 +1454,15 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 
 		if madeBlock {
 			blockTxSizeHistogram.Update(blockTxSize)
-			limitReason := s.pendingQueueItemsResults.limitReason
-			if limitReason == blockSizeLimitReached {
+			finishReason := s.pendingQueueItemsResults.hooks.blockFinishReason
+			if finishReason == blockSizeLimitReached {
 				dataLimitedBlocksCounter.Inc(1)
-			} else if limitReason == blockGasLimitReached || blockOutOfGas {
+			} else if finishReason == blockGasLimitReached || blockOutOfGas {
 				gasLimitedBlocksCounter.Inc(1)
-			} else if limitReason == exhaustedQueue {
+			} else if finishReason == exhaustedQueue {
 				txExhaustedBlocksCounter.Inc(1)
+			} else if finishReason == blockTimeLimitReached {
+				timeLimitedBlocksCounter.Inc(1)
 			}
 		}
 	}

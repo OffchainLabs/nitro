@@ -26,7 +26,6 @@ type pgaTxOrderer struct {
 	baseFee        *big.Int
 	roundsPerBlock uint
 	roundLength    time.Duration
-	limitReason    blockLimitReason
 }
 
 var _ txOrderer = (*pgaTxOrderer)(nil)
@@ -45,26 +44,26 @@ func (p *pgaTxOrderer) CurrentRound() uint64 {
 	return p.schedule.Round()
 }
 
-func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, bool) {
+func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, finishBlockReason) {
 	if blockGasLeft < params.TxGas {
-		p.limitReason = blockGasLimitReached
 		p.mempool.ApplyRoundBoost()
-		return txQueueItem{}, false
+		return txQueueItem{}, blockGasLimitReached
 	}
 
 	for {
 		if queueEmpty := p.mempool.PriorityQueueLen() == 0; queueEmpty || p.schedule.RoundIsOver() {
 			p.mempool.ApplyRoundBoost()
 			if p.schedule.IsLastRound() {
+				limitReason := blockTimeLimitReached
 				if queueEmpty {
-					p.limitReason = exhaustedQueue
+					limitReason = exhaustedQueue
 				}
-				return txQueueItem{}, false
+				return txQueueItem{}, limitReason
 			}
 			err := p.schedule.WaitAndAdvanceRound(p.ctx)
 			if err != nil {
 				log.Warn("PGA round wait interrupted; ending the block early", "err", err)
-				return txQueueItem{}, false
+				return txQueueItem{}, blockInterrupted
 			}
 			p.mempool.PushBatch(p.seq.drainValidatedTxs(statedb, p.baseFee))
 		}
@@ -76,13 +75,12 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 		// If the next tx is too big to fit in the remaining block space, we add it back to the mempool and stop sequencing.
 		// The sequencer will finalize the block and start a new one, which will have a fresh mempool and schedule.
 		if item.txSize > remainingBlockSize {
-			p.limitReason = blockSizeLimitReached
 			p.mempool.Push(item)
 			p.mempool.ApplyRoundBoost()
-			return txQueueItem{}, false
+			return txQueueItem{}, blockSizeLimitReached
 		}
 
-		return item, true
+		return item, blockNotFinished
 	}
 }
 
@@ -101,10 +99,6 @@ func (p *pgaTxOrderer) TakeRemaining() []txQueueItem {
 		return nil
 	}
 	return p.mempool.TakeRemaining()
-}
-
-func (p *pgaTxOrderer) LimitReason() blockLimitReason {
-	return p.limitReason
 }
 
 func (p *pgaTxOrderer) OnTxInclusion(queueItem txQueueItem) {

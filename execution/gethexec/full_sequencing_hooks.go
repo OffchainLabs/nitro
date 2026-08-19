@@ -42,6 +42,7 @@ type FullSequencingHooks struct {
 	txFilter              arbos.TxFilter
 	blockFilter           arbos.BlockFilter // only used in testing
 	transactionFeedServer transactionBroadcaster
+	blockFinishReason     finishBlockReason
 }
 
 var _ BlockSequencingHooks = (*FullSequencingHooks)(nil)
@@ -164,8 +165,9 @@ func (s *FullSequencingHooks) NextTxToSequence(statedb *state.StateDB, blockGasL
 	if n := len(s.sequencedTxs); n > 0 && errors.Is(s.sequencedTxs[n-1].err, txNotFinalized) {
 		return nil, nil, fmt.Errorf("NextTxToSequence called before the block processor reported tx %s's result", s.sequencedTxs[n-1].queueItem.tx.Hash())
 	}
-	item, ok := s.fetcher.NextQueueItem(statedb, s.maxSequencedTxsSize-s.sequencedTxsSizeSoFar, blockGasLeft)
-	if !ok {
+	item, finishReason := s.fetcher.NextQueueItem(statedb, s.maxSequencedTxsSize-s.sequencedTxsSizeSoFar, blockGasLeft)
+	if finishReason != blockNotFinished {
+		s.blockFinishReason = finishReason
 		return nil, nil, nil
 	}
 	s.sequencedTxs = append(s.sequencedTxs, sequencedTx{queueItem: item, err: txNotFinalized})
