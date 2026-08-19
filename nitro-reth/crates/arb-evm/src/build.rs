@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use alloy_consensus::{Transaction, TransactionEnvelope, TxReceipt};
 use alloy_eips::eip2718::{Encodable2718, Typed2718};
 use alloy_evm::{
@@ -146,6 +147,7 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
             gas_used_for_l1: Vec::new(),
             multi_gas_used: Vec::new(),
             expected_balance_delta: 0,
+            redeem_queue: VecDeque::new(),
             zombie_accounts: rustc_hash::FxHashSet::default(),
             finalise_deleted: rustc_hash::FxHashSet::default(),
             touched_accounts: rustc_hash::FxHashSet::default(),
@@ -267,6 +269,9 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     /// Expected balance delta from deposits (positive) and L2→L1 withdrawals (negative).
     /// Used for post-block safety verification.
     expected_balance_delta: i128,
+    /// Block-scoped FIFO of scheduled retry txs pending execution, fed from the per-tx
+    /// `scheduled_txs` staging on commit.
+    pub redeem_queue: VecDeque<Vec<u8>>,
     /// Zombie accounts: empty accounts preserved from EIP-161 deletion because
     /// they were touched by a zero-value transfer on pre-Stylus ArbOS.
     zombie_accounts: rustc_hash::FxHashSet<Address>,
@@ -339,12 +344,9 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
         }
     }
 
-    /// Pops the next scheduled retry tx (e.g. an auto-redeem) produced by the most recently
-    /// committed transaction, in FIFO order.
+    /// Pops the next scheduled retry tx (e.g. an auto-redeem) pending execution, in FIFO order.
     pub fn next_scheduled_tx(&mut self) -> Option<Vec<u8>> {
-        self.arb_hooks
-            .as_mut()
-            .and_then(|hooks| hooks.tx_proc.redeem_queue.pop_front())
+        self.redeem_queue.pop_front()
     }
 }
 
@@ -890,7 +892,7 @@ where
                                     let mut encoded = Vec::new();
                                     encoded.push(ArbTxType::ArbitrumRetryTx.as_u8());
                                     alloy_rlp::Encodable::encode(&retry_tx, &mut encoded);
-                                    hooks.tx_proc.redeem_queue.push_back(encoded);
+                                    hooks.tx_proc.scheduled_txs.push(encoded);
                                 } else {
                                     tracing::warn!(
                                         target: "arb::executor",
@@ -1180,7 +1182,7 @@ where
             hooks.tx_proc.compute_hold_gas = 0;
             hooks.tx_proc.current_retryable = None;
             hooks.tx_proc.current_refund_to = None;
-            hooks.tx_proc.redeem_queue.clear();
+            hooks.tx_proc.scheduled_txs.clear();
         }
 
         // Effective gas price the sender pays on posterGas — full when
@@ -2258,7 +2260,7 @@ where
                 if let Some(encoded) = encoded_retry_tx
                     && let Some(hooks) = self.arb_hooks.as_mut()
                 {
-                    hooks.tx_proc.redeem_queue.push_back(encoded);
+                    hooks.tx_proc.scheduled_txs.push(encoded);
                 }
                 if let Some(b) = latest_backlog {
                     self.precompile_ctx.block.set_current_gas_backlog(b);
@@ -2951,7 +2953,7 @@ where
                 >= arb_chainspec::arbos_version::ARBOS_VERSION_FIX_REDEEM_GAS
                 && let Some(hooks) = self.arb_hooks.as_ref()
             {
-                for scheduled in hooks.tx_proc.redeem_queue.iter() {
+                for scheduled in &hooks.tx_proc.scheduled_txs {
                     if let Some(retry_gas) = decode_retry_tx_gas(scheduled) {
                         adjusted_gas_used = adjusted_gas_used.saturating_sub(retry_gas);
                     }
@@ -2982,6 +2984,12 @@ where
             }
 
             let _ = is_retry; // suppress unused warning
+        }
+
+        // The committed tx's scheduled retries join the back of the block-scoped queue
+        if let Some(hooks) = self.arb_hooks.as_mut() {
+            self.redeem_queue
+                .extend(hooks.tx_proc.scheduled_txs.drain(..));
         }
 
         self.precompile_ctx.reset_tx();
