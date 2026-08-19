@@ -84,7 +84,7 @@ func removeStatesFromDb(t *testing.T, bc *core.BlockChain, db ethdb.Database, fr
 	}
 	for i := from; i <= to; i++ {
 		header := bc.GetHeaderByNumber(i)
-		_, err := bc.StateAt(header.Root)
+		_, err := bc.StateAt(header)
 		if err == nil {
 			Fatal(t, "internal test error - failed to remove state from db")
 		}
@@ -396,7 +396,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 			continue
 		}
 		gas += block.GasUsed()
-		_, err := bc.StateAt(block.Root())
+		_, err := bc.StateAt(block.Header())
 		blocks++
 		if (skipBlocks == 0 && skipGas == 0) || (skipBlocks != 0 && blocks > skipBlocks) || (skipGas != 0 && gas > skipGas) {
 			if err != nil {
@@ -531,7 +531,7 @@ func testGettingState(t *testing.T, execConfig *gethexec.Config) {
 	// force garbage collection of StateDB object, what should cause the state finalizer to run
 	state = nil
 	runtime.GC()
-	_, err = bc.StateAt(header.Root)
+	_, err = bc.StateAt(header)
 	if err == nil {
 		Fatal(t, "StateAndHeaderByNumber didn't failed as expected")
 	}

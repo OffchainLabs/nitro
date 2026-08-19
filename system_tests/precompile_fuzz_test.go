@@ -7,6 +7,8 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/holiman/uint256"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -75,11 +77,11 @@ func FuzzPrecompiles(f *testing.F) {
 			From:       common.Address{},
 			To:         &addr,
 			Nonce:      0,
-			Value:      new(big.Int),
+			Value:      new(uint256.Int),
 			GasLimit:   fuzzGas,
-			GasPrice:   new(big.Int),
-			GasFeeCap:  new(big.Int),
-			GasTipCap:  new(big.Int),
+			GasPrice:   new(uint256.Int),
+			GasFeeCap:  new(uint256.Int),
+			GasTipCap:  new(uint256.Int),
 			Data:       input,
 			AccessList: nil,
 		}

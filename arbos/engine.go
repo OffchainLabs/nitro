@@ -51,7 +51,7 @@ func (e Engine) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 }
 
 func (e Engine) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body) {
-	FinalizeBlock(header, body.Transactions, state, chain.Config())
+	FinalizeBlock(header, state, chain.Config())
 }
 
 func (e Engine) FinalizeAndAssemble(_ context.Context, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt) (*types.Block, error) {

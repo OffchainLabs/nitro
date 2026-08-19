@@ -58,7 +58,7 @@ func TestTrieDBCommitRace(t *testing.T) {
 				block, err := api.BlockByNumber(ctx, rpc.BlockNumber(blockNumber))
 				if err == nil && block != nil {
 					root := block.Root()
-					if statedb, err := bc.StateAt(root); err == nil {
+					if statedb, err := bc.StateAt(block.Header()); err == nil {
 						err := statedb.Database().TrieDB().Reference(root, common.Hash{})
 						Require(t, err)
 						roots = append(roots, root)

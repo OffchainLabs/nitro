@@ -350,6 +350,15 @@ func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chai
 	return nil
 }
 
+// validateConfiguredChainId errors when the chain config the database was
+// opened or initialized with does not target the configured chain.id.
+func validateConfiguredChainId(chainConfig *params.ChainConfig, chainId *big.Int) error {
+	if chainConfig.ChainID == nil || !arbmath.BigEquals(chainConfig.ChainID, chainId) {
+		return fmt.Errorf("database contains chain ID %v but configured chain ID is %v; if the database was just initialized from a mismatched init source (genesis document or snapshot), delete the data directory and initialize again", chainConfig.ChainID, chainId)
+	}
+	return nil
+}
+
 func ValidateBlockChain(blockChain *core.BlockChain, chainConfig *params.ChainConfig) error {
 	statedb, err := blockChain.State()
 	if err != nil {
@@ -726,7 +735,7 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 // Opens the execution DB, falling back to download+genesis initialization when no existing
 // DB is found. The returned bool reports whether the DB was freshly created on this call.
 func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *config.NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, statetransfer.InitDataReader, *core.BlockChain, bool, error) {
-	executionDB, wasmDB, l2BlockChain, chainConfig, err := OpenExistingExecutionDB(stack, config, chainId, cacheConfig, tracer, persistentConfig)
+	executionDB, wasmDB, l2BlockChain, chainConfig, err := OpenExistingExecutionDB(stack, config, cacheConfig, tracer, persistentConfig)
 	if err != nil {
 		return nil, nil, nil, false, err
 	}
@@ -764,6 +773,10 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 		if err != nil {
 			return executionDB, nil, nil, false, err
 		}
+	}
+
+	if err := validateConfiguredChainId(chainConfig, chainId); err != nil {
+		return executionDB, nil, l2BlockChain, false, err
 	}
 
 	err = pruneExecutionDB(ctx, executionDB, stack, config, cacheConfig, persistentConfig, l1Client, rollupAddrs)
@@ -846,46 +859,19 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
 	}
 
-	genesisJsonFile := config.Init.GenesisJsonFile
-	if genesisJsonFile == "" && initDataReader != nil {
-		genesisJsonFile, err = GetGenesisFileNameFromDirectory(config.Init.GenesisJsonFileDirectory, config.Chain.ID)
-		if err != nil {
-			log.Error("error getting genesis json file from directory", "err", err)
-		}
+	gen, err := resolveGenesisDocument(&config.Init, config.Chain.ID, initDataReader != nil)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
-	if genesisJsonFile != "" {
+	if gen != nil {
 		if initDataReader != nil {
 			return nil, nil, nil, errors.New("multiple init methods supplied")
 		}
-		genesisJson, err := os.ReadFile(genesisJsonFile)
+		initDataReader, chainConfig, genesisArbOSInit, err = initDataFromGenesis(gen)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		var gen core.Genesis
-		if err := json.Unmarshal(genesisJson, &gen); err != nil {
-			return nil, nil, nil, err
-		}
-		var accounts []statetransfer.AccountInitializationInfo
-		for address, account := range gen.Alloc {
-			accounts = append(accounts, statetransfer.AccountInitializationInfo{
-				Addr:       address,
-				EthBalance: account.Balance,
-				Nonce:      account.Nonce,
-				ContractInfo: &statetransfer.AccountInitContractInfo{
-					Code:            account.Code,
-					ContractStorage: account.Storage,
-				},
-			})
-		}
-		initDataReader = statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{
-			Accounts: accounts,
-		})
-		chainConfig, err = gen.GetConfig()
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		genesisArbOSInit = gen.ArbOSInit
 	} else {
 		if initDataReader == nil {
 			chainConfig = gethexec.TryReadStoredChainConfig(executionDB)
@@ -911,6 +897,93 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 	}
 
 	return initDataReader, chainConfig, genesisArbOSInit, nil
+}
+
+// resolveGenesisDocument picks the genesis document to init from, honoring
+// init.genesis-mode. With the default (empty) mode the first configured
+// source wins, in the order: genesis-json (inline), genesis-json-file,
+// genesis-json-file-directory. Returns nil when no document is configured.
+func resolveGenesisDocument(initConfig *conf.InitConfig, chainId uint64, otherInitMethodSupplied bool) (*core.Genesis, error) {
+	parseGenesis := func(genesisJson []byte) (*core.Genesis, error) {
+		var gen core.Genesis
+		if err := json.Unmarshal(genesisJson, &gen); err != nil {
+			return nil, err
+		}
+		return &gen, nil
+	}
+	readGenesisFile := func(genesisJsonFile string) (*core.Genesis, error) {
+		genesisJson, err := os.ReadFile(genesisJsonFile)
+		if err != nil {
+			return nil, err
+		}
+		return parseGenesis(genesisJson)
+	}
+	switch initConfig.GenesisMode {
+	case conf.GenesisModeInline:
+		return parseGenesis([]byte(initConfig.GenesisJson))
+	case conf.GenesisModeFile:
+		return readGenesisFile(initConfig.GenesisJsonFile)
+	case conf.GenesisModeDirectory:
+		// normally already resolved at config parse time; the lookup below
+		// serves callers that build the config directly
+		genesisJsonFile := initConfig.ResolvedGenesisJsonFile()
+		if genesisJsonFile == "" {
+			var err error
+			genesisJsonFile, err = GetGenesisFileNameFromDirectory(initConfig.GenesisJsonFileDirectory, chainId)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return readGenesisFile(genesisJsonFile)
+	}
+	if initConfig.GenesisJson != "" {
+		if initConfig.GenesisJsonFile != "" {
+			log.Warn("both init.genesis-json and init.genesis-json-file are configured, using init.genesis-json; set init.genesis-mode to choose explicitly", "ignoredFile", initConfig.GenesisJsonFile)
+		}
+		return parseGenesis([]byte(initConfig.GenesisJson))
+	}
+	if initConfig.GenesisJsonFile != "" {
+		return readGenesisFile(initConfig.GenesisJsonFile)
+	}
+	if resolvedGenesisJsonFile := initConfig.ResolvedGenesisJsonFile(); resolvedGenesisJsonFile != "" {
+		return readGenesisFile(resolvedGenesisJsonFile)
+	}
+	if otherInitMethodSupplied && initConfig.GenesisJsonFileDirectory != "" {
+		// lookup kept so that a directory match while another init method is
+		// supplied is reported as "multiple init methods supplied"
+		genesisJsonFile, err := GetGenesisFileNameFromDirectory(initConfig.GenesisJsonFileDirectory, chainId)
+		if err != nil {
+			log.Error("error getting genesis json file from directory", "err", err)
+			return nil, nil
+		}
+		return readGenesisFile(genesisJsonFile)
+	}
+	return nil, nil
+}
+
+// initDataFromGenesis converts a genesis document into init data and the
+// chain config it carries.
+func initDataFromGenesis(gen *core.Genesis) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, error) {
+	chainConfig, _, err := cmd_util.ReadChainConfig(gen)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	var accounts []statetransfer.AccountInitializationInfo
+	for address, account := range gen.Alloc {
+		accounts = append(accounts, statetransfer.AccountInitializationInfo{
+			Addr:       address,
+			EthBalance: account.Balance,
+			Nonce:      account.Nonce,
+			ContractInfo: &statetransfer.AccountInitContractInfo{
+				Code:            account.Code,
+				ContractStorage: account.Storage,
+			},
+		})
+	}
+	initDataReader := statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{
+		Accounts: accounts,
+	})
+	return initDataReader, chainConfig, gen.ArbOSInit, nil
 }
 
 func GetGenesisFileNameFromDirectory(genesisFileDirectory string, chainId uint64) (string, error) {
@@ -1145,15 +1218,11 @@ func openExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *c
 	return &openedExecutionDB{executionDB: executionDB, wasmDB: wasmDB, wavmPurged: wavmPurged}, nil
 }
 
-func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, *core.BlockChain, *params.ChainConfig, error) {
+func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, *core.BlockChain, *params.ChainConfig, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{AncientsDirectory: config.Persistent.Ancient, MetricsNamespace: "l2chaindata/", ReadOnly: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("l2chaindata")}); err == nil {
 			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
 				readOnlyDb.Close()
-				if !arbmath.BigEquals(chainConfig.ChainID, chainId) {
-					return nil, nil, nil, chainConfig, fmt.Errorf("database has chain ID %v but config has chain ID %v (are you sure this database is for the right chain?)", chainConfig.ChainID, chainId)
-				}
-
 				opened, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
 				if err != nil {
 					return nil, nil, nil, chainConfig, err

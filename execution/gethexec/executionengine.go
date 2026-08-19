@@ -1305,13 +1305,13 @@ type tipRecordingSession struct {
 
 func (s *ExecutionEngine) beginTipRecording(parentHeader *types.Header, runCtx *core.MessageRunContext, recordAtTip bool) (*tipRecordingSession, error) {
 	if !recordAtTip {
-		statedb, err := s.bc.StateAt(parentHeader.Root)
+		statedb, err := s.bc.StateAt(parentHeader)
 		if err != nil {
 			return nil, err
 		}
 		return &tipRecordingSession{statedb: statedb, chainContext: s.bc, runCtx: runCtx}, nil
 	}
-	stateDatabase := state.NewDatabase(s.bc.TrieDB(), s.bc.CodeDB()).WithSnapshot(s.bc.Snapshots())
+	stateDatabase := state.NewMPTDatabase(s.bc.TrieDB(), s.bc.CodeDB()).WithSnapshot(s.bc.Snapshots())
 	recordingStateDatabase := arbitrum.NewTipRecordingStateDatabase(stateDatabase)
 	recordingChainContext := arbitrum.NewRecordingChainContext(s.bc, parentHeader)
 	statedb, err := state.NewRecording(parentHeader.Root, recordingStateDatabase)
@@ -1439,7 +1439,7 @@ func (s *ExecutionEngine) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) (*ex
 func (s *ExecutionEngine) updateL1GasPriceEstimateMetric() {
 	bc := s.bc
 	latestHeader := bc.CurrentBlock()
-	latestState, err := bc.StateAt(latestHeader.Root)
+	latestState, err := bc.StateAt(latestHeader)
 	if err != nil {
 		log.Error("error getting latest statedb while fetching l2 Estimate of L1 GasPrice")
 		return
@@ -1460,7 +1460,7 @@ func (s *ExecutionEngine) updateL1GasPriceEstimateMetric() {
 func (s *ExecutionEngine) getL1PricingSurplus() (int64, error) {
 	bc := s.bc
 	latestHeader := bc.CurrentBlock()
-	latestState, err := bc.StateAt(latestHeader.Root)
+	latestState, err := bc.StateAt(latestHeader)
 	if err != nil {
 		return 0, errors.New("error getting latest statedb while fetching current L1 pricing surplus")
 	}
@@ -1765,7 +1765,7 @@ func (s *ExecutionEngine) isTxHashInOnchainFilter(txHash common.Hash) (bool, err
 		return false, err
 	}
 
-	statedb, err := s.bc.StateAt(currentHeader.Root)
+	statedb, err := s.bc.StateAt(currentHeader)
 	if err != nil {
 		return false, err
 	}

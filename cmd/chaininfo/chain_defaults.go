@@ -65,11 +65,53 @@ func CopyBlobScheduleConfig(blobSchedule *params.BlobScheduleConfig) *params.Blo
 			UpdateFraction: blobSchedule.Osaka.UpdateFraction,
 		}
 	}
-	if blobSchedule.Verkle != nil {
-		blobScheduleCopy.Verkle = &params.BlobConfig{
-			Target:         blobSchedule.Verkle.Target,
-			Max:            blobSchedule.Verkle.Max,
-			UpdateFraction: blobSchedule.Verkle.UpdateFraction,
+	if blobSchedule.BPO1 != nil {
+		blobScheduleCopy.BPO1 = &params.BlobConfig{
+			Target:         blobSchedule.BPO1.Target,
+			Max:            blobSchedule.BPO1.Max,
+			UpdateFraction: blobSchedule.BPO1.UpdateFraction,
+		}
+	}
+	if blobSchedule.BPO2 != nil {
+		blobScheduleCopy.BPO2 = &params.BlobConfig{
+			Target:         blobSchedule.BPO2.Target,
+			Max:            blobSchedule.BPO2.Max,
+			UpdateFraction: blobSchedule.BPO2.UpdateFraction,
+		}
+	}
+	if blobSchedule.BPO3 != nil {
+		blobScheduleCopy.BPO3 = &params.BlobConfig{
+			Target:         blobSchedule.BPO3.Target,
+			Max:            blobSchedule.BPO3.Max,
+			UpdateFraction: blobSchedule.BPO3.UpdateFraction,
+		}
+	}
+	if blobSchedule.BPO4 != nil {
+		blobScheduleCopy.BPO4 = &params.BlobConfig{
+			Target:         blobSchedule.BPO4.Target,
+			Max:            blobSchedule.BPO4.Max,
+			UpdateFraction: blobSchedule.BPO4.UpdateFraction,
+		}
+	}
+	if blobSchedule.BPO5 != nil {
+		blobScheduleCopy.BPO5 = &params.BlobConfig{
+			Target:         blobSchedule.BPO5.Target,
+			Max:            blobSchedule.BPO5.Max,
+			UpdateFraction: blobSchedule.BPO5.UpdateFraction,
+		}
+	}
+	if blobSchedule.Amsterdam != nil {
+		blobScheduleCopy.Amsterdam = &params.BlobConfig{
+			Target:         blobSchedule.Amsterdam.Target,
+			Max:            blobSchedule.Amsterdam.Max,
+			UpdateFraction: blobSchedule.Amsterdam.UpdateFraction,
+		}
+	}
+	if blobSchedule.UBT != nil {
+		blobScheduleCopy.UBT = &params.BlobConfig{
+			Target:         blobSchedule.UBT.Target,
+			Max:            blobSchedule.UBT.Max,
+			UpdateFraction: blobSchedule.UBT.UpdateFraction,
 		}
 	}
 	return blobScheduleCopy

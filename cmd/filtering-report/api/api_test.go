@@ -155,17 +155,17 @@ func TestReportFilteredTransactionsPartialFailure(t *testing.T) {
 	}
 }
 
-func TestReportCurrentFilterSetID_NoEndpointIsNoOp(t *testing.T) {
+func TestReportCurrentFilterSetIDs_NoEndpointIsNoOp(t *testing.T) {
 	stack := NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfigDefault, signertest.NewSigningPair(t).Signer)
 	client := stack.Attach()
 	defer client.Close()
 
-	report := addressfilter.FilterSetIDReport{
-		FilterSetID: uuid.New(),
-		ChainID:     42161,
-		ReportedAt:  time.Now().UTC(),
+	report := addressfilter.FilterSetIDsReport{
+		FilterSetIDs: []uuid.UUID{uuid.New()},
+		ChainID:      42161,
+		ReportedAt:   time.Now().UTC(),
 	}
-	if err := client.Call(nil, "filteringreport_reportCurrentFilterSetID", report); err != nil {
+	if err := client.Call(nil, "filteringreport_reportCurrentFilterSetIDs", report); err != nil {
 		t.Fatalf("expected no-op call to succeed, got %v", err)
 	}
 }

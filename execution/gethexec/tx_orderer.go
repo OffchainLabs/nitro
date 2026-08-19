@@ -11,13 +11,15 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// ordererStats records the ordering policy used and the block limits hit while yielding a block's candidates.
-type ordererStats struct {
-	pgaOrdering           bool
-	blockSizeLimitReached bool
-	blockGasLimitReached  bool
-	exhaustedQueue        bool
-}
+// blockLimitReason records what capped the block's candidates: the queue running dry, or a
+// block limit — recorded even when the fetch skips the oversized candidate and continues.
+type blockLimitReason int
+
+const (
+	exhaustedQueue blockLimitReason = iota
+	blockSizeLimitReached
+	blockGasLimitReached
+)
 
 // nextTxFetcher supplies a block's tx candidates to the sequencing hooks one at a time.
 type nextTxFetcher interface {
@@ -30,21 +32,20 @@ type nextTxFetcher interface {
 
 // fixedTxFetcher yields a pre-set candidate list.
 type fixedTxFetcher struct {
-	items     []txQueueItem
-	exhausted []txQueueItem
-	stats     ordererStats
+	items       []txQueueItem
+	exhausted   []txQueueItem
+	limitReason blockLimitReason
 }
 
 var _ nextTxFetcher = (*fixedTxFetcher)(nil)
 
 func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, bool) {
 	if len(f.items) == 0 {
-		f.stats.exhaustedQueue = len(f.exhausted) == 0
 		return txQueueItem{}, false
 	}
 
 	if blockGasLeft < params.TxGas {
-		f.stats.blockGasLimitReached = true
+		f.limitReason = blockGasLimitReached
 		f.exhausted = append(f.exhausted, f.items...)
 		f.items = nil
 		return txQueueItem{}, false
@@ -55,7 +56,7 @@ func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSiz
 
 	// If the tx is too big for the remaining block size, we exhaust it and continue to the next one.
 	if item.txSize > remainingBlockSize {
-		f.stats.blockSizeLimitReached = true
+		f.limitReason = blockSizeLimitReached
 		f.exhausted = append(f.exhausted, item)
 		return f.NextQueueItem(statedb, remainingBlockSize, blockGasLeft)
 	}
@@ -90,14 +91,15 @@ type txOrderer interface {
 	// dispose of.
 	TakeRemaining() []txQueueItem
 
-	// OrdererStats reports the orderer's statistics.
-	OrdererStats() ordererStats
+	// LimitReason reports what capped the block's candidates.
+	LimitReason() blockLimitReason
 
 	// OnNonceGapResolved hands the orderer a parked tx whose nonce gap the last
 	// inclusion just closed, so it can re-enter the block's candidates.
 	OnNonceGapResolved(queueItem txQueueItem)
 
-	// BlockInterval reports the time interval between the start of the block and the start of the next block.
+	// BlockInterval reports the time interval between the start of this block and the start of
+	// the next one, it includes the time spent building the block.
 	BlockInterval() time.Duration
 }
 
@@ -112,7 +114,9 @@ type txOrdererSequencer interface {
 type fifoTxOrderer struct {
 	seq           txOrdererSequencer
 	baseFee       *big.Int
+	pollInterval  time.Duration
 	blockInterval time.Duration
+	started       bool
 	// The embedded fetcher holds the not-yet-yielded candidates; set by StartBlock, consumed
 	// through NextQueueItem, and emptied by TakeRemaining.
 	fixedTxFetcher
@@ -120,22 +124,28 @@ type fifoTxOrderer struct {
 
 var _ txOrderer = (*fifoTxOrderer)(nil)
 
-func newFIFOTxOrderer(seq txOrdererSequencer, blockInterval time.Duration, baseFee *big.Int) *fifoTxOrderer {
-	return &fifoTxOrderer{seq: seq, blockInterval: blockInterval, baseFee: baseFee}
+func newFIFOTxOrderer(seq txOrdererSequencer, pollInterval time.Duration, blockInterval time.Duration, baseFee *big.Int) *fifoTxOrderer {
+	return &fifoTxOrderer{
+		seq:           seq,
+		pollInterval:  pollInterval,
+		blockInterval: blockInterval,
+		baseFee:       baseFee,
+	}
 }
 
 // StartBlock drains the sequencer's pending txs as the block's candidates.
 func (o *fifoTxOrderer) StartBlock(statedb *state.StateDB) bool {
 	items := o.seq.drainValidatedTxs(statedb, o.baseFee)
 	o.fixedTxFetcher = fixedTxFetcher{items: items}
-	return len(items) > 0
+	o.started = len(items) > 0
+	return o.started
 }
 
 // OnTxInclusion is a no-op: FIFO ordering doesn't react to inclusions.
 func (o *fifoTxOrderer) OnTxInclusion(queueItem txQueueItem) {}
 
-func (o *fifoTxOrderer) OrdererStats() ordererStats {
-	return o.stats
+func (o *fifoTxOrderer) LimitReason() blockLimitReason {
+	return o.limitReason
 }
 
 // OnNonceGapResolved appends the revived tx to the block's candidates: its nonce is valid
@@ -144,6 +154,12 @@ func (o *fifoTxOrderer) OnNonceGapResolved(queueItem txQueueItem) {
 	o.items = append(o.items, queueItem)
 }
 
+// BlockInterval is the full block interval once StartBlock has found work; until then it is
+// the idle poll cadence, matching the wait decideSequencingTurn uses when there is no pending work.
 func (o *fifoTxOrderer) BlockInterval() time.Duration {
+	if !o.started {
+		return min(o.pollInterval, o.blockInterval)
+	}
+
 	return o.blockInterval
 }

@@ -522,7 +522,7 @@ type stateDump struct {
 func dumpState(t *testing.T, client *TestClient, blockNumber uint64) *stateDump {
 	bc := client.ExecNode.Backend.BlockChain()
 	block := bc.GetBlockByNumber(blockNumber)
-	sdb, err := bc.StateAt(block.Root())
+	sdb, err := bc.StateAt(block.Header())
 	Require(t, err)
 	trieId := trie.TrieID(block.Root())
 	tr, err := trie.New(trieId, sdb.Database().TrieDB())

@@ -253,7 +253,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
-	f.Duration(prefix+".filter-set-reporting-interval", DefaultSequencerConfig.FilterSetReportingInterval, "interval at which the active sequencer reports its current address-filter set id to the filtering-report service")
+	f.Duration(prefix+".filter-set-reporting-interval", DefaultSequencerConfig.FilterSetReportingInterval, "interval at which the active sequencer reports its current address-filter set ids to the filtering-report service")
 }
 
 func DangerousAddOptions(prefix string, f *pflag.FlagSet) {
@@ -452,9 +452,9 @@ func (q *synchronizedTxQueue) Len() int {
 }
 
 type pendingQueueItemsResults struct {
-	block *types.Block
-	hooks *FullSequencingHooks
-	stats ordererStats
+	block       *types.Block
+	hooks       *FullSequencingHooks
+	limitReason blockLimitReason
 }
 
 var _ txOrdererSequencer = (*Sequencer)(nil)
@@ -561,7 +561,7 @@ func (s *Sequencer) FilteringReady() bool {
 	if service == nil {
 		return true
 	}
-	return !service.GetLoadedAt().IsZero()
+	return service.AllFilesLoaded()
 }
 
 func (s *Sequencer) buildFilteredTxReport(tx *types.Transaction, header *types.Header, filteredAddresses []filter.FilteredAddressRecord, positionInBlock int) {
@@ -1202,7 +1202,7 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 		return nil, config.MaxBlockSpeed
 	}
 
-	var orderer txOrderer = newFIFOTxOrderer(s, config.MaxBlockSpeed, baseFee)
+	var orderer txOrderer = newFIFOTxOrderer(s, config.PollInterval, config.MaxBlockSpeed, baseFee)
 	if collectTips && !config.ExperimentalPGA.DangerousForceFIFO {
 		orderer = NewPGATxOrderer(ctx, s, config.ExperimentalPGA.RoundsPerBlock, config.PGARoundLength(), baseFee)
 	}
@@ -1274,10 +1274,7 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrde
 		return nil, config.MaxBlockSpeed
 	}
 	if !orderer.StartBlock(statedb) {
-		// No regular txs to sequence right now; re-check on the idle poll
-		// cadence rather than waiting a full block interval. This matches the
-		// wait decideSequencingTurn uses when there is no pending work.
-		return nil, min(config.PollInterval, config.MaxBlockSpeed)
+		return nil, orderer.BlockInterval()
 	}
 
 	hooks = MakeSequencingHooks(
@@ -1370,9 +1367,9 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrde
 	}
 
 	s.pendingQueueItemsResults = &pendingQueueItemsResults{
-		block: block,
-		hooks: hooks,
-		stats: orderer.OrdererStats(),
+		block:       block,
+		hooks:       hooks,
+		limitReason: orderer.LimitReason(),
 	}
 
 	if madeBlock {
@@ -1434,7 +1431,7 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 
 		madeBlock := false
 		var blockTxSize int64
-		blockGasLimitReached := false
+		blockOutOfGas := false
 		for _, st := range hooks.sequencedTxs {
 			queueItem := st.queueItem
 			err := st.err
@@ -1446,7 +1443,7 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 			if errors.Is(err, core.ErrGasLimitReached) {
 				// There's not enough gas left in the block for this tx.
 				if madeBlock {
-					blockGasLimitReached = true
+					blockOutOfGas = true
 					// There was already an earlier tx in the block; retry in a fresh block.
 					s.txRetryQueue.Push(queueItem)
 					continue
@@ -1466,13 +1463,12 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 
 		if madeBlock {
 			blockTxSizeHistogram.Update(blockTxSize)
-			stats := s.pendingQueueItemsResults.stats
-			if stats.exhaustedQueue {
-				// the orderer drained its queue without skipping any candidate
+			limitReason := s.pendingQueueItemsResults.limitReason
+			if limitReason == exhaustedQueue {
 				txExhaustedBlocksCounter.Inc(1)
-			} else if stats.blockGasLimitReached || blockGasLimitReached {
+			} else if limitReason == blockGasLimitReached || blockOutOfGas {
 				gasLimitedBlocksCounter.Inc(1)
-			} else if stats.blockSizeLimitReached {
+			} else if limitReason == blockSizeLimitReached {
 				dataLimitedBlocksCounter.Inc(1)
 			}
 		}
@@ -1721,23 +1717,23 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	return nil
 }
 
-func (s *Sequencer) reportFilterSetID(ctx context.Context, rpcClient *FilteringReportRPCClient) error {
+func (s *Sequencer) reportFilterSetIDs(ctx context.Context, rpcClient *FilteringReportRPCClient) error {
 	service := s.addressFilterService.Load()
 	if service == nil {
-		log.Debug("skipping filter-set id report: address-filter service not configured")
+		log.Debug("skipping filter-set ids report: address-filter service not configured")
 		return nil
 	}
-	filterSetID := service.CurrentFilterSetID()
-	if filterSetID == uuid.Nil {
+	if !service.AllFilesLoaded() {
 		// When address filtering is set, the node blocks on the initial S3
-		// hash-list download during initialization (AddressFilterService.Initialize),
-		// so a running sequencer should always have a filter-set id loaded.
-		return errors.New("no filter-set id loaded yet")
+		// hash-list downloads during initialization (AddressFilterService.Initialize),
+		// so a running sequencer should always have every filter-set id loaded.
+		return errors.New("not all filter-set ids loaded yet")
 	}
-	_, err := rpcClient.ReportCurrentFilterSetID(&addressfilter.FilterSetIDReport{
-		FilterSetID: filterSetID,
-		ChainID:     s.execEngine.ChainID().Uint64(),
-		ReportedAt:  time.Now().UTC(),
+	filterSetIDs := service.CurrentFilterSetIDs()
+	_, err := rpcClient.ReportCurrentFilterSetIDs(&addressfilter.FilterSetIDsReport{
+		FilterSetIDs: filterSetIDs,
+		ChainID:      s.execEngine.ChainID().Uint64(),
+		ReportedAt:   time.Now().UTC(),
 	}).Await(ctx)
 	return err
 }
@@ -1755,8 +1751,8 @@ func (s *Sequencer) startFilterSetReporting() {
 		if !s.IsActive() {
 			return interval
 		}
-		if err := s.reportFilterSetID(ctx, rpcClient); err != nil {
-			log.Warn("failed to report current filter-set id", "err", err)
+		if err := s.reportFilterSetIDs(ctx, rpcClient); err != nil {
+			log.Warn("failed to report current filter-set ids", "err", err)
 		}
 		return interval
 	})

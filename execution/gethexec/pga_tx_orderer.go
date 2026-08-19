@@ -46,7 +46,7 @@ type pgaTxOrderer struct {
 	baseFee        *big.Int
 	roundsPerBlock uint
 	roundLength    time.Duration
-	stats          ordererStats
+	limitReason    blockLimitReason
 }
 
 var _ txOrderer = (*pgaTxOrderer)(nil)
@@ -68,7 +68,7 @@ func (p *pgaTxOrderer) CurrentRound() uint64 {
 
 func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, bool) {
 	if blockGasLeft < params.TxGas {
-		p.stats.blockGasLimitReached = true
+		p.limitReason = blockGasLimitReached
 		p.recordRoundEnd(pgaRoundsBlockFilledCounter)
 		p.mempool.ApplyRoundBoost()
 		return txQueueItem{}, false
@@ -83,7 +83,6 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 			}
 			p.mempool.ApplyRoundBoost()
 			if p.schedule.IsLastRound() {
-				p.stats.exhaustedQueue = p.mempool.PriorityQueueLen() == 0
 				return txQueueItem{}, false
 			}
 			err := p.schedule.WaitAndAdvanceRound(p.ctx)
@@ -101,7 +100,7 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 		// If the next tx is too big to fit in the remaining block space, we leave it in the mempool and stop
 		// sequencing. The sequencer will finalize the block and start a new one, with a fresh mempool and schedule.
 		if item.txSize > remainingBlockSize {
-			p.stats.blockSizeLimitReached = true
+			p.limitReason = blockSizeLimitReached
 			p.recordRoundEnd(pgaRoundsBlockFilledCounter)
 			p.mempool.ApplyRoundBoost()
 			return txQueueItem{}, false
@@ -168,8 +167,8 @@ func (p *pgaTxOrderer) TakeRemaining() []txQueueItem {
 	return p.mempool.TakeRemaining()
 }
 
-func (p *pgaTxOrderer) OrdererStats() ordererStats {
-	return p.stats
+func (p *pgaTxOrderer) LimitReason() blockLimitReason {
+	return p.limitReason
 }
 
 func (p *pgaTxOrderer) OnTxInclusion(queueItem txQueueItem) {
@@ -177,6 +176,8 @@ func (p *pgaTxOrderer) OnTxInclusion(queueItem txQueueItem) {
 	recordIncludedPGATx(queueItem)
 }
 
+// BlockInterval spans the block's elapsed rounds; a no-work block never leaves round 1, so
+// empty attempts retry on the round cadence.
 func (p *pgaTxOrderer) BlockInterval() time.Duration {
 	return p.schedule.ElapsedInterval()
 }

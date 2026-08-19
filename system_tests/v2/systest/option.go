@@ -322,6 +322,14 @@ func WithL1() TestOption {
 	}
 }
 
+// WithMultiNode builds an L1 + sequencer L2 plus a non-sequencer L2 syncing
+// via L1 (env.Followers()).
+func WithMultiNode() TestOption {
+	return func(b *builder) {
+		setTopology(b, TopologyMultiNode, "WithMultiNode")
+	}
+}
+
 // setTopology pins the node layout, rejecting a second topology option.
 func setTopology(b *builder, topo Topology, name string) {
 	if b.topology == topo {

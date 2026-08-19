@@ -90,7 +90,7 @@ func TestRecreateMissingStates(t *testing.T) {
 	triedb := bc.TrieDB()
 	for i := uint64(0); i <= currentBlock; i++ {
 		header := bc.GetHeaderByNumber(i)
-		_, err := bc.StateAt(header.Root)
+		_, err := bc.StateAt(header)
 		Require(t, err)
 		tr, err := trie.New(trie.TrieID(header.Root), triedb)
 		Require(t, err)

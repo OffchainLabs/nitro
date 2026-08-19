@@ -19,13 +19,32 @@ NODE_PID=$!
 echo "Devnode started with PID $NODE_PID"
 cd ..
 
-# Give the devnode time to initialize if needed
-sleep 10
+# Wait until the devnode RPC accepts requests; a fixed sleep races with node
+# startup and the tests then fail with connection resets.
+node_ready() {
+  curl -s -o /dev/null -X POST -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' \
+    http://127.0.0.1:8547
+}
+deadline=$(($(date +%s) + 600))
+until node_ready; do
+  if ! kill -0 "$NODE_PID" 2>/dev/null; then
+    echo "ERROR: devnode process died before the RPC came up" >&2
+    exit 1
+  fi
+  if (( $(date +%s) > deadline )); then
+    echo "ERROR: timed out waiting for the devnode RPC" >&2
+    exit 1
+  fi
+  sleep 5
+done
 
 # Run execution spec tests
 git clone https://github.com/OffchainLabs/execution-specs.git
 cd execution-specs
 curl -LsSf --retry 3 https://astral.sh/uv/install.sh | sh
+# The installer puts uv in ~/.local/bin, which is not on PATH on the CI runners.
+export PATH="$HOME/.local/bin:$PATH"
 uv python install 3.11
 uv python pin 3.11
 uv sync --all-extras
