@@ -5,13 +5,17 @@ use std::{
     fs,
     path::{Path, PathBuf},
     str::FromStr,
+    sync::Arc,
+    time::SystemTime,
 };
 
-use anyhow::Context;
+use anyhow::{Context, bail};
 use bytes::Bytes;
 use clap::Parser;
 use replay_builder::extract_function_names;
+use sp1_core_executor::{MinimalExecutor, Program, UserMode};
 use sp1_sdk::{Elf, include_elf};
+use validation::SP1_BOOTLOAD_SENTINEL;
 use wasmer::{
     Module, Store,
     sys::{CompilerConfig, CpuFeature, EngineBuilder, LLVM, Target, Triple},
@@ -32,12 +36,61 @@ struct Cli {
 }
 
 fn main() -> anyhow::Result<()> {
+    sp1_sdk::utils::setup_logger();
     let cli = Cli::parse();
 
     let wasm = fs::read(&cli.replay_wasm)
         .with_context(|| format!("read replay.wasm from {}", cli.replay_wasm.display()))?;
 
-    Artifacts::build(wasm)?.save(&cli.output_folder)
+    let artifacts = Artifacts::build(wasm)?;
+    artifacts.save(&cli.output_folder)?;
+    bootload(
+        &artifacts.wasmu,
+        &artifacts.function_names_json,
+        &cli.output_folder,
+    )
+}
+
+/// Bootloads the guest: executes it with the wasmu and name mapping loaded
+/// up to its ELF dump point, producing `dumped_replay_wasm.elf`.
+fn bootload(wasmu: &[u8], function_names_json: &str, output_folder: &Path) -> anyhow::Result<()> {
+    let output = match std::env::var("DUMP_ELF_OUTPUT") {
+        Ok(s) => s,
+        Err(_) => {
+            let output = output_folder.join("dumped_replay_wasm.elf");
+            unsafe { std::env::set_var("DUMP_ELF_OUTPUT", &output) };
+            output.display().to_string()
+        }
+    };
+    let _ = fs::remove_file(&output);
+
+    let program = Arc::new(
+        Program::from(&REPLAY_ELF).map_err(|e| anyhow::anyhow!("parse replay ELF: {e:#}"))?,
+    );
+    let mut executor = MinimalExecutor::<UserMode>::simple(program);
+    executor.with_input(wasmu);
+    executor.with_input(function_names_json.as_bytes());
+    // Bincode-encode the sentinel to match the runner's SP1Stdin wire format;
+    // the guest recognizes it and halts cleanly after the ELF dump.
+    let bootload_input = bincode::serialize(&SP1_BOOTLOAD_SENTINEL.to_vec())
+        .context("serialize bootload sentinel")?;
+    executor.with_input(&bootload_input);
+
+    let t0 = SystemTime::now();
+    let _ = executor.execute_chunk();
+    let time_secs = t0.elapsed().context("measure bootload time")?.as_secs_f64();
+
+    if !fs::exists(&output).context("check bootload output")? {
+        bail!("SP1 bootloading failed: expected output at '{output}' was not produced");
+    }
+
+    tracing::info!(
+        "[PROFILE] bootloading: cycles={}, time_secs={:.3}",
+        executor.global_clk(),
+        time_secs,
+    );
+    println!("Bootloaded program is written to {output}");
+    Ok(())
 }
 
 struct Artifacts {
