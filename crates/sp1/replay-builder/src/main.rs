@@ -43,17 +43,18 @@ fn main() -> anyhow::Result<()> {
         .with_context(|| format!("read replay.wasm from {}", cli.replay_wasm.display()))?;
 
     let artifacts = Artifacts::build(wasm)?;
-    artifacts.save(&cli.output_folder)?;
     bootload(
         &artifacts.wasmu,
         &artifacts.function_names_json,
         &cli.output_folder,
-    )
+    )?;
+    artifacts.save(&cli.output_folder)
 }
 
 /// Bootloads the guest: executes it with the wasmu and name mapping loaded
 /// up to its ELF dump point, producing `dumped_replay_wasm.elf`.
 fn bootload(wasmu: &[u8], function_names_json: &str, output_folder: &Path) -> anyhow::Result<()> {
+    fs::create_dir_all(output_folder).context("create output folder")?;
     let output = match std::env::var("DUMP_ELF_OUTPUT") {
         Ok(s) => s,
         Err(_) => {
