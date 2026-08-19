@@ -11,7 +11,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use bytes::Bytes;
 use clap::Parser;
 use replay_builder::extract_function_names;
@@ -89,7 +89,7 @@ impl Artifacts {
 /// Compiles replay.wasm for the riscv64 target with wasmer's LLVM backend into a serialized module.
 fn compile_wasmu(wasm: &[u8]) -> Result<Bytes> {
     let target = Target::new(
-        Triple::from_str("riscv64").map_err(|e| anyhow::anyhow!("riscv64 triple: {e}"))?,
+        Triple::from_str("riscv64").map_err(|e| anyhow!("riscv64 triple: {e}"))?,
         CpuFeature::set(),
     );
     let mut compiler = LLVM::new();
@@ -109,11 +109,9 @@ fn compile_wasmu(wasm: &[u8]) -> Result<Bytes> {
 fn bootload(artifacts: &Artifacts, dump_target: &Path) -> Result<()> {
     prepare_bootload(dump_target);
 
-    let program = Arc::new(
-        Program::from(&REPLAY_ELF).map_err(|e| anyhow::anyhow!("parse replay ELF: {e:#}"))?,
-    );
+    let program = Program::from(&REPLAY_ELF).map_err(|e| anyhow!("parse replay ELF: {e:#}"))?;
     let stdin = replay_io::send::bootload_mode(&artifacts.wasmu, &artifacts.function_names_json);
-    let mut executor = MinimalExecutor::<UserMode>::simple(program);
+    let mut executor = MinimalExecutor::<UserMode>::simple(Arc::new(program));
     for input in &stdin.buffer {
         executor.with_input(input);
     }
