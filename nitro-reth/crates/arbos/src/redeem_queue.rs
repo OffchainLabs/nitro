@@ -39,16 +39,9 @@ impl<T> RedeemQueue<T> {
         self.queue.iter()
     }
 
-    /// Pops the next scheduled retry whose ticket is still live; dead tickets (already redeemed,
-    /// deleted or expired) are dropped. The caller answers the liveness question, keeping this type
-    /// state-free.
-    pub fn pop_live(&mut self, mut is_live: impl FnMut(&T) -> bool) -> Option<T> {
-        while let Some(tx) = self.queue.pop_front() {
-            if is_live(&tx) {
-                return Some(tx);
-            }
-        }
-        None
+    /// Pops the next scheduled retry.
+    pub fn pop(&mut self) -> Option<T> {
+        self.queue.pop_front()
     }
 }
 
@@ -71,10 +64,10 @@ mod tests {
         }
         assert_eq!(queue.len(), 3);
 
-        assert_eq!(queue.pop_live(|_| true), Some("a"));
-        assert_eq!(queue.pop_live(|_| true), Some("b"));
-        assert_eq!(queue.pop_live(|_| true), Some("c"));
-        assert_eq!(queue.pop_live(|_| true), None);
+        assert_eq!(queue.pop(), Some("a"));
+        assert_eq!(queue.pop(), Some("b"));
+        assert_eq!(queue.pop(), Some("c"));
+        assert_eq!(queue.pop(), None);
         assert!(queue.is_empty());
     }
 
@@ -86,25 +79,12 @@ mod tests {
         queue.schedule("a");
         queue.schedule("b");
 
-        assert_eq!(queue.pop_live(|_| true), Some("a"));
+        assert_eq!(queue.pop(), Some("a"));
         queue.schedule("scheduled-by-a");
 
-        assert_eq!(queue.pop_live(|_| true), Some("b"));
-        assert_eq!(queue.pop_live(|_| true), Some("scheduled-by-a"));
-        assert_eq!(queue.pop_live(|_| true), None);
-    }
-
-    #[test]
-    fn pop_live_drops_dead_tickets() {
-        let mut queue = RedeemQueue::new();
-        for tx in ["live-1", "dead-1", "dead-2", "live-2"] {
-            queue.schedule(tx);
-        }
-
-        let is_live = |tx: &&str| tx.starts_with("live");
-        assert_eq!(queue.pop_live(is_live), Some("live-1"));
-        assert_eq!(queue.pop_live(is_live), Some("live-2"));
-        assert!(queue.is_empty());
+        assert_eq!(queue.pop(), Some("b"));
+        assert_eq!(queue.pop(), Some("scheduled-by-a"));
+        assert_eq!(queue.pop(), None);
     }
 
     #[test]
@@ -115,7 +95,7 @@ mod tests {
 
         assert_eq!(queue.iter().collect::<Vec<_>>(), [&"a", &"b"]);
         assert_eq!(queue.len(), 2);
-        assert_eq!(queue.pop_live(|_| true), Some("a"));
+        assert_eq!(queue.pop(), Some("a"));
     }
 
     #[test]
@@ -125,16 +105,6 @@ mod tests {
         queue.schedule("b");
         queue.clear();
         assert!(queue.is_empty());
-        assert_eq!(queue.pop_live(|_| true), None);
-    }
-
-    #[test]
-    fn pop_live_returns_none_when_all_dead() {
-        let mut queue = RedeemQueue::new();
-        queue.schedule("dead-1");
-        queue.schedule("dead-2");
-
-        assert_eq!(queue.pop_live(|_| false), None);
-        assert!(queue.is_empty());
+        assert_eq!(queue.pop(), None);
     }
 }

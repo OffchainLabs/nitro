@@ -344,7 +344,7 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
     pub fn next_scheduled_tx(&mut self) -> Option<Vec<u8>> {
         self.arb_hooks
             .as_mut()
-            .and_then(|hooks| hooks.tx_proc.redeem_queue.pop_live(|_| true))
+            .and_then(|hooks| hooks.tx_proc.redeem_queue.pop())
     }
 }
 
