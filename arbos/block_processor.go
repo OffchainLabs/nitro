@@ -824,13 +824,11 @@ func FinalizeBlock(header *types.Header, statedb vm.StateDB, chainConfig *params
 func postGenesisHeaderInfo(statedb vm.StateDB, header *types.Header) *types.HeaderInfo {
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 	if err != nil {
-		newErr := fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root)
-		panic(newErr)
+		panic(fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root))
 	}
 	collectTips, err := arbState.CollectTips()
 	if err != nil {
-		newErr := fmt.Errorf("%w while reading collect tips setting. Block: %d root: %v", err, header.Number, header.Root)
-		panic(newErr)
+		panic(fmt.Errorf("%w while reading collect tips setting. Block: %d root: %v", err, header.Number, header.Root))
 	}
 	// Delayed-message blocks never collect tips, regardless of the chain-wide setting.
 	// All transactions in a block share the same Coinbase, so this is a block-level property.
