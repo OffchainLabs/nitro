@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 use alloy_primitives::{Address, B256, U256};
 use arb_chainspec::arbos_version as arb_ver;
@@ -38,10 +38,9 @@ pub struct TxProcessor {
     pub current_retryable: Option<B256>,
     /// The refund-to address for retryable redeems.
     pub current_refund_to: Option<Address>,
-    /// FIFO queue of encoded retry txs scheduled by redeems (auto-redeem and the Redeem
-    /// precompile). A scheduled retry runs right after the tx that scheduled it, before the next
-    /// message tx; retries scheduled by a retry join the back. Go: `blockBuildState.redeems`.
-    pub redeem_queue: VecDeque<Vec<u8>>,
+    /// Encoded retry txs scheduled by the current tx (auto-redeem and the Redeem precompile),
+    /// moved to the executor's block-scoped redeem queue on commit.
+    pub scheduled_txs: Vec<Vec<u8>>,
     /// Count of open Stylus program contexts per contract address.
     /// Used to detect reentrance.
     pub programs_depth: HashMap<Address, usize>,
@@ -57,7 +56,7 @@ impl Default for TxProcessor {
             top_tx_type: None,
             current_retryable: None,
             current_refund_to: None,
-            redeem_queue: VecDeque::new(),
+            scheduled_txs: Vec::new(),
             programs_depth: HashMap::new(),
         }
     }
