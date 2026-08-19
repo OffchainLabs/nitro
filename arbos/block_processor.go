@@ -806,14 +806,14 @@ func FinalizeBlock(header *types.Header, statedb vm.StateDB, chainConfig *params
 	if header == nil {
 		return
 	}
-	if header.Number.Uint64() < chainConfig.ArbitrumChainParams.GenesisBlockNum {
+	var arbitrumHeader *types.HeaderInfo
+	genesis := chainConfig.ArbitrumChainParams.GenesisBlockNum
+	switch num := header.Number.Uint64(); {
+	case num < genesis:
 		panic("cannot finalize blocks before genesis")
-	}
-
-	arbitrumHeader := &types.HeaderInfo{
-		ArbOSFormatVersion: chainConfig.ArbitrumChainParams.InitialArbOSVersion,
-	}
-	if header.Number.Uint64() != chainConfig.ArbitrumChainParams.GenesisBlockNum {
+	case num == genesis:
+		arbitrumHeader = &types.HeaderInfo{ArbOSFormatVersion: chainConfig.ArbitrumChainParams.InitialArbOSVersion}
+	default:
 		arbitrumHeader = arbitrumHeaderPostGenesis(statedb, header)
 	}
 
