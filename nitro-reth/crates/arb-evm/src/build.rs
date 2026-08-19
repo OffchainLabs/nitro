@@ -107,7 +107,7 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
     /// Create an executor with the concrete `ArbBlockExecutor` return type.
     ///
     /// Unlike the trait method which returns an opaque type, this provides
-    /// access to Arbitrum-specific methods like `drain_scheduled_txs`.
+    /// access to Arbitrum-specific methods like `next_scheduled_tx`.
     pub fn create_arb_executor<'a, DB, I>(
         &'a self,
         evm: EvmF::Evm<&'a mut State<DB>, I>,
@@ -339,14 +339,12 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
         }
     }
 
-    /// Drain any scheduled transactions (e.g. auto-redeem retry txs) produced
-    /// by the most recently committed transaction. The caller should decode and
-    /// re-inject these as new transactions in the same block.
-    pub fn drain_scheduled_txs(&mut self) -> Vec<Vec<u8>> {
+    /// Pops the next scheduled retry tx (e.g. an auto-redeem) produced by the most recently
+    /// committed transaction, in FIFO order.
+    pub fn next_scheduled_tx(&mut self) -> Option<Vec<u8>> {
         self.arb_hooks
             .as_mut()
-            .map(|hooks| std::mem::take(&mut hooks.tx_proc.scheduled_txs))
-            .unwrap_or_default()
+            .and_then(|hooks| hooks.tx_proc.redeem_queue.pop_live(|_| true))
     }
 }
 
@@ -892,7 +890,7 @@ where
                                     let mut encoded = Vec::new();
                                     encoded.push(ArbTxType::ArbitrumRetryTx.as_u8());
                                     alloy_rlp::Encodable::encode(&retry_tx, &mut encoded);
-                                    hooks.tx_proc.scheduled_txs.push(encoded);
+                                    hooks.tx_proc.redeem_queue.schedule([encoded]);
                                 } else {
                                     tracing::warn!(
                                         target: "arb::executor",
@@ -1182,7 +1180,7 @@ where
             hooks.tx_proc.compute_hold_gas = 0;
             hooks.tx_proc.current_retryable = None;
             hooks.tx_proc.current_refund_to = None;
-            hooks.tx_proc.scheduled_txs.clear();
+            hooks.tx_proc.redeem_queue.clear();
         }
 
         // Effective gas price the sender pays on posterGas — full when
@@ -2260,7 +2258,7 @@ where
                 if let Some(encoded) = encoded_retry_tx
                     && let Some(hooks) = self.arb_hooks.as_mut()
                 {
-                    hooks.tx_proc.scheduled_txs.push(encoded);
+                    hooks.tx_proc.redeem_queue.schedule([encoded]);
                 }
                 if let Some(b) = latest_backlog {
                     self.precompile_ctx.block.set_current_gas_backlog(b);
@@ -2953,7 +2951,7 @@ where
                 >= arb_chainspec::arbos_version::ARBOS_VERSION_FIX_REDEEM_GAS
                 && let Some(hooks) = self.arb_hooks.as_ref()
             {
-                for scheduled in &hooks.tx_proc.scheduled_txs {
+                for scheduled in hooks.tx_proc.redeem_queue.iter() {
                     if let Some(retry_gas) = decode_retry_tx_gas(scheduled) {
                         adjusted_gas_used = adjusted_gas_used.saturating_sub(retry_gas);
                     }
