@@ -176,8 +176,8 @@ func TestPGATxOrdererExactFitTxYielded(t *testing.T) {
 	}
 }
 
-// Running out of block gas ends the block: only the gas-limit flag is set, and the unsequenced
-// tx leaves through TakeRemaining.
+// Running out of block gas ends the block: the gas limit is the stop reason, and the
+// unsequenced tx leaves through TakeRemaining.
 func TestPGATxOrdererGasLimitEndsBlock(t *testing.T) {
 	o := newTestPGATxOrderer(&stubOrdererSequencer{items: []txQueueItem{makePGAQueueItem(t, 0, 10)}})
 
@@ -187,9 +187,8 @@ func TestPGATxOrdererGasLimitEndsBlock(t *testing.T) {
 	if item, ok := o.NextQueueItem(nil, math.MaxInt, params.TxGas-1); ok {
 		t.Fatalf("NextQueueItem yielded nonce %d, want end of block with no gas left", item.tx.Nonce())
 	}
-	stats := o.OrdererStats()
-	if !stats.blockGasLimitReached || stats.exhaustedQueue || stats.blockSizeLimitReached {
-		t.Fatalf("stats = %+v, want only blockGasLimitReached", stats)
+	if got := o.LimitReason(); got != blockGasLimitReached {
+		t.Fatalf("LimitReason = %d, want blockGasLimitReached", got)
 	}
 	if got := queueItemNonces(o.TakeRemaining()); !slices.Equal(got, []uint64{0}) {
 		t.Fatalf("TakeRemaining nonces = %v, want [0]", got)

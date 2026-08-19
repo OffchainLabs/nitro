@@ -11,12 +11,15 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// ordererStats records the block limits hit while yielding a block's candidates.
-type ordererStats struct {
-	blockSizeLimitReached bool
-	blockGasLimitReached  bool
-	exhaustedQueue        bool
-}
+// blockLimitReason records what capped the block's candidates: the queue running dry, or a
+// block limit — recorded even when the fetch skips the oversized candidate and continues.
+type blockLimitReason int
+
+const (
+	exhaustedQueue blockLimitReason = iota
+	blockSizeLimitReached
+	blockGasLimitReached
+)
 
 // nextTxFetcher supplies a block's tx candidates to the sequencing hooks one at a time.
 type nextTxFetcher interface {
@@ -29,21 +32,20 @@ type nextTxFetcher interface {
 
 // fixedTxFetcher yields a pre-set candidate list.
 type fixedTxFetcher struct {
-	items     []txQueueItem
-	exhausted []txQueueItem
-	stats     ordererStats
+	items       []txQueueItem
+	exhausted   []txQueueItem
+	limitReason blockLimitReason
 }
 
 var _ nextTxFetcher = (*fixedTxFetcher)(nil)
 
 func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, bool) {
 	if len(f.items) == 0 {
-		f.stats.exhaustedQueue = len(f.exhausted) == 0
 		return txQueueItem{}, false
 	}
 
 	if blockGasLeft < params.TxGas {
-		f.stats.blockGasLimitReached = true
+		f.limitReason = blockGasLimitReached
 		f.exhausted = append(f.exhausted, f.items...)
 		f.items = nil
 		return txQueueItem{}, false
@@ -54,7 +56,7 @@ func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSiz
 
 	// If the tx is too big for the remaining block size, we exhaust it and continue to the next one.
 	if item.txSize > remainingBlockSize {
-		f.stats.blockSizeLimitReached = true
+		f.limitReason = blockSizeLimitReached
 		f.exhausted = append(f.exhausted, item)
 		return f.NextQueueItem(statedb, remainingBlockSize, blockGasLeft)
 	}
@@ -89,8 +91,8 @@ type txOrderer interface {
 	// dispose of.
 	TakeRemaining() []txQueueItem
 
-	// OrdererStats reports the orderer's statistics.
-	OrdererStats() ordererStats
+	// LimitReason reports what capped the block's candidates.
+	LimitReason() blockLimitReason
 
 	// OnNonceGapResolved hands the orderer a parked tx whose nonce gap the last
 	// inclusion just closed, so it can re-enter the block's candidates.
@@ -142,8 +144,8 @@ func (o *fifoTxOrderer) StartBlock(statedb *state.StateDB) bool {
 // OnTxInclusion is a no-op: FIFO ordering doesn't react to inclusions.
 func (o *fifoTxOrderer) OnTxInclusion(queueItem txQueueItem) {}
 
-func (o *fifoTxOrderer) OrdererStats() ordererStats {
-	return o.stats
+func (o *fifoTxOrderer) LimitReason() blockLimitReason {
+	return o.limitReason
 }
 
 // OnNonceGapResolved appends the revived tx to the block's candidates: its nonce is valid

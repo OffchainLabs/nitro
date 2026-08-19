@@ -448,9 +448,9 @@ func (q *synchronizedTxQueue) Len() int {
 }
 
 type pendingQueueItemsResults struct {
-	block *types.Block
-	hooks *FullSequencingHooks
-	stats ordererStats
+	block       *types.Block
+	hooks       *FullSequencingHooks
+	limitReason blockLimitReason
 }
 
 var _ txOrdererSequencer = (*Sequencer)(nil)
@@ -1363,9 +1363,9 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrde
 	}
 
 	s.pendingQueueItemsResults = &pendingQueueItemsResults{
-		block: block,
-		hooks: hooks,
-		stats: orderer.OrdererStats(),
+		block:       block,
+		hooks:       hooks,
+		limitReason: orderer.LimitReason(),
 	}
 
 	if madeBlock {
@@ -1422,7 +1422,7 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 
 		madeBlock := false
 		var blockTxSize int64
-		blockGasLimitReached := false
+		blockOutOfGas := false
 		for _, st := range hooks.sequencedTxs {
 			queueItem := st.queueItem
 			err := st.err
@@ -1434,7 +1434,7 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 			if errors.Is(err, core.ErrGasLimitReached) {
 				// There's not enough gas left in the block for this tx.
 				if madeBlock {
-					blockGasLimitReached = true
+					blockOutOfGas = true
 					// There was already an earlier tx in the block; retry in a fresh block.
 					s.txRetryQueue.Push(queueItem)
 					continue
@@ -1454,13 +1454,12 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 
 		if madeBlock {
 			blockTxSizeHistogram.Update(blockTxSize)
-			stats := s.pendingQueueItemsResults.stats
-			if stats.exhaustedQueue {
-				// the orderer drained its queue without skipping any candidate
+			limitReason := s.pendingQueueItemsResults.limitReason
+			if limitReason == exhaustedQueue {
 				txExhaustedBlocksCounter.Inc(1)
-			} else if stats.blockGasLimitReached || blockGasLimitReached {
+			} else if limitReason == blockGasLimitReached || blockOutOfGas {
 				gasLimitedBlocksCounter.Inc(1)
-			} else if stats.blockSizeLimitReached {
+			} else if limitReason == blockSizeLimitReached {
 				dataLimitedBlocksCounter.Inc(1)
 			}
 		}

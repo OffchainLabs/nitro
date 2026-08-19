@@ -137,6 +137,9 @@ func TestFIFOTxOrdererAllOversizedExhausts(t *testing.T) {
 	if item, ok := o.NextQueueItem(nil, 99, math.MaxUint64); ok {
 		t.Fatalf("NextQueueItem yielded nonce %d, want exhaustion with only oversized txs", item.tx.Nonce())
 	}
+	if got := o.LimitReason(); got != blockSizeLimitReached {
+		t.Fatalf("LimitReason = %d, want blockSizeLimitReached (skips are not exhaustion)", got)
+	}
 	if got := queueItemNonces(o.TakeRemaining()); !slices.Equal(got, []uint64{0, 1}) {
 		t.Fatalf("TakeRemaining nonces = %v, want [0 1]", got)
 	}
@@ -145,8 +148,8 @@ func TestFIFOTxOrdererAllOversizedExhausts(t *testing.T) {
 	}
 }
 
-// Running out of block gas ends the block: only the gas-limit flag is set, and the unsequenced
-// txs leave through TakeRemaining exactly once.
+// Running out of block gas ends the block: the gas limit is the stop reason, and the
+// unsequenced txs leave through TakeRemaining exactly once.
 func TestFIFOTxOrdererGasLimitEndsBlock(t *testing.T) {
 	var items []txQueueItem
 	for nonce := range uint64(2) {
@@ -161,9 +164,8 @@ func TestFIFOTxOrdererGasLimitEndsBlock(t *testing.T) {
 	if item, ok := o.NextQueueItem(nil, math.MaxInt, params.TxGas-1); ok {
 		t.Fatalf("NextQueueItem yielded nonce %d, want end of block with no gas left", item.tx.Nonce())
 	}
-	stats := o.OrdererStats()
-	if !stats.blockGasLimitReached || stats.exhaustedQueue || stats.blockSizeLimitReached {
-		t.Fatalf("stats = %+v, want only blockGasLimitReached", stats)
+	if got := o.LimitReason(); got != blockGasLimitReached {
+		t.Fatalf("LimitReason = %d, want blockGasLimitReached", got)
 	}
 	if got := queueItemNonces(o.TakeRemaining()); !slices.Equal(got, []uint64{0, 1}) {
 		t.Fatalf("TakeRemaining nonces = %v, want [0 1] exactly once", got)
