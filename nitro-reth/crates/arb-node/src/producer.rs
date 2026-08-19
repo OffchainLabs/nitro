@@ -34,7 +34,7 @@ use arbos::{
     parse_l2::{ParsedTransaction, parse_l2_transactions, parsed_tx_to_signed},
     types::parse_init_message,
 };
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use reth_chain_state::{CanonicalInMemoryState, ExecutedBlock, NewCanonicalChain};
 use reth_chainspec::ChainSpec;
 use reth_evm::ConfigureEvm;
@@ -171,7 +171,7 @@ pub struct ArbBlockProducer<Provider> {
     /// External shared slot pushed to on every set_finality update so
     /// the `arb_getValidatedBlock` RPC handler can read it without
     /// holding a strong reference to the producer.
-    validated_watcher: Mutex<Option<Arc<parking_lot::RwLock<B256>>>>,
+    validated_watcher: Mutex<Option<Arc<RwLock<B256>>>>,
     cross_block_cache_size: usize,
     cached_execution: Mutex<Option<CachedExecution>>,
     cached_prestate: Mutex<Option<CachedPrestate>>,
@@ -295,10 +295,10 @@ where
 
     fn extend_cached_prestate(&self, new_block_hash: B256, bundle: &BundleState) {
         let mut cache = self.cached_prestate.lock();
-        let mut contracts = match cache.take() {
-            Some(c) => Arc::try_unwrap(c.contracts).unwrap_or_else(|arc| (*arc).clone()),
-            None => Default::default(),
-        };
+        let mut contracts = cache
+            .take()
+            .map(|cached| Arc::unwrap_or_clone(cached.contracts))
+            .unwrap_or_default();
         for (hash, code) in &bundle.contracts {
             contracts.entry(*hash).or_insert_with(|| code.clone());
         }
@@ -828,22 +828,22 @@ where
             });
             match exec_outcome {
                 Ok(result) => match executor.commit_transaction(result) {
-                    Ok(_gas_used) => {
+                    Ok(_) => {
                         all_txs.push(signed_tx);
                         if !hostio_records.is_empty() {
                             arb_rpc::stylus_tracer::cache_trace(tx_hash, hostio_records);
                         }
                         drain_scheduled_txs(&mut executor, &mut all_txs);
                     }
-                    Err(e) => {
-                        warn!(target: "block_producer", error = %e, "Failed to commit transaction");
+                    Err(err) => {
+                        warn!(target: "block_producer", error = %err, "Failed to commit transaction");
                     }
                 },
-                Err(ref e) if e.to_string().contains("block gas limit reached") => {
+                Err(ref err) if err.to_string().contains("block gas limit reached") => {
                     break;
                 }
-                Err(e) => {
-                    warn!(target: "block_producer", error = %e, "Transaction execution failed, skipping");
+                Err(err) => {
+                    warn!(target: "block_producer", error = %err, "Transaction execution failed, skipping");
                 }
             }
         }
@@ -1220,8 +1220,8 @@ where
             input.l1_base_fee,
             chain_id,
         )
-            .unwrap_or_else(|e| {
-                warn!(target: "block_producer", error=%e, "Error parsing L2 message, treating as empty");
+            .unwrap_or_else(|err| {
+                warn!(target: "block_producer", error=%err, "Error parsing L2 message, treating as empty");
                 vec![]
             });
 
@@ -1373,7 +1373,7 @@ where
         Ok(())
     }
 
-    fn attach_validated_watcher(&self, watcher: Arc<parking_lot::RwLock<B256>>) {
+    fn attach_validated_watcher(&self, watcher: Arc<RwLock<B256>>) {
         *self.validated_watcher.lock() = Some(watcher);
     }
 }
@@ -1617,11 +1617,11 @@ fn drain_scheduled_txs<'a>(
         let retry_hash = *retry_signed.tx_hash();
 
         let recovered_retry = match retry_tx.try_into_recovered() {
-            Ok(r) => r,
-            Err(e) => {
+            Ok(retry) => retry,
+            Err(err) => {
                 warn!(
                     target: "block_producer",
-                    error = %e,
+                    error = %err,
                     "Failed to recover auto-redeem tx sender"
                 );
                 continue;
@@ -1632,21 +1632,21 @@ fn drain_scheduled_txs<'a>(
             executor.execute_transaction_without_commit(recovered_retry)
         });
         let retry_result = match retry_outcome {
-            Ok(r) => r,
-            Err(e) => {
+            Ok(result) => result,
+            Err(err) => {
                 warn!(
                     target: "block_producer",
-                    error = %e,
+                    error = %err,
                     "Auto-redeem tx execution failed"
                 );
                 continue;
             }
         };
 
-        if let Err(e) = executor.commit_transaction(retry_result) {
+        if let Err(err) = executor.commit_transaction(retry_result) {
             warn!(
                 target: "block_producer",
-                error = %e,
+                error = %err,
                 "Failed to commit auto-redeem tx"
             );
             continue;
