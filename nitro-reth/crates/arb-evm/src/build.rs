@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+
 use alloy_consensus::{Transaction, TransactionEnvelope, TxReceipt};
 use alloy_eips::eip2718::{Encodable2718, Typed2718};
 use alloy_evm::{
