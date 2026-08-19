@@ -814,14 +814,14 @@ func FinalizeBlock(header *types.Header, statedb vm.StateDB, chainConfig *params
 	case blockNum == genesisBlockNum:
 		arbitrumHeader = &types.HeaderInfo{ArbOSFormatVersion: chainConfig.ArbitrumChainParams.InitialArbOSVersion}
 	default:
-		arbitrumHeader = arbitrumHeaderPostGenesis(statedb, header)
+		arbitrumHeader = postGenesisHeaderInfo(statedb, header)
 	}
 
 	arbitrumHeader.UpdateHeaderWithInfo(header)
 	header.Root = statedb.IntermediateRoot(true)
 }
 
-func arbitrumHeaderPostGenesis(statedb vm.StateDB, header *types.Header) *types.HeaderInfo {
+func postGenesisHeaderInfo(statedb vm.StateDB, header *types.Header) *types.HeaderInfo {
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 	if err != nil {
 		newErr := fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root)
