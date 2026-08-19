@@ -25,10 +25,7 @@ fn main() -> anyhow::Result<()> {
     let mut executor = MinimalExecutor::<UserMode>::simple(Arc::new(program));
     // Placeholder for the rkyv ValidationInput (next PR): any non-sentinel payload makes the
     // bootloaded guest run its (mocked) validation.
-    let stdin = replay_io::send::validation_mode(&[]);
-    for input in &stdin.buffer {
-        executor.with_input(input);
-    }
+    replay_io::send::validation_mode(&mut executor, &[]);
     if executor.execute_chunk().is_some() {
         bail!("execution failed: executor returned a trace chunk unexpectedly");
     }

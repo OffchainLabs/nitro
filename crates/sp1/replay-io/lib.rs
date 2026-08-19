@@ -10,20 +10,18 @@ const SP1_BOOTLOAD_SENTINEL: &[u8] = b"SP1_BOOTLOAD_ONLY";
 /// Sending data from host to SP1 guest.
 #[cfg(any(not(target_os = "zkvm"), test))]
 pub mod send {
+    use sp1_core_executor::{ExecutionMode, MinimalExecutor};
+
     /// Sends input for bootloading.
-    pub fn bootload_mode(wasmu: &[u8], function_names_json: &str) -> sp1_sdk::SP1Stdin {
-        let mut stdin = sp1_sdk::SP1Stdin::new();
-        stdin.write_slice(wasmu);
-        stdin.write_slice(function_names_json.as_bytes());
-        stdin.write_slice(super::SP1_BOOTLOAD_SENTINEL);
-        stdin
+    pub fn bootload_mode(executor: &mut MinimalExecutor<impl ExecutionMode>, wasmu: &[u8], function_names_json: &str) {
+        executor.with_input(wasmu);
+        executor.with_input(function_names_json.as_bytes());
+        executor.with_input(super::SP1_BOOTLOAD_SENTINEL);
     }
 
     /// Sends the data for actual validation (already after bootloading).
-    pub fn validation_mode(payload: &[u8]) -> sp1_sdk::SP1Stdin {
-        let mut stdin = sp1_sdk::SP1Stdin::new();
-        stdin.write_slice(payload);
-        stdin
+    pub fn validation_mode(executor: &mut MinimalExecutor<impl ExecutionMode>, payload: &[u8]) {
+        executor.with_input(payload);
     }
 }
 
