@@ -6,7 +6,6 @@ use std::{
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
-    time::SystemTime,
 };
 
 use anyhow::{Context, bail};
@@ -22,6 +21,9 @@ use wasmer::{
 };
 
 const REPLAY_ELF: Elf = include_elf!("replay-program");
+
+/// Env var the SP1 executor dumps the bootloaded ELF to.
+const DUMP_ELF_OUTPUT: &str = "DUMP_ELF_OUTPUT";
 
 #[derive(Parser)]
 #[command(about = "Build the SP1 replay-program artifacts")]
@@ -41,50 +43,8 @@ fn main() -> anyhow::Result<()> {
     let wasm = fs::read(&cli.replay_wasm)
         .with_context(|| format!("read replay.wasm from {}", cli.replay_wasm.display()))?;
 
-    let artifacts = Artifacts::build(wasm)?;
-    bootload(
-        &artifacts.wasmu,
-        &artifacts.function_names_json,
-        &cli.output_folder,
-    )?;
-    artifacts.save(&cli.output_folder)
-}
-
-/// Bootloads the guest: executes it with the wasmu and name mapping loaded
-/// up to its ELF dump point, producing `dumped_replay_wasm.elf`.
-fn bootload(wasmu: &[u8], function_names_json: &str, output_folder: &Path) -> anyhow::Result<()> {
-    let output = match std::env::var("DUMP_ELF_OUTPUT") {
-        Ok(s) => s,
-        Err(_) => {
-            let output = output_folder.join("dumped_replay_wasm.elf");
-            unsafe { std::env::set_var("DUMP_ELF_OUTPUT", &output) };
-            output.display().to_string()
-        }
-    };
-    let _ = fs::remove_file(&output);
-
-    let program = Arc::new(
-        Program::from(&REPLAY_ELF).map_err(|e| anyhow::anyhow!("parse replay ELF: {e:#}"))?,
-    );
-    let mut executor = MinimalExecutor::<UserMode>::simple(program);
-    executor.with_input(wasmu);
-    executor.with_input(function_names_json.as_bytes());
-    // Bincode-encode the sentinel to match the runner's SP1Stdin wire format;
-    // the guest recognizes it and halts cleanly after the ELF dump.
-    let bootload_input = bincode::serialize(&SP1_BOOTLOAD_SENTINEL.to_vec())
-        .context("serialize bootload sentinel")?;
-    executor.with_input(&bootload_input);
-
-    let t0 = SystemTime::now();
-    let _ = executor.execute_chunk();
-    let time_secs = t0.elapsed().context("measure bootload time")?.as_secs_f64();
-
-    if !fs::exists(&output).context("check bootload output")? {
-        bail!("SP1 bootloading failed: expected output at '{output}' was not produced");
-    }
-
-    println!("Bootloaded program is written to {output}");
-    Ok(())
+    Artifacts::prepare(&cli.output_folder)?;
+    Artifacts::build(wasm)?.save(&cli.output_folder)
 }
 
 struct Artifacts {
@@ -95,17 +55,51 @@ struct Artifacts {
 }
 
 impl Artifacts {
+    /// Prepares `output_folder`: creates it and points DUMP_ELF_OUTPUT at the bootload dump target,
+    /// removing any stale dump so `save` can assert the fresh one was written. Must run before `build`.
+    fn prepare(output_folder: &Path) -> anyhow::Result<()> {
+        fs::create_dir_all(output_folder).context("create output folder")?;
+        if std::env::var(DUMP_ELF_OUTPUT).is_err() {
+            let dump = output_folder.join("dumped_replay_wasm.elf");
+            unsafe { std::env::set_var(DUMP_ELF_OUTPUT, dump) };
+        }
+        let dump = std::env::var(DUMP_ELF_OUTPUT).context("read dump target")?;
+        let _ = fs::remove_file(dump);
+        Ok(())
+    }
+
     fn build(wasm: Vec<u8>) -> anyhow::Result<Self> {
         let names = extract_function_names(&wasm)?;
-        Ok(Self {
+        let artifacts = Self {
             function_names_json: serde_json::to_string_pretty(&names)
                 .context("serialize function names")?,
             wasmu: compile_wasmu(wasm)?,
-        })
+        };
+        artifacts.bootload()?;
+        Ok(artifacts)
     }
 
+    /// Bootloads the guest: executes it with the wasmu and name mapping loaded up to its ELF dump
+    /// point (the DUMP_ELF_OUTPUT target).
+    fn bootload(&self) -> anyhow::Result<()> {
+        let program = Arc::new(
+            Program::from(&REPLAY_ELF).map_err(|e| anyhow::anyhow!("parse replay ELF: {e:#}"))?,
+        );
+        let mut executor = MinimalExecutor::<UserMode>::simple(program);
+        executor.with_input(self.wasmu.as_ref());
+        executor.with_input(self.function_names_json.as_bytes());
+        // Bincode-encode the sentinel to match the runner's SP1Stdin wire
+        // format; the guest recognizes it and halts cleanly after the dump.
+        let bootload_input = bincode::serialize(&SP1_BOOTLOAD_SENTINEL.to_vec())
+            .context("serialize bootload sentinel")?;
+        executor.with_input(&bootload_input);
+
+        let _ = executor.execute_chunk();
+        Ok(())
+    }
+
+    /// Writes all artifacts and ensures bootloading produced its dump.
     fn save(&self, output_folder: &Path) -> anyhow::Result<()> {
-        fs::create_dir_all(output_folder).context("create output folder")?;
         for (name, contents) in [
             ("function_names.json", self.function_names_json.as_bytes()),
             ("replay.wasmu", self.wasmu.as_ref()),
@@ -115,6 +109,12 @@ impl Artifacts {
             fs::write(&output, contents).with_context(|| format!("write {name}"))?;
             println!("{name} written to {}", output.display());
         }
+
+        let dump = std::env::var(DUMP_ELF_OUTPUT).context("read dump target")?;
+        if !fs::exists(&dump).context("check bootload output")? {
+            bail!("SP1 bootloading failed: expected output at '{dump}' was not produced");
+        }
+        println!("Bootloaded program is written to {dump}");
         Ok(())
     }
 }
