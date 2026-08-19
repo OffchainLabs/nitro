@@ -1455,12 +1455,12 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 		if madeBlock {
 			blockTxSizeHistogram.Update(blockTxSize)
 			limitReason := s.pendingQueueItemsResults.limitReason
-			if limitReason == exhaustedQueue {
-				txExhaustedBlocksCounter.Inc(1)
+			if limitReason == blockSizeLimitReached {
+				dataLimitedBlocksCounter.Inc(1)
 			} else if limitReason == blockGasLimitReached || blockOutOfGas {
 				gasLimitedBlocksCounter.Inc(1)
-			} else if limitReason == blockSizeLimitReached {
-				dataLimitedBlocksCounter.Inc(1)
+			} else if limitReason == exhaustedQueue {
+				txExhaustedBlocksCounter.Inc(1)
 			}
 		}
 	}
