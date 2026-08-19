@@ -1596,75 +1596,68 @@ fn augment_bundle_from_cache(
     Ok(())
 }
 
-/// Drain and execute any scheduled txs (auto-redeems). After a SubmitRetryable or manual Redeem
-/// precompile call, the executor queues retry txs that must execute in the same block, immediately
-/// after the triggering tx.
-fn drain_scheduled_txs(
+/// Execute any scheduled txs (auto-redeems). After a SubmitRetryable or manual Redeem precompile
+/// call, the executor queues retry txs that must execute in the same block, immediately after the
+/// triggering tx; retries scheduled by a retry join the back of the queue.
+fn drain_scheduled_txs<'a, 'db, 'p>(
     executor: &mut ArbBlockExecutor<
-        ArbEvm<&mut State<StateProviderDatabase<&(dyn StateProvider + Send)>>, MultiGasInspector>,
-        &Arc<ChainSpec>,
-        &ArbReceiptBuilder,
+        'a,
+        ArbEvm<
+            &'db mut State<StateProviderDatabase<&'p (dyn StateProvider + Send)>>,
+            MultiGasInspector,
+        >,
+        &'a Arc<ChainSpec>,
+        &'a ArbReceiptBuilder,
     >,
-    all_txs: &mut [ArbTransactionSigned],
+    all_txs: &mut Vec<ArbTransactionSigned>,
 ) {
-    loop {
-        let scheduled = executor.drain_scheduled_txs();
-        if scheduled.is_empty() {
-            break;
-        }
-        debug!(
-            target: "block_producer",
-            count = scheduled.len(),
-            "Draining scheduled txs"
-        );
-        for encoded in scheduled {
-            let Ok(retry_tx) = ArbTransactionSigned::decode_2718(&mut &encoded[..]) else {
-                continue;
-            };
+    while let Some(encoded) = executor.next_scheduled_tx() {
+        let Ok(retry_tx) = ArbTransactionSigned::decode_2718(&mut &encoded[..]) else {
+            continue;
+        };
 
-            let retry_signed = retry_tx.clone();
-            let retry_hash = *retry_signed.tx_hash();
+        let retry_signed = retry_tx.clone();
+        let retry_hash = *retry_signed.tx_hash();
 
-            let recovered_retry = match retry_tx.try_into_recovered() {
-                Ok(r) => r,
-                Err(e) => {
-                    warn!(
-                        target: "block_producer",
-                        error = %e,
-                        "Failed to recover auto-redeem tx sender"
-                    );
-                    continue;
-                }
-            };
-
-            let (retry_outcome, retry_records) = arb_rpc::stylus_tracer::with_trace_buffer(|| {
-                executor.execute_transaction_without_commit(recovered_retry)
-            });
-            let retry_result = match retry_outcome {
-                Ok(r) => r,
-                Err(e) => {
-                    warn!(
-                        target: "block_producer",
-                        error = %e,
-                        "Auto-redeem tx execution failed"
-                    );
-                    continue;
-                }
-            };
-
-            if let Err(e) = executor.commit_transaction(retry_result) {
+        let recovered_retry = match retry_tx.try_into_recovered() {
+            Ok(r) => r,
+            Err(e) => {
                 warn!(
                     target: "block_producer",
                     error = %e,
-                    "Failed to commit auto-redeem tx"
+                    "Failed to recover auto-redeem tx sender"
                 );
                 continue;
             }
+        };
 
-            all_txs.push(retry_signed);
-            if !retry_records.is_empty() {
-                arb_rpc::stylus_tracer::cache_trace(retry_hash, retry_records);
+        let (retry_outcome, retry_records) = arb_rpc::stylus_tracer::with_trace_buffer(|| {
+            executor.execute_transaction_without_commit(recovered_retry)
+        });
+        let retry_result = match retry_outcome {
+            Ok(r) => r,
+            Err(e) => {
+                warn!(
+                    target: "block_producer",
+                    error = %e,
+                    "Auto-redeem tx execution failed"
+                );
+                continue;
             }
+        };
+
+        if let Err(e) = executor.commit_transaction(retry_result) {
+            warn!(
+                target: "block_producer",
+                error = %e,
+                "Failed to commit auto-redeem tx"
+            );
+            continue;
+        }
+
+        all_txs.push(retry_signed);
+        if !retry_records.is_empty() {
+            arb_rpc::stylus_tracer::cache_trace(retry_hash, retry_records);
         }
     }
 }
