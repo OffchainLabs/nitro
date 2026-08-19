@@ -1618,52 +1618,49 @@ fn drain_scheduled_txs(
             break;
         }
         for encoded in scheduled {
-            let retry_tx: Option<ArbTransactionSigned> =
-                ArbTransactionSigned::decode_2718(&mut &encoded[..]).ok();
-            if let Some(retry_tx) = retry_tx {
-                let retry_signed = retry_tx.clone();
-                let retry_hash = *retry_signed.tx_hash();
-                match retry_tx.try_into_recovered() {
-                    Ok(recovered_retry) => {
-                        let (retry_outcome, retry_records) =
-                            arb_rpc::stylus_tracer::with_trace_buffer(|| {
-                                executor.execute_transaction_without_commit(recovered_retry)
-                            });
-                        match retry_outcome {
-                            Ok(retry_result) => match executor.commit_transaction(retry_result) {
-                                Ok(_) => {
-                                    all_txs.push(retry_signed);
-                                    if !retry_records.is_empty() {
-                                        arb_rpc::stylus_tracer::cache_trace(
-                                            retry_hash,
-                                            retry_records,
-                                        );
-                                    }
+            let Some(retry_tx) = ArbTransactionSigned::decode_2718(&mut &encoded[..]).ok() else {
+                continue;
+            };
+
+            let retry_signed = retry_tx.clone();
+            let retry_hash = *retry_signed.tx_hash();
+            match retry_tx.try_into_recovered() {
+                Ok(recovered_retry) => {
+                    let (retry_outcome, retry_records) =
+                        arb_rpc::stylus_tracer::with_trace_buffer(|| {
+                            executor.execute_transaction_without_commit(recovered_retry)
+                        });
+                    match retry_outcome {
+                        Ok(retry_result) => match executor.commit_transaction(retry_result) {
+                            Ok(_) => {
+                                all_txs.push(retry_signed);
+                                if !retry_records.is_empty() {
+                                    arb_rpc::stylus_tracer::cache_trace(retry_hash, retry_records);
                                 }
-                                Err(e) => {
-                                    warn!(
-                                        target: "block_producer",
-                                        error = %e,
-                                        "Failed to commit auto-redeem tx"
-                                    );
-                                }
-                            },
+                            }
                             Err(e) => {
                                 warn!(
                                     target: "block_producer",
                                     error = %e,
-                                    "Auto-redeem tx execution failed"
+                                    "Failed to commit auto-redeem tx"
                                 );
                             }
+                        },
+                        Err(e) => {
+                            warn!(
+                                target: "block_producer",
+                                error = %e,
+                                "Auto-redeem tx execution failed"
+                            );
                         }
                     }
-                    Err(e) => {
-                        warn!(
-                            target: "block_producer",
-                            error = %e,
-                            "Failed to recover auto-redeem tx sender"
-                        );
-                    }
+                }
+                Err(e) => {
+                    warn!(
+                        target: "block_producer",
+                        error = %e,
+                        "Failed to recover auto-redeem tx sender"
+                    );
                 }
             }
         }
