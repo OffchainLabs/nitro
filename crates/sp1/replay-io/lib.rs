@@ -11,15 +11,19 @@ const SP1_BOOTLOAD_SENTINEL: &[u8] = b"SP1_BOOTLOAD_ONLY";
 #[cfg(any(not(target_os = "zkvm"), test))]
 pub mod send {
     /// Sends input for bootloading.
-    pub fn bootload_mode(stdin: &mut sp1_sdk::SP1Stdin, wasmu: &[u8], function_names_json: &str) {
+    pub fn bootload_mode(wasmu: &[u8], function_names_json: &str) -> sp1_sdk::SP1Stdin {
+        let mut stdin = sp1_sdk::SP1Stdin::new();
         stdin.write_slice(wasmu);
         stdin.write_slice(function_names_json.as_bytes());
         stdin.write_slice(super::SP1_BOOTLOAD_SENTINEL);
+        stdin
     }
 
     /// Sends the data for actual validation (already after bootloading).
-    pub fn validation_mode(stdin: &mut sp1_sdk::SP1Stdin, payload: &[u8]) {
+    pub fn validation_mode(stdin: &mut sp1_sdk::SP1Stdin, payload: &[u8]) -> sp1_sdk::SP1Stdin {
+        let mut stdin = sp1_sdk::SP1Stdin::new();
         stdin.write_slice(payload);
+        stdin
     }
 }
 
