@@ -16,7 +16,7 @@ use bytes::Bytes;
 use clap::Parser;
 use replay_builder::extract_function_names;
 use sp1_core_executor::{MinimalExecutor, Program, UserMode};
-use sp1_sdk::{Elf, artifacts, include_elf};
+use sp1_sdk::{Elf, include_elf};
 use validation::SP1_BOOTLOAD_SENTINEL;
 use wasmer::{
     Module, Store,
@@ -49,7 +49,10 @@ fn main() -> Result<()> {
     let artifacts = Artifacts::build(&wasm)?;
     artifacts.save(&cli.output_folder)?;
 
-    bootload(&artifacts, &cli.output_folder)
+    bootload(
+        &artifacts,
+        &cli.output_folder.join("dumped_replay_wasm.elf"),
+    )
 }
 
 /// Artifacts generated from the original `replay.wasm`.
