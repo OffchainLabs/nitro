@@ -8,12 +8,16 @@
 const SP1_BOOTLOAD_SENTINEL: &[u8] = b"SP1_BOOTLOAD_ONLY";
 
 /// Sending data from host to SP1 guest.
-#[cfg(any(not(target_os = "zkvm"), test))]
+#[cfg(not(target_os = "zkvm"))]
 pub mod send {
     use sp1_core_executor::{ExecutionMode, MinimalExecutor};
 
     /// Sends input for bootloading.
-    pub fn bootload_mode(executor: &mut MinimalExecutor<impl ExecutionMode>, wasmu: &[u8], function_names_json: &str) {
+    pub fn bootload_mode(
+        executor: &mut MinimalExecutor<impl ExecutionMode>,
+        wasmu: &[u8],
+        function_names_json: &str,
+    ) {
         executor.with_input(wasmu);
         executor.with_input(function_names_json.as_bytes());
         executor.with_input(super::SP1_BOOTLOAD_SENTINEL);
