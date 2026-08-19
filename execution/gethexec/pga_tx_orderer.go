@@ -53,9 +53,12 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 	}
 
 	for {
-		if p.mempool.PriorityQueueLen() == 0 || p.schedule.RoundIsOver() {
+		if queueEmpty := p.mempool.PriorityQueueLen() == 0; queueEmpty || p.schedule.RoundIsOver() {
 			p.mempool.ApplyRoundBoost()
 			if p.schedule.IsLastRound() {
+				if queueEmpty {
+					p.limitReason = exhaustedQueue
+				}
 				return txQueueItem{}, false
 			}
 			err := p.schedule.WaitAndAdvanceRound(p.ctx)
