@@ -554,10 +554,10 @@ func TestBacklogSizeInBytesReleasesLockOnError(t *testing.T) {
 	})
 }
 
-// TestBacklogRaceCondition performs read & write operations in separate
+// TestBacklogRaceConditionFlaky performs read & write operations in separate
 // goroutines to ensure that the backlog does not have race conditions. The
 // `go test -race` command can be used to test this.
-func TestBacklogRaceCondition(t *testing.T) {
+func TestBacklogRaceConditionFlaky(t *testing.T) {
 	indexes := []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46}
 	b, err := createDummyBacklog(indexes)
 	if err != nil {
