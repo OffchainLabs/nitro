@@ -344,7 +344,7 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
     pub fn next_scheduled_tx(&mut self) -> Option<Vec<u8>> {
         self.arb_hooks
             .as_mut()
-            .and_then(|hooks| hooks.tx_proc.redeem_queue.pop())
+            .and_then(|hooks| hooks.tx_proc.redeem_queue.pop_front())
     }
 }
 
@@ -890,7 +890,7 @@ where
                                     let mut encoded = Vec::new();
                                     encoded.push(ArbTxType::ArbitrumRetryTx.as_u8());
                                     alloy_rlp::Encodable::encode(&retry_tx, &mut encoded);
-                                    hooks.tx_proc.redeem_queue.schedule(encoded);
+                                    hooks.tx_proc.redeem_queue.push_back(encoded);
                                 } else {
                                     tracing::warn!(
                                         target: "arb::executor",
@@ -2258,7 +2258,7 @@ where
                 if let Some(encoded) = encoded_retry_tx
                     && let Some(hooks) = self.arb_hooks.as_mut()
                 {
-                    hooks.tx_proc.redeem_queue.schedule(encoded);
+                    hooks.tx_proc.redeem_queue.push_back(encoded);
                 }
                 if let Some(b) = latest_backlog {
                     self.precompile_ctx.block.set_current_gas_backlog(b);
