@@ -3906,6 +3906,7 @@ name = "replay-runner"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bincode",
  "clap",
  "sp1-core-executor",
 ]

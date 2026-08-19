@@ -23,6 +23,10 @@ fn main() -> anyhow::Result<()> {
     let program = Program::from(&elf).map_err(|e| anyhow::anyhow!("parse program ELF: {e:#}"))?;
 
     let mut executor = MinimalExecutor::<UserMode>::simple(Arc::new(program));
+    // Placeholder for the rkyv ValidationInput (next port): any non-sentinel
+    // payload makes the bootloaded guest run its (mocked) validation.
+    let placeholder = bincode::serialize(&Vec::<u8>::new()).context("serialize placeholder")?;
+    executor.with_input(&placeholder);
     if executor.execute_chunk().is_some() {
         bail!("execution failed: executor returned a trace chunk unexpectedly");
     }
