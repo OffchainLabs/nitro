@@ -36,7 +36,6 @@ struct Cli {
 }
 
 fn main() -> anyhow::Result<()> {
-    sp1_sdk::utils::setup_logger();
     let cli = Cli::parse();
 
     let wasm = fs::read(&cli.replay_wasm)
@@ -85,11 +84,6 @@ fn bootload(wasmu: &[u8], function_names_json: &str, output_folder: &Path) -> an
         bail!("SP1 bootloading failed: expected output at '{output}' was not produced");
     }
 
-    tracing::info!(
-        "[PROFILE] bootloading: cycles={}, time_secs={:.3}",
-        executor.global_clk(),
-        time_secs,
-    );
     println!("Bootloaded program is written to {output}");
     Ok(())
 }
