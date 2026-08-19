@@ -17,7 +17,6 @@ use clap::Parser;
 use replay_builder::extract_function_names;
 use sp1_core_executor::{MinimalExecutor, Program, UserMode};
 use sp1_sdk::{Elf, include_elf};
-use validation::SP1_BOOTLOAD_SENTINEL;
 use wasmer::{
     Module, Store,
     sys::{CompilerConfig, CpuFeature, EngineBuilder, LLVM, Target, Triple},
@@ -113,12 +112,11 @@ fn bootload(artifacts: &Artifacts, dump_target: &Path) -> Result<()> {
     let program = Arc::new(
         Program::from(&REPLAY_ELF).map_err(|e| anyhow::anyhow!("parse replay ELF: {e:#}"))?,
     );
+    let stdin = replay_io::send::bootload_mode(&artifacts.wasmu, &artifacts.function_names_json);
     let mut executor = MinimalExecutor::<UserMode>::simple(program);
-    executor.with_input(&artifacts.wasmu);
-    executor.with_input(artifacts.function_names_json.as_bytes());
-    let bootload_input = bincode::serialize(&SP1_BOOTLOAD_SENTINEL.to_vec())
-        .context("serialize bootload sentinel")?;
-    executor.with_input(&bootload_input);
+    for input in &stdin.buffer {
+        executor.with_input(input);
+    }
 
     let _ = executor.execute_chunk();
     let exit_code = executor.exit_code();
