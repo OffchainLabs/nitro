@@ -46,6 +46,7 @@ fn main() -> Result<()> {
         .with_context(|| format!("read replay.wasm from {}", cli.replay_wasm.display()))?;
 
     Artifacts::build(&wasm)?.save(&cli.output_folder)?;
+    bootload()?;
 }
 
 /// Artifacts generated from the original `replay.wasm`.
@@ -66,14 +67,8 @@ impl Artifacts {
         })
     }
 
-    /// Writes everything the builder produces into `output_folder`: bootloads
-    /// the guest (dumping the initialized ELF) and writes the in-memory
-    /// artifacts.
     fn save(&self, output_folder: &Path) -> Result<()> {
         fs::create_dir_all(output_folder).context("create output folder")?;
-
-        self.bootload(&output_folder.join("dumped_replay_wasm.elf"))?;
-
         for (name, contents) in [
             ("function_names.json", self.function_names_json.as_bytes()),
             ("replay.wasmu", self.wasmu.as_ref()),
@@ -83,42 +78,6 @@ impl Artifacts {
             fs::write(&output, contents).with_context(|| format!("write {name}"))?;
             println!("{name} written to {}", output.display());
         }
-        Ok(())
-    }
-
-    /// Executes the guest with the wasmu and name mapping loaded up to its
-    /// ELF dump point, writing the initialized guest to `dump_target`.
-    fn bootload(&self, dump_target: &Path) -> Result<()> {
-        // The SP1 executor reads the dump destination from this env var at
-        // the guest's dump syscall.
-        unsafe { std::env::set_var("DUMP_ELF_OUTPUT", dump_target) };
-        // Remove any stale dump so the check below certifies this run.
-        let _ = fs::remove_file(dump_target);
-
-        let program = Arc::new(
-            Program::from(&REPLAY_ELF).map_err(|e| anyhow::anyhow!("parse replay ELF: {e:#}"))?,
-        );
-        let mut executor = MinimalExecutor::<UserMode>::simple(program);
-        executor.with_input(self.wasmu.as_ref());
-        executor.with_input(self.function_names_json.as_bytes());
-        // Bincode-encode the sentinel to match the runner's SP1Stdin wire
-        // format; the guest recognizes it and halts cleanly after the dump.
-        let bootload_input = bincode::serialize(&SP1_BOOTLOAD_SENTINEL.to_vec())
-            .context("serialize bootload sentinel")?;
-        executor.with_input(&bootload_input);
-
-        let _ = executor.execute_chunk();
-
-        if !fs::exists(dump_target).context("check bootload output")? {
-            bail!(
-                "SP1 bootloading failed: expected output at '{}' was not produced",
-                dump_target.display()
-            );
-        }
-        println!(
-            "dumped_replay_wasm.elf written to {}",
-            dump_target.display()
-        );
         Ok(())
     }
 }
@@ -139,4 +98,40 @@ fn compile_wasmu(wasm: &[u8]) -> Result<Bytes> {
     );
     let module = Module::new(&store, wasm).context("compile replay.wasm")?;
     module.serialize().context("serialize module")
+}
+
+/// Executes the guest with the wasmu and name mapping loaded up to its
+/// ELF dump point, writing the initialized guest to `dump_target`.
+fn bootload(dump_target: &Path) -> Result<()> {
+    // The SP1 executor reads the dump destination from this env var at
+    // the guest's dump syscall.
+    unsafe { std::env::set_var("DUMP_ELF_OUTPUT", dump_target) };
+    // Remove any stale dump so the check below certifies this run.
+    let _ = fs::remove_file(dump_target);
+
+    let program = Arc::new(
+        Program::from(&REPLAY_ELF).map_err(|e| anyhow::anyhow!("parse replay ELF: {e:#}"))?,
+    );
+    let mut executor = MinimalExecutor::<UserMode>::simple(program);
+    executor.with_input(self.wasmu.as_ref());
+    executor.with_input(self.function_names_json.as_bytes());
+    // Bincode-encode the sentinel to match the runner's SP1Stdin wire
+    // format; the guest recognizes it and halts cleanly after the dump.
+    let bootload_input = bincode::serialize(&SP1_BOOTLOAD_SENTINEL.to_vec())
+        .context("serialize bootload sentinel")?;
+    executor.with_input(&bootload_input);
+
+    let _ = executor.execute_chunk();
+
+    if !fs::exists(dump_target).context("check bootload output")? {
+        bail!(
+            "SP1 bootloading failed: expected output at '{}' was not produced",
+            dump_target.display()
+        );
+    }
+    println!(
+        "dumped_replay_wasm.elf written to {}",
+        dump_target.display()
+    );
+    Ok(())
 }
