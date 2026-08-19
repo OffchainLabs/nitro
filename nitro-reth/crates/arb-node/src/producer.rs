@@ -1599,13 +1599,10 @@ fn augment_bundle_from_cache(
 /// Execute any scheduled txs (auto-redeems). After a SubmitRetryable or manual Redeem precompile
 /// call, the executor queues retry txs that must execute in the same block, immediately after the
 /// triggering tx; retries scheduled by a retry join the back of the queue.
-fn drain_scheduled_txs<'a, 'db, 'p>(
+fn drain_scheduled_txs<'a>(
     executor: &mut ArbBlockExecutor<
         'a,
-        ArbEvm<
-            &'db mut State<StateProviderDatabase<&'p (dyn StateProvider + Send)>>,
-            MultiGasInspector,
-        >,
+        ArbEvm<&mut State<StateProviderDatabase<&(dyn StateProvider + Send)>>, MultiGasInspector>,
         &'a Arc<ChainSpec>,
         &'a ArbReceiptBuilder,
     >,
