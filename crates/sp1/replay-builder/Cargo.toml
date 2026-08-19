@@ -21,7 +21,7 @@ bytes = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sp1-core-executor = { workspace = true }
-sp1-sdk = { workspace = true, features = ["mprotect"] }
+sp1-sdk = { workspace = true }
 tracing = { workspace = true }
 validation = { workspace = true }
 wasmer = { workspace = true, features = ["llvm", "sp1"] }
