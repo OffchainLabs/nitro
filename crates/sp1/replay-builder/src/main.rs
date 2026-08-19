@@ -45,7 +45,7 @@ fn main() -> anyhow::Result<()> {
     let wasm = fs::read(&cli.replay_wasm)
         .with_context(|| format!("read replay.wasm from {}", cli.replay_wasm.display()))?;
 
-    Artifacts::build(wasm)?.save(&cli.output_folder)?;
+    Artifacts::build(&wasm)?.save(&cli.output_folder)?;
 }
 
 /// Artifacts generated from the original `replay.wasm`.
@@ -57,8 +57,8 @@ struct Artifacts {
 }
 
 impl Artifacts {
-    fn build(wasm: Vec<u8>) -> anyhow::Result<Self> {
-        let names = extract_function_names(&wasm)?;
+    fn build(wasm: &[u8]) -> anyhow::Result<Self> {
+        let names = extract_function_names(wasm)?;
         Ok(Self {
             function_names_json: serde_json::to_string_pretty(&names)
                 .context("serialize function names")?,
@@ -124,7 +124,7 @@ impl Artifacts {
 }
 
 /// Compiles replay.wasm for the riscv64 target with wasmer's LLVM backend into a serialized module.
-fn compile_wasmu(wasm: Vec<u8>) -> anyhow::Result<Bytes> {
+fn compile_wasmu(wasm: &[u8]) -> anyhow::Result<Bytes> {
     let target = Target::new(
         Triple::from_str("riscv64").map_err(|e| anyhow::anyhow!("riscv64 triple: {e}"))?,
         CpuFeature::set(),
