@@ -822,14 +822,12 @@ func FinalizeBlock(header *types.Header, statedb vm.StateDB, chainConfig *params
 }
 
 func arbitrumHeaderPostGenesis(statedb vm.StateDB, header *types.Header) *types.HeaderInfo {
-	collectTips := false
-
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 	if err != nil {
 		newErr := fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root)
 		panic(newErr)
 	}
-	collectTips, err = arbState.CollectTips()
+	collectTips, err := arbState.CollectTips()
 	if err != nil {
 		newErr := fmt.Errorf("%w while reading collect tips setting. Block: %d root: %v", err, header.Number, header.Root)
 		panic(newErr)
