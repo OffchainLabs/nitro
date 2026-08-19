@@ -1,20 +1,24 @@
 use std::sync::Arc;
 
+use alloy_consensus::transaction::Recovered;
 use alloy_evm::{
     EvmFactory,
     block::{BlockExecutor, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
 };
-use alloy_primitives::{Address, B256, Bytes, TxKind, U256};
+use alloy_primitives::{Address, B256, Bytes, Signature, TxKind, U256};
+use arb_alloy_consensus::tx::ArbDepositTx;
 use arb_evm::config::ArbEvmConfig;
 use arb_executor_tests::helpers::{
     ExecutorScaffold, ONE_ETH, ONE_GWEI, RECIPIENT, alice, alice_key, balance_of, bob, bob_key,
     charlie, charlie_key, deploy_contract, fund_account, nonce_of, recover, sign_legacy,
 };
-use arb_test_utils::ArbosHarness;
+use arb_primitives::{ArbTransactionSigned, signed_tx::ArbTypedTransaction};
+use arb_test_utils::{ArbosHarness, EmptyDb};
+use arbos::compute_budget::TX_GAS;
 use reth_chainspec::ChainSpec;
 use reth_evm::{ConfigureEvm, EvmEnv};
-use revm::primitives::hardfork::SpecId;
+use revm::{database::State, primitives::hardfork::SpecId};
 
 fn run_multi_tx_block(
     harness: &mut ArbosHarness,
@@ -323,4 +327,97 @@ fn balance_drains_correctly_when_value_plus_gas_exceeds_balance_mid_block() {
     );
     let final_recipient = balance_of(s.harness.state(), RECIPIENT);
     assert!(final_recipient <= send * U256::from(2u64));
+}
+
+fn set_per_block_gas_limit(state: &mut State<EmptyDb>, limit: u64) {
+    let arb_state =
+        arbos::arbos_state::ArbosState::open(state, arbos::burn::SystemBurner::new(None, false))
+            .expect("open arbos state");
+    // SAFETY: re-borrow the backing state to write the gas limit.
+    let backend = unsafe { arb_state.backing_storage.state_mut() };
+    arb_state
+        .l2_pricing_state
+        .set_max_per_block_gas_limit(backend, limit)
+        .expect("set per-block gas limit");
+}
+
+#[test]
+fn block_gas_budget_exhaustion_rejects_user_txs_but_not_deposits() {
+    // A budget that fits exactly two TX_GAS transfers.
+    let per_block_gas_limit = 3 * TX_GAS - 1;
+
+    let mut s = ExecutorScaffold::new().with_funded(&[(alice(), U256::from(10u128 * ONE_ETH))]);
+    set_per_block_gas_limit(s.harness.state(), per_block_gas_limit);
+
+    let cfg = s.evm_config();
+    let env = s.evm_env();
+    let evm = cfg
+        .block_executor_factory()
+        .evm_factory()
+        .create_evm(s.harness.state(), env);
+    let exec_ctx = EthBlockExecutionCtx {
+        tx_count_hint: Some(4),
+        parent_hash: B256::ZERO,
+        parent_beacon_block_root: None,
+        ommers: &[],
+        withdrawals: None,
+        extra_data: vec![0u8; 32].into(),
+    };
+    let mut executor = cfg
+        .block_executor_factory()
+        .create_arb_executor(evm, exec_ctx, s.chain_id);
+    executor.apply_pre_execution_changes().expect("pre-exec");
+
+    let send = U256::from(ONE_ETH);
+    let transfer = |nonce: u64| {
+        sign_legacy(
+            s.chain_id,
+            nonce,
+            ONE_GWEI,
+            TX_GAS,
+            TxKind::Call(RECIPIENT),
+            send,
+            Bytes::new(),
+            alice_key(),
+        )
+    };
+
+    for nonce in 0..2 {
+        let result = executor
+            .execute_transaction_without_commit(recover(transfer(nonce)))
+            .expect("transfer within budget must execute");
+        assert!(result.result.result.is_success());
+        executor.commit_transaction(result).expect("commit");
+    }
+    let err = executor
+        .execute_transaction_without_commit(recover(transfer(2)))
+        .expect_err("transfer beyond budget must be rejected");
+    assert!(
+        err.to_string().contains("block gas limit reached"),
+        "unexpected error: {err}"
+    );
+
+    // Deposits are not rate-limited by the block gas budget.
+    let deposit = ArbTransactionSigned::new_unhashed(
+        ArbTypedTransaction::Deposit(ArbDepositTx {
+            chain_id: U256::from(s.chain_id),
+            l1_request_id: B256::repeat_byte(0x01),
+            from: bob(),
+            to: charlie(),
+            value: send,
+        }),
+        Signature::new(U256::ZERO, U256::ZERO, false),
+    );
+    let result = executor
+        .execute_transaction_without_commit(Recovered::new_unchecked(deposit, bob()))
+        .expect("deposit must pass despite exhausted budget");
+    assert!(result.result.result.is_success());
+    executor.commit_transaction(result).expect("commit deposit");
+    let _ = executor.finish().expect("finish");
+
+    assert_eq!(
+        balance_of(s.harness.state(), RECIPIENT),
+        send * U256::from(2u64)
+    );
+    assert_eq!(balance_of(s.harness.state(), charlie()), send);
 }

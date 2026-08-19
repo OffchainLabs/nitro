@@ -723,6 +723,7 @@ pub fn wasm_to_wavm(
     all_types_func_idx: u32,
     internals_offset: u32,
     name: &str,
+    max_ops: usize,
 ) -> Result<()> {
     use Operator::*;
 
@@ -739,42 +740,49 @@ pub fn wasm_to_wavm(
             $first { .. } $(| $opcode { .. })*
         };
     }
+    /// emits an instruction, enforcing the `max_ops` limit (0 means unlimited)
+    macro_rules! emit {
+        ($inst:expr_2021) => {{
+            ensure!(max_ops == 0 || out.len() < max_ops, "too many wavm opcodes");
+            out.push($inst);
+        }};
+    }
     macro_rules! opcode {
         ($opcode:ident ($($inside:expr_2021),*)) => {{
-            out.push(Instruction::simple(Opcode::$opcode($($inside,)*)));
+            emit!(Instruction::simple(Opcode::$opcode($($inside,)*)));
         }};
         ($opcode:ident ($($inside:expr_2021),*), @push $delta:expr_2021) => {{
-            out.push(Instruction::simple(Opcode::$opcode($($inside,)*)));
+            emit!(Instruction::simple(Opcode::$opcode($($inside,)*)));
             stack += $delta;
         }};
         ($opcode:ident ($($inside:expr_2021),*), @pop $delta:expr_2021) => {{
-            out.push(Instruction::simple(Opcode::$opcode($($inside,)*)));
+            emit!(Instruction::simple(Opcode::$opcode($($inside,)*)));
             stack -= $delta;
         }};
         ($opcode:ident) => {{
-            out.push(Instruction::simple(Opcode::$opcode));
+            emit!(Instruction::simple(Opcode::$opcode));
         }};
         ($opcode:ident, @push $delta:expr_2021) => {{
-            out.push(Instruction::simple(Opcode::$opcode));
+            emit!(Instruction::simple(Opcode::$opcode));
             stack += $delta;
         }};
         ($opcode:ident, @pop $delta:expr_2021) => {{
-            out.push(Instruction::simple(Opcode::$opcode));
+            emit!(Instruction::simple(Opcode::$opcode));
             stack -= $delta;
         }};
         ($opcode:ident, $value:expr_2021) => {{
-            out.push(Instruction::with_data(Opcode::$opcode, $value));
+            emit!(Instruction::with_data(Opcode::$opcode, $value));
         }};
         ($opcode:ident, $value:expr_2021, @push $delta:expr_2021) => {{
-            out.push(Instruction::with_data(Opcode::$opcode, $value));
+            emit!(Instruction::with_data(Opcode::$opcode, $value));
             stack += $delta;
         }};
         ($opcode:ident, $value:expr_2021, @pop $delta:expr_2021) => {{
-            out.push(Instruction::with_data(Opcode::$opcode, $value));
+            emit!(Instruction::with_data(Opcode::$opcode, $value));
             stack -= $delta;
         }};
         (@cross, $module:expr_2021, $func:expr_2021) => {
-            out.push(Instruction::with_data(
+            emit!(Instruction::with_data(
                 Opcode::CrossModuleCall,
                 pack_cross_module_call($module, $func),
             ));
@@ -788,7 +796,7 @@ pub fn wasm_to_wavm(
                 bytes: $bytes,
                 signed: $signed,
             };
-            out.push(Instruction::with_data(op, $memory.offset));
+            emit!(Instruction::with_data(op, $memory.offset));
         }};
     }
     macro_rules! store {
@@ -798,34 +806,34 @@ pub fn wasm_to_wavm(
                 ty: ArbValueType::$type,
                 bytes: $bytes,
             };
-            out.push(Instruction::with_data(op, $memory.offset));
+            emit!(Instruction::with_data(op, $memory.offset));
             stack -= 2;
         }};
     }
     macro_rules! compare {
         ($type:ident, $rel:ident, $signed:expr_2021) => {{
             let op = Opcode::IRelOp(IntegerValType::$type, IRelOpType::$rel, $signed);
-            out.push(Instruction::simple(op));
+            emit!(Instruction::simple(op));
             stack -= 1;
         }};
     }
     macro_rules! unary {
         ($type:ident, $op:ident) => {{
             let op = Opcode::IUnOp(IntegerValType::$type, IUnOpType::$op);
-            out.push(Instruction::simple(op));
+            emit!(Instruction::simple(op));
         }};
     }
     macro_rules! binary {
         ($type:ident, $op:ident) => {{
             let op = Opcode::IBinOp(IntegerValType::$type, IBinOpType::$op);
-            out.push(Instruction::simple(op));
+            emit!(Instruction::simple(op));
             stack -= 1;
         }};
     }
     macro_rules! reinterpret {
         ($dest:ident, $source:ident) => {{
             let op = Opcode::Reinterpret(ArbValueType::$dest, ArbValueType::$source);
-            out.push(Instruction::simple(op));
+            emit!(Instruction::simple(op));
         }};
     }
     macro_rules! call {
@@ -965,7 +973,7 @@ pub fn wasm_to_wavm(
                     dest = *start;
                 }
             }
-            out.push(Instruction::with_data(jump_op, dest as u64));
+            emit!(Instruction::with_data(jump_op, dest as u64));
             if let Some(jump_to_after) = jump_to_after {
                 out[jump_to_after].argument_data = out.len() as u64;
                 stack = stack_if_not_taken;
