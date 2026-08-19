@@ -20,7 +20,7 @@ pub mod send {
     }
 
     /// Sends the data for actual validation (already after bootloading).
-    pub fn validation_mode(stdin: &mut sp1_sdk::SP1Stdin, payload: &[u8]) -> sp1_sdk::SP1Stdin {
+    pub fn validation_mode(payload: &[u8]) -> sp1_sdk::SP1Stdin {
         let mut stdin = sp1_sdk::SP1Stdin::new();
         stdin.write_slice(payload);
         stdin
@@ -28,7 +28,6 @@ pub mod send {
 }
 
 /// Reading data in SP1 guest.
-#[cfg(any(target_os = "zkvm", test))]
 pub mod recv {
     /// The inputs consumed during bootload.
     pub struct BootloadInputs {

@@ -6,29 +6,17 @@
 #[cfg(target_os = "zkvm")]
 sp1_zkvm::entrypoint!(main);
 
-use validation::SP1_BOOTLOAD_SENTINEL;
+use replay_io::recv::ValidationPayload;
 
 fn main() {
-    // Input 1: replay.wasmu, read in place (~140MB, so no copying). Unused
-    // until the guest hosts replay.wasm in wasmer.
-    let sp1_zkvm::ReadVecResult { ptr, .. } = sp1_zkvm::read_vec_raw();
-    assert!(!ptr.is_null());
+    let _inputs = replay_io::recv::bootload_inputs();
 
-    // Input 2: replay.wasm function names for profiler symbols. Unused until
-    // then.
-    let sp1_zkvm::ReadVecResult { ptr, .. } = sp1_zkvm::read_vec_raw();
-    assert!(!ptr.is_null());
-
-    // Bootloading dumps the initialized guest here; the dumped ELF resumes
-    // below, reading its next input from the runner.
     sp1_zkvm::syscalls::syscall_dump_elf();
 
-    // Input 3: the bootload sentinel (halt cleanly; the dump above is the
-    // product) or, once ported, the rkyv ValidationInput.
-    let input = sp1_zkvm::io::read::<Vec<u8>>();
-    if input.as_slice() == SP1_BOOTLOAD_SENTINEL {
-        sp1_zkvm::syscalls::syscall_halt(0);
+    match replay_io::recv::validation_payload() {
+        ValidationPayload::Bootload => sp1_zkvm::syscalls::syscall_halt(0),
+        ValidationPayload::Input(_) => {
+            println!("Validation MOCKED with hash 0x{}", "00".repeat(32));
+        }
     }
-
-    println!("Validation MOCKED with hash 0x{}", "00".repeat(32));
 }

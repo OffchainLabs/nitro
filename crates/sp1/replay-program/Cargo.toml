@@ -11,5 +11,5 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+replay-io = { workspace = true }
 sp1-zkvm = { workspace = true, features = ["may_dump_elf"] }
-validation = { workspace = true }
