@@ -1,6 +1,11 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
+//! Builds the SP1 replay artifacts from replay.wasm: the riscv64 `wasmu`
+//! module and the function-name mapping are built in memory; saving writes
+//! them and generates `dumped_replay_wasm.elf` in place by bootloading the
+//! guest (executing it with both loaded, up to its ELF dump point).
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -22,9 +27,6 @@ use wasmer::{
 
 const REPLAY_ELF: Elf = include_elf!("replay-program");
 
-/// Env var the SP1 executor dumps the bootloaded ELF to.
-const DUMP_ELF_OUTPUT: &str = "DUMP_ELF_OUTPUT";
-
 #[derive(Parser)]
 #[command(about = "Build the SP1 replay-program artifacts")]
 struct Cli {
@@ -43,10 +45,10 @@ fn main() -> anyhow::Result<()> {
     let wasm = fs::read(&cli.replay_wasm)
         .with_context(|| format!("read replay.wasm from {}", cli.replay_wasm.display()))?;
 
-    Artifacts::prepare(&cli.output_folder)?;
-    Artifacts::build(wasm)?.save(&cli.output_folder)
+    Artifacts::build(wasm)?.save(&cli.output_folder)?;
 }
 
+/// Artifacts generated from the original `replay.wasm`.
 struct Artifacts {
     /// Function names of replay.wasm (lost in wasmer's compiled output).
     function_names_json: String,
@@ -55,33 +57,44 @@ struct Artifacts {
 }
 
 impl Artifacts {
-    /// Prepares `output_folder`: creates it and points DUMP_ELF_OUTPUT at the bootload dump target,
-    /// removing any stale dump so `save` can assert the fresh one was written. Must run before `build`.
-    fn prepare(output_folder: &Path) -> anyhow::Result<()> {
-        fs::create_dir_all(output_folder).context("create output folder")?;
-        if std::env::var(DUMP_ELF_OUTPUT).is_err() {
-            let dump = output_folder.join("dumped_replay_wasm.elf");
-            unsafe { std::env::set_var(DUMP_ELF_OUTPUT, dump) };
-        }
-        let dump = std::env::var(DUMP_ELF_OUTPUT).context("read dump target")?;
-        let _ = fs::remove_file(dump);
-        Ok(())
-    }
-
     fn build(wasm: Vec<u8>) -> anyhow::Result<Self> {
         let names = extract_function_names(&wasm)?;
-        let artifacts = Self {
+        Ok(Self {
             function_names_json: serde_json::to_string_pretty(&names)
                 .context("serialize function names")?,
             wasmu: compile_wasmu(wasm)?,
-        };
-        artifacts.bootload()?;
-        Ok(artifacts)
+        })
     }
 
-    /// Bootloads the guest: executes it with the wasmu and name mapping loaded up to its ELF dump
-    /// point (the DUMP_ELF_OUTPUT target).
-    fn bootload(&self) -> anyhow::Result<()> {
+    /// Writes everything the builder produces into `output_folder`: bootloads
+    /// the guest (dumping the initialized ELF) and writes the in-memory
+    /// artifacts.
+    fn save(&self, output_folder: &Path) -> anyhow::Result<()> {
+        fs::create_dir_all(output_folder).context("create output folder")?;
+
+        self.bootload(&output_folder.join("dumped_replay_wasm.elf"))?;
+
+        for (name, contents) in [
+            ("function_names.json", self.function_names_json.as_bytes()),
+            ("replay.wasmu", self.wasmu.as_ref()),
+            ("replay-program.elf", REPLAY_ELF.as_ref()),
+        ] {
+            let output = output_folder.join(name);
+            fs::write(&output, contents).with_context(|| format!("write {name}"))?;
+            println!("{name} written to {}", output.display());
+        }
+        Ok(())
+    }
+
+    /// Executes the guest with the wasmu and name mapping loaded up to its
+    /// ELF dump point, writing the initialized guest to `dump_target`.
+    fn bootload(&self, dump_target: &Path) -> anyhow::Result<()> {
+        // The SP1 executor reads the dump destination from this env var at
+        // the guest's dump syscall.
+        unsafe { std::env::set_var("DUMP_ELF_OUTPUT", dump_target) };
+        // Remove any stale dump so the check below certifies this run.
+        let _ = fs::remove_file(dump_target);
+
         let program = Arc::new(
             Program::from(&REPLAY_ELF).map_err(|e| anyhow::anyhow!("parse replay ELF: {e:#}"))?,
         );
@@ -95,26 +108,17 @@ impl Artifacts {
         executor.with_input(&bootload_input);
 
         let _ = executor.execute_chunk();
-        Ok(())
-    }
 
-    /// Writes all artifacts and ensures bootloading produced its dump.
-    fn save(&self, output_folder: &Path) -> anyhow::Result<()> {
-        for (name, contents) in [
-            ("function_names.json", self.function_names_json.as_bytes()),
-            ("replay.wasmu", self.wasmu.as_ref()),
-            ("replay-program.elf", REPLAY_ELF.as_ref()),
-        ] {
-            let output = output_folder.join(name);
-            fs::write(&output, contents).with_context(|| format!("write {name}"))?;
-            println!("{name} written to {}", output.display());
+        if !fs::exists(dump_target).context("check bootload output")? {
+            bail!(
+                "SP1 bootloading failed: expected output at '{}' was not produced",
+                dump_target.display()
+            );
         }
-
-        let dump = std::env::var(DUMP_ELF_OUTPUT).context("read dump target")?;
-        if !fs::exists(&dump).context("check bootload output")? {
-            bail!("SP1 bootloading failed: expected output at '{dump}' was not produced");
-        }
-        println!("Bootloaded program is written to {dump}");
+        println!(
+            "dumped_replay_wasm.elf written to {}",
+            dump_target.display()
+        );
         Ok(())
     }
 }
