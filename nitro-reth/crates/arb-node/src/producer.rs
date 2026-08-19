@@ -1612,7 +1612,7 @@ fn drain_scheduled_txs(
         debug!(
             target: "block_producer",
             count = scheduled.len(),
-            "Drained scheduled txs"
+            "Draining scheduled txs"
         );
         if scheduled.is_empty() {
             break;
