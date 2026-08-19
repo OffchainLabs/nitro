@@ -186,13 +186,6 @@ func DrainStackPool() {
 	C.stylus_drain_stack_pool()
 }
 
-// MinNativeStackSize is the floor enforced by Wasmer's set_stack_size (must match wasmer_vm clamping
-// in crates/tools/wasmer/lib/vm/src/trap/traphandlers.rs, set_stack_size()).
-const MinNativeStackSize = 8 * 1024 // 8 KB
-
-// MaxNativeStackSize is the hard cap on Wasmer coroutine stack size (must match wasmer_vm::MAX_STACK_SIZE).
-const MaxNativeStackSize = 100 * 1024 * 1024 // 100 MB
-
 var (
 	stylusLRUCacheSizeBytesGauge    = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size_bytes", nil)
 	stylusLRUCacheCountGauge        = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/count", nil)
@@ -222,7 +215,9 @@ func activateProgram(
 	suppliedGas := burner.GasLeft()
 	gasLeft := suppliedGas
 	shouldAllowFallback := GetAllowFallback() && runCtx.IsExecutedOnChain()
-	info, asmMap, err := activateProgramInternal(program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, &gasLeft, runCtx.WasmTargets(), moduleActivationMandatory, shouldAllowFallback)
+
+	nodeConfig := GetStylusConfig(db)
+	info, asmMap, err := activateProgramInternal(program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, &gasLeft, runCtx.WasmTargets(), moduleActivationMandatory, shouldAllowFallback, nodeConfig, runCtx)
 	if gasLeft < suppliedGas {
 		// Ignore the out-of-gas error because we want to return the error above
 		burner.Burn(multigas.ResourceKindComputation, suppliedGas-gasLeft) //nolint:errcheck
@@ -245,6 +240,7 @@ func activateModule(
 	arbosVersionForGas uint64,
 	debug bool,
 	gasLeft *uint64,
+	op_limit uint32,
 ) (*activationInfo, []byte, error) {
 	output := &rustBytes{}
 	moduleHash := &bytes32{}
@@ -262,6 +258,7 @@ func activateModule(
 		moduleHash,
 		stylusData,
 		(*u64)(gasLeft),
+		u32(op_limit),
 	))
 
 	module, msg, err := status_mod.toResult(rustBytesIntoBytes(output), debug)
@@ -329,6 +326,8 @@ func activateProgramInternal(
 	targets []rawdb.WasmTarget,
 	moduleActivationMandatory bool,
 	useFallback bool,
+	nodeConfig *StylusTargetConfig,
+	_runCtx *core.MessageRunContext,
 ) (*activationInfo, map[rawdb.WasmTarget][]byte, error) {
 	var wavmFound bool
 	var nativeTargets []rawdb.WasmTarget
@@ -352,7 +351,7 @@ func activateProgramInternal(
 		go func() {
 			var err error
 			var module []byte
-			info, module, err = activateModule(addressForLogging, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, gasLeft)
+			info, module, err = activateModule(addressForLogging, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, gasLeft, uint32(nodeConfig.MaxWavmOps))
 			results <- result{target: rawdb.TargetWavm, asm: module, err: err}
 		}()
 	}
@@ -456,7 +455,7 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 	moduleActivationMandatory := false
 	// compile only missing targets
 	shouldAllowFallback := GetAllowFallback() && runCtx.IsExecutedOnChain()
-	info, newlyBuilt, err := activateProgramInternal(addressForLogging, codehash, wasm, params.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory, shouldAllowFallback)
+	info, newlyBuilt, err := activateProgramInternal(addressForLogging, codehash, wasm, params.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory, shouldAllowFallback, GetStylusConfig(statedb), runCtx)
 	if err != nil {
 		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
@@ -724,7 +723,6 @@ func getCraneliftAsm(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get wasm for cranelift compilation: %w", err)
 	}
-
 	asm, err := compileNative(wasm, version, debug, craneliftTarget, true, 15*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("cranelift compilation failed: %w", err)
@@ -861,9 +859,6 @@ func ClearWasmLongTermCache() {
 func GetEntrySizeEstimateBytes(module []byte, version uint16, debug bool) uint64 {
 	return uint64(C.stylus_get_entry_size_estimate_bytes(goSlice(module), u16(version), cbool(debug)))
 }
-
-const DefaultTargetDescriptionArm = "arm64-linux-unknown+neon"
-const DefaultTargetDescriptionX86 = "x86_64-linux-unknown+sse4.2+lzcnt+bmi"
 
 func SetTarget(name rawdb.WasmTarget, description string, native bool) error {
 	output := &rustBytes{}

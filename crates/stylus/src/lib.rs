@@ -119,6 +119,7 @@ pub unsafe extern "C" fn stylus_activate(
     module_hash: *mut Bytes32,
     stylus_data: *mut StylusData,
     gas: *mut u64,
+    op_limit: u32,
 ) -> UserOutcomeKind {
     unsafe {
         let wasm = wasm.slice();
@@ -135,6 +136,7 @@ pub unsafe extern "C" fn stylus_activate(
             page_limit,
             debug,
             gas,
+            op_limit,
         ) {
             Ok(val) => val,
             Err(err) => return write_err(output, err),
