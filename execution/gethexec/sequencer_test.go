@@ -26,28 +26,28 @@ func TestSequencerConfigValidatePGA(t *testing.T) {
 	}{
 		{"default config", func(c *SequencerConfig) {}, false},
 		{"forced fifo", func(c *SequencerConfig) {
-			c.ExperimentalPGA.DangerousForceFIFO = true
+			c.PGA.DangerousForceFIFO = true
 		}, false},
 		{"timeboost enabled", func(c *SequencerConfig) {
 			c.Timeboost.Enable = true
 		}, false},
 		{"forced fifo and timeboost enabled", func(c *SequencerConfig) {
-			c.ExperimentalPGA.DangerousForceFIFO = true
+			c.PGA.DangerousForceFIFO = true
 			c.Timeboost.Enable = true
 		}, false},
 		{"zero value pga config", func(c *SequencerConfig) {
-			c.ExperimentalPGA = PGAConfig{}
+			c.PGA = PGAConfig{}
 		}, true},
 		{"zero rounds per block", func(c *SequencerConfig) {
-			c.ExperimentalPGA.RoundsPerBlock = 0
+			c.PGA.RoundsPerBlock = 0
 		}, true},
 		{"one round per block", func(c *SequencerConfig) {
-			c.ExperimentalPGA.RoundsPerBlock = 1
+			c.PGA.RoundsPerBlock = 1
 		}, false},
 		{"many rounds per block", func(c *SequencerConfig) {
 			c.Enable = true
 			c.MaxBlockSpeed = 250 * time.Millisecond
-			c.ExperimentalPGA.RoundsPerBlock = 6
+			c.PGA.RoundsPerBlock = 6
 		}, false},
 	}
 	for _, tt := range tests {
@@ -68,7 +68,7 @@ func TestSequencerConfigValidatePGA(t *testing.T) {
 func TestPGARoundLength(t *testing.T) {
 	c := DefaultSequencerConfig
 	c.MaxBlockSpeed = 250 * time.Millisecond
-	c.ExperimentalPGA.RoundsPerBlock = 2
+	c.PGA.RoundsPerBlock = 2
 	if got := c.PGARoundLength(); got != 125*time.Millisecond {
 		t.Errorf("expected round length 125ms, got %v", got)
 	}
