@@ -24,7 +24,7 @@ rustflags = ["-C", "link-arg=-Wl,--allow-multiple-definition"]
 
 [alias]
 # Checks the crates the replay binary needs against the wasm target. Extend the list
-# whenever a crate becomes wasm-clean; CI runs this in the lint workflow's `wasm` job.
+# whenever a crate becomes wasm-clean.
 wasm-check = [
     "check",
     "--locked",
