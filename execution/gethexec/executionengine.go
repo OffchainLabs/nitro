@@ -578,13 +578,6 @@ func (s *ExecutionEngine) EnqueueDelayedMessages(msgs []*arbostypes.L1IncomingMe
 	}
 }
 
-func msgToPrefetch(msgs []arbostypes.MessageWithMetadataAndBlockInfo, i int) *arbostypes.MessageWithMetadata {
-	if i+1 >= len(msgs) {
-		return nil
-	}
-	return &msgs[i+1].MessageWithMeta
-}
-
 func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) ([]*execution.MessageResult, error) {
 	if msgIdxOfFirstMsgToAdd == 0 {
 		return nil, errors.New("cannot reorg out genesis")
@@ -639,8 +632,12 @@ func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newM
 
 	newMessagesResults := make([]*execution.MessageResult, 0, len(newMessages))
 	for i := range newMessages {
+		var msgForPrefetch *arbostypes.MessageWithMetadata
+		if i < len(newMessages)-1 {
+			msgForPrefetch = &newMessages[i+1].MessageWithMeta
+		}
 		nextMsgIdx := msgIdxOfFirstMsgToAdd + arbutil.MessageIndex(i)
-		msgResult, err := s.digestMessageWithBlockMutex(nextMsgIdx, &newMessages[i].MessageWithMeta, msgToPrefetch(newMessages, i))
+		msgResult, err := s.digestMessageWithBlockMutex(nextMsgIdx, &newMessages[i].MessageWithMeta, msgForPrefetch)
 		if err != nil {
 			return nil, err
 		}
