@@ -6,6 +6,7 @@ package gethexec
 import (
 	"context"
 	"errors"
+	"math"
 	"math/big"
 	"sync/atomic"
 	"testing"
@@ -49,6 +50,10 @@ func TestSequencerConfigValidatePGA(t *testing.T) {
 			c.MaxBlockSpeed = 250 * time.Millisecond
 			c.PGA.RoundsPerBlock = 6
 		}, false},
+		{"round length below 5ms", func(c *SequencerConfig) {
+			c.MaxBlockSpeed = 10 * time.Millisecond
+			c.PGA.RoundsPerBlock = 6
+		}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -62,15 +67,6 @@ func TestSequencerConfigValidatePGA(t *testing.T) {
 				t.Errorf("unexpected validation error: %v", err)
 			}
 		})
-	}
-}
-
-func TestPGARoundLength(t *testing.T) {
-	c := DefaultSequencerConfig
-	c.MaxBlockSpeed = 250 * time.Millisecond
-	c.PGA.RoundsPerBlock = 2
-	if got := c.PGARoundLength(); got != 125*time.Millisecond {
-		t.Errorf("expected round length 125ms, got %v", got)
 	}
 }
 
@@ -271,7 +267,12 @@ func TestCreateBlockRequeuesNeverAttemptedTxs(t *testing.T) {
 	}
 
 	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
-	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}}, DefaultSequencerConfig.PollInterval, DefaultSequencerConfig.MaxBlockSpeed, big.NewInt(testBaseFee))
+	ordererConfig := txOrdererConfig{
+		baseFee:              big.NewInt(testBaseFee),
+		maxBlockTxCandidates: math.MaxInt,
+		maxBlockSpeed:        DefaultSequencerConfig.MaxBlockSpeed,
+	}
+	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}}, ordererConfig, DefaultSequencerConfig.PollInterval)
 
 	sequencedMsg, _ := seq.createBlockWithTxOrderer(context.Background(), orderer)
 
@@ -308,7 +309,12 @@ func TestCreateBlockPanicFailsTxsInsteadOfRequeueing(t *testing.T) {
 	}
 
 	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
-	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}}, DefaultSequencerConfig.PollInterval, DefaultSequencerConfig.MaxBlockSpeed, big.NewInt(testBaseFee))
+	ordererConfig := txOrdererConfig{
+		baseFee:              big.NewInt(testBaseFee),
+		maxBlockTxCandidates: math.MaxInt,
+		maxBlockSpeed:        DefaultSequencerConfig.MaxBlockSpeed,
+	}
+	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}}, ordererConfig, DefaultSequencerConfig.PollInterval)
 
 	sequencedMsg, throttle := seq.createBlockWithTxOrderer(context.Background(), panicAfterArmOrderer{orderer})
 

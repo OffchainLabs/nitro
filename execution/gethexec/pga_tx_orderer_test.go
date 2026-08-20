@@ -50,16 +50,26 @@ func makeExpiredPGAQueueItem(t *testing.T, nonce uint64, gasTipCap int64) (txQue
 	return newRegularTxQueueItem(ctx, tx, nil, resultChan, false, 0), resultChan
 }
 
+// testPGAOrdererConfig is the shared orderer config for PGA tests: splitting its 250ms block
+// into two rounds yields testPGARoundLength.
+func testPGAOrdererConfig() txOrdererConfig {
+	return txOrdererConfig{
+		baseFee:              big.NewInt(testBaseFee),
+		maxBlockTxCandidates: math.MaxInt,
+		maxBlockSpeed:        2 * testPGARoundLength,
+	}
+}
+
 func newTestPGATxOrderer(seq txOrdererSequencer) *pgaTxOrderer {
-	return NewPGATxOrderer(context.Background(), seq, 2, testPGARoundLength, big.NewInt(testBaseFee))
+	return NewPGATxOrderer(context.Background(), seq, testPGAOrdererConfig(), 2)
 }
 
 // newTestPGATxOrdererWithRounds builds an orderer for a 300ms block split into the given number
 // of rounds.
 func newTestPGATxOrdererWithRounds(seq txOrdererSequencer, rounds uint) *pgaTxOrderer {
-	// Test round counts are tiny; the conversion cannot overflow.
-	// #nosec G115
-	return NewPGATxOrderer(context.Background(), seq, rounds, 300*time.Millisecond/time.Duration(rounds), big.NewInt(testBaseFee))
+	config := testPGAOrdererConfig()
+	config.maxBlockSpeed = 300 * time.Millisecond
+	return NewPGATxOrderer(context.Background(), seq, config, rounds)
 }
 
 // TakeRemaining runs in a deferred cleanup that can fire before StartBlock arms the mempool; it
@@ -222,6 +232,31 @@ func TestPGATxOrdererRoundExpiryAdvancesAndBoosts(t *testing.T) {
 	})
 }
 
+func TestPGATxOrdererDrainBoundSubtractsMempool(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		seq := &stubOrdererSequencer{items: []txQueueItem{
+			makePGAQueueItem(t, 0, 10),
+			makePGAQueueItem(t, 1, 20),
+		}}
+		config := testPGAOrdererConfig()
+		config.maxBlockTxCandidates = 5
+		o := NewPGATxOrderer(context.Background(), seq, config, 2)
+
+		if !o.StartBlock(nil) {
+			t.Fatal("StartBlock = false, want true")
+		}
+		// Round 1 expires with both txs still queued: the round-2 refill only asks for the
+		// room left in the mempool.
+		time.Sleep(testPGARoundLength + time.Millisecond)
+		if _, reason := o.NextQueueItem(nil, math.MaxInt, math.MaxUint64); reason != fetchedTx {
+			t.Fatal("NextQueueItem = exhausted, want a yield in round 2")
+		}
+		if !slices.Equal(seq.drainLimits, []int{5, 3}) {
+			t.Fatalf("drain bounds = %v, want [5 3]", seq.drainLimits)
+		}
+	})
+}
+
 // CurrentRound tracks the round yields come from: it starts at 1, advances at round boundaries,
 // and a tx revived mid-round is yielded without moving it.
 func TestPGATxOrdererCurrentRoundTracksYields(t *testing.T) {
@@ -336,7 +371,7 @@ func TestPGATxOrdererCtxCancelEndsBlock(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		seq := &stubOrdererSequencer{items: []txQueueItem{makePGAQueueItem(t, 0, 10)}}
-		o := NewPGATxOrderer(ctx, seq, 2, testPGARoundLength, big.NewInt(testBaseFee))
+		o := NewPGATxOrderer(ctx, seq, testPGAOrdererConfig(), 2)
 
 		if !o.StartBlock(nil) {
 			t.Fatal("StartBlock = false, want true")
