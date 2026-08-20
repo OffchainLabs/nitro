@@ -417,7 +417,7 @@ func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	}
 }
 
-func PopulateStylusTargetCache(targetConfig *StylusTargetConfig) error {
+func PopulateStylusTargetCache(targetConfig *programs.StylusTargetConfig) error {
 	localTarget := rawdb.LocalTarget()
 	targets := targetConfig.WasmTargets()
 	var nativeSet bool
@@ -455,7 +455,7 @@ func PopulateStylusTargetCache(targetConfig *StylusTargetConfig) error {
 	return nil
 }
 
-func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *StylusTargetConfig) error {
+func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *programs.StylusTargetConfig) error {
 	if rustCacheCapacityMB != 0 {
 		programs.SetWasmLruCacheCapacity(arbmath.SaturatingUMul(uint64(rustCacheCapacityMB), 1024*1024))
 	}
@@ -464,10 +464,7 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 	}
 	s.wasmTargets = targetConfig.WasmTargets()
 	programs.SetAllowFallback(targetConfig.AllowFallback)
-	s.bc.CodeDB().SetArbNodeConfig(&programs.ArbNodeConfig{
-		MaxOpenPages:       targetConfig.MaxStylusOpenPages,
-		MaxStylusCallDepth: targetConfig.MaxStylusCallDepth,
-	})
+	s.bc.CodeDB().SetArbNodeConfig(targetConfig)
 	// Establishes the baseline for doubleNativeStackSize (overflow recovery).
 	programs.SetInitialNativeStackSize(targetConfig.NativeStackSize)
 	return nil
