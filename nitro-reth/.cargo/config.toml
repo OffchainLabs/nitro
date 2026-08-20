@@ -21,3 +21,21 @@ rustflags = ["-C", "link-arg=-Wl,--allow-multiple-definition"]
 [target.x86_64-unknown-linux-musl]
 linker = "cc"
 rustflags = ["-C", "link-arg=-Wl,--allow-multiple-definition"]
+
+[alias]
+# Checks the crates the replay binary needs against the wasm target. Extend the list
+# whenever a crate becomes wasm-clean; CI runs this in the lint workflow's `wasm` job.
+wasm-check = [
+    "check",
+    "--locked",
+    "--target",
+    "wasm32-wasip1",
+    "-p", "arb-mel",
+    "-p", "arb-mel-types",
+    "-p", "arb-da-provider",
+    "-p", "arbos-types",
+    "-p", "arb-primitives",
+    "-p", "arb-math",
+    "-p", "arb-errors",
+    "-p", "arb-storage-errors",
+]
