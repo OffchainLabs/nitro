@@ -9,6 +9,7 @@ pub mod chainspec;
 pub mod consensus;
 pub mod engine;
 pub mod error;
+pub mod flush;
 pub mod genesis;
 pub mod launcher;
 pub mod network;
@@ -229,7 +230,7 @@ where
     let flush_interval = std::env::var("ARB_FLUSH_INTERVAL")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(producer::DEFAULT_FLUSH_INTERVAL);
+        .unwrap_or(flush::DEFAULT_FLUSH_INTERVAL);
     let cross_block_cache_size = ctx.config().engine.tree_config().cross_block_cache_size();
 
     let head_block = ctx.provider().last_block_number()?;
