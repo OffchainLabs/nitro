@@ -44,7 +44,7 @@ func TestFullSequencingHooksTxAcceptedReportsPGARound(t *testing.T) {
 
 		pull := func() *types.Transaction {
 			t.Helper()
-			tx, _, err := hooks.NextTxToSequence(nil)
+			tx, _, err := hooks.NextTxToSequence(nil, math.MaxUint64)
 			if err != nil || tx == nil {
 				t.Fatalf("NextTxToSequence = (%v, %v), want a tx", tx, err)
 			}
@@ -82,7 +82,7 @@ func TestFullSequencingHooksTxAcceptedNonPGARoundIsZero(t *testing.T) {
 	header := &types.Header{Number: big.NewInt(testBlockNumber), BaseFee: big.NewInt(testBaseFee)}
 	receipt := &types.Receipt{Status: types.ReceiptStatusSuccessful, EffectiveGasPrice: big.NewInt(testBaseFee)}
 
-	tx, _, err := hooks.NextTxToSequence(nil)
+	tx, _, err := hooks.NextTxToSequence(nil, math.MaxUint64)
 	if err != nil || tx == nil {
 		t.Fatalf("NextTxToSequence = (%v, %v), want a tx", tx, err)
 	}
@@ -115,7 +115,7 @@ func TestFullSequencingHooksNotifyFetcherOnSuccessOnly(t *testing.T) {
 	fetcher := &spyTxFetcher{fixedTxFetcher: fixedTxFetcher{items: []txQueueItem{item0, item1}}}
 	hooks := MakeSequencingHooks(fetcher, math.MaxInt, nil, nil)
 
-	if tx, _, err := hooks.NextTxToSequence(nil); err != nil || tx == nil {
+	if tx, _, err := hooks.NextTxToSequence(nil, math.MaxUint64); err != nil || tx == nil {
 		t.Fatalf("first NextTxToSequence = (%v, %v), want a tx", tx, err)
 	}
 	hooks.TxSucceeded()
@@ -123,7 +123,7 @@ func TestFullSequencingHooksNotifyFetcherOnSuccessOnly(t *testing.T) {
 		t.Fatalf("inclusions after TxSucceeded = %v, want just the nonce-0 tx", queueItemNonces(fetcher.inclusions))
 	}
 
-	if tx, _, err := hooks.NextTxToSequence(nil); err != nil || tx == nil {
+	if tx, _, err := hooks.NextTxToSequence(nil, math.MaxUint64); err != nil || tx == nil {
 		t.Fatalf("second NextTxToSequence = (%v, %v), want a tx", tx, err)
 	}
 	hooks.TxFailed(errors.New("intrinsic gas too low"))
@@ -143,7 +143,7 @@ func TestFullSequencingHooksTxResultLifecycle(t *testing.T) {
 
 	pull := func() {
 		t.Helper()
-		tx, _, err := hooks.NextTxToSequence(nil)
+		tx, _, err := hooks.NextTxToSequence(nil, math.MaxUint64)
 		if err != nil || tx == nil {
 			t.Fatalf("NextTxToSequence = (%v, %v), want a tx", tx, err)
 		}
@@ -180,14 +180,14 @@ func TestFullSequencingHooksLateFailureOverridesSuccess(t *testing.T) {
 	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item0, item1}}, math.MaxInt, nil, nil)
 
 	rollback := errors.New("group rolled back")
-	if tx, _, err := hooks.NextTxToSequence(nil); err != nil || tx == nil {
+	if tx, _, err := hooks.NextTxToSequence(nil, math.MaxUint64); err != nil || tx == nil {
 		t.Fatalf("first NextTxToSequence = (%v, %v), want a tx", tx, err)
 	}
 	hooks.TxSucceeded()
 	hooks.TxFailed(rollback)
 
 	failure := errors.New("intrinsic gas too low")
-	if tx, _, err := hooks.NextTxToSequence(nil); err != nil || tx == nil {
+	if tx, _, err := hooks.NextTxToSequence(nil, math.MaxUint64); err != nil || tx == nil {
 		t.Fatalf("second NextTxToSequence = (%v, %v), want a tx", tx, err)
 	}
 	hooks.TxFailed(failure)
@@ -214,14 +214,14 @@ func TestFullSequencingHooksFailedTxDoesNotConsumeBudget(t *testing.T) {
 	fits.txSize = 20
 	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{failed, fits}}, 25, nil, nil)
 
-	tx, _, err := hooks.NextTxToSequence(nil)
+	tx, _, err := hooks.NextTxToSequence(nil, math.MaxUint64)
 	if err != nil || tx.Nonce() != 0 {
 		t.Fatalf("first NextTxToSequence = (%v, %v), want nonce 0", tx, err)
 	}
 	hooks.TxFailed(errors.New("intrinsic gas too low"))
 
 	// The failed tx's 20 bytes must not count against the 25-byte budget.
-	tx, _, err = hooks.NextTxToSequence(nil)
+	tx, _, err = hooks.NextTxToSequence(nil, math.MaxUint64)
 	if err != nil || tx == nil || tx.Nonce() != 1 {
 		t.Fatalf("second NextTxToSequence = (%v, %v), want nonce 1", tx, err)
 	}
@@ -234,12 +234,12 @@ func TestFullSequencingHooksFailsOnUnreportedResult(t *testing.T) {
 	item1, _ := makeTestQueueItem(t, 1, testBaseFee)
 	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item0, item1}}, math.MaxInt, nil, nil)
 
-	tx, _, err := hooks.NextTxToSequence(nil)
+	tx, _, err := hooks.NextTxToSequence(nil, math.MaxUint64)
 	if err != nil || tx == nil {
 		t.Fatalf("first NextTxToSequence = (%v, %v), want a tx", tx, err)
 	}
 	// The pulled tx's result is never reported.
-	tx, _, err = hooks.NextTxToSequence(nil)
+	tx, _, err = hooks.NextTxToSequence(nil, math.MaxUint64)
 	if err == nil {
 		t.Fatalf("second NextTxToSequence = (%v, nil), want an error", tx)
 	}
