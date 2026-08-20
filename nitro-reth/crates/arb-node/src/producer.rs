@@ -522,88 +522,15 @@ where
 
         let chain_id = self.chain_spec.chain().id();
 
-        // Apply cached ArbOS Init during block 1.
-        // Two cases:
-        //   - ArbOS not yet initialized (no chainspec alloc): full init from message.
-        //   - ArbOS already initialized (chainspec did it with placeholder L1 base fee): override
-        //     the L1 price_per_unit slot with the value from the init message, since chainspec has
-        //     no way to know the real value.
         if let Some(init_msg) = self.cached_init.lock().take() {
-            if !genesis::is_arbos_initialized(&mut db) {
-                // Honor the genesis-declared ArbOS version from the parent
-                // header's mix_hash so chain specs that target a higher
-                // initial version (e.g. v30 / v50 spec fixtures) get the
-                // matching hardfork-equivalent EVM activation rather than
-                // booting at the v10 default.
-                let initial_version = std::env::var("ARB_INITIAL_ARBOS_VERSION")
-                    .ok()
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .unwrap_or({
-                        if parent_arbos_version > 0 {
-                            parent_arbos_version
-                        } else {
-                            genesis::INITIAL_ARBOS_VERSION
-                        }
-                    });
-                info!(
-                    target: "block_producer",
-                    initial_version,
-                    "Applying cached ArbOS Init during block {} execution",
-                    l2_block_number
-                );
-                genesis::initialize_arbos_state(
-                    &mut db,
-                    &init_msg,
-                    chain_id,
-                    initial_version,
-                    genesis::DEFAULT_CHAIN_OWNER,
-                    genesis::ArbOSInit::default(),
-                )
-                .map_err(|e| BlockProducerError::Execution(e.to_string()))?;
-            } else {
-                use arbos::{arbos_state::ArbosState, burn::SystemBurner};
-                info!(
-                    target: "block_producer",
-                    initial_l1_base_fee = %init_msg.initial_l1_base_fee,
-                    "ArbOS already initialized; overriding L1 price_per_unit from Init message"
-                );
-                // SAFETY: `state_ptr` points at the local `db` owned by
-                // this scope; reads through it are sequential and the
-                // `&mut *state_ptr` re-borrows are dropped at each call
-                // site before the next one, so the type-level aliasing
-                // does not overlap at runtime.
-                let state_ptr: *mut _ = &mut db;
-                let mut arb_state =
-                    ArbosState::open(unsafe { &mut *state_ptr }, SystemBurner::new(None, false))
-                        .map_err(|e| BlockProducerError::Execution(e.to_string()))?;
-                let _ = arb_state
-                    .l1_pricing_state
-                    .set_price_per_unit(unsafe { &mut *state_ptr }, init_msg.initial_l1_base_fee);
-                if let Ok(target) = std::env::var("ARB_INITIAL_ARBOS_VERSION")
-                    && let Ok(target_version) = target.parse::<u64>()
-                {
-                    let current = arb_state.arbos_version();
-                    if target_version > current {
-                        match arb_state.upgrade_arbos_version(
-                            unsafe { &mut *state_ptr },
-                            target_version,
-                            true,
-                        ) {
-                            Err(e) => {
-                                info!(target: "block_producer", err = ?e, target_version, "ArbOS upgrade via env var failed");
-                            }
-                            _ => {
-                                info!(
-                                    target: "block_producer",
-                                    from = current,
-                                    to = target_version,
-                                    "ArbOS upgraded via ARB_INITIAL_ARBOS_VERSION"
-                                );
-                            }
-                        }
-                    }
-                }
-            }
+            genesis::apply_cached_init(
+                &mut db,
+                &init_msg,
+                chain_id,
+                parent_arbos_version,
+                l2_block_number,
+            )
+            .map_err(|e| BlockProducerError::Execution(e.to_string()))?;
         }
 
         let parent_extra = parent_header.extra_data().to_vec();

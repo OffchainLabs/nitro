@@ -271,3 +271,89 @@ pub fn is_arbos_initialized<D: Database>(state: &mut State<D>) -> bool {
     let backing = Storage::new(state, B256::ZERO);
     backing.get_uint64_by_uint64(0).unwrap_or(0) != 0
 }
+
+/// Apply cached ArbOS Init during block 1.
+/// Two cases:
+///   - ArbOS not yet initialized (no chainspec alloc): full init from message.
+///   - ArbOS already initialized (chainspec did it with placeholder L1 base fee): override the L1
+///     price_per_unit slot with the value from the init message, since chainspec has no way to know
+///     the real value.
+pub fn apply_cached_init<D: Database>(
+    state: &mut State<D>,
+    init_msg: &ParsedInitMessage,
+    chain_id: u64,
+    parent_arbos_version: u64,
+    l2_block_number: u64,
+) -> Result<(), GenesisError> {
+    if !is_arbos_initialized(state) {
+        // Honor the genesis-declared ArbOS version from the parent
+        // header's mix_hash so chain specs that target a higher
+        // initial version (e.g. v30 / v50 spec fixtures) get the
+        // matching hardfork-equivalent EVM activation rather than
+        // booting at the v10 default.
+        let initial_version = std::env::var("ARB_INITIAL_ARBOS_VERSION")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or({
+                if parent_arbos_version > 0 {
+                    parent_arbos_version
+                } else {
+                    INITIAL_ARBOS_VERSION
+                }
+            });
+        info!(
+            target: "block_producer",
+            initial_version,
+            "Applying cached ArbOS Init during block {} execution",
+            l2_block_number
+        );
+        return initialize_arbos_state(
+            state,
+            init_msg,
+            chain_id,
+            initial_version,
+            DEFAULT_CHAIN_OWNER,
+            ArbOSInit::default(),
+        );
+    }
+
+    info!(
+        target: "block_producer",
+        initial_l1_base_fee = %init_msg.initial_l1_base_fee,
+        "ArbOS already initialized; overriding L1 price_per_unit from Init message"
+    );
+    let mut arb_state =
+        ArbosState::open(state, SystemBurner::new(None, false)).map_err(|source| {
+            GenesisError::InitSubsystem {
+                subsystem: "arbos state",
+                source,
+            }
+        })?;
+    // SAFETY: see `Storage::state_mut()` invariant. The returned reference
+    // inherits the storage handle's `'a` lifetime, decoupled from `&arb_state`.
+    let state_ref = unsafe { arb_state.backing_storage.state_mut() };
+    let _ = arb_state
+        .l1_pricing_state
+        .set_price_per_unit(&mut *state_ref, init_msg.initial_l1_base_fee);
+    if let Ok(target) = std::env::var("ARB_INITIAL_ARBOS_VERSION")
+        && let Ok(target_version) = target.parse::<u64>()
+    {
+        let current = arb_state.arbos_version();
+        if target_version > current {
+            match arb_state.upgrade_arbos_version(&mut *state_ref, target_version, true) {
+                Err(e) => {
+                    info!(target: "block_producer", err = ?e, target_version, "ArbOS upgrade via env var failed");
+                }
+                _ => {
+                    info!(
+                        target: "block_producer",
+                        from = current,
+                        to = target_version,
+                        "ArbOS upgraded via ARB_INITIAL_ARBOS_VERSION"
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
