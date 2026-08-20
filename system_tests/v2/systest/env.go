@@ -322,28 +322,23 @@ func (e *Env) wait(ctx context.Context) {
 		e.goWG.Wait()
 		close(done)
 	}()
+	var failure string
 	select {
 	case <-done:
-		e.asyncMu.Lock()
-		e.dead = true
-		e.asyncMu.Unlock()
 	case <-ctx.Done():
-		e.asyncMu.Lock()
 		if n := e.running.Load(); n > 0 {
-			e.t.Errorf("env.Wait aborted (%v): %d env.Go goroutine(s) still running; their pending failures are now suppressed", context.Cause(ctx), n)
+			failure = fmt.Sprintf("env.Wait aborted (%v): %d env.Go goroutine(s) still running; their pending failures are now suppressed", context.Cause(ctx), n)
 		}
-		e.dead = true
-		e.asyncMu.Unlock()
 	case <-time.After(envWaitTimeout):
-		// Record the timeout and mark dead in one critical section so the
-		// failure is logged before late goroutines are silenced. A goroutine
-		// that ignores ctx leaks (Go can't force-kill it) but can no longer
-		// write to the finished subtest.
-		e.asyncMu.Lock()
-		e.t.Errorf("env.Wait timed out after %v: %d env.Go goroutine(s) still running; their pending failures are now suppressed — raise envWaitTimeout and rerun to surface the real error", envWaitTimeout, e.running.Load())
-		e.dead = true
-		e.asyncMu.Unlock()
+		failure = fmt.Sprintf("env.Wait timed out after %v: %d env.Go goroutine(s) still running; their pending failures are now suppressed — raise envWaitTimeout and rerun to surface the real error", envWaitTimeout, e.running.Load())
 	}
+
+	e.asyncMu.Lock()
+	defer e.asyncMu.Unlock()
+	if failure != "" {
+		e.t.Errorf("%s", failure)
+	}
+	e.dead = true
 }
 
 // guarded runs fn under the dead guard: once wait has marked the env dead, fn

@@ -60,6 +60,9 @@ func (s StateScheme) Valid() bool {
 	return false
 }
 
+// validationScheme is the only state scheme block validation supports.
+const validationScheme = StateSchemeHash
+
 // DBEngine is the geth chain-data persistence backend.
 type DBEngine string
 
@@ -106,4 +109,6 @@ type Spec struct {
 	ExposeRPC bool
 	// arbOSInit seeds ArbOS init params into the L2 genesis. Nil = defaults.
 	arbOSInit *params.ArbOSInit
+	// Validate requests block validation (JIT) for this node.
+	Validate bool
 }
