@@ -20,6 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_arb"
 )
 
+// implements subset of methods required by ValidationClient
 type ValidationServerAPI struct {
 	spawner validator.ValidationSpawner
 }
@@ -231,15 +232,39 @@ func (s *ExecServer) CloseExec(execid uint64) {
 }
 
 type ExecServerAPI struct {
-	ValidationServerAPI
-	execServer *ExecServer
+	valServerAPI *ValidationServerAPI
+	execServer   *ExecServer
 }
 
 func NewExecServerAPI(valSpawner validator.ValidationSpawner, execServer *ExecServer) *ExecServerAPI {
 	return &ExecServerAPI{
-		ValidationServerAPI: *NewValidationServerAPI(valSpawner),
-		execServer:          execServer,
+		valServerAPI: NewValidationServerAPI(valSpawner),
+		execServer:   execServer,
 	}
+}
+
+func (a *ExecServerAPI) Name() string {
+	return a.valServerAPI.Name()
+}
+
+func (a *ExecServerAPI) Capacity() int {
+	return a.valServerAPI.Capacity()
+}
+
+func (a *ExecServerAPI) Room() int {
+	return a.valServerAPI.Room()
+}
+
+func (a *ExecServerAPI) Validate(ctx context.Context, entry *server_api.InputJSON, moduleRoot common.Hash) (validator.GoGlobalState, error) {
+	return a.valServerAPI.Validate(ctx, entry, moduleRoot)
+}
+
+func (a *ExecServerAPI) WasmModuleRoots() ([]common.Hash, error) {
+	return a.valServerAPI.WasmModuleRoots()
+}
+
+func (a *ExecServerAPI) StylusArchs() ([]rawdb.WasmTarget, error) {
+	return a.valServerAPI.StylusArchs()
 }
 
 func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *server_api.InputJSON, useBoldMachineOptional *bool) (uint64, error) {
