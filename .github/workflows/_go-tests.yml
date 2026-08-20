@@ -81,13 +81,18 @@ jobs:
   go-tests:
     name: Go tests
     runs-on: ocl-16cpu-64ram-dind-500gi
+    env:
+      # `nproc` reports the node's cores, not this pod's share; track runs-on.
+      BUILD_JOBS: 16
+      COVER: ${{ github.event_name != 'merge_group' && '--cover' || '' }}
     # Hard cap so a hung job is killed at 1.5h instead of GitHub's 6h default.
     # Kept above every per-step Go `--timeout` (<=70m) plus the ~15m build, so on
     # a hung test the Go timeout fires first and prints a goroutine stack trace
     # before the job cap terminates the runner.
-    timeout-minutes: 90
-    env:
-      COVER: ${{ github.event_name != 'merge_group' && '--cover' || '' }}
+    # execution-spec-tests is the one mode that legitimately needs longer: it also
+    # builds the nitro-node-dev image (~15m) and then walks ~4.5k spec tests
+    # serially at ~1.6s each, for ~2.4h total (NIT-5479).
+    timeout-minutes: ${{ inputs.run-execution-spec-tests && 150 || 90 }}
     services:
       redis:
         # Only the redis test steps use an external redis instance (--test_redis).
@@ -135,7 +140,7 @@ jobs:
 
       - name: Build node dependencies
         timeout-minutes: 20
-        run: make -j "$(nproc)" build-node-deps
+        run: make -j "${BUILD_JOBS:-$(nproc)}" build-node-deps
 
       # --------------------- PATHDB MODE ---------------------
 

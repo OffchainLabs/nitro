@@ -458,6 +458,7 @@ pub fn module(
     Ok(module.to_vec())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn activate(
     wasm: &[u8],
     codehash: &Bytes32,
@@ -466,6 +467,7 @@ pub fn activate(
     page_limit: u16,
     debug: bool,
     gas: &mut u64,
+    op_limit: u32,
 ) -> Result<(ProverModule, StylusData)> {
     let (module, stylus_data) = ProverModule::activate(
         wasm,
@@ -475,6 +477,7 @@ pub fn activate(
         page_limit,
         debug,
         gas,
+        op_limit.try_into()?,
     )?;
 
     Ok((module, stylus_data))

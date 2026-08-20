@@ -32,7 +32,7 @@ func TestScheduleDoesNotMutateRegistry(t *testing.T) {
 	stubRegistry(t, b)
 
 	_ = schedule(scheduleParams{})
-	if len(b.postHooks) != 0 || b.topology != TopologyL2Only {
+	if b.validation || len(b.postHooks) != 0 || b.topology != TopologyL2Only {
 		t.Fatalf("schedule mutated the shared registry builder: %+v", b)
 	}
 }

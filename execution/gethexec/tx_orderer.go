@@ -11,20 +11,22 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// blockLimitReason records what capped the block's candidates: the queue running dry, or a
-// block limit — recorded even when the fetch skips the oversized candidate and continues.
-type blockLimitReason int
+// ordererStatus enumerates the reasons a block's tx orderer can stop yielding candidates.
+type ordererStatus int
 
 const (
-	exhaustedQueue blockLimitReason = iota
+	fetchedTx ordererStatus = iota
+	exhaustedQueue
 	blockSizeLimitReached
 	blockGasLimitReached
+	blockTimeLimitReached
+	blockInterrupted
 )
 
 // nextTxFetcher supplies a block's tx candidates to the sequencing hooks one at a time.
 type nextTxFetcher interface {
-	// NextQueueItem yields the next block candidate, reporting false on exhaustion.
-	NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, bool)
+	// NextQueueItem yields the next block candidate, reporting the finishBlockReason otherwise.
+	NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, ordererStatus)
 
 	// OnTxInclusion notifies the orderer that the last yielded tx made it into the block.
 	OnTxInclusion(queueItem txQueueItem)
@@ -32,23 +34,24 @@ type nextTxFetcher interface {
 
 // fixedTxFetcher yields a pre-set candidate list.
 type fixedTxFetcher struct {
-	items       []txQueueItem
-	exhausted   []txQueueItem
-	limitReason blockLimitReason
+	items     []txQueueItem
+	exhausted []txQueueItem
 }
 
 var _ nextTxFetcher = (*fixedTxFetcher)(nil)
 
-func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, bool) {
+func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, ordererStatus) {
 	if len(f.items) == 0 {
-		return txQueueItem{}, false
+		if len(f.exhausted) > 0 {
+			return txQueueItem{}, blockSizeLimitReached
+		}
+		return txQueueItem{}, exhaustedQueue
 	}
 
 	if blockGasLeft < params.TxGas {
-		f.limitReason = blockGasLimitReached
 		f.exhausted = append(f.exhausted, f.items...)
 		f.items = nil
-		return txQueueItem{}, false
+		return txQueueItem{}, blockGasLimitReached
 	}
 
 	item := f.items[0]
@@ -56,12 +59,11 @@ func (f *fixedTxFetcher) NextQueueItem(statedb *state.StateDB, remainingBlockSiz
 
 	// If the tx is too big for the remaining block size, we exhaust it and continue to the next one.
 	if item.txSize > remainingBlockSize {
-		f.limitReason = blockSizeLimitReached
 		f.exhausted = append(f.exhausted, item)
 		return f.NextQueueItem(statedb, remainingBlockSize, blockGasLeft)
 	}
 
-	return item, true
+	return item, fetchedTx
 }
 
 // OnTxInclusion is a no-op: the fixed fetcher doesn't react to inclusions.
@@ -90,9 +92,6 @@ type txOrderer interface {
 	// TakeRemaining removes and returns the never-yielded candidates for the caller to
 	// dispose of.
 	TakeRemaining() []txQueueItem
-
-	// LimitReason reports what capped the block's candidates.
-	LimitReason() blockLimitReason
 
 	// OnNonceGapResolved hands the orderer a parked tx whose nonce gap the last
 	// inclusion just closed, so it can re-enter the block's candidates.
@@ -143,10 +142,6 @@ func (o *fifoTxOrderer) StartBlock(statedb *state.StateDB) bool {
 
 // OnTxInclusion is a no-op: FIFO ordering doesn't react to inclusions.
 func (o *fifoTxOrderer) OnTxInclusion(queueItem txQueueItem) {}
-
-func (o *fifoTxOrderer) LimitReason() blockLimitReason {
-	return o.limitReason
-}
 
 // OnNonceGapResolved appends the revived tx to the block's candidates: its nonce is valid
 // against the in-progress state, so it can follow its predecessor into the same block.

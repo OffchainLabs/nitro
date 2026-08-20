@@ -44,6 +44,12 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4
+        with:
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["registry-cache.registry-cache.svc.cluster.local:5000"]
+            [registry."registry-cache.registry-cache.svc.cluster.local:5000"]
+              http = true
 
       - name: Build nitro-node-dev docker
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf  # v7
@@ -76,6 +82,19 @@ jobs:
             echo "=== Last 200 lines of testnode.log ==="
             tail -200 /tmp/testnode.log
           fi
+
+      # The testnode script launched above (output in /tmp/testnode.log) only relays
+      # docker compose's progress lines, so a container that dies on startup shows up
+      # as a bare "exited (1)" with no reason. Dump container states and stderr too.
+      - name: Dump testnode container logs
+        if: failure() || cancelled()
+        shell: bash
+        run: |
+          cd nitro-testnode
+          echo "=== docker compose ps ==="
+          docker compose ps --all || true
+          echo "=== docker compose logs (last 200 lines per container) ==="
+          docker compose logs --no-color --timestamps --tail 200 || true
 
       - name: Print WAVM module root
         id: module-root

@@ -48,7 +48,7 @@ func TestFIFOTxOrdererStartBlockEmpty(t *testing.T) {
 	if o.StartBlock(nil) {
 		t.Fatal("StartBlock on empty = true, want false")
 	}
-	if _, yielded := o.NextQueueItem(nil, math.MaxInt, math.MaxUint64); yielded {
+	if _, reason := o.NextQueueItem(nil, math.MaxInt, math.MaxUint64); reason == fetchedTx {
 		t.Fatal("NextQueueItem yielded from an empty block")
 	}
 	if remaining := o.TakeRemaining(); len(remaining) != 0 {
@@ -70,20 +70,20 @@ func TestFIFOTxOrdererBlockLifecycle(t *testing.T) {
 	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")
 	}
-	first, ok := o.NextQueueItem(nil, math.MaxInt, math.MaxUint64)
-	if !ok || first.tx.Nonce() != 0 {
-		t.Fatalf("first yield = (nonce %d, %v), want nonce 0", first.tx.Nonce(), ok)
+	first, reason := o.NextQueueItem(nil, math.MaxInt, math.MaxUint64)
+	if reason != fetchedTx || first.tx.Nonce() != 0 {
+		t.Fatalf("first yield = (nonce %d, %v), want nonce 0", first.tx.Nonce(), reason)
 	}
-	second, ok := o.NextQueueItem(nil, math.MaxInt, math.MaxUint64)
-	if !ok || second.tx.Nonce() != 1 {
-		t.Fatalf("second yield = (nonce %d, %v), want nonce 1", second.tx.Nonce(), ok)
+	second, reason := o.NextQueueItem(nil, math.MaxInt, math.MaxUint64)
+	if reason != fetchedTx || second.tx.Nonce() != 1 {
+		t.Fatalf("second yield = (nonce %d, %v), want nonce 1", second.tx.Nonce(), reason)
 	}
 
 	remaining := o.TakeRemaining()
 	if got := queueItemNonces(remaining); !slices.Equal(got, []uint64{2, 3}) {
 		t.Fatalf("TakeRemaining nonces = %v, want [2 3] (the never-yielded tail)", got)
 	}
-	if _, yielded := o.NextQueueItem(nil, math.MaxInt, math.MaxUint64); yielded {
+	if _, reason := o.NextQueueItem(nil, math.MaxInt, math.MaxUint64); reason == fetchedTx {
 		t.Fatal("NextQueueItem yielded after TakeRemaining")
 	}
 	if leftover := o.TakeRemaining(); len(leftover) != 0 {
@@ -109,9 +109,9 @@ func TestFIFOTxOrdererSkipsOversizedTxs(t *testing.T) {
 	}
 	// Nonce 0 fills the space exactly; nonces 1 and 2 are skipped as oversized.
 	for _, wantNonce := range []uint64{0, 3} {
-		item, ok := o.NextQueueItem(nil, 10, math.MaxUint64)
-		if !ok || item.tx.Nonce() != wantNonce {
-			t.Fatalf("yield = (nonce %d, %v), want nonce %d", item.tx.Nonce(), ok, wantNonce)
+		item, reason := o.NextQueueItem(nil, 10, math.MaxUint64)
+		if reason != fetchedTx || item.tx.Nonce() != wantNonce {
+			t.Fatalf("yield = (nonce %d, %v), want nonce %d", item.tx.Nonce(), reason, wantNonce)
 		}
 	}
 	// TakeRemaining returns the never-yielded tail followed by the skipped oversized txs.
@@ -120,7 +120,7 @@ func TestFIFOTxOrdererSkipsOversizedTxs(t *testing.T) {
 	}
 }
 
-// With only oversized candidates left, NextQueueItem reports exhaustion and TakeRemaining
+// With only oversized candidates left, NextQueueItem reports the size limit and TakeRemaining
 // recovers the skipped txs exactly once.
 func TestFIFOTxOrdererAllOversizedExhausts(t *testing.T) {
 	var items []txQueueItem
@@ -134,11 +134,8 @@ func TestFIFOTxOrdererAllOversizedExhausts(t *testing.T) {
 	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")
 	}
-	if item, ok := o.NextQueueItem(nil, 99, math.MaxUint64); ok {
-		t.Fatalf("NextQueueItem yielded nonce %d, want exhaustion with only oversized txs", item.tx.Nonce())
-	}
-	if got := o.LimitReason(); got != blockSizeLimitReached {
-		t.Fatalf("LimitReason = %d, want blockSizeLimitReached (skips are not exhaustion)", got)
+	if _, reason := o.NextQueueItem(nil, 99, math.MaxUint64); reason != blockSizeLimitReached {
+		t.Fatalf("finish reason = %d, want blockSizeLimitReached (skips are not exhaustion)", reason)
 	}
 	if got := queueItemNonces(o.TakeRemaining()); !slices.Equal(got, []uint64{0, 1}) {
 		t.Fatalf("TakeRemaining nonces = %v, want [0 1]", got)
@@ -161,11 +158,8 @@ func TestFIFOTxOrdererGasLimitEndsBlock(t *testing.T) {
 	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")
 	}
-	if item, ok := o.NextQueueItem(nil, math.MaxInt, params.TxGas-1); ok {
-		t.Fatalf("NextQueueItem yielded nonce %d, want end of block with no gas left", item.tx.Nonce())
-	}
-	if got := o.LimitReason(); got != blockGasLimitReached {
-		t.Fatalf("LimitReason = %d, want blockGasLimitReached", got)
+	if _, reason := o.NextQueueItem(nil, math.MaxInt, params.TxGas-1); reason != blockGasLimitReached {
+		t.Fatalf("finish reason = %d, want blockGasLimitReached with no gas left", reason)
 	}
 	if got := queueItemNonces(o.TakeRemaining()); !slices.Equal(got, []uint64{0, 1}) {
 		t.Fatalf("TakeRemaining nonces = %v, want [0 1] exactly once", got)
@@ -203,15 +197,15 @@ func TestFIFOTxOrdererNonceGapResolvedJoinsCandidates(t *testing.T) {
 	o.OnNonceGapResolved(trailing)
 
 	for _, wantNonce := range []uint64{0, 1} {
-		if item, ok := o.NextQueueItem(nil, math.MaxInt, math.MaxUint64); !ok || item.tx.Nonce() != wantNonce {
-			t.Fatalf("yield = (nonce %d, %v), want nonce %d", item.tx.Nonce(), ok, wantNonce)
+		if item, reason := o.NextQueueItem(nil, math.MaxInt, math.MaxUint64); reason != fetchedTx || item.tx.Nonce() != wantNonce {
+			t.Fatalf("yield = (nonce %d, %v), want nonce %d", item.tx.Nonce(), reason, wantNonce)
 		}
 	}
 	// The block ends with the second revived tx never yielded: it leaves via TakeRemaining.
 	if got := queueItemNonces(o.TakeRemaining()); !slices.Equal(got, []uint64{2}) {
 		t.Fatalf("TakeRemaining nonces = %v, want [2]", got)
 	}
-	if _, yielded := o.NextQueueItem(nil, math.MaxInt, math.MaxUint64); yielded {
+	if _, reason := o.NextQueueItem(nil, math.MaxInt, math.MaxUint64); reason == fetchedTx {
 		t.Fatal("NextQueueItem yielded after TakeRemaining")
 	}
 }

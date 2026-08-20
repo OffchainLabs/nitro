@@ -330,6 +330,18 @@ func WithMultiNode() TestOption {
 	}
 }
 
+// WithValidation enables block validation (JIT) for this test. Requires a
+// topology with a parent chain.
+func WithValidation() TestOption {
+	return func(b *builder) {
+		if b.validation {
+			panic("systest: WithValidation applied twice")
+		}
+		b.validation = true
+		b.postHooks = append(b.postHooks, validateToHead)
+	}
+}
+
 // setTopology pins the node layout, rejecting a second topology option.
 func setTopology(b *builder, topo Topology, name string) {
 	if b.topology == topo {

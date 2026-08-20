@@ -97,6 +97,7 @@ pub fn activate_v2(
         page_limit,
         debug,
         gas_left,
+        0,
     ) {
         Ok((module, data)) => {
             mem.write_u64(gas_ptr, *gas_left);

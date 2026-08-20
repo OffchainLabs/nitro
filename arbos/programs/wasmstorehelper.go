@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/log"
@@ -67,7 +68,8 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 	// Empty program address is supplied because we dont have access to this during rebuilding of wasm store
 	moduleActivationMandatory := false
 	// recompile only missing targets
-	info, asmMap, err := activateProgramInternal(common.Address{}, codeHash, wasm, progParams.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory, GetAllowFallback())
+	runCtx := core.NewMessageEthcallContext()
+	info, asmMap, err := activateProgramInternal(common.Address{}, codeHash, wasm, progParams.PageLimit, program.version, zeroArbosVersion, debugMode, &zeroGas, missingTargets, moduleActivationMandatory, GetAllowFallback(), GetStylusConfig(statedb), runCtx)
 	if err != nil {
 		log.Error("failed to reactivate program while rebuilding wasm store", "expected moduleHash", moduleHash, "err", err)
 		return fmt.Errorf("failed to reactivate program while rebuilding wasm store: %w", err)
