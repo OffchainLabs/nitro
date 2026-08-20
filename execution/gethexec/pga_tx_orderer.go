@@ -57,7 +57,6 @@ func NewPGATxOrderer(ctx context.Context, seq txOrdererSequencer, roundsPerBlock
 		roundsPerBlock: roundsPerBlock,
 		roundLength:    roundLength,
 		baseFee:        baseFee,
-		stats:          ordererStats{pgaOrdering: true},
 	}
 }
 

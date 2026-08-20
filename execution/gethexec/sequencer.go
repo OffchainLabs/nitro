@@ -1206,6 +1206,9 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 	var orderer txOrderer = newFIFOTxOrderer(s, config.PollInterval, config.MaxBlockSpeed, baseFee)
 	if collectTips && !config.ExperimentalPGA.DangerousForceFIFO {
 		orderer = NewPGATxOrderer(ctx, s, config.ExperimentalPGA.RoundsPerBlock, config.PGARoundLength(), baseFee)
+		pgaBlocksCounter.Inc(1)
+	} else {
+		fifoBlocksCounter.Inc(1)
 	}
 
 	s.blockTxOrderer = containers.Some(orderer)
@@ -1421,11 +1424,6 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 	} else {
 		if s.pendingQueueItemsResults.block != nil {
 			successfulBlocksCounter.Inc(1)
-			if s.pendingQueueItemsResults.stats.pgaOrdering {
-				pgaBlocksCounter.Inc(1)
-			} else {
-				fifoBlocksCounter.Inc(1)
-			}
 			s.nonceCache.Finalize(s.pendingQueueItemsResults.block)
 		}
 
