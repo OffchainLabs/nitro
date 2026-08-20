@@ -23,8 +23,6 @@ linker = "cc"
 rustflags = ["-C", "link-arg=-Wl,--allow-multiple-definition"]
 
 [alias]
-# Checks the crates the replay binary needs against the wasm target. Extend the list
-# whenever a crate becomes wasm-clean.
 wasm-check = [
     "check",
     "--locked",
