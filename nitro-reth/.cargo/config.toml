@@ -30,7 +30,6 @@ wasm-check = [
     "wasm32-wasip1",
     "-p", "arb-chainspec",
     "-p", "arb-consensus-db",
-    "-p", "arb-context",
     "-p", "arb-da-provider",
     "-p", "arb-errors",
     "-p", "arb-math",
@@ -39,6 +38,5 @@ wasm-check = [
     "-p", "arb-mel-types",
     "-p", "arb-storage",
     "-p", "arb-storage-errors",
-    "-p", "arbos",
     "-p", "arbos-types",
 ]
