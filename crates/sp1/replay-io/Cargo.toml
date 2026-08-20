@@ -18,4 +18,3 @@ sp1-zkvm = { workspace = true }
 
 [target.'cfg(not(target_os = "zkvm"))'.dependencies]
 sp1-core-executor = { workspace = true }
-sp1-sdk = { workspace = true }
