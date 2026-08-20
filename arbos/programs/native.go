@@ -477,9 +477,11 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 		batch := statedb.Database().CodeDB().WasmStore().NewBatch()
 		// rawdb.WriteActivation iterates over the asms map and writes each entry separately to wasmdb, so the writes for the same module hash can be incremental
 		// we know that all targets for which asms were found initially, were read from disk as oppose to from newly activated asms from memory, as otherwise statedb.ActivatedAsmMap would have failed with an error because of missing targets within newly activated asms
-		rawdb.WriteActivation(batch, moduleHash, newlyBuilt)
+		if err := rawdb.WriteActivation(batch, moduleHash, newlyBuilt); err != nil {
+			log.Error("failed writing re-activation to batch", "address", addressForLogging, "err", err)
+		}
 		if err := batch.Write(); err != nil {
-			log.Error("failed writing re-activation to state", "address", addressForLogging, "err", err)
+			log.Error("failed writing re-activation to disk", "address", addressForLogging, "err", err)
 		}
 	} else {
 		// we need to add asms for all targets to the newly activated targets (not only the newly built) to maintain consistency the newly activated targets map
@@ -732,8 +734,11 @@ func getCraneliftAsm(
 	wasmStore := db.Database().CodeDB().WasmStore()
 	if wasmStore != nil {
 		batch := wasmStore.NewBatch()
-		rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, asm)
-		if err := batch.Write(); err != nil {
+		err := rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, asm)
+		if err == nil {
+			err = batch.Write()
+		}
+		if err != nil {
 			log.Warn("failed to persist cranelift ASM to wasm store, will recompile on next overflow",
 				"program", address, "err", err)
 		}
