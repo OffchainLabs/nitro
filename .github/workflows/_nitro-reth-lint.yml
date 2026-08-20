@@ -69,8 +69,6 @@ jobs:
         with:
           client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
-      - name: Install build deps
-        run: sudo apt-get update && sudo apt-get install -y clang
       - uses: dtolnay/rust-toolchain@1.93
         with:
           targets: wasm32-wasip1

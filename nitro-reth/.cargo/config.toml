@@ -35,7 +35,6 @@ wasm-check = [
     "-p", "arb-math",
     "-p", "arb-mel",
     "-p", "arb-mel-types",
-    "-p", "arb-primitives",
     "-p", "arb-storage-errors",
     "-p", "arbos-types",
 ]
