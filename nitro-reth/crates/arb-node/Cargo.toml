@@ -84,6 +84,9 @@ tokio = { workspace = true, features = ["macros", "sync", "time"] }
 tokio-stream = { workspace = true }
 tracing = { workspace = true }
 
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+revm = { workspace = true, features = ["secp256k1", "c-kzg", "blst", "portable"] }
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 

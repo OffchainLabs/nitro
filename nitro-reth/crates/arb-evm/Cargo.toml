@@ -36,6 +36,9 @@ rustc-hash = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+revm = { workspace = true, features = ["secp256k1", "c-kzg", "blst", "portable"] }
+
 [dev-dependencies]
 arb-test-utils = { workspace = true }
 
