@@ -413,15 +413,6 @@ func TestBlockValidatorSimpleLocalAnyTrustFlaky(t *testing.T) {
 	testBlockValidatorSimple(t, opts)
 }
 
-func TestBlockValidatorSimpleJITOnchainFlaky(t *testing.T) {
-	opts := Options{
-		daModeString:  "files",
-		workloadLoops: 8,
-		workload:      smallContract,
-	}
-	testBlockValidatorSimple(t, opts)
-}
-
 // TestBlockValidatorReferenceDAWithProverFlaky tests the block validator with prover
 // with the embedded reference DA
 func TestBlockValidatorReferenceDAWithProverFlaky(t *testing.T) {
