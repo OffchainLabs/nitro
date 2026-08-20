@@ -4,6 +4,8 @@
 package systest
 
 import (
+	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/node"
@@ -11,8 +13,11 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/containers"
 )
+
+var errClone = errors.New("clone probe")
 
 func TestDerivedName(t *testing.T) {
 	tests := []struct {
@@ -191,4 +196,47 @@ func TestValidateAllowsValidArbOSRange(t *testing.T) {
 	MinArbOS(params.ArbosVersion_30)(b)
 	MaxArbOS(params.ArbosVersion_40)(b)
 	b.validate() // must not panic
+}
+
+func TestFreezeCarriesNameAndCategory(t *testing.T) {
+	b := newBuilder()
+	b.name = "Carry"
+	WithCategory("challenge")(b)
+	spec := b.freeze("arbos40/path")
+	if spec.Name != "Carry/arbos40/path" {
+		t.Fatalf("Spec.Name = %q, want %q", spec.Name, "Carry/arbos40/path")
+	}
+	if spec.Category != "challenge" {
+		t.Fatalf("Spec.Category = %q, want %q", spec.Category, "challenge")
+	}
+}
+
+func TestCloneIsIndependent(t *testing.T) {
+	hookA := func(*Env) error { return nil }
+	hookB := func(*Env) error { return errClone }
+	b := newBuilder()
+	WithPostHook(hookA)(b)
+	SkipOnStateSchemes(StateSchemeHash)(b)
+	WithNodeConfigOverride(func(*arbnode.Config) {})(b)
+	WithExecConfigOverride(func(*gethexec.Config) {})(b)
+	WithStackConfigOverride(func(*node.Config) {})(b)
+	WithInitDataOverride(func(*statetransfer.ArbosInitializationInfo) {})(b)
+	WithChainConfigOverride(func(*params.ChainConfig) {})(b)
+	MatrixArbOS(params.ArbosVersion_20, params.ArbosVersion_30)(b)
+
+	c := b.clone()
+	if len(c.dims) != 0 {
+		t.Fatalf("clone must drop dims, got %d", len(c.dims))
+	}
+	if len(b.dims) != 1 {
+		t.Fatalf("original dims must survive the clone, got %d", len(b.dims))
+	}
+	c.skipStateSchemes[0] = StateSchemePath
+	if b.skipStateSchemes[0] != StateSchemeHash {
+		t.Fatal("clone shares the skipStateSchemes backing array with the original")
+	}
+	c.postHooks[0] = hookB
+	if reflect.ValueOf(b.postHooks[0]).Pointer() != reflect.ValueOf(hookA).Pointer() {
+		t.Fatal("clone shares the postHooks backing array with the original")
+	}
 }
