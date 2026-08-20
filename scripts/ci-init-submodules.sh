@@ -48,4 +48,14 @@ if [ -n "${GITHUB_TOKEN:-}" ]; then
 fi
 
 git submodule sync --recursive
+
+# Nothing here reads geth's test fixtures. `tests` is the name in
+# go-ethereum/.gitmodules, not a path — a wrong key, or setting it before
+# go-ethereum exists, silently no-ops.
+git submodule update --init go-ethereum
+if [ "${INIT_GETH_TESTDATA:-0}" != "1" ]; then
+  git -C go-ethereum config submodule.tests.update none
+  git -C go-ethereum config submodule.evm-benchmarks.update none
+fi
+
 git submodule update --init --recursive

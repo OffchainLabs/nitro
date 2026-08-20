@@ -7,7 +7,7 @@ runs:
 
   steps:
     - name: Install dependencies
-      run: sudo apt update && sudo apt install -y build-essential cmake clang wabt gotestsum protobuf-compiler python3 jq curl wget uuid-runtime
+      run: sudo apt update && sudo apt install -y build-essential cmake clang wabt gotestsum protobuf-compiler python3 jq curl wget uuid-runtime lld-14
       shell: bash
 
     - name: Setup Node.js
@@ -40,9 +40,7 @@ runs:
       shell: bash
 
     - name: Install wasm-ld
-      run: |
-        sudo apt-get update && sudo apt-get install -y lld-14
-        sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
+      run: sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
       shell: bash
 
     - name: Install rust
