@@ -19,6 +19,7 @@ import (
 
 	"github.com/offchainlabs/nitro/bold/containers"
 	"github.com/offchainlabs/nitro/bold/protocol"
+	"github.com/offchainlabs/nitro/util"
 )
 
 const FUSAKA_MAX_GAS = 1 << 24 // Fusaka hard fork adds a max cap for transactions of 2**24 gas.
@@ -82,7 +83,7 @@ func (a *AssertionChain) transact(
 
 	// Estimate the gas required for the transaction. This will catch errors early
 	// without needing to pay for the transaction and waste funds.
-	gas, err := backend.EstimateGas(ctx, msg)
+	gas, err := util.CheckedGasEstimate(backend.EstimateGas(ctx, msg))
 	if err != nil {
 		return nil, errors.Wrapf(err, "gas estimation errored for tx with hash %s", containers.Trunc(tx.Hash().Bytes()))
 	}
