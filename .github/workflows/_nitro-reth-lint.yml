@@ -57,13 +57,11 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   wasm:
-    # Pins wasm32-wasip1 buildability of the MEL message-extraction core, so that
-    # adding a native-only dependency (tokio/reqwest/c-kzg/revm) to arb-mel or
-    # anything beneath it fails here rather than in the replay binary.
-    #
-    # Deliberately narrow: per-package rather than --workspace, since sibling
-    # crates like arb-blob-client pull c-kzg and reqwest; and no --all-targets,
-    # since arb-mel's tokio dev-dependency is not wasm-buildable.
+    # Pins wasm32-wasip1 buildability of the crates the replay binary needs, so a new
+    # native-only dependency fails here rather than in the replay binary. Extend the
+    # package list whenever a crate becomes wasm-clean. Deliberately per-package (not
+    # --workspace) and without --all-targets: sibling crates and dev-deps aren't
+    # wasm-buildable.
     name: wasm
     runs-on: ocl-4cpu-16ram
     timeout-minutes: 30
@@ -85,6 +83,7 @@ jobs:
       - run: >
           cargo check --locked --target wasm32-wasip1
           -p arb-mel -p arb-mel-types -p arb-da-provider -p arbos-types
+          -p arb-primitives -p arb-math -p arb-errors -p arb-storage-errors
 
   docs:
     name: docs
