@@ -56,15 +56,8 @@ jobs:
           workspaces: nitro-reth
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
-  wasm:
-    # Pins wasm32-wasip1 buildability of the MEL message-extraction core, so that
-    # adding a native-only dependency (tokio/reqwest/c-kzg/revm) to arb-mel or
-    # anything beneath it fails here rather than in the replay binary.
-    #
-    # Deliberately narrow: per-package rather than --workspace, since sibling
-    # crates like arb-blob-client pull c-kzg and reqwest; and no --all-targets,
-    # since arb-mel's tokio dev-dependency is not wasm-buildable.
-    name: wasm
+  wasm-check:
+    name: Check wasm-buildability
     runs-on: ocl-4cpu-16ram
     timeout-minutes: 30
     defaults:
@@ -82,9 +75,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: nitro-reth
-      - run: >
-          cargo check --locked --target wasm32-wasip1
-          -p arb-mel -p arb-mel-types -p arb-da-provider -p arbos-types
+      - run: cargo wasm-check
 
   docs:
     name: docs
