@@ -36,7 +36,7 @@ impl MelNode {
         };
 
         let mut mel_db = {
-            let store = LibmdbxKvStore::open(&config.datadir)?;
+            let store = LibmdbxKvStore::open(&config.datadir, config.db_sync_mode)?;
             let consensus_db = ConsensusDb::open(store)?;
             MelDb::open(consensus_db)?
         };

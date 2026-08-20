@@ -11,6 +11,10 @@ pub struct MelNodeConfig {
     #[arg(long)]
     pub datadir: PathBuf,
 
+    /// Fsync every DB commit to disk before the write is marked as completed.
+    #[arg(long = "db.sync-mode", default_value_t = false)]
+    pub db_sync_mode: bool,
+
     /// Parent-chain RPC endpoint.
     #[arg(long)]
     pub parent_chain_url: String,

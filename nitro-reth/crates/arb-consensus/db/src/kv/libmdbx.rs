@@ -1,9 +1,9 @@
 //! A disk-backed [`crate::kv::KvStore`] over libmdbx (via reth-libmdbx), using the
 //! default (unnamed) table.
 
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
-use reth_libmdbx::{Environment, Geometry, WriteFlags};
+use reth_libmdbx::{Environment, EnvironmentFlags, Geometry, Mode, SyncMode, WriteFlags};
 
 use crate::kv::{Batch, Key, KeyBuf, KvStore, Op, Value};
 
@@ -11,6 +11,12 @@ use crate::kv::{Batch, Key, KeyBuf, KvStore, Op, Value};
 const MAX_MAP_SIZE: usize = 1 << 40; // 1 TiB
 /// Grow the map file in 256 MiB steps.
 const GROWTH_STEP: isize = 1 << 28;
+/// Reader slots. Must exceed the 256-handle read-txn pool in reth-libmdbx.
+const MAX_READERS: u64 = 1024;
+/// Under [`SyncMode::SafeNoSync`], flush after this many unsynced bytes...
+const SYNC_BYTES: usize = 64 << 20;
+/// ...or this long since the last unsteady commit, whichever comes first.
+const SYNC_PERIOD: Duration = Duration::from_secs(5);
 
 /// Error from the libmdbx-backed store.
 #[derive(Debug, thiserror::Error)]
@@ -28,10 +34,27 @@ pub struct LibmdbxKvStore {
 
 impl LibmdbxKvStore {
     /// Open (creating if needed) a libmdbx store rooted at directory `path`.
-    pub fn open(path: impl AsRef<Path>) -> Result<Self, LibmdbxOpenError> {
+    ///
+    /// With `sync_mode` false, commits survive process crash but a machine crash
+    /// rolls the whole DB back to the last flushed commit (at most [`SYNC_BYTES`]
+    /// or [`SYNC_PERIOD`] behind); graceful shutdown still syncs on close. With
+    /// `sync_mode` true, every commit is fsynced before completing.
+    pub fn open(path: impl AsRef<Path>, sync_mode: bool) -> Result<Self, LibmdbxOpenError> {
         let path = path.as_ref();
         std::fs::create_dir_all(path)?;
+        let sync_mode = if sync_mode {
+            SyncMode::Durable
+        } else {
+            SyncMode::SafeNoSync
+        };
         let env = Environment::builder()
+            .set_flags(EnvironmentFlags {
+                mode: Mode::ReadWrite { sync_mode },
+                ..Default::default()
+            })
+            .set_max_readers(MAX_READERS)
+            .set_sync_bytes(SYNC_BYTES)
+            .set_sync_period(SYNC_PERIOD)
             .set_geometry(Geometry {
                 size: Some(0..MAX_MAP_SIZE),
                 growth_step: Some(GROWTH_STEP),
@@ -131,7 +154,7 @@ mod tests {
     /// store's lifetime — dropping it removes the directory out from under mdbx.
     fn store() -> (TempDir, LibmdbxKvStore) {
         let dir = TempDir::new().unwrap();
-        let s = LibmdbxKvStore::open(dir.path()).unwrap();
+        let s = LibmdbxKvStore::open(dir.path(), false).unwrap();
         (dir, s)
     }
 
@@ -225,11 +248,12 @@ mod tests {
         use crate::{ConsensusDb, schema::MessageCount};
         let dir = TempDir::new().unwrap();
         {
-            let mut db = ConsensusDb::open(LibmdbxKvStore::open(dir.path()).unwrap()).unwrap();
+            let mut db =
+                ConsensusDb::open(LibmdbxKvStore::open(dir.path(), false).unwrap()).unwrap();
             db.put(MessageCount, &7u64).unwrap();
         }
         // Reopen the same directory: the write must have persisted.
-        let db = ConsensusDb::open(LibmdbxKvStore::open(dir.path()).unwrap()).unwrap();
+        let db = ConsensusDb::open(LibmdbxKvStore::open(dir.path(), false).unwrap()).unwrap();
         assert_eq!(db.get(MessageCount).unwrap(), Some(7));
     }
 }
