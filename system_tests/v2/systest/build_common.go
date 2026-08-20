@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
+	nitroinit "github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution_consensus"
@@ -205,6 +206,10 @@ func createBlockChain(
 		&gethexec.ConfigDefault.TxIndexer, 0, execCfg.ExposeMultiGas)
 	if err != nil {
 		t.Fatalf("WriteOrTestBlockChain: %v", err)
+	}
+	// The same boot-time chain sanity check cmd/nitro runs on every node start.
+	if err := nitroinit.ValidateBlockChain(blockchain, chainConfig); err != nil {
+		t.Fatalf("ValidateBlockChain: %v", err)
 	}
 
 	rb.commit()
