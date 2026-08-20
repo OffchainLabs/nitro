@@ -97,7 +97,7 @@ func (b *builder) validate() {
 		panic(fmt.Sprintf("systest: MinArbOS(%d) > MaxArbOS(%d)", b.minArbOS, b.maxArbOS))
 	}
 	if b.validation && b.topology == TopologyL2Only {
-		panic("systest: WithValidation requires an L1-bearing topology")
+		panic("systest: WithValidation requires a parent chain")
 	}
 	if b.validation && b.stateScheme.IsSome() && b.stateScheme.Unwrap() != validationScheme {
 		panic(fmt.Sprintf("systest: validation requires %s state scheme; conflicts with WithStateScheme(%s)", validationScheme, b.stateScheme.Unwrap()))

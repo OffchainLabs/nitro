@@ -114,7 +114,7 @@ func TestValidationOptionPanics(t *testing.T) {
 		WithValidation()(b)
 		WithValidation()(b)
 	})
-	mustPanic(t, "requires an L1-bearing topology", func() {
+	mustPanic(t, "requires a parent chain", func() {
 		b := newBuilder()
 		WithValidation()(b)
 		b.validate()

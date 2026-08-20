@@ -330,8 +330,8 @@ func WithMultiNode() TestOption {
 	}
 }
 
-// WithValidation enables block validation (JIT) for this test. Requires an
-// L1-bearing topology.
+// WithValidation enables block validation (JIT) for this test. Requires a
+// topology with a parent chain.
 func WithValidation() TestOption {
 	return func(b *builder) {
 		if b.validation {

@@ -119,6 +119,7 @@ func startValnode(ctx context.Context) (*valnodeHandle, error) {
 	stackConf := node.DefaultConfig
 	stackConf.HTTPPort = 0
 	stackConf.HTTPHost = ""
+	stackConf.AuthPort = 0
 	stackConf.DataDir = ""
 	stackConf.WSHost = "127.0.0.1"
 	stackConf.WSPort = 0
