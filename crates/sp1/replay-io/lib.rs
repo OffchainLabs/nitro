@@ -38,6 +38,10 @@ pub mod recv {
     }
 
     /// Reads the bootload inputs.
+    ///
+    /// They live in SP1's reserved input region, which the ELF dump excludes and whose pointer it
+    /// resets: consume them fully (materialize into the heap) before `syscall_dump_elf`; after it
+    /// the slices alias the runner's payload.
     pub fn bootload_inputs() -> BootloadInputs {
         BootloadInputs {
             wasmu: read_raw(),
