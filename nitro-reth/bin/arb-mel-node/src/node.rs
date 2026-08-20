@@ -42,7 +42,7 @@ impl MelNode {
         };
         // Seed a fresh database with the initial MEL state (nitro's
         // validateAndInitializeDBForMEL + createInitialMELState).
-        if mel_db.head_state_block_num()?.is_none() {
+        if mel_db.head_state()?.is_none() {
             let deploy_block = config
                 .deployed_at
                 .checked_sub(1)
