@@ -62,10 +62,7 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 				log.Warn("PGA round wait interrupted; ending the block early", "err", err)
 				return txQueueItem{}, blockInterrupted
 			}
-			mempoolCapacity := 0
-			if p.maxBlockTxCandidates > p.mempool.PriorityQueueLen() {
-				mempoolCapacity = p.maxBlockTxCandidates - p.mempool.PriorityQueueLen()
-			}
+			mempoolCapacity := max(p.maxBlockTxCandidates-p.mempool.PriorityQueueLen(), 0)
 			p.mempool.PushBatch(p.seq.drainValidatedTxs(statedb, p.baseFee, mempoolCapacity))
 		}
 		item, ok := p.mempool.Pop()
