@@ -3,11 +3,11 @@
 //! [`KvStore`] is the backend seam under [`crate::ConsensusDb`]: any engine that can
 //! get/put/delete byte keys and iterate a prefix can back the consensus DB.
 
-#[cfg(feature = "libmdbx")]
+#[cfg(not(target_family = "wasm"))]
 mod libmdbx;
 mod memory;
 
-#[cfg(feature = "libmdbx")]
+#[cfg(not(target_family = "wasm"))]
 pub use libmdbx::LibmdbxKvStore;
 pub use memory::MemoryKvStore;
 

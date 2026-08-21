@@ -36,8 +36,8 @@ impl LibmdbxKvStore {
     /// Open (creating if needed) a libmdbx store rooted at directory `path`.
     ///
     /// With `sync_mode` false, commits survive process crash but a machine crash
-    /// rolls the whole DB back to the last flushed commit (at most [`SYNC_BYTES`]
-    /// or [`SYNC_PERIOD`] behind); graceful shutdown still syncs on close. With
+    /// rolls the whole DB back to the last flushed commit (at most `SYNC_BYTES`
+    /// or `SYNC_PERIOD` behind); graceful shutdown still syncs on close. With
     /// `sync_mode` true, every commit is fsynced before completing.
     pub fn open(path: impl AsRef<Path>, sync_mode: bool) -> Result<Self, LibmdbxOpenError> {
         let path = path.as_ref();
