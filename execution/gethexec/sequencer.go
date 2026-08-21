@@ -54,6 +54,7 @@ var (
 	sequencerBacklogGauge                   = metrics.NewRegisteredGauge("arb/sequencer/backlog", nil)
 	sequencerQueueGauge                     = metrics.NewRegisteredGauge("arb/sequencer/queue/length", nil)
 	sequencerQueueHistogram                 = metrics.NewRegisteredHistogram("arb/sequencer/queue/histogram", nil, metrics.NewBoundedHistogramSample())
+	sequencerQueueThrottledCounter          = metrics.NewRegisteredCounter("arb/sequencer/queue/throttled", nil)
 	nonceCacheHitCounter                    = metrics.NewRegisteredCounter("arb/sequencer/noncecache/hit", nil)
 	nonceCacheMissCounter                   = metrics.NewRegisteredCounter("arb/sequencer/noncecache/miss", nil)
 	nonceCacheRejectedCounter               = metrics.NewRegisteredCounter("arb/sequencer/noncecache/rejected", nil)
@@ -1090,7 +1091,11 @@ func (s *Sequencer) drainQueueItems(maxQueueItems int) []txQueueItem {
 	auctionResolutionLen := len(s.timeboostAuctionResolutionTxQueue)
 	retryQueueLen := s.txRetryQueue.Len()
 	capacityRemaining := max(maxQueueItems-(retryQueueLen+auctionResolutionLen), 0)
-	txQueueLen := min(len(s.txQueue), capacityRemaining)
+	pendingTxQueueLen := len(s.txQueue)
+	txQueueLen := min(pendingTxQueueLen, capacityRemaining)
+	if txQueueLen < pendingTxQueueLen {
+		sequencerQueueThrottledCounter.Inc(int64(pendingTxQueueLen - txQueueLen))
+	}
 	capacity := auctionResolutionLen + retryQueueLen + txQueueLen
 	queueItems := make([]txQueueItem, 0, capacity)
 	for range auctionResolutionLen {
