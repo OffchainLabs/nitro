@@ -516,6 +516,8 @@ type Sequencer struct {
 	// The tx orderer of the block under construction,
 	// set for the duration of createBlockWithTxOrderer; guarded by createBlockMutex.
 	blockTxOrderer containers.Option[txOrderer]
+
+	loggedOrderingStrategy string
 }
 
 func NewSequencer(
@@ -1220,9 +1222,15 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 		maxBlockTxCandidates: config.MaxBlockTxCandidates,
 		maxBlockSpeed:        config.MaxBlockSpeed,
 	}
+	strategy := "FIFO"
 	var orderer txOrderer = newFIFOTxOrderer(s, ordererConfig, config.PollInterval)
 	if collectTips && !config.PGA.DangerousForceFIFO {
+		strategy = "PGA"
 		orderer = NewPGATxOrderer(ctx, s, ordererConfig, config.PGA.RoundsPerBlock)
+	}
+	if s.loggedOrderingStrategy != strategy {
+		log.Info("Sequencer transaction ordering strategy", "strategy", strategy, "blockNumber", s.execEngine.bc.CurrentBlock().Number.Uint64()+1)
+		s.loggedOrderingStrategy = strategy
 	}
 
 	s.blockTxOrderer = containers.Some(orderer)
