@@ -19,7 +19,10 @@ use alloy_evm::{
 };
 use alloy_primitives::{Address, B64, B256, Bytes, U256};
 use alloy_rpc_types_eth::BlockNumberOrTag;
-use arb_evm::config::{ArbEvmConfig, arbos_version_from_mix_hash, l1_block_number_from_mix_hash};
+use arb_evm::{
+    build::is_block_gas_limit_reached,
+    config::{ArbEvmConfig, arbos_version_from_mix_hash, l1_block_number_from_mix_hash},
+};
 use arb_primitives::{ArbPrimitives, signed_tx::ArbTransactionSigned, tx_types::ArbInternalTx};
 use arb_rpc::block_producer::{
     BlockProducer, BlockProducerError, BlockProductionInput, ProducedBlock,
@@ -805,7 +808,7 @@ where
                         }
                     }
                 }
-                Err(ref e) if e.to_string().contains("block gas limit reached") => {
+                Err(ref e) if is_block_gas_limit_reached(e) => {
                     break;
                 }
                 Err(e) => {
