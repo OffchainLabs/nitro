@@ -53,9 +53,9 @@ func (m *Mempool[T]) RecordIncludedTx(priority uint64) {
 	m.lastIncludedPriority = priority
 }
 
-// Peek returns the highest-priority valid transaction without removing it, discarding entries whose submission
-// context has expired.
-func (m *Mempool[T]) Peek() (emptyEntry T, found bool) {
+// ValidateAndPeek returns the highest-priority valid transaction without removing it, discarding entries
+// whose submission context has expired.
+func (m *Mempool[T]) ValidateAndPeek() (emptyEntry T, found bool) {
 	for m.heap.Len() > 0 {
 		if entry := m.heap.peekConcrete(); entry.Validate() {
 			return entry, true
@@ -66,14 +66,15 @@ func (m *Mempool[T]) Peek() (emptyEntry T, found bool) {
 	return emptyEntry, false
 }
 
-// PopPeeked removes the entry a preceding Peek returned. It does not re-validate: Peek already did, and a second
-// check could drop the entry the caller is about to sequence.
-func (m *Mempool[T]) PopPeeked() {
+// Pop removes and returns the highest-priority transaction. It does not validate, it's expected that a preceding ValidateAndPeek
+// already did, and re-validating here could drop the entry the caller is about to sequence.
+func (m *Mempool[T]) Pop() (emptyEntry T, found bool) {
 	if m.heap.Len() == 0 {
-		return
+		return emptyEntry, false
 	}
-	m.heap.popConcrete()
+	entry := m.heap.popConcrete()
 	txsProcessedCounter.Inc(1)
+	return entry, true
 }
 
 // Push adds a transaction, keying it against the mempool's basefee with its carried boost folded in. It reports

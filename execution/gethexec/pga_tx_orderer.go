@@ -93,7 +93,7 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 			}
 			p.promote(p.seq.drainValidatedTxs(statedb, p.baseFee))
 		}
-		item, ok := p.mempool.Peek()
+		item, ok := p.mempool.ValidateAndPeek()
 		if !ok {
 			continue
 		}
@@ -106,8 +106,11 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 			return txQueueItem{}, blockSizeLimitReached
 		}
 
-		p.mempool.PopPeeked()
-		return item, fetchedTx
+		popped, ok := p.mempool.Pop()
+		if !ok {
+			continue
+		}
+		return popped, fetchedTx
 	}
 }
 
