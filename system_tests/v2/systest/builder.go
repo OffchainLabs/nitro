@@ -105,9 +105,9 @@ func (b *builder) validate() {
 }
 
 // validates reports whether any node in this test runs block validation:
-// requested via WithValidation, or TopologyFullStack's staker follower (buildFollowerNode).
+// requested via WithValidation, or TopologyStakingValidation's staker follower (buildFollowerNode).
 func (b *builder) validates() bool {
-	return b.validation || b.topology == TopologyFullStack
+	return b.validation || b.topology == TopologyStakingValidation
 }
 
 func (b *builder) shouldSkip(sp scheduleParams) string {

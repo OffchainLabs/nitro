@@ -11,8 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/offchainlabs/nitro/arbnode"
 )
 
 func TestEqualBig(t *testing.T) {
@@ -256,28 +254,5 @@ func TestL1HelperOnL2OnlyEnvFails(t *testing.T) {
 	}
 	if !strings.Contains(tb.errors[0], "systest.WithL1()") {
 		t.Fatalf("failure must point at WithL1, got %q", tb.errors[0])
-	}
-}
-
-func TestWaitForStakerFailsFastWithoutStaker(t *testing.T) {
-	tb := &recordingT{}
-	e := &Env{
-		t:           tb,
-		Ctx:         context.Background(),
-		L2:          &L2Handle{Consensus: &arbnode.Node{}},
-		L2Followers: []*L2Handle{{Consensus: &arbnode.Node{}}},
-		L1:          &L1Handle{},
-	}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		e.WaitForStaker()
-	}()
-	<-done
-	if tb.errCount() != 1 {
-		t.Fatalf("WaitForStaker without a staker must record exactly 1 error, got %d", tb.errCount())
-	}
-	if !strings.Contains(tb.errors[0], "systest.WithFullStack()") {
-		t.Fatalf("failure must point at WithFullStack, got %q", tb.errors[0])
 	}
 }

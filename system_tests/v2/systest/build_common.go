@@ -60,10 +60,8 @@ func buildNode(t *testing.T, ctx context.Context, spec Spec, overrides overrides
 		return buildL2Node(t, ctx, spec, overrides)
 	case TopologyL1L2:
 		return buildL1L2Node(t, ctx, spec, overrides)
-	case TopologyMultiNode:
-		return buildMultiNodeStack(t, ctx, spec, overrides, false)
-	case TopologyFullStack:
-		return buildMultiNodeStack(t, ctx, spec, overrides, true)
+	case TopologyMultiNode, TopologyStakingValidation:
+		return buildMultiNodeStack(t, ctx, spec, overrides)
 	default:
 		t.Fatalf("systest: unknown topology %d", spec.Topology)
 		return nil, nil

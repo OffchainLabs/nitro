@@ -45,7 +45,7 @@ func TestSpecWeightDerivation(t *testing.T) {
 		{"L2-only", TopologyL2Only, weightLight},
 		{"L1L2", TopologyL1L2, weightMedium},
 		{"multi-node", TopologyMultiNode, weightHeavy},
-		{"full-stack", TopologyFullStack, weightMax},
+		{"staking-validation", TopologyStakingValidation, weightMax},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -236,7 +236,7 @@ func TestExpandMatrixCarriesTopology(t *testing.T) {
 	}{
 		{WithL1(), TopologyL1L2},
 		{WithMultiNode(), TopologyMultiNode},
-		{WithFullStack(), TopologyFullStack},
+		{WithStakingValidation(), TopologyStakingValidation},
 	} {
 		b := newBuilder()
 		b.name = "X"

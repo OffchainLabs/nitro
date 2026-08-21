@@ -14,8 +14,8 @@ import (
 )
 
 // buildMultiNodeStack builds a sequencer stack plus a non-sequencer follower.
-// When staker is set, the follower also runs block validation and a staker.
-func buildMultiNodeStack(t *testing.T, ctx context.Context, spec Spec, overrides overrides, staker bool) (*Env, func()) {
+// Under TopologyStakingValidation the follower also runs block validation and a staker.
+func buildMultiNodeStack(t *testing.T, ctx context.Context, spec Spec, overrides overrides) (*Env, func()) {
 	t.Helper()
 
 	env, seqCleanup := buildL1L2Node(t, ctx, spec, overrides)
@@ -24,7 +24,7 @@ func buildMultiNodeStack(t *testing.T, ctx context.Context, spec Spec, overrides
 	rb.stage(seqCleanup)
 	defer rb.run()
 
-	follower, followerCleanup := buildFollowerNode(t, ctx, spec, overrides, env, staker)
+	follower, followerCleanup := buildFollowerNode(t, ctx, spec, overrides, env)
 	env.L2Followers = append(env.L2Followers, follower)
 
 	rb.commit()
@@ -35,8 +35,8 @@ func buildMultiNodeStack(t *testing.T, ctx context.Context, spec Spec, overrides
 }
 
 // buildFollowerNode spins a non-sequencer L2 reusing the sequencer's L1 setup.
-// When staker is set, it also runs block validation and a staker.
-func buildFollowerNode(t *testing.T, ctx context.Context, spec Spec, overrides overrides, env *Env, staker bool) (*L2Handle, func()) {
+// Under TopologyStakingValidation it also runs block validation and a staker.
+func buildFollowerNode(t *testing.T, ctx context.Context, spec Spec, overrides overrides, env *Env) (*L2Handle, func()) {
 	t.Helper()
 
 	nodeConfig, chainConfig, execCfg, stackCfg := seedConfigs(t, spec, overrides, arbnode.ConfigDefaultL1NonSequencerTest())
@@ -45,7 +45,7 @@ func buildFollowerNode(t *testing.T, ctx context.Context, spec Spec, overrides o
 	execCfg.Sequencer.Enable = false
 
 	var validatorTxOpts *bind.TransactOpts
-	if staker {
+	if spec.Topology == TopologyStakingValidation {
 		mustEnableValidation(t, execCfg, nodeConfig, "staker requires wasm machines")
 		nodeConfig.Staker.Enable = true
 		nodeConfig.Staker.Strategy = legacystaker.MakeNodesStrategy.ToString()

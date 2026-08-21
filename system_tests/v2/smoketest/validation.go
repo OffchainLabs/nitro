@@ -17,7 +17,7 @@ import (
 
 var blockValidatorTests = []systest.Scenario{
 	systest.Test(testRunBlockValidatorSimple, systest.WithL1(), systest.WithValidation()),
-	systest.Test(testRunFullStackStaking, systest.WithFullStack()),
+	systest.Test(testRunStakingValidation, systest.WithStakingValidation()),
 }
 
 func testRunBlockValidatorSimple(env *systest.Env) {
@@ -42,7 +42,7 @@ func testRunBlockValidatorSimple(env *systest.Env) {
 	env.SendSignedTxViaL1(delayedTx)
 }
 
-func testRunFullStackStaking(env *systest.Env) {
+func testRunStakingValidation(env *systest.Env) {
 	env.L2.Info.GenerateAccount("User2")
 	txs := []*types.Transaction{
 		env.L2.Info.PrepareTx("Owner", "User2", env.L2.Info.TransferGas, big.NewInt(1e12), nil),
@@ -53,6 +53,4 @@ func testRunFullStackStaking(env *systest.Env) {
 	env.WaitForFollowersSync()
 	bal := env.Follower().BalanceAt(env.L2.Info.GetAddress("User2"))
 	env.EqualBig(big.NewInt(2e12), bal, "follower balance")
-
-	env.WaitForStaker()
 }

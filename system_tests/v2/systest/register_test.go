@@ -86,10 +86,10 @@ func TestScheduleSortsHeaviestFirst(t *testing.T) {
 	WithMultiNode()(heavy)
 	light2 := newBuilder()
 	light2.name = "Light2"
-	fullStack := newBuilder()
-	fullStack.name = "Max"
-	WithFullStack()(fullStack)
-	stubRegistry(t, light1, heavy, light2, fullStack)
+	stakingValidation := newBuilder()
+	stakingValidation.name = "Max"
+	WithStakingValidation()(stakingValidation)
+	stubRegistry(t, light1, heavy, light2, stakingValidation)
 
 	out := schedule(scheduleParams{})
 	if len(out) != 4 {

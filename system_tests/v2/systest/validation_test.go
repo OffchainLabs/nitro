@@ -43,6 +43,17 @@ func TestValidateToHead(t *testing.T) {
 	if err := validateToHead(&Env{Spec: Spec{Validate: true}}); err == nil {
 		t.Error("Validate=true with nil validator: want error, got nil")
 	}
+	// Staking-validation topology validates even without Spec.Validate.
+	if err := validateToHead(&Env{Spec: Spec{Topology: TopologyStakingValidation}}); err == nil {
+		t.Error("staking-validation with nil validator: want error, got nil")
+	}
+}
+
+func TestVerifyStakedIsTopologyGated(t *testing.T) {
+	// Only the staking-validation topology stakes; elsewhere the hook no-ops.
+	if err := verifyStaked(&Env{Spec: Spec{Topology: TopologyMultiNode}}); err != nil {
+		t.Errorf("non-staking topology: want nil, got %v", err)
+	}
 }
 
 func TestHasUsefulTx(t *testing.T) {
@@ -164,17 +175,17 @@ func TestShouldSkipValidation(t *testing.T) {
 			wantReason: "validation requires hash state scheme",
 		},
 		{
-			name: "full-stack on forced path scheme",
+			name: "staking-validation on forced path scheme",
 			setup: func(b *builder) {
-				WithFullStack()(b)
+				WithStakingValidation()(b)
 			},
 			sp:         scheduleParams{StateScheme: containers.Some(StateSchemePath)},
 			wantReason: "validation requires hash state scheme",
 		},
 		{
-			name: "full-stack on env-default path",
+			name: "staking-validation on env-default path",
 			setup: func(b *builder) {
-				WithFullStack()(b)
+				WithStakingValidation()(b)
 			},
 			sp:         scheduleParams{DefaultStateScheme: containers.Some(StateSchemePath)},
 			wantReason: "validation requires hash state scheme",
@@ -224,42 +235,45 @@ func TestMatrixPathCellDeclinesValidation(t *testing.T) {
 	}
 }
 
-func TestFullStackSchemePinConflictPanics(t *testing.T) {
+func TestStakingValidationSchemePinConflictPanics(t *testing.T) {
 	mustPanic(t, "validation requires hash", func() {
 		b := newBuilder()
 		WithStateScheme(StateSchemePath)(b)
-		WithFullStack()(b)
+		WithStakingValidation()(b)
 		b.validate()
 	})
 }
 
-func TestFullStackTopology(t *testing.T) {
+func TestStakingValidationTopology(t *testing.T) {
 	b := newBuilder()
-	WithFullStack()(b)
-	if b.topology != TopologyFullStack {
-		t.Fatalf("topology = %v, want TopologyFullStack", b.topology)
+	WithStakingValidation()(b)
+	if b.topology != TopologyStakingValidation {
+		t.Fatalf("topology = %v, want TopologyStakingValidation", b.topology)
 	}
 	if w := b.weight(); w != weightMax {
 		t.Fatalf("weight = %d, want weightMax (%d)", w, weightMax)
 	}
+	if len(b.postHooks) != 2 {
+		t.Fatalf("postHooks = %d, want 2 (validateToHead, verifyStaked)", len(b.postHooks))
+	}
 
 	// WithValidation must not downgrade a higher topology.
 	WithValidation()(b)
-	if b.topology != TopologyFullStack {
+	if b.topology != TopologyStakingValidation {
 		t.Fatalf("WithValidation downgraded topology to %v", b.topology)
 	}
 }
 
-func TestFullStackTopologyConflicts(t *testing.T) {
+func TestStakingValidationTopologyConflicts(t *testing.T) {
 	cases := []struct {
 		name string
 		opts []TestOption
 		want string
 	}{
-		{"WithFullStack twice", []TestOption{WithFullStack(), WithFullStack()}, "WithFullStack applied twice"},
-		{"WithMultiNode then WithFullStack", []TestOption{WithMultiNode(), WithFullStack()}, "conflicts with another topology"},
-		{"WithFullStack then WithL1", []TestOption{WithFullStack(), WithL1()}, "conflicts with another topology"},
-		{"WithL1 then WithFullStack", []TestOption{WithL1(), WithFullStack()}, "conflicts with another topology"},
+		{"WithStakingValidation twice", []TestOption{WithStakingValidation(), WithStakingValidation()}, "WithStakingValidation applied twice"},
+		{"WithMultiNode then WithStakingValidation", []TestOption{WithMultiNode(), WithStakingValidation()}, "conflicts with another topology"},
+		{"WithStakingValidation then WithL1", []TestOption{WithStakingValidation(), WithL1()}, "conflicts with another topology"},
+		{"WithL1 then WithStakingValidation", []TestOption{WithL1(), WithStakingValidation()}, "conflicts with another topology"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -342,11 +342,12 @@ func WithValidation() TestOption {
 	}
 }
 
-// WithFullStack builds an L1 + sequencer L2 plus a follower L2 (env.L2Followers) that
+// WithStakingValidation builds an L1 + sequencer L2 plus a follower L2 (env.L2Followers) that
 // runs block validation and a staker. Requires wasm machines.
-func WithFullStack() TestOption {
+func WithStakingValidation() TestOption {
 	return func(b *builder) {
-		setTopology(b, TopologyFullStack, "WithFullStack")
+		setTopology(b, TopologyStakingValidation, "WithStakingValidation")
+		b.postHooks = append(b.postHooks, validateToHead, verifyStaked)
 	}
 }
 

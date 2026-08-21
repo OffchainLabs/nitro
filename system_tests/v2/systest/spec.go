@@ -29,7 +29,7 @@ const (
 	weightLight  weight = iota + 1 // L2-only, single node
 	weightMedium                   // L1 + L2
 	weightHeavy                    // multi-node
-	weightMax                      // full stack, or any validating run
+	weightMax                      // staking validation, or any validating run
 )
 
 // specWeight projects a topology onto a scheduler-slot cost.
@@ -39,7 +39,7 @@ func specWeight(topology Topology) weight {
 		return weightMedium
 	case TopologyMultiNode:
 		return weightHeavy
-	case TopologyFullStack:
+	case TopologyStakingValidation:
 		return weightMax
 	}
 	return weightLight
@@ -87,10 +87,10 @@ func (e DBEngine) Valid() bool {
 type Topology int
 
 const (
-	TopologyL2Only    Topology = iota // L2-only sequencer, no parent chain
-	TopologyL1L2                      // L1 + sequencer L2 (batch posting + inbox reading)
-	TopologyMultiNode                 // L1 + sequencer L2 + non-sequencer follower L2
-	TopologyFullStack                 // L1 + sequencer L2 + follower L2 running block validation + staker
+	TopologyL2Only            Topology = iota // L2-only sequencer, no parent chain
+	TopologyL1L2                              // L1 + sequencer L2 (batch posting + inbox reading)
+	TopologyMultiNode                         // L1 + sequencer L2 + non-sequencer follower L2
+	TopologyStakingValidation                 // L1 + sequencer L2 + follower L2 running block validation + staker
 )
 
 // Spec is the resolved per-variant config. Scenarios receive it by value on

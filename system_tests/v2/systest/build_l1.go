@@ -44,7 +44,7 @@ import (
 
 // defaultL1Accounts are funded at L1 genesis: RollupOwner deploys the rollup,
 // Sequencer is batch poster + data signer, User drives the delayed inbox.
-// Validator stakes in the full-stack topology.
+// Validator stakes in the staking-validation topology.
 var defaultL1Accounts = []string{"RollupOwner", "Sequencer", "Validator", "User"}
 
 // maxL1DataSize bounds sequencer-inbox batch data on the parent chain.
@@ -86,7 +86,7 @@ func buildL1L2Node(t *testing.T, ctx context.Context, spec Spec, overrides overr
 		t.Fatalf("no wasm module root found under target/machines; run `make build-replay-env`")
 	}
 
-	addresses, initMsg := deployRollup(t, ctx, l1Info, l1Client, chainConfig, wasmModuleRoot, spec.Topology == TopologyFullStack)
+	addresses, initMsg := deployRollup(t, ctx, l1Info, l1Client, chainConfig, wasmModuleRoot, spec.Topology == TopologyStakingValidation)
 
 	nodeFetcher := newConfigFetcher(nodeConfig)
 	// l1Reader's poll loop is never started here; the consensus node builds and
@@ -228,7 +228,7 @@ func createL1Chain(t *testing.T) (*arbtest.BlockchainTestInfo, *ethclient.Client
 
 // deployRollup deploys the legacy (non-BOLD) rollup contracts and returns the
 // rollup addresses plus the parsed init message read back from the parent chain's inbox.
-// disableValidatorWhitelist opens the rollup's validator whitelist (for the full-stack staker).
+// disableValidatorWhitelist opens the rollup's validator whitelist (for the staking-validation staker).
 func deployRollup(
 	t *testing.T,
 	ctx context.Context,

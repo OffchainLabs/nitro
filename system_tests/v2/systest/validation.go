@@ -10,12 +10,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/node"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -151,16 +154,22 @@ func startValnode(ctx context.Context) (*valnodeHandle, error) {
 	return &valnodeHandle{stack: stack, valNode: valNode, wsURL: stack.WSEndpoint()}, nil
 }
 
-// validateToHead is the WithValidation post-hook: it waits for the node's block
-// validator to validate every message the scenario produced.
+// validateToHead is the WithValidation/WithStakingValidation post-hook: it waits
+// for every block validator in the topology to validate every message the
+// scenario produced.
 func validateToHead(e *Env) error {
-	if !e.Spec.Validate {
+	if !e.Spec.Validate && e.Spec.Topology != TopologyStakingValidation {
 		return nil
 	}
-	if e.L2 == nil || e.L2.Consensus == nil || e.L2.Consensus.BlockValidator == nil {
+	var bvs []*staker.BlockValidator
+	for _, h := range append([]*L2Handle{e.L2}, e.L2Followers...) {
+		if h != nil && h.Consensus != nil && h.Consensus.BlockValidator != nil {
+			bvs = append(bvs, h.Consensus.BlockValidator)
+		}
+	}
+	if len(bvs) == 0 {
 		return fmt.Errorf("validation requested but block validator not configured")
 	}
-	bv := e.L2.Consensus.BlockValidator
 	ctx, cancel := context.WithTimeout(e.Ctx, validationBackstop)
 	defer cancel()
 	// Trailing internal-tx-only blocks are never validated on their own; wait
@@ -178,19 +187,71 @@ func validateToHead(e *Env) error {
 			return fmt.Errorf("validation walk-back: %w", err)
 		}
 	}
-	t, ok := e.t.(*testing.T)
-	if !ok {
-		return fmt.Errorf("block validation wait requires *testing.T, got %T", e.t)
-	}
 	// Block number equals message index on these chains (genesis = message 0).
 	pos := arbutil.MessageIndex(block.NumberU64())
-	if bv.WaitForPos(t, ctx, pos, validationBackstop) {
+	if werr := defaultBackoff.until(ctx, func() (bool, error) {
+		// Followers validate only what they sync from the L1 inbox, and the
+		// simulated L1 only mines on demand.
+		if err := e.advanceL1ForPoll(ctx); err != nil {
+			return false, err
+		}
+		for _, bv := range bvs {
+			if bv.GetValidated() <= pos {
+				return false, nil
+			}
+		}
+		return true, nil
+	}); werr != nil {
+		stalled := bvs[0].GetValidated()
+		for _, bv := range bvs[1:] {
+			stalled = min(stalled, bv.GetValidated())
+		}
+		return fmt.Errorf("block validation stalled at %d, want %d: %w", stalled, pos, werr)
+	}
+	return nil
+}
+
+// verifyStaked is the WithStakingValidation post-hook: it waits until a
+// validator is staked and an assertion beyond genesis exists on the rollup.
+func verifyStaked(e *Env) error {
+	if e.Spec.Topology != TopologyStakingValidation {
 		return nil
 	}
-	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("block validation stalled at %d, want %d: %w", bv.GetValidated(), pos, err)
+	rollup, err := rollup_legacy_gen.NewRollupUserLogic(e.L2.Consensus.DeployInfo.Rollup, e.L1.Client)
+	if err != nil {
+		return fmt.Errorf("NewRollupUserLogic: %w", err)
 	}
-	return fmt.Errorf("block validation stalled at %d, want %d", bv.GetValidated(), pos)
+	ctx, cancel := context.WithTimeout(e.Ctx, validationBackstop)
+	defer cancel()
+	opts := &bind.CallOpts{Context: ctx}
+	var lastStakers, lastAssertion uint64
+	if werr := defaultBackoff.until(ctx, func() (bool, error) {
+		if err := e.advanceL1ForPoll(ctx); err != nil {
+			return false, err
+		}
+		stakers, err := rollup.StakerCount(opts)
+		if err != nil {
+			return false, fmt.Errorf("StakerCount: %w", err)
+		}
+		assertion, err := rollup.LatestNodeCreated(opts)
+		if err != nil {
+			return false, fmt.Errorf("LatestNodeCreated: %w", err)
+		}
+		lastStakers, lastAssertion = stakers, assertion
+		return stakers >= 1 && assertion >= 1, nil
+	}); werr != nil {
+		return fmt.Errorf("waiting for a staked assertion on the rollup (stakers=%d, latest assertion=%d): %w", lastStakers, lastAssertion, werr)
+	}
+	return nil
+}
+
+// advanceL1ForPoll mines one L1 block for a poll iteration; deadline errors
+// are swallowed so the poll's own timeout message wins.
+func (e *Env) advanceL1ForPoll(ctx context.Context) error {
+	if err := e.L1.advanceBlock(ctx); err != nil && ctx.Err() == nil {
+		return fmt.Errorf("advance L1: %w", err)
+	}
+	return nil
 }
 
 // hasUsefulTx reports whether the block carries any non-internal transaction.
