@@ -23,18 +23,20 @@ linker = "cc"
 rustflags = ["-C", "link-arg=-Wl,--allow-multiple-definition"]
 
 [alias]
-# Checks the crates the replay binary needs against the wasm target. Extend the list
-# whenever a crate becomes wasm-clean.
 wasm-check = [
     "check",
     "--locked",
     "--target",
     "wasm32-wasip1",
+    "-p", "arb-chainspec",
+    "-p", "arb-consensus-db",
     "-p", "arb-da-provider",
     "-p", "arb-errors",
     "-p", "arb-math",
     "-p", "arb-mel",
+    "-p", "arb-mel-db",
     "-p", "arb-mel-types",
+    "-p", "arb-storage",
     "-p", "arb-storage-errors",
     "-p", "arbos-types",
 ]

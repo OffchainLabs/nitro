@@ -104,7 +104,7 @@ type SequencerConfig struct {
 	ExpectedSurplusHardThreshold string           `koanf:"expected-surplus-hard-threshold" reload:"hot"`
 	EnableProfiling              bool             `koanf:"enable-profiling" reload:"hot"`
 	Timeboost                    timeboost.Config `koanf:"timeboost"`
-	ExperimentalPGA              PGAConfig        `koanf:"experimental-pga"`
+	PGA                          PGAConfig        `koanf:"pga"`
 	Dangerous                    DangerousConfig  `koanf:"dangerous"`
 	FilterSetReportingInterval   time.Duration    `koanf:"filter-set-reporting-interval"`
 	expectedSurplusSoftThreshold int
@@ -127,7 +127,7 @@ type PGAConfig struct {
 func (c *SequencerConfig) PGARoundLength() time.Duration {
 	// RoundsPerBlock is a small round count bounded by Validate; the conversion cannot overflow.
 	// #nosec G115
-	return c.MaxBlockSpeed / time.Duration(c.ExperimentalPGA.RoundsPerBlock)
+	return c.MaxBlockSpeed / time.Duration(c.PGA.RoundsPerBlock)
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -186,8 +186,8 @@ func (c *SequencerConfig) Validate() error {
 	if c.FilterSetReportingInterval <= 0 {
 		return fmt.Errorf("filter-set-reporting-interval must be positive, got %s", c.FilterSetReportingInterval)
 	}
-	if c.ExperimentalPGA.RoundsPerBlock == 0 {
-		return errors.New("experimental-pga.rounds-per-block must be at least 1")
+	if c.PGA.RoundsPerBlock == 0 {
+		return errors.New("pga.rounds-per-block must be at least 1")
 	}
 	if c.PollInterval <= 0 {
 		return fmt.Errorf("sequencer poll-interval must be positive, got %v", c.PollInterval)
@@ -219,7 +219,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
 	Timeboost:                    timeboost.DefaultConfig,
-	ExperimentalPGA:              DefaultPGAConfig,
+	PGA:                          DefaultPGAConfig,
 	Dangerous:                    DefaultDangerousConfig,
 	FilterSetReportingInterval:   time.Minute,
 }
@@ -242,7 +242,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.StringSlice(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
 	timeboost.AddOptions(prefix+".timeboost", f)
-	PGAAddOptions(prefix+".experimental-pga", f)
+	PGAAddOptions(prefix+".pga", f)
 
 	DangerousAddOptions(prefix+".dangerous", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
@@ -264,8 +264,8 @@ func DangerousAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 func PGAAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".dangerous-force-fifo", DefaultPGAConfig.DangerousForceFIFO, "EXPERIMENTAL: force FIFO transaction ordering even when the chain collects tips, disabling the priority gas auction (PGA)")
-	f.Uint(prefix+".rounds-per-block", DefaultPGAConfig.RoundsPerBlock, "EXPERIMENTAL: number of PGA rounds per block; the round length is max-block-speed divided by this value")
+	f.Bool(prefix+".dangerous-force-fifo", DefaultPGAConfig.DangerousForceFIFO, "force FIFO transaction ordering even when the chain collects tips, disabling the priority gas auction (PGA)")
+	f.Uint(prefix+".rounds-per-block", DefaultPGAConfig.RoundsPerBlock, "number of PGA rounds per block; the round length is max-block-speed divided by this value")
 }
 
 func EventFilterAddOptions(prefix string, f *pflag.FlagSet) {
@@ -1204,8 +1204,8 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 	}
 
 	var orderer txOrderer = newFIFOTxOrderer(s, config.PollInterval, config.MaxBlockSpeed, baseFee)
-	if collectTips && !config.ExperimentalPGA.DangerousForceFIFO {
-		orderer = NewPGATxOrderer(ctx, s, config.ExperimentalPGA.RoundsPerBlock, config.PGARoundLength(), baseFee)
+	if collectTips && !config.PGA.DangerousForceFIFO {
+		orderer = NewPGATxOrderer(ctx, s, config.PGA.RoundsPerBlock, config.PGARoundLength(), baseFee)
 		pgaBlocksCounter.Inc(1)
 	} else {
 		fifoBlocksCounter.Inc(1)
