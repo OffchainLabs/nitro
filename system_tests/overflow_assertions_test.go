@@ -41,7 +41,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
-func TestOverflowAssertions(t *testing.T) {
+func TestChallengeProtocolBOLDOverflowAssertions(t *testing.T) {
 	// Start the external geth parent chain.
 	//
 	// Create enough messages in batches to overflow the block level challenge

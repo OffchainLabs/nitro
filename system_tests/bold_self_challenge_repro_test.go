@@ -45,7 +45,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
-// TestBoldSelfChallengeRepro is the system-level regression gate for the
+// TestChallengeProtocolBOLDSelfChallengeRepro is the system-level regression gate for the
 // same-hash short-circuit in maybePostRivalAssertionAndChallenge. It posts
 // one canonical child Y on-chain, then runs a full challenge.Stack with a
 // flaky ExecutionProvider that returns a wrong EndHistoryRoot on the first
@@ -60,7 +60,7 @@ import (
 // Note: this test does not exercise the cursor-downgrade path in
 // applyRecordAgreedAssertion — see TestRecordAgreedAssertionDoesNotDowngradeLatestAgreedAssertion
 // for that side.
-func TestBoldSelfChallengeRepro(t *testing.T) {
+func TestChallengeProtocolBOLDSelfChallengeRepro(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
