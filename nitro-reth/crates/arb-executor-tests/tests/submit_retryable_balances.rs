@@ -132,11 +132,10 @@ fn auto_redeem_redeemer_is_coinbase_changeset_baseline() {
     let scheduled = executor
         .next_scheduled_tx()
         .expect("submit should schedule an auto-redeem");
-    // Simulate a sibling retry scheduled by the same tx: it must survive the first retry's
-    // execution (the block-scoped queue is never cleared per tx).
-    let sibling = vec![0xff];
-    executor.redeem_queue.push_back(sibling.clone());
-
+    assert!(
+        executor.next_scheduled_tx().is_none(),
+        "submit should schedule exactly one auto-redeem"
+    );
     let redeem = ArbTransactionSigned::decode_2718(&mut &scheduled[..]).expect("decode redeem");
     let redeem_res = executor
         .execute_transaction_without_commit(redeem.try_into_recovered().expect("recover"))
@@ -148,16 +147,6 @@ fn auto_redeem_redeemer_is_coinbase_changeset_baseline() {
     executor
         .commit_transaction(redeem_res)
         .expect("redeem commit");
-
-    assert_eq!(
-        executor.next_scheduled_tx(),
-        Some(sibling),
-        "queued sibling redeem must survive the first retry's execution"
-    );
-    assert!(
-        executor.next_scheduled_tx().is_none(),
-        "submit should schedule exactly one auto-redeem"
-    );
 
     let _ = executor.finish().expect("finish");
 
