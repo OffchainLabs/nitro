@@ -19,7 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
-func TestSequencerConfigValidatePGA(t *testing.T) {
+func TestSequencerConfigValidate(t *testing.T) {
 	tests := []struct {
 		name    string
 		modify  func(*SequencerConfig)
@@ -53,6 +53,12 @@ func TestSequencerConfigValidatePGA(t *testing.T) {
 		{"round length below 5ms", func(c *SequencerConfig) {
 			c.MaxBlockSpeed = 10 * time.Millisecond
 			c.PGA.RoundsPerBlock = 6
+		}, true},
+		{"zero max block tx candidates", func(c *SequencerConfig) {
+			c.MaxBlockTxCandidates = 0
+		}, true},
+		{"negative max block tx candidates", func(c *SequencerConfig) {
+			c.MaxBlockTxCandidates = -1
 		}, true},
 	}
 	for _, tt := range tests {
