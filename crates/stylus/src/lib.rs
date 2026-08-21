@@ -300,7 +300,7 @@ pub unsafe extern "C" fn stylus_call(
     unsafe {
         let module = module.slice();
         let calldata = calldata.slice().to_vec();
-        let evm_api = EvmApiRequestor::new(req_handler);
+        let evm_api = EvmApiRequestor::new(req_handler, evm_data.storage_cache_limit);
         let pricing = config.pricing;
         let output = &mut *output;
         let ink = pricing.gas_to_ink(Gas(*gas));
