@@ -27,8 +27,8 @@ func TestPGAHappyPath(t *testing.T) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithArbOSVersion(params.ArbosVersion_60)
 	builder.execConfig.Sequencer.MaxBlockSpeed = 100 * time.Millisecond
-	builder.execConfig.Sequencer.ExperimentalPGA.DangerousForceFIFO = false
-	builder.execConfig.Sequencer.ExperimentalPGA.RoundsPerBlock = 2
+	builder.execConfig.Sequencer.PGA.DangerousForceFIFO = false
+	builder.execConfig.Sequencer.PGA.RoundsPerBlock = 2
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -105,8 +105,8 @@ func TestPGASameSenderNonceChain(t *testing.T) {
 	// The queue-length gauge below is process-global; run alone so no other node writes to it.
 	builder.parallelise = false
 	builder.execConfig.Sequencer.MaxBlockSpeed = 100 * time.Millisecond
-	builder.execConfig.Sequencer.ExperimentalPGA.DangerousForceFIFO = false
-	builder.execConfig.Sequencer.ExperimentalPGA.RoundsPerBlock = 2
+	builder.execConfig.Sequencer.PGA.DangerousForceFIFO = false
+	builder.execConfig.Sequencer.PGA.RoundsPerBlock = 2
 	// Keep the parked follow-up alive while the paused sequencer holds the burst.
 	builder.execConfig.Sequencer.NonceFailureCacheExpiry = time.Minute
 	cleanup := builder.Build(t)
