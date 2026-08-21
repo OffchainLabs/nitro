@@ -14,38 +14,52 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// stubOrdererSequencer feeds drainValidatedTxs canned results: items first, then one batch per
-// later call. Like the real drain, it returns at most maxQueueItems items, keeping the excess
-// for the next call. It records the bound passed to each call in drainLimits.
+// stubOrdererSequencer feeds drainValidatedTxs pre-set results: one batch per call. Like the real
+// drain, it returns at most maxQueueItems items, keeping the excess for the next call. It records
+// the bound passed to each call in drainLimits.
 type stubOrdererSequencer struct {
-	items       []txQueueItem
 	batches     [][]txQueueItem
 	drainLimits []int
 }
 
+func newStubOrdererSequencer(items ...txQueueItem) *stubOrdererSequencer {
+	return &stubOrdererSequencer{
+		batches: [][]txQueueItem{
+			items,
+		},
+	}
+}
+
+func newStubOrdererSequencerWithBatches(batches ...[]txQueueItem) *stubOrdererSequencer {
+	return &stubOrdererSequencer{
+		batches: batches,
+	}
+}
+
 func (s *stubOrdererSequencer) drainValidatedTxs(statedb *state.StateDB, baseFee *big.Int, maxQueueItems int) []txQueueItem {
 	s.drainLimits = append(s.drainLimits, maxQueueItems)
-	if s.items != nil {
-		n := min(len(s.items), max(maxQueueItems, 0))
-		items := s.items[:n]
-		s.items = s.items[n:]
-		if len(s.items) == 0 {
-			s.items = nil
-		}
-		return items
+	if maxQueueItems <= 0 || len(s.batches) == 0 {
+		return nil
 	}
-	if len(s.batches) > 0 {
-		batch := s.batches[0]
-		s.batches = s.batches[1:]
-		return batch
+	drainedTxs := s.batches[0]
+	s.batches = s.batches[1:]
+	if len(drainedTxs) <= maxQueueItems {
+		return drainedTxs
 	}
-	return nil
+	remainingTxs := drainedTxs[maxQueueItems:]
+	drainedTxs = drainedTxs[:maxQueueItems]
+	if len(s.batches) == 0 {
+		s.batches = append(s.batches, remainingTxs)
+	} else {
+		s.batches[0] = append(remainingTxs, s.batches[0]...)
+	}
+	return drainedTxs
 }
 
 // newTestFIFOTxOrderer builds a FIFO orderer over the given canned items with no drain bound.
 func newTestFIFOTxOrderer(t *testing.T, items ...txQueueItem) *fifoTxOrderer {
 	t.Helper()
-	return newFIFOTxOrderer(&stubOrdererSequencer{items: items}, txOrdererConfig{maxBlockTxCandidates: math.MaxInt}, 0)
+	return newFIFOTxOrderer(newStubOrdererSequencer(items...), txOrdererConfig{maxBlockTxCandidates: math.MaxInt}, 0)
 }
 
 func queueItemNonces(items []txQueueItem) []uint64 {
@@ -185,7 +199,7 @@ func TestFIFOTxOrdererPassesDrainBound(t *testing.T) {
 		item, _ := makeTestQueueItem(t, nonce, testBaseFee)
 		items = append(items, item)
 	}
-	seq := &stubOrdererSequencer{items: items}
+	seq := newStubOrdererSequencer(items...)
 	o := newFIFOTxOrderer(seq, txOrdererConfig{maxBlockTxCandidates: 7}, 0)
 
 	if !o.StartBlock(nil) {
@@ -204,7 +218,7 @@ func TestFIFOTxOrdererBlockInterval(t *testing.T) {
 	pollInterval := 100 * time.Millisecond
 	item, _ := makeTestQueueItem(t, 0, testBaseFee)
 	config := txOrdererConfig{maxBlockTxCandidates: math.MaxInt, maxBlockSpeed: blockInterval}
-	o := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}}, config, pollInterval)
+	o := newFIFOTxOrderer(newStubOrdererSequencer(item), config, pollInterval)
 	if got := o.BlockInterval(); got != pollInterval {
 		t.Fatalf("BlockInterval = %v, want %v", got, pollInterval)
 	}

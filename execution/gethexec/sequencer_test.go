@@ -278,7 +278,7 @@ func TestCreateBlockRequeuesNeverAttemptedTxs(t *testing.T) {
 		maxBlockTxCandidates: math.MaxInt,
 		maxBlockSpeed:        DefaultSequencerConfig.MaxBlockSpeed,
 	}
-	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}}, ordererConfig, DefaultSequencerConfig.PollInterval)
+	orderer := newFIFOTxOrderer(newStubOrdererSequencer(item), ordererConfig, DefaultSequencerConfig.PollInterval)
 
 	sequencedMsg, _ := seq.createBlockWithTxOrderer(context.Background(), orderer)
 
@@ -320,7 +320,7 @@ func TestCreateBlockPanicFailsTxsInsteadOfRequeueing(t *testing.T) {
 		maxBlockTxCandidates: math.MaxInt,
 		maxBlockSpeed:        DefaultSequencerConfig.MaxBlockSpeed,
 	}
-	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}}, ordererConfig, DefaultSequencerConfig.PollInterval)
+	orderer := newFIFOTxOrderer(newStubOrdererSequencer(item), ordererConfig, DefaultSequencerConfig.PollInterval)
 
 	sequencedMsg, throttle := seq.createBlockWithTxOrderer(context.Background(), panicAfterArmOrderer{orderer})
 
