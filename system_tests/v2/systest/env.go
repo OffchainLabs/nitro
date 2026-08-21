@@ -39,7 +39,8 @@ type Env struct {
 	Ctx context.Context
 	// L2 is the sequencer handle. Always populated.
 	L2 *L2Handle
-	// L2Followers are the non-sequencer follower handles. Empty unless TopologyMultiNode.
+	// L2Followers are the non-sequencer follower handles. Empty unless
+	// TopologyMultiNode or TopologyStakingValidation.
 	L2Followers []*L2Handle
 	// L1 is the parent chain handle. Nil for TopologyL2Only scenarios.
 	L1   *L1Handle
@@ -147,7 +148,7 @@ func (e *Env) WaitForFollowersSync() {
 // requireFollower fails the scenario if it has no follower node.
 func (e *Env) requireFollower() {
 	e.t.Helper()
-	e.NotEmpty(e.L2Followers, "follower helper called on a non-multi-node scenario; register it with systest.WithMultiNode()")
+	e.NotEmpty(e.L2Followers, "follower helper called on a scenario without followers; register it with systest.WithMultiNode() or systest.WithStakingValidation()")
 }
 
 // waitFollowersSynced blocks until every follower executes the sequencer's

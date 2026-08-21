@@ -342,6 +342,15 @@ func WithValidation() TestOption {
 	}
 }
 
+// WithStakingValidation builds an L1 + sequencer L2 plus a follower L2 (env.L2Followers) that
+// runs block validation and a staker. Requires wasm machines.
+func WithStakingValidation() TestOption {
+	return func(b *builder) {
+		setTopology(b, TopologyStakingValidation, "WithStakingValidation")
+		b.postHooks = append(b.postHooks, validateToHead, verifyStaked)
+	}
+}
+
 // setTopology pins the node layout, rejecting a second topology option.
 func setTopology(b *builder, topo Topology, name string) {
 	if b.topology == topo {
