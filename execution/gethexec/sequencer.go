@@ -250,7 +250,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	DangerousAddOptions(prefix+".dangerous", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
-	f.Int(prefix+".max-block-tx-candidates", DefaultSequencerConfig.MaxBlockTxCandidates, "maximum number of queued transactions considered for a block; the auction resolution and retry queues are always drained in full, even beyond this bound")
+	f.Int(prefix+".max-block-tx-candidates", DefaultSequencerConfig.MaxBlockTxCandidates, "maximum number of queued transactions considered for a block at the same time (e.g., during a single PGA round)")
 	f.Int(prefix+".nonce-cache-size", DefaultSequencerConfig.NonceCacheSize, "size of the tx sender nonce cache")
 	f.Int(prefix+".max-tx-data-size", DefaultSequencerConfig.MaxTxDataSize, "maximum transaction size the sequencer will accept")
 	f.Int(prefix+".nonce-failure-cache-size", DefaultSequencerConfig.NonceFailureCacheSize, "number of transactions with too high of a nonce to keep in memory while waiting for their predecessor")
