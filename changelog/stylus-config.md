@@ -1,0 +1,2 @@
+### Ignored
+- Stylus config updates

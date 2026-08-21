@@ -265,6 +265,10 @@ pub fn fragment_read_gas(warm: bool, code_size: u64) -> u64 {
 ///
 /// `wasm` must be the decompressed WASM bytes (call `decompress_wasm` first).
 /// `gas` is decremented by the activation cost.
+/// Cap on wavm ops when building a module during activation. Mirrors Go's non-configurable
+/// `DefaultStylusTargetConfig.MaxWavmOps` (`arbos/programs/node_config.go`).
+const MAX_WAVM_OPS: usize = 1 << 23;
+
 pub fn activate_program(
     wasm: &[u8],
     codehash: &[u8; 32],
@@ -283,6 +287,7 @@ pub fn activate_program(
         page_limit,
         debug,
         gas,
+        MAX_WAVM_OPS,
     )
     .map_err(|e| StylusError::Activation(format!("{e}")))?;
 

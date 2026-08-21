@@ -138,9 +138,17 @@ fn assert_activation_round_trip(label: &str, wat: &[u8]) {
     let codehash = Bytes32::default();
     let stylus_version = 3u16;
     let mut gas = u64::MAX;
-    let (module, _stylus_data) =
-        Module::activate(&wasm, &codehash, stylus_version, 0, 65535, false, &mut gas)
-            .expect("activation");
+    let (module, _stylus_data) = Module::activate(
+        &wasm,
+        &codehash,
+        stylus_version,
+        0,
+        65535,
+        false,
+        &mut gas,
+        0,
+    )
+    .expect("activation");
 
     let activation_hash = module.hash();
     let bytes = module
@@ -639,7 +647,7 @@ fn compression_actually_shrinks_realistic_modules() {
     let codehash = Bytes32::default();
     let mut gas = u64::MAX;
     let (module, _) =
-        Module::activate(&wasm, &codehash, 3u16, 0, 65535, false, &mut gas).expect("activate");
+        Module::activate(&wasm, &codehash, 3u16, 0, 65535, false, &mut gas, 0).expect("activate");
 
     let envelope = module.to_wavm_bytes().expect("to_wavm_bytes");
     // Envelope = MAGIC(4) + VERSION u32(4) + LEN u32(4) = 12 bytes.

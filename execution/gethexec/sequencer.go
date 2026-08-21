@@ -69,12 +69,14 @@ var (
 	callDataUnitsBacklogGauge               = metrics.NewRegisteredGauge("arb/sequencer/calldataunitsbacklog", nil)
 	currentSurplusGauge                     = metrics.NewRegisteredGauge("arb/sequencer/currentsurplus", nil)
 	expectedSurplusGauge                    = metrics.NewRegisteredGauge("arb/sequencer/expectedsurplus", nil)
-	// number of blocks ended because of block gas limit at least one tx wasn't included in block because of gas limit)
+	// number of blocks ended because of block gas limit at least one tx wasn't included in block because of gas limit
 	gasLimitedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/gaslimited", nil)
 	// number of blocks ended because of txes data size limit
 	dataLimitedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/datalimited", nil)
 	// number of blocks ended because of exhausting the transactions to sequence
 	txExhaustedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/txexhausted", nil)
+	// number of blocks ended because the block's time was up with txs still queued
+	timeLimitedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/timelimited", nil)
 	// forwarder/pause wait + validation before sequencing an express lane submission
 	expressLanePreSequenceWaitHistogram = metrics.NewRegisteredHistogram("arb/sequencer/timeboost/expresslane/presequencewait", nil, metrics.NewBoundedHistogramSample())
 )
@@ -98,7 +100,7 @@ type SequencerConfig struct {
 	ExpectedSurplusHardThreshold string           `koanf:"expected-surplus-hard-threshold" reload:"hot"`
 	EnableProfiling              bool             `koanf:"enable-profiling" reload:"hot"`
 	Timeboost                    timeboost.Config `koanf:"timeboost"`
-	ExperimentalPGA              PGAConfig        `koanf:"experimental-pga"`
+	PGA                          PGAConfig        `koanf:"pga"`
 	Dangerous                    DangerousConfig  `koanf:"dangerous"`
 	FilterSetReportingInterval   time.Duration    `koanf:"filter-set-reporting-interval"`
 	expectedSurplusSoftThreshold int
@@ -121,7 +123,7 @@ type PGAConfig struct {
 func (c *SequencerConfig) PGARoundLength() time.Duration {
 	// RoundsPerBlock is a small round count bounded by Validate; the conversion cannot overflow.
 	// #nosec G115
-	return c.MaxBlockSpeed / time.Duration(c.ExperimentalPGA.RoundsPerBlock)
+	return c.MaxBlockSpeed / time.Duration(c.PGA.RoundsPerBlock)
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -180,8 +182,8 @@ func (c *SequencerConfig) Validate() error {
 	if c.FilterSetReportingInterval <= 0 {
 		return fmt.Errorf("filter-set-reporting-interval must be positive, got %s", c.FilterSetReportingInterval)
 	}
-	if c.ExperimentalPGA.RoundsPerBlock == 0 {
-		return errors.New("experimental-pga.rounds-per-block must be at least 1")
+	if c.PGA.RoundsPerBlock == 0 {
+		return errors.New("pga.rounds-per-block must be at least 1")
 	}
 	if c.PollInterval <= 0 {
 		return fmt.Errorf("sequencer poll-interval must be positive, got %v", c.PollInterval)
@@ -213,7 +215,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
 	Timeboost:                    timeboost.DefaultConfig,
-	ExperimentalPGA:              DefaultPGAConfig,
+	PGA:                          DefaultPGAConfig,
 	Dangerous:                    DefaultDangerousConfig,
 	FilterSetReportingInterval:   time.Minute,
 }
@@ -236,7 +238,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.StringSlice(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
 	timeboost.AddOptions(prefix+".timeboost", f)
-	PGAAddOptions(prefix+".experimental-pga", f)
+	PGAAddOptions(prefix+".pga", f)
 
 	DangerousAddOptions(prefix+".dangerous", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
@@ -258,8 +260,8 @@ func DangerousAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 func PGAAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".dangerous-force-fifo", DefaultPGAConfig.DangerousForceFIFO, "EXPERIMENTAL: force FIFO transaction ordering even when the chain collects tips, disabling the priority gas auction (PGA)")
-	f.Uint(prefix+".rounds-per-block", DefaultPGAConfig.RoundsPerBlock, "EXPERIMENTAL: number of PGA rounds per block; the round length is max-block-speed divided by this value")
+	f.Bool(prefix+".dangerous-force-fifo", DefaultPGAConfig.DangerousForceFIFO, "force FIFO transaction ordering even when the chain collects tips, disabling the priority gas auction (PGA)")
+	f.Uint(prefix+".rounds-per-block", DefaultPGAConfig.RoundsPerBlock, "number of PGA rounds per block; the round length is max-block-speed divided by this value")
 }
 
 func EventFilterAddOptions(prefix string, f *pflag.FlagSet) {
@@ -448,9 +450,8 @@ func (q *synchronizedTxQueue) Len() int {
 }
 
 type pendingQueueItemsResults struct {
-	block                   *types.Block
-	hooks                   *FullSequencingHooks
-	ordererSizeLimitReached bool
+	block *types.Block
+	hooks *FullSequencingHooks
 }
 
 var _ txOrdererSequencer = (*Sequencer)(nil)
@@ -1198,9 +1199,9 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 		return nil, config.MaxBlockSpeed
 	}
 
-	var orderer txOrderer = newFIFOTxOrderer(s, config.MaxBlockSpeed, baseFee)
-	if collectTips && !config.ExperimentalPGA.DangerousForceFIFO {
-		orderer = NewPGATxOrderer(ctx, s, config.ExperimentalPGA.RoundsPerBlock, config.PGARoundLength(), baseFee)
+	var orderer txOrderer = newFIFOTxOrderer(s, config.PollInterval, config.MaxBlockSpeed, baseFee)
+	if collectTips && !config.PGA.DangerousForceFIFO {
+		orderer = NewPGATxOrderer(ctx, s, config.PGA.RoundsPerBlock, config.PGARoundLength(), baseFee)
 	}
 
 	s.blockTxOrderer = containers.Some(orderer)
@@ -1270,10 +1271,7 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrde
 		return nil, config.MaxBlockSpeed
 	}
 	if !orderer.StartBlock(statedb) {
-		// No regular txs to sequence right now; re-check on the idle poll
-		// cadence rather than waiting a full block interval. This matches the
-		// wait decideSequencingTurn uses when there is no pending work.
-		return nil, min(config.PollInterval, config.MaxBlockSpeed)
+		return nil, orderer.BlockInterval()
 	}
 
 	hooks = MakeSequencingHooks(
@@ -1366,9 +1364,8 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrde
 	}
 
 	s.pendingQueueItemsResults = &pendingQueueItemsResults{
-		block:                   block,
-		hooks:                   hooks,
-		ordererSizeLimitReached: orderer.SizeLimitReached(),
+		block: block,
+		hooks: hooks,
 	}
 
 	if madeBlock {
@@ -1425,7 +1422,7 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 
 		madeBlock := false
 		var blockTxSize int64
-		blockGasLimitReached := false
+		blockOutOfGas := false
 		for _, st := range hooks.sequencedTxs {
 			queueItem := st.queueItem
 			err := st.err
@@ -1437,7 +1434,7 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 			if errors.Is(err, core.ErrGasLimitReached) {
 				// There's not enough gas left in the block for this tx.
 				if madeBlock {
-					blockGasLimitReached = true
+					blockOutOfGas = true
 					// There was already an earlier tx in the block; retry in a fresh block.
 					s.txRetryQueue.Push(queueItem)
 					continue
@@ -1457,13 +1454,15 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 
 		if madeBlock {
 			blockTxSizeHistogram.Update(blockTxSize)
-			if s.pendingQueueItemsResults.ordererSizeLimitReached {
+			finishReason := s.pendingQueueItemsResults.hooks.ordererStatus
+			if finishReason == blockSizeLimitReached {
 				dataLimitedBlocksCounter.Inc(1)
-			} else if blockGasLimitReached {
+			} else if finishReason == blockGasLimitReached || blockOutOfGas {
 				gasLimitedBlocksCounter.Inc(1)
-			} else {
-				// no transactions were skipped due to block size or gas limit
+			} else if finishReason == exhaustedQueue {
 				txExhaustedBlocksCounter.Inc(1)
+			} else if finishReason == blockTimeLimitReached {
+				timeLimitedBlocksCounter.Inc(1)
 			}
 		}
 	}

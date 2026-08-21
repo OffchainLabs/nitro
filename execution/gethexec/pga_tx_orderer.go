@@ -10,6 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/execution/gethexec/pga"
 )
@@ -22,10 +23,9 @@ type pgaTxOrderer struct {
 	mempool  *pga.Mempool[txQueueItem]
 	schedule *pga.Schedule
 
-	baseFee          *big.Int
-	roundsPerBlock   uint
-	roundLength      time.Duration
-	sizeLimitReached bool
+	baseFee        *big.Int
+	roundsPerBlock uint
+	roundLength    time.Duration
 }
 
 var _ txOrderer = (*pgaTxOrderer)(nil)
@@ -44,17 +44,26 @@ func (p *pgaTxOrderer) CurrentRound() uint64 {
 	return p.schedule.Round()
 }
 
-func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize int) (txQueueItem, bool) {
+func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, ordererStatus) {
+	if blockGasLeft < params.TxGas {
+		p.mempool.ApplyRoundBoost()
+		return txQueueItem{}, blockGasLimitReached
+	}
+
 	for {
-		if p.mempool.PriorityQueueLen() == 0 || p.schedule.RoundIsOver() {
+		if queueEmpty := p.mempool.PriorityQueueLen() == 0; queueEmpty || p.schedule.RoundIsOver() {
 			p.mempool.ApplyRoundBoost()
 			if p.schedule.IsLastRound() {
-				return txQueueItem{}, false
+				limitReason := blockTimeLimitReached
+				if queueEmpty {
+					limitReason = exhaustedQueue
+				}
+				return txQueueItem{}, limitReason
 			}
 			err := p.schedule.WaitAndAdvanceRound(p.ctx)
 			if err != nil {
 				log.Warn("PGA round wait interrupted; ending the block early", "err", err)
-				return txQueueItem{}, false
+				return txQueueItem{}, blockInterrupted
 			}
 			p.mempool.PushBatch(p.seq.drainValidatedTxs(statedb, p.baseFee))
 		}
@@ -66,12 +75,12 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 		// If the next tx is too big to fit in the remaining block space, we add it back to the mempool and stop sequencing.
 		// The sequencer will finalize the block and start a new one, which will have a fresh mempool and schedule.
 		if item.txSize > remainingBlockSize {
-			p.sizeLimitReached = true
 			p.mempool.Push(item)
-			return txQueueItem{}, false
+			p.mempool.ApplyRoundBoost()
+			return txQueueItem{}, blockSizeLimitReached
 		}
 
-		return item, true
+		return item, fetchedTx
 	}
 }
 
@@ -92,14 +101,12 @@ func (p *pgaTxOrderer) TakeRemaining() []txQueueItem {
 	return p.mempool.TakeRemaining()
 }
 
-func (p *pgaTxOrderer) SizeLimitReached() bool {
-	return p.sizeLimitReached
-}
-
 func (p *pgaTxOrderer) OnTxInclusion(queueItem txQueueItem) {
 	p.mempool.RecordIncludedTx(queueItem.GetPriority())
 }
 
+// BlockInterval spans the block's elapsed rounds; a no-work block never leaves round 1, so
+// empty attempts retry on the round cadence.
 func (p *pgaTxOrderer) BlockInterval() time.Duration {
 	return p.schedule.ElapsedInterval()
 }

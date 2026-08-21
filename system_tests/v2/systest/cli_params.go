@@ -117,8 +117,8 @@ func isDryRun() bool { return *flagDryRun }
 // -systest.test-timeout. A test's own WithTimeout overrides it; 0 means no deadline.
 func testTimeout() time.Duration { return *flagTestTimeout }
 
-// configuredCapacity returns -systest.max-weight, or GOMAXPROCS if unset.
-func configuredCapacity() int {
+// baseCapacity returns -systest.max-weight, or GOMAXPROCS if unset.
+func baseCapacity() int {
 	c := *flagMaxWeight
 	if c <= 0 {
 		c = runtime.GOMAXPROCS(0)

@@ -74,6 +74,7 @@ pub unsafe extern "C" fn programs__activate_v2(
             page_limit,
             debug,
             gas_left,
+            0,
         ) {
             Ok((module, data)) => {
                 StaticMem.write_u64(gas_ptr, *gas_left);

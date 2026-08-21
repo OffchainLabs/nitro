@@ -5,6 +5,8 @@ package gethexec
 
 import (
 	"testing"
+
+	"github.com/offchainlabs/nitro/arbos/programs"
 )
 
 func TestStylusTargetConfigValidateNativeStackSize(t *testing.T) {
@@ -23,7 +25,7 @@ func TestStylusTargetConfigValidateNativeStackSize(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := DefaultStylusTargetConfig
+			c := programs.DefaultStylusTargetConfig
 			c.NativeStackSize = tt.size
 			err := c.Validate()
 			if tt.wantErr && err == nil {

@@ -1540,7 +1540,7 @@ func testMemoryGrowMachineLimit(t *testing.T, jit bool, builderOpts ...func(*Nod
 func testMaxStylusOpenPages(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	const pageLimit uint16 = 20
 	builderOpts = append(builderOpts, func(b *NodeBuilder) {
-		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
+		b.execConfig.StylusTarget.MaxOpenPages = pageLimit
 	})
 	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
@@ -1601,7 +1601,7 @@ func TestProgramDelayedInboxPageLimitBypassNative(t *testing.T) {
 }
 
 // testDelayedInboxPageLimitBypass verifies that a Stylus call which would
-// exceed MaxStylusOpenPages lands on-chain when delivered via the delayed
+// exceed MaxOpenPages lands on-chain when delivered via the delayed
 // inbox (censorship resistance). Delayed-inbox messages cannot be filtered
 // post-commitment, so addPages must skip FilterTx for them.
 //
@@ -1615,7 +1615,7 @@ func TestProgramDelayedInboxPageLimitBypassNative(t *testing.T) {
 func testDelayedInboxPageLimitBypass(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	const pageLimit uint16 = 20
 	builderOpts = append(builderOpts, func(b *NodeBuilder) {
-		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
+		b.execConfig.StylusTarget.MaxOpenPages = pageLimit
 	})
 	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
@@ -1653,7 +1653,7 @@ func testMaxStylusOpenPagesInitialFootprint(t *testing.T, jit bool, builderOpts 
 	// arbos/programs/programs.go.
 	const pageLimit uint16 = 50
 	builderOpts = append(builderOpts, func(b *NodeBuilder) {
-		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
+		b.execConfig.StylusTarget.MaxOpenPages = pageLimit
 	})
 	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
@@ -1826,7 +1826,7 @@ func testNestedStylusCumulativeFootprintNodeLevel(t *testing.T, jit bool, builde
 	// node-level MaxOpenPages path this test is designed to exercise.
 	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithArbOSVersion(params.ArbosVersion_51)
-		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
+		b.execConfig.StylusTarget.MaxOpenPages = pageLimit
 	})
 	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
@@ -3005,7 +3005,11 @@ func checkWasmStoreContent(t *testing.T, wasmDB ethdb.KeyValueStore, expectedTar
 					t.Fatalf("Failed to read activated asm for target: %v, module: %v", target, module)
 				}
 			}()
-			return rawdb.ReadActivatedAsm(wasmDB, wasmTarget, module)
+			val, err := rawdb.ReadActivatedAsm(wasmDB, wasmTarget, module)
+			if err != nil {
+				t.Fatalf("read activated asm failed: %v", err)
+			}
+			return val
 		}()
 	}
 	for _, module := range modules {

@@ -527,7 +527,9 @@ func testHandleNativeStackOverflow() error {
 	}
 	wasmStore := db.Database().CodeDB().WasmStore()
 	batch := wasmStore.NewBatch()
-	rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, craneliftAsm)
+	if err := rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, craneliftAsm); err != nil {
+		return fmt.Errorf("failed to write cranelift ASM: %w", err)
+	}
 	if err := batch.Write(); err != nil {
 		return fmt.Errorf("failed to persist cranelift ASM to wasm store: %w", err)
 	}
@@ -654,7 +656,9 @@ func testHandleNativeStackOverflowAtMax() error {
 	}
 	wasmStore := db.Database().CodeDB().WasmStore()
 	batch := wasmStore.NewBatch()
-	rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, craneliftAsm)
+	if err := rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, craneliftAsm); err != nil {
+		return fmt.Errorf("failed to write cranelift ASM: %w", err)
+	}
 	if err := batch.Write(); err != nil {
 		return fmt.Errorf("failed to persist cranelift ASM: %w", err)
 	}
@@ -722,7 +726,9 @@ func testRetryRestoresStylusPages() error {
 	}
 	wasmStore := db.Database().CodeDB().WasmStore()
 	batch := wasmStore.NewBatch()
-	rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, craneliftAsm)
+	if err := rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, craneliftAsm); err != nil {
+		return fmt.Errorf("failed to write cranelift ASM: %w", err)
+	}
 	if err := batch.Write(); err != nil {
 		return fmt.Errorf("failed to persist cranelift ASM to wasm store: %w", err)
 	}
@@ -847,7 +853,10 @@ func testCraneliftCompilationAndCache() error {
 
 	// Verify wasm store is initially empty for this module.
 	wasmStore := db.Database().CodeDB().WasmStore()
-	existing := rawdb.ReadActivatedAsm(wasmStore, craneliftTarget, moduleHash)
+	existing, err := rawdb.ReadActivatedAsm(wasmStore, craneliftTarget, moduleHash)
+	if err != nil {
+		return fmt.Errorf("error reading asm: %w", err)
+	}
 	if len(existing) > 0 {
 		return fmt.Errorf("expected empty wasm store, but found %d bytes", len(existing))
 	}
@@ -863,7 +872,9 @@ func testCraneliftCompilationAndCache() error {
 
 	// Persist to wasm store.
 	batch := wasmStore.NewBatch()
-	rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, craneliftAsm)
+	if err := rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, craneliftAsm); err != nil {
+		return fmt.Errorf("failed to write cranelift ASM: %w", err)
+	}
 	if err := batch.Write(); err != nil {
 		return fmt.Errorf("failed to persist cranelift ASM: %w", err)
 	}
@@ -948,7 +959,7 @@ func testActivateWithCraneliftTarget() error {
 	_, asmMap, err := activateProgramInternal(
 		common.Address{}, common.Hash{}, wasm, 128, 1, 0, true, &gas,
 		[]rawdb.WasmTarget{craneliftTarget},
-		false, false,
+		false, false, &StylusTargetConfig{}, &core.MessageRunContext{},
 	)
 	if err != nil {
 		return fmt.Errorf("activation with cranelift target failed: %w", err)
@@ -962,7 +973,7 @@ func testActivateWithCraneliftTarget() error {
 	_, asmMap, err = activateProgramInternal(
 		common.Address{}, common.Hash{}, wasm, 128, 1, 0, true, &gas,
 		[]rawdb.WasmTarget{localTarget, craneliftTarget},
-		false, false,
+		false, false, &StylusTargetConfig{}, &core.MessageRunContext{},
 	)
 	if err != nil {
 		return fmt.Errorf("activation with both targets failed: %w", err)
