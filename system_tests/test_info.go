@@ -23,7 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/util"
 )
 
-var simulatedChainID = big.NewInt(1337)
+var testL1ChainID = big.NewInt(1337)
 
 type AccountInfo struct {
 	Address    common.Address
@@ -78,7 +78,7 @@ func NewArbTestInfo(t *testing.T, chainId *big.Int) *BlockchainTestInfo {
 }
 
 func NewL1TestInfo(t *testing.T) *BlockchainTestInfo {
-	return NewBlockChainTestInfo(t, types.NewPragueSigner(simulatedChainID), big.NewInt(params.GWei*100), params.TxGas)
+	return NewBlockChainTestInfo(t, types.NewPragueSigner(testL1ChainID), big.NewInt(params.GWei*100), params.TxGas)
 }
 
 func GetTestKeyForAccountName(t *testing.T, name string) *ecdsa.PrivateKey {

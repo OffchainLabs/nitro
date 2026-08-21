@@ -141,9 +141,8 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	// SimulatedBeacon running in OnDemand block production mode
-	// produces blocks in the future so we need this to avoid the batch poster
-	// not posting because the txs appear to be in the future.
+	// On-demand L1 block production can produce blocks in the future, so avoid
+	// the batch poster treating the transactions as future-dated.
 	builder.nodeConfig.BatchPoster.MaxDelay = -time.Hour
 
 	ownerAuth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)

@@ -92,7 +92,7 @@ func EnsureTxSucceededWithTimeout(ctx context.Context, client *ethclient.Client,
 	if err != nil {
 		return nil, fmt.Errorf("waitForTx (tx=%s) got: %w", tx.Hash().Hex(), err)
 	}
-	if receipt.Status == types.ReceiptStatusSuccessful && tx.ChainId().Cmp(simulatedChainID) == 0 {
+	if receipt.Status == types.ReceiptStatusSuccessful && tx.ChainId().Cmp(testL1ChainID) == 0 {
 		for {
 			safeBlock, err := client.HeaderByNumber(ctx, big.NewInt(int64(rpc.SafeBlockNumber)))
 			if err != nil {

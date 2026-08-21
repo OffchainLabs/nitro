@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -72,13 +71,12 @@ func TestValidateGenesisAssertion(t *gotesting.T) {
 		MinimumAssertionPeriod: 0,
 	}
 
-	_, l2nodeA, _, _, _, _, _, l1client, l1stack, _, _, _, l2blockchain, addresses := createCompleteTestNodeOnL1(
+	_, l2nodeA, _, _, _, _, l1client, _, _, _, l2blockchain, addresses := createCompleteTestNodeOnL1(
 		t,
 		ctx,
 		true,
 		nil,
 		l2chainConfig,
-		nil,
 		sconf,
 		l2info,
 		false,
@@ -88,7 +86,6 @@ func TestValidateGenesisAssertion(t *gotesting.T) {
 	if l2blockchain == nil || addresses == nil {
 		t.Fatal("Both l2blockchain and addresses have to be non nil")
 	}
-	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
 
 	// Chain assertion info contains a BeforeState and AfterState which are used to dictate if genesis
@@ -149,7 +146,6 @@ func createCompleteTestNodeOnL1(
 	isSequencer bool,
 	nodeConfig *arbnode.Config,
 	chainConfig *params.ChainConfig,
-	_ *node.Config,
 	rollupStackConf setup.RollupStackConfig,
 	l2infoIn info,
 	useExternalSigner bool,
@@ -157,12 +153,12 @@ func createCompleteTestNodeOnL1(
 	execConfigOpts ...func(*gethexec.Config),
 ) (
 	l2info info, currentNode *arbnode.Node, execNode *gethexec.ExecutionNode, l2client *ethclient.Client, l2stack *node.Node,
-	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
+	l1info info, l1client *ethclient.Client,
 	assertionChain *sol.AssertionChain, stakeTokenAddr common.Address, asserterOpts *bind.TransactOpts, l2blockchain *core.BlockChain, addresses *chaininfo.RollupAddresses,
 ) {
 	// First set up L1 and deploy contracts
 	var signerCfg *dataposterconfig.ExternalSignerConfig
-	l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr, asserterOpts, signerCfg = setupL1WithRollupAddresses(
+	l1info, l1client, addresses, stakeTokenAddr, asserterOpts, signerCfg = setupL1WithRollupAddresses(
 		t, ctx, rollupStackConf, useExternalSigner, nodeConfig, chainConfig, enableCustomDA,
 	)
 
@@ -185,8 +181,8 @@ func setupL1WithRollupAddresses(
 	chainConfig *params.ChainConfig,
 	enableCustomDA bool,
 ) (
-	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
-	addresses *chaininfo.RollupAddresses, stakeTokenAddr common.Address, asserterOpts *bind.TransactOpts,
+	l1info info, l1client *ethclient.Client, addresses *chaininfo.RollupAddresses,
+	stakeTokenAddr common.Address, asserterOpts *bind.TransactOpts,
 	signerCfg *dataposterconfig.ExternalSignerConfig,
 ) {
 	var srv *externalsignertest.SignerServer
@@ -208,8 +204,8 @@ func setupL1WithRollupAddresses(
 		chainConfig = chaininfo.ArbitrumDevTestChainConfig()
 	}
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
-	withoutClientWrapper := false
-	l1info, l1client, l1backend, l1stack, _, _ = createTestL1BlockChain(t, nil, withoutClientWrapper, testhelpers.CreateStackConfigForTest(""), nil)
+	// The external harness registers its process cleanup directly on the test.
+	l1info, l1client, _, _, _, _, _ = createExternalL1(t, ctx, nil, false, externalL1Binary(t), nil)
 
 	var err error
 	if useExternalSigner {
@@ -268,7 +264,7 @@ func setupL1WithRollupAddresses(
 	l1info.SetContract("Rollup", addresses.Rollup)
 	l1info.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
 
-	return l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr, asserterOpts, signerCfg
+	return l1info, l1client, addresses, stakeTokenAddr, asserterOpts, signerCfg
 }
 
 func createL2NodeWithRollupAddresses(
