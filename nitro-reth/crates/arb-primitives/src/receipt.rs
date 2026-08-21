@@ -639,6 +639,7 @@ impl<'de> serde::Deserialize<'de> for ArbReceipt {
 // Compact — storage encoding (includes gas_used_for_l1)
 // ---------------------------------------------------------------------------
 
+#[cfg(not(target_family = "wasm"))]
 impl reth_codecs::Compact for ArbReceipt {
     fn to_compact<B>(&self, buf: &mut B) -> usize
     where
@@ -720,6 +721,7 @@ impl reth_codecs::Compact for ArbReceipt {
 // Compress / Decompress — delegates to Compact for database storage
 // ---------------------------------------------------------------------------
 
+#[cfg(not(target_family = "wasm"))]
 impl reth_db_api::table::Compress for ArbReceipt {
     type Compressed = Vec<u8>;
 
@@ -728,6 +730,7 @@ impl reth_db_api::table::Compress for ArbReceipt {
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
 impl reth_db_api::table::Decompress for ArbReceipt {
     fn decompress(value: &[u8]) -> Result<Self, reth_codecs::DecompressError> {
         let (obj, _) = reth_codecs::Compact::from_compact(value, value.len());
