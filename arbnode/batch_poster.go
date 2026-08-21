@@ -317,7 +317,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	GasRefunderAddress:             "",
 	ExtraBatchGas:                  50_000,
 	Post4844Blobs:                  false,
-	IgnoreBlobPrice:                false,
+	IgnoreBlobPrice:                true,
 	DataPoster:                     dataposterconfig.DefaultDataPosterConfig,
 	ParentChainWallet:              DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:                   "",
