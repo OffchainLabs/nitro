@@ -166,7 +166,9 @@ alloy-trie = { version = "0.9.4" }
 alloy-hardforks = { version = "0.4.5" }
 
 # Revm
-revm = { version = "36.0.0", features = [
+revm = { version = "36.0.0", default-features = false, features = [
+    "std",
+    "tracer",
     "optional_balance_check",
     "optional_eip3541",
     "optional_eip3607",

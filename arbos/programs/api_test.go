@@ -57,7 +57,7 @@ func buildAddPagesTestHandler(t *testing.T, coinbase common.Address, runCtx *cor
 	t.Helper()
 	db := state.NewDatabaseForTesting()
 	statedb, _ := state.New(types.EmptyRootHash, db)
-	statedb.Database().CodeDB().SetArbNodeConfig(&ArbNodeConfig{MaxOpenPages: maxPages})
+	statedb.Database().CodeDB().SetArbNodeConfig(&StylusTargetConfig{MaxOpenPages: maxPages})
 	evm := vm.NewEVM(vm.BlockContext{Coinbase: coinbase, ArbOSVersion: arbosVersion}, statedb, params.TestChainConfig, vm.Config{})
 	caller := common.Address{}
 	acting := common.Address{1}
@@ -382,7 +382,7 @@ func buildEnforceTestArgs(t *testing.T, maxPages uint16, setConfig bool, arbosVe
 	db := state.NewDatabaseForTesting()
 	statedb, _ := state.New(types.EmptyRootHash, db)
 	if setConfig {
-		statedb.Database().CodeDB().SetArbNodeConfig(&ArbNodeConfig{MaxOpenPages: maxPages})
+		statedb.Database().CodeDB().SetArbNodeConfig(&StylusTargetConfig{MaxOpenPages: maxPages})
 	}
 	evm := vm.NewEVM(vm.BlockContext{ArbOSVersion: arbosVersion}, statedb, params.TestChainConfig, vm.Config{})
 	return evm, statedb

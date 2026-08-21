@@ -54,7 +54,7 @@ var defaultSequencerConfig = gethexec.SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	ExpectedSurplusGasPriceMode:  "CalldataPrice",
 	EnableProfiling:              false,
-	ExperimentalPGA:              gethexec.DefaultPGAConfig,
+	PGA:                          gethexec.DefaultPGAConfig,
 	FilterSetReportingInterval:   time.Minute,
 }
 

@@ -1286,11 +1286,23 @@ type StateOverride map[common.Address]OverrideAccount
 func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams, blockHex string) (uint64, error) {
 	var gas hexutil.Uint64
 	err := client.CallContext(ctx, &gas, "eth_estimateGas", params, blockHex)
-	// If eth_estimateGas fails due to a revert, we try again with eth_call to get a detailed error.
-	if err != nil && headerreader.IsExecutionReverted(err) {
-		err = client.CallContext(ctx, nil, "eth_call", params, blockHex)
+	estimate, err := util.CheckedGasEstimate(uint64(gas), err)
+	if err != nil {
+		return 0, detailedEstimateGasError(ctx, client, err, params, blockHex)
 	}
-	return uint64(gas), err
+	return estimate, nil
+}
+
+// detailedEstimateGasError enriches a reverted eth_estimateGas error with the
+// reason reported by eth_call. It always returns a non-nil error.
+func detailedEstimateGasError(ctx context.Context, client rpc.ClientInterface, estimateErr error, callArgs ...interface{}) error {
+	if !headerreader.IsExecutionReverted(estimateErr) {
+		return estimateErr
+	}
+	if callErr := client.CallContext(ctx, nil, "eth_call", callArgs...); callErr != nil {
+		return fmt.Errorf("%w (eth_call reported: %w)", estimateErr, callErr)
+	}
+	return estimateErr
 }
 
 func (b *BatchPoster) estimateGasSimple(
@@ -1384,15 +1396,14 @@ func (b *BatchPoster) estimateGasForFutureTx(
 	}
 	var gas hexutil.Uint64
 	err = rawRpcClient.CallContext(ctx, &gas, "eth_estimateGas", gasParams, rpc.PendingBlockNumber, stateOverride)
+	estimate, err := util.CheckedGasEstimate(uint64(gas), err)
 	if err != nil {
 		sequencerMessageHeader := sequencerMessage
 		if len(sequencerMessageHeader) > 33 {
 			sequencerMessageHeader = sequencerMessageHeader[:33]
 		}
 		// If eth_estimateGas fails due to a revert, we try again with eth_call to get a detailed error.
-		if headerreader.IsExecutionReverted(err) {
-			err = rawRpcClient.CallContext(ctx, nil, "eth_call", gasParams, rpc.PendingBlockNumber, stateOverride)
-		}
+		err = detailedEstimateGasError(ctx, rawRpcClient, err, gasParams, rpc.PendingBlockNumber, stateOverride)
 		log.Warn(
 			"error estimating gas for batch",
 			"err", err,
@@ -1403,7 +1414,7 @@ func (b *BatchPoster) estimateGasForFutureTx(
 		)
 		return 0, fmt.Errorf("error estimating gas for batch: %w", err)
 	}
-	return uint64(gas) + config.ExtraBatchGas, nil
+	return estimate + config.ExtraBatchGas, nil
 }
 
 const ethPosBlockTime = 12 * time.Second

@@ -65,6 +65,10 @@ func buildL1L2Node(t *testing.T, ctx context.Context, spec Spec, overrides overr
 
 	nodeConfig, chainConfig, execCfg, stackCfg := seedConfigs(t, spec, overrides, arbnode.ConfigDefaultL1Test())
 
+	if spec.Validate {
+		mustEnableValidation(t, execCfg, nodeConfig, "validation requested but no wasm machines found")
+	}
+
 	var rb rollbackGuard
 	defer rb.run()
 
