@@ -10,7 +10,7 @@ use sp1_core_executor::{MinimalExecutor, Program, UserMode};
 #[derive(Parser)]
 #[command(about = "Validate an Arbitrum block in SP1")]
 struct Cli {
-    /// Path to the SP1 replay program ELF, produced by replay-builder.
+    /// Path to the *dumped* SP1 replay program ELF, produced by replay-builder.
     #[arg(long)]
     program: PathBuf,
 }
@@ -23,6 +23,9 @@ fn main() -> anyhow::Result<()> {
     let program = Program::from(&elf).map_err(|e| anyhow::anyhow!("parse program ELF: {e:#}"))?;
 
     let mut executor = MinimalExecutor::<UserMode>::simple(Arc::new(program));
+    // Placeholder for the rkyv ValidationInput (next PR): any non-sentinel payload makes the
+    // bootloaded guest run its (mocked) validation.
+    replay_io::send::validation_mode(&mut executor, &[]);
     if executor.execute_chunk().is_some() {
         bail!("execution failed: executor returned a trace chunk unexpectedly");
     }
