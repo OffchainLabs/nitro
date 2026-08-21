@@ -70,6 +70,12 @@ func TestSequencerConfigValidatePGA(t *testing.T) {
 	}
 }
 
+func TestPGARoundLength(t *testing.T) {
+	if got := pgaRoundLength(250*time.Millisecond, 2); got != 125*time.Millisecond {
+		t.Errorf("expected round length 125ms, got %v", got)
+	}
+}
+
 // TestEndSequencingDelayedCommitOutcome verifies that the delayed-message pop
 // is keyed on the commit outcome reported to EndSequencing, not on the staged
 // result: a failed durable write leaves the message queued for retry, a
