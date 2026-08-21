@@ -409,8 +409,8 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		checkEip7623 = true
 		useEip7623 = false
 	}
-	if !opts.Config().IgnoreBlobPrice {
-		log.Warn("the dynamic price calculation and fallback to calldata is deprecated post-Amsterdam and may not function correctly if used; set batch-poster.ignore-blob-price=true to always post blobs when the parent chain supports them")
+	if opts.Config().Post4844Blobs && !opts.Config().IgnoreBlobPrice {
+		log.Warn("the dynamic price calculation and fallback to calldata is deprecated post-Amsterdam and may not function correctly if used; set --node.batch-poster.ignore-blob-price=true to always post blobs when --node.batch-poster.post-4844-blobs is enabled and the parent chain supports them")
 	}
 	seqInboxABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
 	if err != nil {
