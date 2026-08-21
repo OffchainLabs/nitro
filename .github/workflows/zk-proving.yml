@@ -85,7 +85,7 @@ jobs:
           grep -q "Validation MOCKED" run.log
 
       # The recording tests boot an external geth binary as the L1
-      # (see resolveExternalL1Fork in system_tests/common_test.go).
+      # (see externalL1Binary in system_tests/common_test.go).
       - name: Build external L1 geth
         run: make -j8 build-upstream-geth
 
