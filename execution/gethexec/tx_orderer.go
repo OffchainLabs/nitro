@@ -102,20 +102,26 @@ type txOrderer interface {
 	BlockInterval() time.Duration
 }
 
+// txOrdererConfig carries the constants fixed for one block that every tx orderer uses.
+type txOrdererConfig struct {
+	baseFee              *big.Int
+	maxBlockTxCandidates int
+	maxBlockSpeed        time.Duration
+}
+
 // txOrdererSequencer is the sequencer functionality the tx orderers depend on.
 type txOrdererSequencer interface {
 	// drainValidatedTxs drains, validates, and nonce-prechecks the pending txs for the next
 	// block, in priority order.
-	drainValidatedTxs(statedb *state.StateDB, baseFee *big.Int) []txQueueItem
+	drainValidatedTxs(statedb *state.StateDB, baseFee *big.Int, maxQueueItems int) []txQueueItem
 }
 
 // fifoTxOrderer yields the block's candidates in the order the sequencer drained them.
 type fifoTxOrderer struct {
-	seq           txOrdererSequencer
-	baseFee       *big.Int
-	pollInterval  time.Duration
-	blockInterval time.Duration
-	started       bool
+	txOrdererConfig
+	seq          txOrdererSequencer
+	pollInterval time.Duration
+	started      bool
 	// The embedded fetcher holds the not-yet-yielded candidates; set by StartBlock, consumed
 	// through NextQueueItem, and emptied by TakeRemaining.
 	fixedTxFetcher
@@ -123,18 +129,17 @@ type fifoTxOrderer struct {
 
 var _ txOrderer = (*fifoTxOrderer)(nil)
 
-func newFIFOTxOrderer(seq txOrdererSequencer, pollInterval time.Duration, blockInterval time.Duration, baseFee *big.Int) *fifoTxOrderer {
+func newFIFOTxOrderer(seq txOrdererSequencer, config txOrdererConfig, pollInterval time.Duration) *fifoTxOrderer {
 	return &fifoTxOrderer{
-		seq:           seq,
-		pollInterval:  pollInterval,
-		blockInterval: blockInterval,
-		baseFee:       baseFee,
+		txOrdererConfig: config,
+		seq:             seq,
+		pollInterval:    pollInterval,
 	}
 }
 
 // StartBlock drains the sequencer's pending txs as the block's candidates.
 func (o *fifoTxOrderer) StartBlock(statedb *state.StateDB) bool {
-	items := o.seq.drainValidatedTxs(statedb, o.baseFee)
+	items := o.seq.drainValidatedTxs(statedb, o.baseFee, o.maxBlockTxCandidates)
 	o.fixedTxFetcher = fixedTxFetcher{items: items}
 	o.started = len(items) > 0
 	return o.started
@@ -153,8 +158,8 @@ func (o *fifoTxOrderer) OnNonceGapResolved(queueItem txQueueItem) {
 // the idle poll cadence, matching the wait decideSequencingTurn uses when there is no pending work.
 func (o *fifoTxOrderer) BlockInterval() time.Duration {
 	if !o.started {
-		return min(o.pollInterval, o.blockInterval)
+		return min(o.pollInterval, o.maxBlockSpeed)
 	}
 
-	return o.blockInterval
+	return o.maxBlockSpeed
 }

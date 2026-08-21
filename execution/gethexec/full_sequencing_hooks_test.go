@@ -32,7 +32,7 @@ func TestFullSequencingHooksTxAcceptedReportsPGARound(t *testing.T) {
 			makePGAQueueItem(t, 0, 100),
 			makePGAQueueItem(t, 1, 0),
 		}
-		orderer := newTestPGATxOrderer(&stubOrdererSequencer{items: items})
+		orderer := newTestPGATxOrderer(newStubOrdererSequencer(items...))
 		if !orderer.StartBlock(nil) {
 			t.Fatal("StartBlock = false, want true")
 		}

@@ -54,6 +54,7 @@ var (
 	sequencerBacklogGauge                   = metrics.NewRegisteredGauge("arb/sequencer/backlog", nil)
 	sequencerQueueGauge                     = metrics.NewRegisteredGauge("arb/sequencer/queue/length", nil)
 	sequencerQueueHistogram                 = metrics.NewRegisteredHistogram("arb/sequencer/queue/histogram", nil, metrics.NewBoundedHistogramSample())
+	sequencerQueueThrottledCounter          = metrics.NewRegisteredCounter("arb/sequencer/queue/throttled", nil)
 	nonceCacheHitCounter                    = metrics.NewRegisteredCounter("arb/sequencer/noncecache/hit", nil)
 	nonceCacheMissCounter                   = metrics.NewRegisteredCounter("arb/sequencer/noncecache/miss", nil)
 	nonceCacheRejectedCounter               = metrics.NewRegisteredCounter("arb/sequencer/noncecache/rejected", nil)
@@ -91,6 +92,7 @@ type SequencerConfig struct {
 	Forwarder                    ForwarderConfig  `koanf:"forwarder"`
 	QueueSize                    int              `koanf:"queue-size"`
 	QueueTimeout                 time.Duration    `koanf:"queue-timeout" reload:"hot"`
+	MaxBlockTxCandidates         int              `koanf:"max-block-tx-candidates" reload:"hot"`
 	NonceCacheSize               int              `koanf:"nonce-cache-size" reload:"hot"`
 	MaxTxDataSize                int              `koanf:"max-tx-data-size" reload:"hot"`
 	NonceFailureCacheSize        int              `koanf:"nonce-failure-cache-size" reload:"hot"`
@@ -117,13 +119,11 @@ type PGAConfig struct {
 	RoundsPerBlock     uint `koanf:"rounds-per-block"`
 }
 
-// PGARoundLength returns the length of a PGA round. It is derived from the
+// pgaRoundLength returns the length of a PGA round. It is derived from the
 // block time rather than configured directly, so MaxBlockSpeed remains the
 // single source of truth.
-func (c *SequencerConfig) PGARoundLength() time.Duration {
-	// RoundsPerBlock is a small round count bounded by Validate; the conversion cannot overflow.
-	// #nosec G115
-	return c.MaxBlockSpeed / time.Duration(c.PGA.RoundsPerBlock)
+func pgaRoundLength(maxBlockSpeed time.Duration, roundsPerBlock uint) time.Duration {
+	return maxBlockSpeed / arbmath.SaturatingCast[time.Duration](roundsPerBlock)
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -185,8 +185,14 @@ func (c *SequencerConfig) Validate() error {
 	if c.PGA.RoundsPerBlock == 0 {
 		return errors.New("pga.rounds-per-block must be at least 1")
 	}
+	if roundLength := pgaRoundLength(c.MaxBlockSpeed, c.PGA.RoundsPerBlock); roundLength < 5*time.Millisecond {
+		return fmt.Errorf("pga round length must be at least 5ms, got %v (max-block-speed %v / pga.rounds-per-block %d)", roundLength, c.MaxBlockSpeed, c.PGA.RoundsPerBlock)
+	}
 	if c.PollInterval <= 0 {
 		return fmt.Errorf("sequencer poll-interval must be positive, got %v", c.PollInterval)
+	}
+	if c.MaxBlockTxCandidates <= 0 {
+		return fmt.Errorf("sequencer max-block-tx-candidates must be positive, got %d", c.MaxBlockTxCandidates)
 	}
 
 	return nil
@@ -204,6 +210,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	Forwarder:                   DefaultSequencerForwarderConfig,
 	QueueSize:                   1024,
 	QueueTimeout:                time.Second * 12,
+	MaxBlockTxCandidates:        3000,
 	NonceCacheSize:              1024,
 	// 95% of the default batch poster limit, leaving 5KB for headers and such
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
@@ -243,6 +250,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	DangerousAddOptions(prefix+".dangerous", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
+	f.Int(prefix+".max-block-tx-candidates", DefaultSequencerConfig.MaxBlockTxCandidates, "maximum number of queued transactions considered for a block at the same time (e.g., during a single PGA round)")
 	f.Int(prefix+".nonce-cache-size", DefaultSequencerConfig.NonceCacheSize, "size of the tx sender nonce cache")
 	f.Int(prefix+".max-tx-data-size", DefaultSequencerConfig.MaxTxDataSize, "maximum transaction size the sequencer will accept")
 	f.Int(prefix+".nonce-failure-cache-size", DefaultSequencerConfig.NonceFailureCacheSize, "number of transactions with too high of a nonce to keep in memory while waiting for their predecessor")
@@ -1075,14 +1083,22 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem, latestState *state.
 	return outputQueueItems
 }
 
-// drainQueueItems snapshots each queue's length and drains up to that many items in priority
-// order (auction resolution, then retry, then submitted). Safe for concurrent consumers: items
-// taken by another consumer between the snapshot and the read are skipped, and concurrent pushes
-// are left for the next drain.
-func (s *Sequencer) drainQueueItems() []txQueueItem {
-	capacity := len(s.timeboostAuctionResolutionTxQueue) + s.txRetryQueue.Len() + len(s.txQueue)
+// drainQueueItems drains the queues in priority order (auction resolution, then retry, then
+// submitted). The first two queues always drain fully; the submitted-tx queue only fills the
+// room left under maxQueueItems. Safe for concurrent consumers: items taken by another consumer
+// after the length snapshot are skipped, and concurrent pushes are left for the next drain.
+func (s *Sequencer) drainQueueItems(maxQueueItems int) []txQueueItem {
+	auctionResolutionLen := len(s.timeboostAuctionResolutionTxQueue)
+	retryQueueLen := s.txRetryQueue.Len()
+	capacityRemaining := max(maxQueueItems-(retryQueueLen+auctionResolutionLen), 0)
+	pendingTxQueueLen := len(s.txQueue)
+	txQueueLen := min(pendingTxQueueLen, capacityRemaining)
+	if txQueueLen < pendingTxQueueLen {
+		sequencerQueueThrottledCounter.Inc(int64(pendingTxQueueLen - txQueueLen))
+	}
+	capacity := auctionResolutionLen + retryQueueLen + txQueueLen
 	queueItems := make([]txQueueItem, 0, capacity)
-	for range len(s.timeboostAuctionResolutionTxQueue) {
+	for range auctionResolutionLen {
 		select {
 		case queueItem := <-s.timeboostAuctionResolutionTxQueue:
 			log.Debug("Popped the auction resolution tx", "txHash", queueItem.tx.Hash())
@@ -1090,7 +1106,7 @@ func (s *Sequencer) drainQueueItems() []txQueueItem {
 		default:
 		}
 	}
-	for range s.txRetryQueue.Len() {
+	for range retryQueueLen {
 		queueItem := s.txRetryQueue.Pop()
 		if queueItem.tx == nil {
 			// Pop returned the zero value: another consumer emptied the queue.
@@ -1098,7 +1114,7 @@ func (s *Sequencer) drainQueueItems() []txQueueItem {
 		}
 		queueItems = append(queueItems, queueItem)
 	}
-	for range len(s.txQueue) {
+	for range txQueueLen {
 		select {
 		case queueItem := <-s.txQueue:
 			queueItems = append(queueItems, queueItem)
@@ -1145,8 +1161,8 @@ func validateQueueItem(config *SequencerConfig, currentHeader *types.Header, bas
 
 // drainAndValidateQueueItems drains the queues and filters out the invalid items, returning the
 // validation failure to each dropped item's submitter.
-func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentHeader *types.Header, baseFee *big.Int) []txQueueItem {
-	unvalidatedItems := s.drainQueueItems()
+func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentHeader *types.Header, baseFee *big.Int, maxQueueItems int) []txQueueItem {
+	unvalidatedItems := s.drainQueueItems(maxQueueItems)
 	// Filter in place: unvalidatedItems is freshly allocated with no other reference.
 	queueItems := unvalidatedItems[:0]
 	for _, queueItem := range unvalidatedItems {
@@ -1159,10 +1175,10 @@ func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentH
 	return queueItems
 }
 
-func (s *Sequencer) drainValidatedTxs(statedb *state.StateDB, baseFee *big.Int) []txQueueItem {
+func (s *Sequencer) drainValidatedTxs(statedb *state.StateDB, baseFee *big.Int, maxQueueItems int) []txQueueItem {
 	// This config snapshot can lag the block creator's if a hot reload lands in between, so the
 	// drain may validate with different limits than the rest of the block; that's acceptable.
-	queueItems := s.drainAndValidateQueueItems(s.config(), s.execEngine.bc.CurrentBlock(), baseFee)
+	queueItems := s.drainAndValidateQueueItems(s.config(), s.execEngine.bc.CurrentBlock(), baseFee, maxQueueItems)
 	if len(queueItems) == 0 {
 		return nil
 	}
@@ -1199,9 +1215,14 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 		return nil, config.MaxBlockSpeed
 	}
 
-	var orderer txOrderer = newFIFOTxOrderer(s, config.PollInterval, config.MaxBlockSpeed, baseFee)
+	ordererConfig := txOrdererConfig{
+		baseFee:              baseFee,
+		maxBlockTxCandidates: config.MaxBlockTxCandidates,
+		maxBlockSpeed:        config.MaxBlockSpeed,
+	}
+	var orderer txOrderer = newFIFOTxOrderer(s, ordererConfig, config.PollInterval)
 	if collectTips && !config.PGA.DangerousForceFIFO {
-		orderer = NewPGATxOrderer(ctx, s, config.PGA.RoundsPerBlock, config.PGARoundLength(), baseFee)
+		orderer = NewPGATxOrderer(ctx, s, ordererConfig, config.PGA.RoundsPerBlock)
 	}
 
 	s.blockTxOrderer = containers.Some(orderer)
@@ -1634,7 +1655,7 @@ func (s *Sequencer) backgroundForwarder(_ context.Context) time.Duration {
 
 	forwarder := s.getForwarder()
 	if forwarder != nil {
-		queueItems := s.drainQueueItems()
+		queueItems := s.drainQueueItems(math.MaxInt)
 		s.handleInactive(forwarder, queueItems)
 	} else {
 		// StartSequencing turns are not guaranteed (paused without a forwarder,
@@ -1834,7 +1855,7 @@ func (s *Sequencer) StopAndWait() {
 	defer forwarder.StopAndWait()
 	// Drain in a loop: txs may be enqueued while a batch is being forwarded.
 	for shutdownCtx.Err() == nil {
-		queueItems := s.drainQueueItems()
+		queueItems := s.drainQueueItems(math.MaxInt)
 		if len(queueItems) == 0 && s.nonceFailures.Len() == 0 {
 			return
 		}
@@ -1850,7 +1871,7 @@ func (s *Sequencer) StopAndWait() {
 // failQueuedItems resolves every queued tx and parked nonce failure with ErrNoSequencer so
 // submitters fail fast instead of waiting out their abort deadlines.
 func (s *Sequencer) failQueuedItems() {
-	for _, item := range s.drainQueueItems() {
+	for _, item := range s.drainQueueItems(math.MaxInt) {
 		item.returnResult(ErrNoSequencer)
 	}
 	for {
