@@ -354,12 +354,14 @@ func TestSeqCoordinatorMetrics(t *testing.T) {
 		signer:           nullSigner,
 	}
 
-	coordinator.updatePriorityMetric(ctx)
+	coordinator.updatePriorityMetric(nil)
 	if got := sequencerPriority.Snapshot().Value(); got != -1 {
 		t.Fatalf("sequencerPriority with unset priorities = %d, want -1", got)
 	}
 	Require(t, redisCoordinator.Client.Set(ctx, redisutil.PRIORITIES_KEY, "first,test,last", 0).Err())
-	coordinator.updatePriorityMetric(ctx)
+	_, priorities, err := redisCoordinator.RecommendSequencerWantingLockoutAndPriorities(ctx)
+	Require(t, err)
+	coordinator.updatePriorityMetric(priorities)
 	if got := sequencerPriority.Snapshot().Value(); got != 1 {
 		t.Fatalf("sequencerPriority = %d, want 1", got)
 	}

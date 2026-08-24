@@ -659,22 +659,16 @@ func (c *SeqCoordinator) blockMetadataAt(ctx context.Context, pos arbutil.Messag
 	return common.BlockMetadata(blockMetadataStr), nil
 }
 
-// updatePriorityMetric reports this sequencer's zero-based rank in the
-// coordinator priorities list, or -1 if it isn't listed or the list can't be read.
-func (c *SeqCoordinator) updatePriorityMetric(ctx context.Context) {
-	priority := int64(-1)
-	priorities, err := c.RedisCoordinator().GetPriorities(ctx)
-	if err != nil {
-		log.Debug("coordinator failed reading sequencer priorities", "err", err)
-	} else if idx := slices.Index(priorities, c.config.Url()); idx >= 0 {
-		priority = int64(idx)
-	}
-	sequencerPriority.Update(priority)
+// updatePriorityMetric reports this sequencer's zero-based rank in the given
+// coordinator priorities list, or -1 if it isn't listed — including when the
+// list is unset or couldn't be read this tick (pass nil in that case).
+func (c *SeqCoordinator) updatePriorityMetric(priorities []string) {
+	sequencerPriority.Update(int64(slices.Index(priorities, c.config.Url())))
 }
 
 func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
-	c.updatePriorityMetric(ctx)
-	chosenSeq, err := c.RedisCoordinator().RecommendSequencerWantingLockout(ctx)
+	chosenSeq, priorities, err := c.RedisCoordinator().RecommendSequencerWantingLockoutAndPriorities(ctx)
+	c.updatePriorityMetric(priorities)
 	if err != nil {
 		log.Warn("coordinator failed finding sequencer wanting lockout", "err", err)
 		return c.retryAfterRedisError(), nil

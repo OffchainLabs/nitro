@@ -58,12 +58,19 @@ func NewRedisCoordinator(redisUrl string, quorumSize uint64) (*RedisCoordinator,
 
 // RecommendSequencerWantingLockout returns the top priority sequencer wanting the lockout
 func (c *RedisCoordinator) RecommendSequencerWantingLockout(ctx context.Context) (string, error) {
+	recommended, _, err := c.RecommendSequencerWantingLockoutAndPriorities(ctx)
+	return recommended, err
+}
+
+// RecommendSequencerWantingLockoutAndPriorities returns the top priority sequencer wanting
+// the lockout, along with the parsed priorities list it was chosen from.
+func (c *RedisCoordinator) RecommendSequencerWantingLockoutAndPriorities(ctx context.Context) (string, []string, error) {
 	prioritiesString, err := c.Client.Get(ctx, PRIORITIES_KEY).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			err = errors.New("sequencer priorities unset")
 		}
-		return "", err
+		return "", nil, err
 	}
 	priorities := strings.Split(prioritiesString, ",")
 	for _, url := range priorities {
@@ -72,13 +79,13 @@ func (c *RedisCoordinator) RecommendSequencerWantingLockout(ctx context.Context)
 			continue
 		}
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		// We found a sequencer that wants the lockout, so we reset the last time we observed the error
 		// to a value of zero for logging purposes below.
 		c.firstSequencerWantingLockoutErrorTime.Store(0)
 		c.lastLockoutErrorLogTime.Store(0) // Reset log throttling timer when state changes.
-		return url, nil
+		return url, priorities, nil
 	}
 
 	// If we hit this line, it means no sequencer is currently wanting the lockout from Redis.
@@ -110,7 +117,7 @@ func (c *RedisCoordinator) RecommendSequencerWantingLockout(ctx context.Context)
 			c.lastLockoutErrorLogTime.Store(time.Now().UnixMilli()) // Update last log time.
 		}
 	}
-	return "", nil
+	return "", priorities, nil
 }
 
 // CurrentChosenSequencer retrieves the current chosen sequencer holding the lock
