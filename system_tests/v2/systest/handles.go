@@ -4,6 +4,7 @@
 package systest
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"time"
@@ -128,6 +129,17 @@ func (c *ChainHandle) AdvanceBlocks(n int) {
 		c.SendTx(tx)
 		c.EnsureTxSucceeded(tx)
 	}
+}
+
+// advanceBlock mines one block via a no-op Faucet self-transfer without
+// failing the test, so polling loops keep their own error reporting.
+func (c *ChainHandle) advanceBlock(ctx context.Context) error {
+	tx := c.Info.PrepareTx("Faucet", "Faucet", c.Info.TransferGas, common.Big1, nil)
+	if err := c.Client.SendTransaction(ctx, tx); err != nil {
+		return err
+	}
+	_, err := ensureTxSucceededWithin(ctx, c.Client, tx, DefaultTxWaitTimeout)
+	return err
 }
 
 // TransferBalance sends amount from->to and waits for success.

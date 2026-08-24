@@ -78,6 +78,12 @@ jobs:
               # so toolchain/format bumps also run the reth suite.
               - 'rust-toolchain.toml'
               - 'rustfmt.toml'
+              # Root crates that nitro-reth path-depends.
+              - 'crates/arbutil/**'
+              - 'crates/brotli/**'
+              - 'crates/caller-env/**'
+              - 'crates/prover/**'
+              - 'crates/tools/wasmer/**'
             changelog:
               - 'changelog/**.md'
             code:

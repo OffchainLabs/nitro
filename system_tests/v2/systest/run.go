@@ -42,7 +42,7 @@ func Run(t *testing.T) {
 	skipped := scheduleStats(items)
 	t.Logf("scheduled %d test runs (%d skipped)", len(items)-skipped, skipped)
 
-	base := configuredCapacity()
+	base := baseCapacity()
 	capacity := poolCapacity(base, items)
 	if capacity > base {
 		t.Logf("systest: capacity %d raised to %d to fit the heaviest scheduled test", base, capacity)
@@ -53,6 +53,7 @@ func Run(t *testing.T) {
 // RunTestMain is the shared TestMain body.
 func RunTestMain(m *testing.M) {
 	code := m.Run()
+	validators.shutdown()
 	os.Exit(code)
 }
 
@@ -65,7 +66,7 @@ func RunScenario(t *testing.T, scenario Scenario) {
 // RunGroup is the IDE entry point: it schedules the registered tests through
 // the same schedule the runner uses, then runs those matching the given
 // scenario funcs. Filters, pins, and category gating are ignored; registered
-// options (matrix, …) are honored; dedupes by func.
+// options (matrix, WithValidation, …) are honored; dedupes by func.
 func RunGroup(t *testing.T, scenarios []Scenario) {
 	if os.Getenv("CI") != "" {
 		t.Skip("IDE wrapper: covered by TestRunner on CI")
@@ -76,7 +77,7 @@ func RunGroup(t *testing.T, scenarios []Scenario) {
 		t.Run(item.Spec.Name, func(t *testing.T) { runOne(t, item) })
 	}
 	for _, p := range missing {
-		t.Fatalf("systest: scenario %s not registered", runtime.FuncForPC(p).Name())
+		t.Errorf("systest: scenario %s not registered", runtime.FuncForPC(p).Name())
 	}
 }
 

@@ -115,12 +115,12 @@ version = "0.1.0"
 dependencies = [
  "digest 0.10.7",
  "eyre",
- "fnv",
  "hex",
  "num-traits",
  "num_enum",
  "ruint2",
  "serde",
+ "thiserror 1.0.63",
  "tiny-keccak",
  "wasmparser 0.245.1",
 ]

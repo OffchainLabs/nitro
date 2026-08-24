@@ -5,6 +5,7 @@
 
 use arbutil::evm::{
     api::{DataReader, EvmApi, Ink},
+    storage::StorageCacheLimitExceeded as StorageCacheLimitError,
     user::UserOutcome,
 };
 use eyre::{Result, eyre};
@@ -115,7 +116,13 @@ impl<D: DataReader, E: EvmApi<D>> RunProgram for NativeInstance<D, E> {
                 match escape {
                     Escape::OutOfInk => return Ok(OutOfInk),
                     Escape::Memory(error) => return Ok(Failure(error.into())),
-                    Escape::Internal(error) | Escape::Logical(error) => return Ok(Failure(error)),
+                    Escape::Internal(error) => {
+                        if error.downcast_ref::<StorageCacheLimitError>().is_some() {
+                            return Ok(StorageCacheLimitExceeded);
+                        }
+                        return Ok(Failure(error));
+                    }
+                    Escape::Logical(error) => return Ok(Failure(error)),
                     Escape::Exit(status) => status,
                 }
             }

@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
+	nitroinit "github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution_consensus"
@@ -59,7 +60,7 @@ func buildNode(t *testing.T, ctx context.Context, spec Spec, overrides overrides
 		return buildL2Node(t, ctx, spec, overrides)
 	case TopologyL1L2:
 		return buildL1L2Node(t, ctx, spec, overrides)
-	case TopologyMultiNode:
+	case TopologyMultiNode, TopologyStakingValidation:
 		return buildMultiNodeStack(t, ctx, spec, overrides)
 	default:
 		t.Fatalf("systest: unknown topology %d", spec.Topology)
@@ -205,6 +206,10 @@ func createBlockChain(
 		&gethexec.ConfigDefault.TxIndexer, 0, execCfg.ExposeMultiGas)
 	if err != nil {
 		t.Fatalf("WriteOrTestBlockChain: %v", err)
+	}
+	// The same boot-time chain sanity check cmd/nitro runs on every node start.
+	if err := nitroinit.ValidateBlockChain(blockchain, chainConfig); err != nil {
+		t.Fatalf("ValidateBlockChain: %v", err)
 	}
 
 	rb.commit()

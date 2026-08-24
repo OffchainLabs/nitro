@@ -33,6 +33,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -477,9 +478,11 @@ func getCompiledProgram(statedb vm.StateDB, moduleHash common.Hash, addressForLo
 		batch := statedb.Database().CodeDB().WasmStore().NewBatch()
 		// rawdb.WriteActivation iterates over the asms map and writes each entry separately to wasmdb, so the writes for the same module hash can be incremental
 		// we know that all targets for which asms were found initially, were read from disk as oppose to from newly activated asms from memory, as otherwise statedb.ActivatedAsmMap would have failed with an error because of missing targets within newly activated asms
-		rawdb.WriteActivation(batch, moduleHash, newlyBuilt)
+		if err := rawdb.WriteActivation(batch, moduleHash, newlyBuilt); err != nil {
+			log.Error("failed writing re-activation to batch", "address", addressForLogging, "err", err)
+		}
 		if err := batch.Write(); err != nil {
-			log.Error("failed writing re-activation to state", "address", addressForLogging, "err", err)
+			log.Error("failed writing re-activation to disk", "address", addressForLogging, "err", err)
 		}
 	} else {
 		// we need to add asms for all targets to the newly activated targets (not only the newly built) to maintain consistency the newly activated targets map
@@ -570,15 +573,15 @@ func callProgram(
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
 	evmData *EvmData,
-	stylusParams *ProgParams,
+	progParams *ProgParams,
 	memoryModel *MemoryModel,
 	runCtx *core.MessageRunContext,
 	code []byte,
-	params *StylusParams,
+	stylusParams *StylusParams,
 	program Program,
 ) ([]byte, error) {
 	db := evm.StateDB
-	debug := stylusParams.DebugMode
+	debug := progParams.DebugMode
 
 	if len(localAsm) == 0 {
 		log.Error("missing asm", "program", address, "module", moduleHash)
@@ -597,14 +600,14 @@ func callProgram(
 	saved := saveState(scope, db)
 
 	// First attempt with the locally-compiled ASM (singlepass or cranelift, depending on activation).
-	status, output := doStylusCall(localAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx, params)
+	status, output := doStylusCall(localAsm, calldata, progParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx, stylusParams)
 
 	if status == userNativeStackOverflow {
 		status, output = handleNativeStackOverflow(
 			address, moduleHash,
-			scope, evm, tracingInfo, calldata, evmData, stylusParams,
+			scope, evm, tracingInfo, calldata, evmData, progParams,
 			memoryModel, runCtx, &saved, debug, db,
-			code, params, program,
+			code, stylusParams, program,
 		)
 	}
 
@@ -620,8 +623,22 @@ func callProgram(
 	}
 	data, msg, err := status.toResult(output, debug)
 
+	// The memory.fill value overflow error is a known issue in ArbOS versions
+	// prior to 59.
 	if err != nil && strings.Contains(msg, "memory.fill value exceeds 8 bits") {
-		log.Error("memory.fill value overflow triggered")
+		if evmData.arbosVersion < params.ArbosVersion_59 {
+			log.Error("memory.fill value overflow triggered, filtering tx",
+				"program", address, "depth", depth)
+			evm.StateDB.FilterTx()
+		} else {
+			log.Debug("memory.fill overflow message in revert data, processing normally",
+				"program", address, "depth", depth, "arbosVersion", evmData.arbosVersion)
+		}
+	}
+
+	if status == userStorageCacheLimitExceeded {
+		log.Info("stylus storage cache limit exceeded", "program", address,
+			"limit", evmData.storageCacheLimit, "runMode", runCtx.RunModeMetricName())
 		evm.StateDB.FilterTx()
 	}
 
@@ -732,8 +749,11 @@ func getCraneliftAsm(
 	wasmStore := db.Database().CodeDB().WasmStore()
 	if wasmStore != nil {
 		batch := wasmStore.NewBatch()
-		rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, asm)
-		if err := batch.Write(); err != nil {
+		err := rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, asm)
+		if err == nil {
+			err = batch.Write()
+		}
+		if err != nil {
 			log.Warn("failed to persist cranelift ASM to wasm store, will recompile on next overflow",
 				"program", address, "err", err)
 		}
@@ -944,22 +964,23 @@ func (params *ProgParams) encode() C.StylusConfig {
 
 func (data *EvmData) encode() C.EvmData {
 	return C.EvmData{
-		arbos_version:    u64(data.arbosVersion),
-		block_basefee:    hashToBytes32(data.blockBasefee),
-		chainid:          u64(data.chainId),
-		block_coinbase:   addressToBytes20(data.blockCoinbase),
-		block_gas_limit:  u64(data.blockGasLimit),
-		block_number:     u64(data.blockNumber),
-		block_timestamp:  u64(data.blockTimestamp),
-		contract_address: addressToBytes20(data.contractAddress),
-		module_hash:      hashToBytes32(data.moduleHash),
-		msg_sender:       addressToBytes20(data.msgSender),
-		msg_value:        hashToBytes32(data.msgValue),
-		tx_gas_price:     hashToBytes32(data.txGasPrice),
-		tx_origin:        addressToBytes20(data.txOrigin),
-		reentrant:        u32(data.reentrant),
-		return_data_len:  0,
-		cached:           cbool(data.cached),
-		tracing:          cbool(data.tracing),
+		arbos_version:       u64(data.arbosVersion),
+		block_basefee:       hashToBytes32(data.blockBasefee),
+		chainid:             u64(data.chainId),
+		block_coinbase:      addressToBytes20(data.blockCoinbase),
+		block_gas_limit:     u64(data.blockGasLimit),
+		block_number:        u64(data.blockNumber),
+		block_timestamp:     u64(data.blockTimestamp),
+		contract_address:    addressToBytes20(data.contractAddress),
+		module_hash:         hashToBytes32(data.moduleHash),
+		msg_sender:          addressToBytes20(data.msgSender),
+		msg_value:           hashToBytes32(data.msgValue),
+		tx_gas_price:        hashToBytes32(data.txGasPrice),
+		tx_origin:           addressToBytes20(data.txOrigin),
+		reentrant:           u32(data.reentrant),
+		return_data_len:     0,
+		storage_cache_limit: u32(data.storageCacheLimit),
+		cached:              cbool(data.cached),
+		tracing:             cbool(data.tracing),
 	}
 }

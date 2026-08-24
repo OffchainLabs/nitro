@@ -854,6 +854,7 @@ impl<'de> serde::Deserialize<'de> for ArbTransactionSigned {
 // Compact — required by MaybeCompact when reth-codec feature is active
 // ---------------------------------------------------------------------------
 
+#[cfg(not(target_family = "wasm"))]
 impl reth_codecs::Compact for ArbTransactionSigned {
     fn to_compact<B>(&self, buf: &mut B) -> usize
     where
@@ -899,6 +900,7 @@ impl reth_codecs::Compact for ArbTransactionSigned {
 // Compress / Decompress — delegates to Compact for database storage
 // ---------------------------------------------------------------------------
 
+#[cfg(not(target_family = "wasm"))]
 impl reth_db_api::table::Compress for ArbTransactionSigned {
     type Compressed = Vec<u8>;
 
@@ -907,6 +909,7 @@ impl reth_db_api::table::Compress for ArbTransactionSigned {
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
 impl reth_db_api::table::Decompress for ArbTransactionSigned {
     fn decompress(value: &[u8]) -> Result<Self, reth_codecs::DecompressError> {
         let (obj, _) = reth_codecs::Compact::from_compact(value, value.len());

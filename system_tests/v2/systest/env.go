@@ -39,7 +39,8 @@ type Env struct {
 	Ctx context.Context
 	// L2 is the sequencer handle. Always populated.
 	L2 *L2Handle
-	// L2Followers are the non-sequencer follower handles. Empty unless TopologyMultiNode.
+	// L2Followers are the non-sequencer follower handles. Empty unless
+	// TopologyMultiNode or TopologyStakingValidation.
 	L2Followers []*L2Handle
 	// L1 is the parent chain handle. Nil for TopologyL2Only scenarios.
 	L1   *L1Handle
@@ -147,7 +148,7 @@ func (e *Env) WaitForFollowersSync() {
 // requireFollower fails the scenario if it has no follower node.
 func (e *Env) requireFollower() {
 	e.t.Helper()
-	e.NotEmpty(e.L2Followers, "follower helper called on a non-multi-node scenario; register it with systest.WithMultiNode()")
+	e.NotEmpty(e.L2Followers, "follower helper called on a scenario without followers; register it with systest.WithMultiNode() or systest.WithStakingValidation()")
 }
 
 // waitFollowersSynced blocks until every follower executes the sequencer's
@@ -322,28 +323,23 @@ func (e *Env) wait(ctx context.Context) {
 		e.goWG.Wait()
 		close(done)
 	}()
+	var failure string
 	select {
 	case <-done:
-		e.asyncMu.Lock()
-		e.dead = true
-		e.asyncMu.Unlock()
 	case <-ctx.Done():
-		e.asyncMu.Lock()
 		if n := e.running.Load(); n > 0 {
-			e.t.Errorf("env.Wait aborted (%v): %d env.Go goroutine(s) still running; their pending failures are now suppressed", context.Cause(ctx), n)
+			failure = fmt.Sprintf("env.Wait aborted (%v): %d env.Go goroutine(s) still running; their pending failures are now suppressed", context.Cause(ctx), n)
 		}
-		e.dead = true
-		e.asyncMu.Unlock()
 	case <-time.After(envWaitTimeout):
-		// Record the timeout and mark dead in one critical section so the
-		// failure is logged before late goroutines are silenced. A goroutine
-		// that ignores ctx leaks (Go can't force-kill it) but can no longer
-		// write to the finished subtest.
-		e.asyncMu.Lock()
-		e.t.Errorf("env.Wait timed out after %v: %d env.Go goroutine(s) still running; their pending failures are now suppressed — raise envWaitTimeout and rerun to surface the real error", envWaitTimeout, e.running.Load())
-		e.dead = true
-		e.asyncMu.Unlock()
+		failure = fmt.Sprintf("env.Wait timed out after %v: %d env.Go goroutine(s) still running; their pending failures are now suppressed — raise envWaitTimeout and rerun to surface the real error", envWaitTimeout, e.running.Load())
 	}
+
+	e.asyncMu.Lock()
+	defer e.asyncMu.Unlock()
+	if failure != "" {
+		e.t.Errorf("%s", failure)
+	}
+	e.dead = true
 }
 
 // guarded runs fn under the dead guard: once wait has marked the env dead, fn

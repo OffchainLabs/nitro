@@ -19,11 +19,9 @@ const (
 type sequencingState struct {
 	lastTurn sequencingTurn
 	// regularSequencingThrottledUntil is the earliest time a regular tx block
-	// may be created again. It is set MaxBlockSpeed into the future after a block
-	// is made (rate-limiting block production) or on a transient error. When a
-	// regular turn instead finds the queue empty, it is set only the idle poll
-	// interval into the future, matching the wait decideSequencingTurn uses when
-	// there is no pending work.
+	// may be created again. It is set the orderer's BlockInterval into the future
+	// after a block is made (rate-limiting block production) and after a no-work
+	// turn, or MaxBlockSpeed on a transient error.
 	regularSequencingThrottledUntil time.Time
 	// delayedSequencingThrottledUntil is the earliest time a delayed message
 	// may be sequenced again. It is set only when a delayed turn fails to produce

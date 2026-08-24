@@ -6,6 +6,7 @@ package gethexec
 import (
 	"context"
 	"errors"
+	"math"
 	"math/big"
 	"sync/atomic"
 	"testing"
@@ -18,7 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
-func TestSequencerConfigValidatePGA(t *testing.T) {
+func TestSequencerConfigValidate(t *testing.T) {
 	tests := []struct {
 		name    string
 		modify  func(*SequencerConfig)
@@ -26,29 +27,39 @@ func TestSequencerConfigValidatePGA(t *testing.T) {
 	}{
 		{"default config", func(c *SequencerConfig) {}, false},
 		{"forced fifo", func(c *SequencerConfig) {
-			c.ExperimentalPGA.DangerousForceFIFO = true
+			c.PGA.DangerousForceFIFO = true
 		}, false},
 		{"timeboost enabled", func(c *SequencerConfig) {
 			c.Timeboost.Enable = true
 		}, false},
 		{"forced fifo and timeboost enabled", func(c *SequencerConfig) {
-			c.ExperimentalPGA.DangerousForceFIFO = true
+			c.PGA.DangerousForceFIFO = true
 			c.Timeboost.Enable = true
 		}, false},
 		{"zero value pga config", func(c *SequencerConfig) {
-			c.ExperimentalPGA = PGAConfig{}
+			c.PGA = PGAConfig{}
 		}, true},
 		{"zero rounds per block", func(c *SequencerConfig) {
-			c.ExperimentalPGA.RoundsPerBlock = 0
+			c.PGA.RoundsPerBlock = 0
 		}, true},
 		{"one round per block", func(c *SequencerConfig) {
-			c.ExperimentalPGA.RoundsPerBlock = 1
+			c.PGA.RoundsPerBlock = 1
 		}, false},
 		{"many rounds per block", func(c *SequencerConfig) {
 			c.Enable = true
 			c.MaxBlockSpeed = 250 * time.Millisecond
-			c.ExperimentalPGA.RoundsPerBlock = 6
+			c.PGA.RoundsPerBlock = 6
 		}, false},
+		{"round length below 5ms", func(c *SequencerConfig) {
+			c.MaxBlockSpeed = 10 * time.Millisecond
+			c.PGA.RoundsPerBlock = 6
+		}, true},
+		{"zero max block tx candidates", func(c *SequencerConfig) {
+			c.MaxBlockTxCandidates = 0
+		}, true},
+		{"negative max block tx candidates", func(c *SequencerConfig) {
+			c.MaxBlockTxCandidates = -1
+		}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -66,10 +77,7 @@ func TestSequencerConfigValidatePGA(t *testing.T) {
 }
 
 func TestPGARoundLength(t *testing.T) {
-	c := DefaultSequencerConfig
-	c.MaxBlockSpeed = 250 * time.Millisecond
-	c.ExperimentalPGA.RoundsPerBlock = 2
-	if got := c.PGARoundLength(); got != 125*time.Millisecond {
+	if got := pgaRoundLength(250*time.Millisecond, 2); got != 125*time.Millisecond {
 		t.Errorf("expected round length 125ms, got %v", got)
 	}
 }
@@ -271,7 +279,12 @@ func TestCreateBlockRequeuesNeverAttemptedTxs(t *testing.T) {
 	}
 
 	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
-	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}}, DefaultSequencerConfig.MaxBlockSpeed, big.NewInt(testBaseFee))
+	ordererConfig := txOrdererConfig{
+		baseFee:              big.NewInt(testBaseFee),
+		maxBlockTxCandidates: math.MaxInt,
+		maxBlockSpeed:        DefaultSequencerConfig.MaxBlockSpeed,
+	}
+	orderer := newFIFOTxOrderer(newStubOrdererSequencer(item), ordererConfig, DefaultSequencerConfig.PollInterval)
 
 	sequencedMsg, _ := seq.createBlockWithTxOrderer(context.Background(), orderer)
 
@@ -308,7 +321,12 @@ func TestCreateBlockPanicFailsTxsInsteadOfRequeueing(t *testing.T) {
 	}
 
 	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
-	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}}, DefaultSequencerConfig.MaxBlockSpeed, big.NewInt(testBaseFee))
+	ordererConfig := txOrdererConfig{
+		baseFee:              big.NewInt(testBaseFee),
+		maxBlockTxCandidates: math.MaxInt,
+		maxBlockSpeed:        DefaultSequencerConfig.MaxBlockSpeed,
+	}
+	orderer := newFIFOTxOrderer(newStubOrdererSequencer(item), ordererConfig, DefaultSequencerConfig.PollInterval)
 
 	sequencedMsg, throttle := seq.createBlockWithTxOrderer(context.Background(), panicAfterArmOrderer{orderer})
 
