@@ -73,11 +73,11 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 
 	for {
 		if queueEmpty := p.mempool.PriorityQueueLen() == 0; queueEmpty || p.schedule.RoundIsOver() {
+			reason := pgaRoundsDeadlineReachedCounter
 			if queueEmpty {
-				p.recordRoundEnd(pgaRoundsTxExhaustedCounter)
-			} else {
-				p.recordRoundEnd(pgaRoundsDeadlineReachedCounter)
+				reason = pgaRoundsTxExhaustedCounter
 			}
+			p.recordRoundEnd(reason)
 			p.mempool.ApplyRoundBoost()
 			if p.schedule.IsLastRound() {
 				limitReason := blockTimeLimitReached
