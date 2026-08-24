@@ -79,10 +79,10 @@ var (
 	timeLimitedBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/timelimited", nil)
 	// forwarder/pause wait + validation before sequencing an express lane submission
 	expressLanePreSequenceWaitHistogram = metrics.NewRegisteredHistogram("arb/sequencer/timeboost/expresslane/presequencewait", nil, metrics.NewBoundedHistogramSample())
-	// number of successful blocks sequenced with FIFO ordering
-	fifoBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/fifo", nil)
-	// number of successful blocks sequenced with PGA ordering
-	pgaBlocksCounter = metrics.NewRegisteredCounter("arb/sequencer/block/pga", nil)
+	// number of block creation attempts using FIFO ordering
+	fifoOrderingCounter = metrics.NewRegisteredCounter("arb/sequencer/ordering/fifo", nil)
+	// number of block creation attempts using PGA ordering
+	pgaOrderingCounter = metrics.NewRegisteredCounter("arb/sequencer/ordering/pga", nil)
 )
 
 type SequencerConfig struct {
@@ -1206,9 +1206,9 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 	var orderer txOrderer = newFIFOTxOrderer(s, config.PollInterval, config.MaxBlockSpeed, baseFee)
 	if collectTips && !config.PGA.DangerousForceFIFO {
 		orderer = NewPGATxOrderer(ctx, s, config.PGA.RoundsPerBlock, config.PGARoundLength(), baseFee)
-		pgaBlocksCounter.Inc(1)
+		pgaOrderingCounter.Inc(1)
 	} else {
-		fifoBlocksCounter.Inc(1)
+		fifoOrderingCounter.Inc(1)
 	}
 
 	s.blockTxOrderer = containers.Some(orderer)
