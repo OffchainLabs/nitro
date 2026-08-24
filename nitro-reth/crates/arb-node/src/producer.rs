@@ -20,13 +20,14 @@ use alloy_evm::{
 use alloy_primitives::{Address, B64, B256, Bytes, U256};
 use alloy_rpc_types_eth::BlockNumberOrTag;
 use arb_evm::{
+    block_producer::{create_internal_tx, execute_and_commit_tx},
     build::is_block_gas_limit_reached,
-    config::{ArbEvmConfig, arbos_version_from_mix_hash, l1_block_number_from_mix_hash},
+    config::{ArbEvmConfig, arbos_version_from_mix_hash, monotonic_l1_block_number},
 };
-use arb_primitives::{ArbPrimitives, signed_tx::ArbTransactionSigned, tx_types::ArbInternalTx};
+use arb_primitives::{ArbPrimitives, signed_tx::ArbTransactionSigned};
 use arb_rpc::block_producer::{BlockProducer, BlockProducerError, ProducedBlock};
 use arbos::{
-    header::{ArbHeaderInfo, derive_arb_header_info},
+    header::{ArbHeaderInfo, compute_arbos_mixhash, derive_arb_header_info},
     internal_tx,
     parse_l2::{ParsedTransaction, parse_l2_transactions, parsed_tx_to_signed},
     types::{MessageWithMetadata, parse_init_message},
@@ -450,7 +451,7 @@ where
             u64::from_be_bytes(buf)
         };
         let provisional_mix_hash =
-            compute_mix_hash(send_count, block_l1_block_number, arbos_version);
+            compute_arbos_mixhash(send_count, block_l1_block_number, arbos_version, false);
 
         // Open state at parent block via block hash.
         let raw_state_provider = self
@@ -1358,52 +1359,6 @@ where
 // Helper functions
 // ---------------------------------------------------------------------------
 
-/// Create an internal transaction (type 0x6A).
-fn create_internal_tx(chain_id: u64, data: &[u8]) -> ArbTransactionSigned {
-    use arb_primitives::signed_tx::ArbTypedTransaction;
-    let tx = ArbTypedTransaction::Internal(ArbInternalTx {
-        chain_id: U256::from(chain_id),
-        data: Bytes::copy_from_slice(data),
-    });
-    let sig = alloy_primitives::Signature::new(U256::ZERO, U256::ZERO, false);
-    ArbTransactionSigned::new_unhashed(tx, sig)
-}
-
-/// Execute and commit an internal transaction via the block executor.
-fn execute_and_commit_tx<E>(
-    executor: &mut E,
-    tx: &ArbTransactionSigned,
-    label: &str,
-) -> Result<(), BlockProducerError>
-where
-    E: BlockExecutor<Transaction = ArbTransactionSigned>,
-{
-    let recovered = tx
-        .clone()
-        .try_into_recovered()
-        .map_err(|e| BlockProducerError::Execution(format!("{label} recovery: {e}")))?;
-
-    let result = executor
-        .execute_transaction_without_commit(recovered)
-        .map_err(|e| BlockProducerError::Execution(format!("{label} execution: {e}")))?;
-
-    executor
-        .commit_transaction(result)
-        .map_err(|e| BlockProducerError::Execution(format!("{label} commit: {e}")))?;
-
-    Ok(())
-}
-
-fn compute_mix_hash(send_count: u64, l1_block_number: u64, arbos_version: u64) -> B256 {
-    arbos::header::compute_arbos_mixhash(send_count, l1_block_number, arbos_version, false)
-}
-
-/// L1 block number for the `NUMBER` opcode: monotonic, so a reported value
-/// below the parent's (recovered from its mix_hash) is clamped up to it.
-fn monotonic_l1_block_number(reported: u64, parent_mix_hash: &B256) -> u64 {
-    reported.max(l1_block_number_from_mix_hash(parent_mix_hash))
-}
-
 /// EIP-161: mark empty non-zombie accounts for trie deletion.
 fn delete_empty_accounts(
     bundle: &mut BundleState,
@@ -1570,22 +1525,4 @@ fn augment_bundle_from_cache(
         }
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use arbos::header::compute_arbos_mixhash;
-
-    use super::*;
-
-    #[test]
-    fn l1_block_number_clamps_to_parent() {
-        let parent = compute_arbos_mixhash(0, 10_538_022, 51, false);
-        // A lower sequencer-reported value is clamped up to the parent's.
-        assert_eq!(monotonic_l1_block_number(10_537_967, &parent), 10_538_022);
-        // A higher value advances normally.
-        assert_eq!(monotonic_l1_block_number(10_538_099, &parent), 10_538_099);
-        // Equal stays put.
-        assert_eq!(monotonic_l1_block_number(10_538_022, &parent), 10_538_022);
-    }
 }
