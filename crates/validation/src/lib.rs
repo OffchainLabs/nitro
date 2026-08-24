@@ -110,13 +110,10 @@ impl ValidationInput {
         })
     }
 
+    /// Deserializes a rkyv-serialized `ValidationInput`.
     #[cfg(feature = "rkyv")]
-    pub fn from_reader<R: io::Read>(mut reader: R) -> Result<Self, String> {
-        let mut s = Vec::new();
-        reader
-            .read_to_end(&mut s)
-            .map_err(|e| format!("IO Error: {e:?}"))?;
-        let archived = rkyv::access::<ArchivedValidationInput, rkyv::rancor::Error>(&s[..])
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        let archived = rkyv::access::<ArchivedValidationInput, rkyv::rancor::Error>(bytes)
             .map_err(|e| format!("rkyv access error: {e:?}"))?;
         rkyv::deserialize::<ValidationInput, rkyv::rancor::Error>(archived)
             .map_err(|e| format!("rkyv deserialize error: {e:?}"))
