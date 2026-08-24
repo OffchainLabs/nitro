@@ -836,7 +836,7 @@ func (s *Sequencer) PostTxFilter(header *types.Header, statedb *state.StateDB, _
 	if result.Err != nil && result.UsedGas > dataGas && result.UsedGas-dataGas <= s.config().MaxRevertGasReject {
 		return arbitrum.NewRevertReason(result)
 	}
-	newNonce := tx.Nonce() + 1
+	newNonce := statedb.GetNonce(sender)
 	s.nonceCache.Update(header, sender, newNonce)
 	newAddrAndNonce := addressAndNonce{sender, newNonce}
 	nonceFailure, haveNonceFailure := s.nonceFailures.Take(newAddrAndNonce)
