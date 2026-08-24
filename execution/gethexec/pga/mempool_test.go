@@ -408,7 +408,7 @@ func TestPgaMempoolPushBatchOrdersAndFoldsBoost(t *testing.T) {
 	low := env.makePgaTestItem(constFee(10))
 	high := env.makePgaTestItem(constFee(30))
 	carried := env.makePgaTestItem(constFee(15))
-	carried.AddBoost(20) // 15 + 20 = 35 outranks high's 30
+	carried.ApplyRoundBoundary(20) // 15 + 20 = 35 outranks high's 30
 	env.mempool.PushBatch([]mockTx{low, high, carried})
 
 	first := mustPop(t, env.mempool)

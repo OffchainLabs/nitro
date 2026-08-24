@@ -53,18 +53,18 @@ func TestPgaPriorityGetPriorityFoldsBoost(t *testing.T) {
 	if p.GetPriority() != 42 {
 		t.Fatalf("priority = %d, want 42", p.GetPriority())
 	}
-	p.AddBoost(8)
+	p.ApplyRoundBoundary(8)
 	p.SetTip(42) // re-key, as when the tx enters the next block's mempool
 	if p.GetPriority() != 50 {
 		t.Fatalf("priority = %d, want 50 (42 base + 8 boost)", p.GetPriority())
 	}
 }
 
-func TestPgaPriorityAddBoostAccumulates(t *testing.T) {
+func TestPgaPriorityBoostAccumulates(t *testing.T) {
 	p := &PGAState{}
 	p.SetTip(10)
-	p.AddBoost(5)
-	p.AddBoost(7)
+	p.ApplyRoundBoundary(5)
+	p.ApplyRoundBoundary(7)
 	if p.GetPriority() != 22 {
 		t.Fatalf("priority = %d, want 22 (10 base + 12 boost)", p.GetPriority())
 	}
@@ -73,7 +73,7 @@ func TestPgaPriorityAddBoostAccumulates(t *testing.T) {
 func TestPgaPriorityResetBoostForfeitsBoost(t *testing.T) {
 	p := &PGAState{}
 	p.SetTip(10)
-	p.AddBoost(15)
+	p.ApplyRoundBoundary(15)
 	p.ResetBoost()
 	if p.GetPriority() != 10 {
 		t.Fatalf("priority = %d, want 10 (boost forfeited)", p.GetPriority())

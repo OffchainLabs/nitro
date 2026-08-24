@@ -111,7 +111,7 @@ func TestPGATxOrdererYieldsByPriority(t *testing.T) {
 // priority and carried on the yielded item.
 func TestPGATxOrdererStartBlockRestoresBoost(t *testing.T) {
 	boosted := makePGAQueueItem(t, 0, 10)
-	boosted.AddBoost(25) // accumulated in a previous block
+	boosted.ApplyRoundBoundary(25) // accumulated in a previous block
 	plain := makePGAQueueItem(t, 1, 20)
 	o := newTestPGATxOrderer(newStubOrdererSequencer(boosted, plain))
 
@@ -152,7 +152,7 @@ func TestPGATxOrdererOversizedTxEndsBlock(t *testing.T) {
 // auction where it left off.
 func TestPGATxOrdererOversizedTxKeepsBoost(t *testing.T) {
 	oversized := makePGAQueueItem(t, 0, 10)
-	oversized.AddBoost(25) // accumulated in a previous block
+	oversized.ApplyRoundBoundary(25) // accumulated in a previous block
 	oversized.txSize = 11
 	o := newTestPGATxOrderer(newStubOrdererSequencer(oversized))
 
