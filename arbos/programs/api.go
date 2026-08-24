@@ -175,11 +175,11 @@ func newApiClosures(
 
 		switch opcode {
 		case vm.CALL:
-			ret, returnGas, returnMultiGas, err = evm.Call(scope.Contract.Address(), contract, input, vm.NewGasBudget(gas), value)
+			ret, returnGas, returnMultiGas, err = evm.Call(scope.Contract.Address(), contract, input, vm.NewGasBudget(gas, 0), value)
 		case vm.DELEGATECALL:
-			ret, returnGas, returnMultiGas, err = evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), contract, input, vm.NewGasBudget(gas), scope.Contract.Value())
+			ret, returnGas, returnMultiGas, err = evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), contract, input, vm.NewGasBudget(gas, 0), scope.Contract.Value())
 		case vm.STATICCALL:
-			ret, returnGas, returnMultiGas, err = evm.StaticCall(scope.Contract.Address(), contract, input, vm.NewGasBudget(gas))
+			ret, returnGas, returnMultiGas, err = evm.StaticCall(scope.Contract.Address(), contract, input, vm.NewGasBudget(gas, 0))
 		default:
 			panic("unsupported call type: " + opcode.String())
 		}
@@ -241,9 +241,9 @@ func newApiClosures(
 		)
 
 		if opcode == vm.CREATE {
-			res, addr, returnGas, returnMultiGas, suberr = evm.Create(contract.Address(), code, vm.NewGasBudget(gas), endowment)
+			res, addr, returnGas, returnMultiGas, suberr = evm.Create(contract.Address(), code, vm.NewGasBudget(gas, 0), endowment)
 		} else {
-			res, addr, returnGas, returnMultiGas, suberr = evm.Create2(contract.Address(), code, vm.NewGasBudget(gas), endowment, salt)
+			res, addr, returnGas, returnMultiGas, suberr = evm.Create2(contract.Address(), code, vm.NewGasBudget(gas, 0), endowment, salt)
 		}
 		if suberr != nil {
 			addr = zeroAddr

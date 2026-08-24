@@ -479,7 +479,7 @@ func testCompileLoad() error {
 func makeTestEVMScope(gas uint64) (*vm.EVM, *vm.ScopeContext, vm.StateDB) {
 	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
 	evm := vm.NewEVM(vm.BlockContext{}, statedb, params.TestChainConfig, vm.Config{})
-	contract := vm.NewContract(common.Address{}, common.Address{1}, new(uint256.Int), vm.NewGasBudget(gas), nil)
+	contract := vm.NewContract(common.Address{}, common.Address{1}, new(uint256.Int), vm.NewGasBudget(gas, 0), nil)
 	scope := &vm.ScopeContext{Contract: contract}
 	return evm, scope, statedb
 }
@@ -518,7 +518,7 @@ func testHandleNativeStackOverflow() error {
 
 	gas := uint64(0xfffffffffffffff)
 	evm, scope, db := makeTestEVMScope(gas)
-	scope.Contract.Gas = vm.NewGasBudget(gas)
+	scope.Contract.Gas = vm.NewGasBudget(gas, 0)
 
 	// Pre-populate cranelift ASM in the wasm store so getCraneliftAsm finds it.
 	craneliftTarget, err := rawdb.CraneliftTarget(localTarget)
@@ -537,7 +537,7 @@ func testHandleNativeStackOverflow() error {
 	allowFallback.Store(false)
 	runCtx := core.NewMessageCommitContext([]rawdb.WasmTarget{localTarget})
 
-	saved := &savedState{gas: vm.NewGasBudget(gas), snapshot: db.Snapshot()}
+	saved := &savedState{gas: vm.NewGasBudget(gas, 0), snapshot: db.Snapshot()}
 	status, _ := handleNativeStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
@@ -554,9 +554,9 @@ func testHandleNativeStackOverflow() error {
 	// Sub-test 2: allowFallback=true but off-chain → no retry.
 	allowFallback.Store(true)
 	offChainCtx := core.NewMessageGasEstimationContext()
-	scope.Contract.Gas = vm.NewGasBudget(gas)
+	scope.Contract.Gas = vm.NewGasBudget(gas, 0)
 
-	saved = &savedState{gas: vm.NewGasBudget(gas), snapshot: db.Snapshot()}
+	saved = &savedState{gas: vm.NewGasBudget(gas, 0), snapshot: db.Snapshot()}
 	status, _ = handleNativeStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
@@ -573,8 +573,8 @@ func testHandleNativeStackOverflow() error {
 	// Sub-test 3: on-chain with allowFallback=true → doubles stack and retries
 	// with cranelift. The stack should go from 32KB to 64KB, and the cranelift
 	// retry at 64KB should succeed for the 500-recursion program.
-	scope.Contract.Gas = vm.NewGasBudget(gas)
-	saved = &savedState{gas: vm.NewGasBudget(gas), snapshot: db.Snapshot()}
+	scope.Contract.Gas = vm.NewGasBudget(gas, 0)
+	saved = &savedState{gas: vm.NewGasBudget(gas, 0), snapshot: db.Snapshot()}
 	status, _ = handleNativeStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
@@ -597,8 +597,8 @@ func testHandleNativeStackOverflow() error {
 	SetNativeStackSize(32 * 1024)
 	DrainStackPool()
 	evm4, scope4, db4 := makeTestEVMScope(gas)
-	scope4.Contract.Gas = vm.NewGasBudget(gas)
-	saved = &savedState{gas: vm.NewGasBudget(gas), snapshot: db4.Snapshot()}
+	scope4.Contract.Gas = vm.NewGasBudget(gas, 0)
+	saved = &savedState{gas: vm.NewGasBudget(gas, 0), snapshot: db4.Snapshot()}
 	status, _ = handleNativeStackOverflow(
 		common.Address{}, moduleHash,
 		scope4, evm4, nil, []byte{}, &EvmData{}, stylusParams,
@@ -646,7 +646,7 @@ func testHandleNativeStackOverflowAtMax() error {
 	memModel := NewMemoryModel(0, 0)
 	gas := uint64(0xfffffffffffffff)
 	evm, scope, db := makeTestEVMScope(gas)
-	scope.Contract.Gas = vm.NewGasBudget(gas)
+	scope.Contract.Gas = vm.NewGasBudget(gas, 0)
 	runCtx := core.NewMessageCommitContext([]rawdb.WasmTarget{localTarget})
 
 	// Pre-populate cranelift ASM in the wasm store.
@@ -663,7 +663,7 @@ func testHandleNativeStackOverflowAtMax() error {
 		return fmt.Errorf("failed to persist cranelift ASM: %w", err)
 	}
 
-	saved := &savedState{gas: vm.NewGasBudget(gas), snapshot: db.Snapshot()}
+	saved := &savedState{gas: vm.NewGasBudget(gas, 0), snapshot: db.Snapshot()}
 	status, _ := handleNativeStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
@@ -716,7 +716,7 @@ func testRetryRestoresStylusPages() error {
 
 	gas := uint64(0xfffffffffffffff)
 	evm, scope, db := makeTestEVMScope(gas)
-	scope.Contract.Gas = vm.NewGasBudget(gas)
+	scope.Contract.Gas = vm.NewGasBudget(gas, 0)
 
 	// Pre-populate cranelift ASM in the wasm store.
 	moduleHash := common.HexToHash("0x1234567890abcdef")
@@ -759,7 +759,7 @@ func testRetryRestoresStylusPages() error {
 	allowFallback.Store(true)
 
 	saved := &savedState{
-		gas:          vm.NewGasBudget(gas),
+		gas:          vm.NewGasBudget(gas, 0),
 		usedMultiGas: initialMultiGas,
 		openPages:    initialOpen,
 		everPages:    initialEver,

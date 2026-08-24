@@ -58,7 +58,7 @@ func (p ArbosPrecompileWrapper) RunAdvanced(
 		input, info.ActingAsAddress,
 		info.Caller, info.Value, info.ReadOnly, gasSupplied, info.Evm,
 	)
-	return ret, vm.NewGasBudget(gasLeft), usedMultiGas, err
+	return ret, vm.NewGasBudget(gasLeft, 0), usedMultiGas, err
 }
 
 func init() {
