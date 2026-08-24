@@ -20,12 +20,15 @@ use alloy_evm::{
 use alloy_primitives::{Address, B64, B256, Bytes, U256};
 use alloy_rpc_types_eth::BlockNumberOrTag;
 use arb_evm::{
-    block_producer::{create_internal_tx, execute_and_commit_tx},
+    block_producer::{
+        BlockProducerError, ProducedBlock, augment_bundle_from_cache, create_internal_tx,
+        delete_empty_accounts, execute_and_commit_tx, filter_unchanged_storage,
+    },
     build::is_block_gas_limit_reached,
     config::{ArbEvmConfig, arbos_version_from_mix_hash, monotonic_l1_block_number},
 };
 use arb_primitives::{ArbPrimitives, signed_tx::ArbTransactionSigned};
-use arb_rpc::block_producer::{BlockProducer, BlockProducerError, ProducedBlock};
+use arb_rpc::block_producer::BlockProducer;
 use arbos::{
     header::{ArbHeaderInfo, compute_arbos_mixhash, derive_arb_header_info},
     internal_tx,
@@ -833,7 +836,7 @@ where
         db.merge_transitions(BundleRetention::Reverts);
         let mut bundle = db.take_bundle();
 
-        augment_bundle_from_cache(&mut bundle, &db.cache, &*state_provider)?;
+        augment_bundle_from_cache(&mut bundle, &db.cache, &mut db.database)?;
 
         // Mark per-tx finalise deletions, skipping zombie accounts.
         let keccak_empty_hash = alloy_primitives::B256::from(alloy_primitives::keccak256([]));
@@ -895,7 +898,7 @@ where
         }
 
         filter_unchanged_storage(&mut bundle);
-        delete_empty_accounts(&mut bundle, &zombie_accounts, &*state_provider);
+        delete_empty_accounts(&mut bundle, &zombie_accounts, &mut db.database);
 
         let hashed_state =
             HashedPostState::from_bundle_state::<reth_trie_common::KeccakKeyHasher>(bundle.state());
@@ -1359,47 +1362,6 @@ where
 // Helper functions
 // ---------------------------------------------------------------------------
 
-/// EIP-161: mark empty non-zombie accounts for trie deletion.
-fn delete_empty_accounts(
-    bundle: &mut BundleState,
-    zombie_accounts: &rustc_hash::FxHashSet<Address>,
-    state_provider: &dyn StateProvider,
-) {
-    let keccak_empty = alloy_primitives::B256::from(alloy_primitives::keccak256([]));
-    let mut to_remove = Vec::new();
-    for (addr, account) in bundle.state.iter_mut() {
-        if let Some(ref info) = account.info {
-            let is_empty =
-                info.nonce == 0 && info.balance.is_zero() && info.code_hash == keccak_empty;
-            if is_empty && !zombie_accounts.contains(addr) {
-                let existed_before = state_provider.basic_account(addr).ok().flatten().is_some();
-                if existed_before {
-                    debug!(
-                        target: "block_producer",
-                        addr = ?addr,
-                        "EIP-161: deleting empty account from state"
-                    );
-                    account.info = None;
-                } else {
-                    to_remove.push(*addr);
-                }
-            }
-        }
-    }
-    for addr in to_remove {
-        bundle.state.remove(&addr);
-    }
-}
-
-/// Remove unchanged storage slots from the bundle.
-fn filter_unchanged_storage(bundle: &mut BundleState) {
-    for (_addr, account) in bundle.state.iter_mut() {
-        account
-            .storage
-            .retain(|_key, slot| slot.present_value != slot.previous_or_original_value);
-    }
-}
-
 /// Derive ArbHeaderInfo from post-execution state.
 fn derive_header_info_from_state(
     state_provider: &dyn StateProvider,
@@ -1418,111 +1380,4 @@ fn derive_header_info_from_state(
 
     derive_arb_header_info(&read_slot, coinbase)
         .map_err(|e| BlockProducerError::Storage(e.to_string()))
-}
-
-/// Augment the bundle with direct cache modifications not captured by EVM transitions.
-fn augment_bundle_from_cache(
-    bundle: &mut BundleState,
-    cache: &revm_database::CacheState,
-    state_provider: &dyn StateProvider,
-) -> Result<(), BlockProducerError> {
-    use revm_database::states::plain_account::StorageSlot;
-
-    for (addr, cache_acct) in &cache.accounts {
-        let current_info = cache_acct.account.as_ref().map(|a| a.info.clone());
-        let current_storage = cache_acct
-            .account
-            .as_ref()
-            .map(|a| &a.storage)
-            .cloned()
-            .unwrap_or_default();
-
-        if let Some(bundle_acct) = bundle.state.get_mut(addr) {
-            // Update existing bundle entry from cache.
-            bundle_acct.info = current_info;
-
-            for (key, value) in &current_storage {
-                if let Some(slot) = bundle_acct.storage.get_mut(key) {
-                    slot.present_value = *value;
-                } else {
-                    // Slot written via direct cache modification.
-                    let original_value = state_provider
-                        .storage(*addr, B256::from(*key))
-                        .map_err(|e| BlockProducerError::Storage(e.to_string()))?
-                        .unwrap_or(U256::ZERO);
-                    if *value != original_value {
-                        bundle_acct.storage.insert(
-                            *key,
-                            StorageSlot {
-                                previous_or_original_value: original_value,
-                                present_value: *value,
-                            },
-                        );
-                    }
-                }
-            }
-        } else {
-            // Account not in bundle — check if modified from original.
-            let original = state_provider
-                .basic_account(addr)
-                .map_err(|e| BlockProducerError::Storage(e.to_string()))?;
-
-            let info_changed = match (&original, &current_info) {
-                (None, None) => false,
-                (Some(_), None) | (None, Some(_)) => true,
-                (Some(orig), Some(curr)) => {
-                    orig.balance != curr.balance
-                        || orig.nonce != curr.nonce
-                        || orig
-                            .bytecode_hash
-                            .unwrap_or(alloy_primitives::KECCAK256_EMPTY)
-                            != curr.code_hash
-                }
-            };
-
-            let mut storage_changes: revm_database::StorageWithOriginalValues = Default::default();
-            for (key, value) in &current_storage {
-                let original_value = state_provider
-                    .storage(*addr, B256::from(*key))
-                    .map_err(|e| BlockProducerError::Storage(e.to_string()))?
-                    .unwrap_or(U256::ZERO);
-                if original_value != *value {
-                    storage_changes.insert(
-                        *key,
-                        StorageSlot {
-                            previous_or_original_value: original_value,
-                            present_value: *value,
-                        },
-                    );
-                }
-            }
-
-            if info_changed || !storage_changes.is_empty() {
-                let original_info = original.as_ref().map(|a| revm::state::AccountInfo {
-                    balance: a.balance,
-                    nonce: a.nonce,
-                    code_hash: a.bytecode_hash.unwrap_or(alloy_primitives::KECCAK256_EMPTY),
-                    code: None,
-                    account_id: None,
-                });
-
-                let status = if original.is_some() {
-                    revm_database::AccountStatus::Changed
-                } else {
-                    revm_database::AccountStatus::InMemoryChange
-                };
-
-                bundle.state.insert(
-                    *addr,
-                    revm_database::BundleAccount {
-                        info: current_info,
-                        original_info,
-                        storage: storage_changes,
-                        status,
-                    },
-                );
-            }
-        }
-    }
-    Ok(())
 }
