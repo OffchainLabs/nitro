@@ -3915,7 +3915,10 @@ dependencies = [
  "anyhow",
  "clap",
  "replay-io",
+ "rkyv",
+ "serde_json",
  "sp1-core-executor",
+ "validation",
 ]
 
 [[package]]
@@ -6316,6 +6319,7 @@ version = "0.1.0"
 dependencies = [
  "arbutil",
  "brotli",
+ "rkyv",
  "serde",
  "serde_json",
  "serde_with",
