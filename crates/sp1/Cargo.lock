@@ -3904,8 +3904,10 @@ dependencies = [
 name = "replay-program"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "replay-io",
  "sp1-zkvm",
+ "validation",
 ]
 
 [[package]]
