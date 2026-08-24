@@ -293,7 +293,8 @@ func (p Programs) CallProgram(
 		evmCost := evmMemoryCost(uint64(len(ret)))
 		if startingGas < evmCost {
 			// burn all remaining gas for this call
-			contract.Gas.Exhaust()
+			contract.Gas.RegularGas = 0
+			contract.Gas.StateGas = 0
 			attributeWasmComputation(contract, startingGas)
 			// #nosec G115
 			metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas))
