@@ -370,6 +370,46 @@ pub fn create_evm_data(
 
 /// Creates an `EvmData` handler from its component parts.
 pub fn create_evm_data_v2(
+    env: WasmEnvMut,
+    arbos_version: u64,
+    block_basefee_ptr: GuestPtr,
+    chainid: u64,
+    block_coinbase_ptr: GuestPtr,
+    block_gas_limit: u64,
+    block_number: u64,
+    block_timestamp: u64,
+    contract_address_ptr: GuestPtr,
+    module_hash_ptr: GuestPtr,
+    msg_sender_ptr: GuestPtr,
+    msg_value_ptr: GuestPtr,
+    tx_gas_price_ptr: GuestPtr,
+    tx_origin_ptr: GuestPtr,
+    cached: u32,
+    reentrant: u32,
+) -> Result<u64, Escape> {
+    create_evm_data_v3(
+        env,
+        arbos_version,
+        block_basefee_ptr,
+        chainid,
+        block_coinbase_ptr,
+        block_gas_limit,
+        block_number,
+        block_timestamp,
+        contract_address_ptr,
+        module_hash_ptr,
+        msg_sender_ptr,
+        msg_value_ptr,
+        tx_gas_price_ptr,
+        tx_origin_ptr,
+        cached,
+        reentrant,
+        0,
+    )
+}
+
+/// Creates an `EvmData` handler with a per-program storage cache limit.
+pub fn create_evm_data_v3(
     mut env: WasmEnvMut,
     arbos_version: u64,
     block_basefee_ptr: GuestPtr,
@@ -386,6 +426,7 @@ pub fn create_evm_data_v2(
     tx_origin_ptr: GuestPtr,
     cached: u32,
     reentrant: u32,
+    storage_cache_limit: u32,
 ) -> Result<u64, Escape> {
     let (mem, _) = env.jit_env();
 
@@ -406,6 +447,7 @@ pub fn create_evm_data_v2(
         tx_origin: mem.read_bytes20(tx_origin_ptr),
         reentrant,
         return_data_len: 0,
+        storage_cache_limit,
         tracing: false,
     };
     let res = heapify(evm_data);
