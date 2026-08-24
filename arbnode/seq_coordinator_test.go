@@ -327,6 +327,55 @@ func TestSeqCoordinatorPropagatesActiveUntilDeadline(t *testing.T) {
 	}
 }
 
+func TestSeqCoordinatorMetrics(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	coordConfig := TestSeqCoordinatorConfig
+	coordConfig.Signer.ECDSA.AcceptSequencer = false
+	coordConfig.Signer.SymmetricFallback = true
+	coordConfig.Signer.SymmetricSign = true
+	coordConfig.Signer.Symmetric.Dangerous.DisableSignatureVerification = true
+	coordConfig.Signer.Symmetric.SigningKey = ""
+
+	nullSigner, err := signature.NewSignVerify(&coordConfig.Signer, nil, nil)
+	Require(t, err)
+
+	redisUrl := redisutil.CreateTestRedis(ctx, t)
+	coordConfig.RedisUrl = redisUrl
+
+	config := coordConfig
+	config.MyUrl = "test"
+	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl, config.RedisQuorumSize)
+	Require(t, err)
+	coordinator := &SeqCoordinator{
+		redisCoordinator: redisCoordinator,
+		config:           config,
+		signer:           nullSigner,
+	}
+
+	coordinator.updatePriorityMetric(nil)
+	if got := sequencerPriority.Snapshot().Value(); got != -1 {
+		t.Fatalf("sequencerPriority with unset priorities = %d, want -1", got)
+	}
+	Require(t, redisCoordinator.Client.Set(ctx, redisutil.PRIORITIES_KEY, "first,test,last", 0).Err())
+	_, priorities, err := redisCoordinator.RecommendSequencerWantingLockoutAndPriorities(ctx)
+	Require(t, err)
+	coordinator.updatePriorityMetric(priorities)
+	if got := sequencerPriority.Snapshot().Value(); got != 1 {
+		t.Fatalf("sequencerPriority = %d, want 1", got)
+	}
+
+	Require(t, coordinator.wantsLockoutUpdate(ctx, redisCoordinator.Client))
+	if got := isLiveSequencer.Snapshot().Value(); got != 1 {
+		t.Fatalf("isLiveSequencer after wantsLockoutUpdate = %d, want 1", got)
+	}
+	Require(t, coordinator.wantsLockoutRelease(ctx))
+	if got := isLiveSequencer.Snapshot().Value(); got != 0 {
+		t.Fatalf("isLiveSequencer after wantsLockoutRelease = %d, want 0", got)
+	}
+}
+
 func TestSeqCoordinatorAddsBlockMetadata(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
