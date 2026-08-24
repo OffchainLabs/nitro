@@ -47,7 +47,8 @@ func (s *Schedule) RoundIsOver() bool {
 }
 
 func (s *Schedule) RoundElapsed() time.Duration {
-	return time.Since(s.deadline) + s.roundLength
+	roundStart := s.deadline.Add(-s.roundLength)
+	return time.Since(roundStart)
 }
 
 func (s *Schedule) ElapsedInterval() time.Duration {
