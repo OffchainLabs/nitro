@@ -76,15 +76,22 @@ jobs:
       - name: Record block inputs
         run: make -C crates/sp1 record-blocks
 
-      # The SP1 guest validation is mocked for now (NIT-5337): the runner
-      # assembles and sends the real ValidationInput, but the guest does not
-      # validate it yet.
+      # The SP1 guest validation is mocked for now (NIT-5337): the guest parses
+      # the ValidationInput and echoes its start-state block hash instead of
+      # validating. Matching the echo against each recorded block proves the
+      # payload survives the protocol and parses inside the zkVM.
       - name: Run SP1 validation (MOCKED)
         run: |
-          set -o pipefail
-          # The guest's output is forwarded on the executor's stderr.
-          make -C crates/sp1 run BLOCK=transfer 2>&1 | tee run.log
-          grep -q "Validation MOCKED" run.log
+          set -e -o pipefail
+          shopt -s nullglob
+          INPUTS=(target/sp1/block-inputs/*.json)
+          for INPUT in "${INPUTS[@]}"; do
+            BLOCK=$(basename "$INPUT" .json)
+            echo "--- Running SP1 (mocked) validation ($BLOCK) ---"
+            make -C crates/sp1 run BLOCK="$BLOCK" 2>&1 | tee run.log
+            EXPECTED=$(python3 -c "import json; print(json.load(open('$INPUT'))['StartState']['BlockHash'])")
+            grep -q "Validation MOCKED with hash $EXPECTED" run.log
+          done
 
       # Ground-truth check: every recorded block must validate under JIT.
       # Once the SP1 runner is ported, it joins this loop and its hash is
