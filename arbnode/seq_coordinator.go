@@ -39,10 +39,11 @@ var (
 	isActiveSequencer = metrics.NewRegisteredGauge("arb/sequencer/active", nil)
 	// isLiveSequencer is 1 while this sequencer's liveliness key is published to
 	// Redis and not released, i.e. it is a candidate for the chosen lockout.
-	isLiveSequencer = metrics.NewRegisteredGauge("arb/sequencer/coordinator/live", nil)
+	isLiveSequencer = metrics.NewRegisteredGauge("arb/sequencer/live", nil)
 	// sequencerPriority is this sequencer's zero-based rank in the coordinator
 	// priorities list (0 is the highest priority), or -1 if it isn't listed.
-	sequencerPriority = metrics.NewRegisteredGauge("arb/sequencer/coordinator/priority", nil)
+	// Unrelated to transaction priority (arb/sequencer/pga/tx/priority).
+	sequencerPriority = metrics.NewRegisteredGauge("arb/sequencer/priority", nil)
 )
 
 type SeqCoordinator struct {
