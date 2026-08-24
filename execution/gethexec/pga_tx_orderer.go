@@ -63,8 +63,7 @@ func (p *pgaTxOrderer) CurrentRound() uint64 {
 
 func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, ordererStatus) {
 	if blockGasLeft < params.TxGas {
-		p.recordRoundEnd(pgaRoundsBlockFilledCounter)
-		p.mempool.ApplyRoundBoost()
+		p.endRound(pgaRoundsBlockFilledCounter)
 		return txQueueItem{}, blockGasLimitReached
 	}
 
@@ -74,8 +73,7 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 			if queueEmpty {
 				reason = pgaRoundsTxExhaustedCounter
 			}
-			p.recordRoundEnd(reason)
-			p.mempool.ApplyRoundBoost()
+			p.endRound(reason)
 			if p.schedule.IsLastRound() {
 				limitReason := blockTimeLimitReached
 				if queueEmpty {
@@ -99,8 +97,7 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 		// If the next tx is too big to fit in the remaining block space, we leave it in the mempool and stop
 		// sequencing. The sequencer will finalize the block and start a new one, with a fresh mempool and schedule.
 		if item.txSize > remainingBlockSize {
-			p.recordRoundEnd(pgaRoundsBlockFilledCounter)
-			p.mempool.ApplyRoundBoost()
+			p.endRound(pgaRoundsBlockFilledCounter)
 			return txQueueItem{}, blockSizeLimitReached
 		}
 
@@ -112,11 +109,12 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 	}
 }
 
-// recordRoundEnd counts a round ending for the given reason and records its execute-phase duration.
-func (p *pgaTxOrderer) recordRoundEnd(reason *metrics.Counter) {
+// endRound counts a round ending for the given reason and records its execute-phase duration.
+func (p *pgaTxOrderer) endRound(reason *metrics.Counter) {
 	pgaRoundsCompletedCounter.Inc(1)
 	reason.Inc(1)
 	pgaRoundExecutionDurationHistogram.Update(p.schedule.RoundElapsed().Microseconds())
+	p.mempool.ApplyRoundBoost()
 }
 
 // promote pushes the drained txs into the priority queue and records the dwell-time metrics.
