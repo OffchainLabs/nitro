@@ -60,6 +60,7 @@ var activationGasKey = []byte{5}
 
 var ErrProgramActivation = errors.New("program activation failed")
 var ErrNativeStackOverflow = errors.New("native stack overflow")
+var ErrStorageCacheLimitExceeded = errors.New("storage cache limit exceeded")
 
 var ProgramNotWasmError func() error
 var ProgramNotActivatedError func() error
@@ -265,22 +266,23 @@ func (p Programs) CallProgram(
 	localAsm := handleProgramPrepare(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params, evm.Context.Time, debugMode, program, runCtx)
 
 	evmData := &EvmData{
-		arbosVersion:    evm.Context.ArbOSVersion,
-		blockBasefee:    common.BigToHash(evm.Context.BaseFee),
-		chainId:         evm.ChainConfig().ChainID.Uint64(),
-		blockCoinbase:   evm.Context.Coinbase,
-		blockGasLimit:   evm.Context.GasLimit,
-		blockNumber:     l1BlockNumber,
-		blockTimestamp:  evm.Context.Time,
-		contractAddress: scope.Contract.Address(),
-		moduleHash:      moduleHash,
-		msgSender:       scope.Contract.Caller(),
-		msgValue:        scope.Contract.Value().Bytes32(),
-		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice.ToBig()),
-		txOrigin:        evm.TxContext.Origin,
-		reentrant:       arbmath.BoolToUint32(reentrant),
-		cached:          program.cached,
-		tracing:         tracingInfo != nil,
+		arbosVersion:      evm.Context.ArbOSVersion,
+		blockBasefee:      common.BigToHash(evm.Context.BaseFee),
+		chainId:           evm.ChainConfig().ChainID.Uint64(),
+		blockCoinbase:     evm.Context.Coinbase,
+		blockGasLimit:     evm.Context.GasLimit,
+		blockNumber:       l1BlockNumber,
+		blockTimestamp:    evm.Context.Time,
+		contractAddress:   scope.Contract.Address(),
+		moduleHash:        moduleHash,
+		msgSender:         scope.Contract.Caller(),
+		msgValue:          scope.Contract.Value().Bytes32(),
+		txGasPrice:        common.BigToHash(evm.TxContext.GasPrice.ToBig()),
+		txOrigin:          evm.TxContext.Origin,
+		reentrant:         arbmath.BoolToUint32(reentrant),
+		storageCacheLimit: stylusStorageCacheLimit(statedb, runCtx),
+		cached:            program.cached,
+		tracing:           tracingInfo != nil,
 	}
 
 	address := contract.Address()
@@ -753,22 +755,23 @@ func (p Programs) progParams(version uint16, debug bool, params *StylusParams) *
 }
 
 type EvmData struct {
-	arbosVersion    uint64
-	blockBasefee    common.Hash
-	chainId         uint64
-	blockCoinbase   common.Address
-	blockGasLimit   uint64
-	blockNumber     uint64
-	blockTimestamp  uint64
-	contractAddress common.Address
-	moduleHash      common.Hash
-	msgSender       common.Address
-	msgValue        common.Hash
-	txGasPrice      common.Hash
-	txOrigin        common.Address
-	reentrant       uint32
-	cached          bool
-	tracing         bool
+	arbosVersion      uint64
+	blockBasefee      common.Hash
+	chainId           uint64
+	blockCoinbase     common.Address
+	blockGasLimit     uint64
+	blockNumber       uint64
+	blockTimestamp    uint64
+	contractAddress   common.Address
+	moduleHash        common.Hash
+	msgSender         common.Address
+	msgValue          common.Hash
+	txGasPrice        common.Hash
+	txOrigin          common.Address
+	reentrant         uint32
+	storageCacheLimit uint32
+	cached            bool
+	tracing           bool
 }
 
 type activationInfo struct {
@@ -788,6 +791,7 @@ const (
 	userOutOfInk
 	userOutOfStack
 	userNativeStackOverflow
+	userStorageCacheLimitExceeded
 )
 
 func (status userStatus) toResult(data []byte, _debug bool) ([]byte, string, error) {
@@ -808,6 +812,8 @@ func (status userStatus) toResult(data []byte, _debug bool) ([]byte, string, err
 		// before calling toResult when status is userNativeStackOverflow.
 		log.Error("unexpected userNativeStackOverflow in toResult", "data", msg)
 		return nil, "", ErrNativeStackOverflow
+	case userStorageCacheLimitExceeded:
+		return nil, ErrStorageCacheLimitExceeded.Error(), ErrStorageCacheLimitExceeded
 	default:
 		log.Error("program errored with unknown status", "status", status, "data", msg)
 		return nil, msg, vm.ErrExecutionReverted

@@ -26,13 +26,6 @@ pub mod transfer;
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
 pub type Preimages = BTreeMap<u8, BTreeMap<[u8; 32], Vec<u8>>>;
 
-/// Magic payload the SP1 builder feeds as the program's third input during
-/// the bootloading step. The program recognizes this exact byte string,
-/// halts cleanly after the `beforeFirstIO` ELF dump, and skips parsing a
-/// `ValidationInput`. Any other payload, including a genuinely empty one,
-/// falls through to the normal parse path and may panic loudly.
-pub const SP1_BOOTLOAD_SENTINEL: &[u8] = b"SP1_BOOTLOAD_ONLY";
-
 /// The runtime data needed by any machine (JIT, SP1, Prover) to execute
 /// a single block validation. Extracted from a `ValidationRequest` by
 /// selecting a target architecture and stripping request metadata.
@@ -371,17 +364,6 @@ mod tests {
         let input = ValidationInput::from_request_allowing_missing_binaries(&req, "host").unwrap();
         assert_eq!(input.module_asms.len(), 1);
         assert_eq!(input.module_asms[&[0xBB; 32]], vec![0, 1, 2, 3]);
-    }
-
-    /// The SP1 program distinguishes the bootload sentinel from a real input
-    /// by exact byte equality before parsing, and any non-sentinel payload
-    /// must fail parsing loudly rather than validate garbage. Guarantee the
-    /// two cannot be confused: the sentinel itself is not a parseable input.
-    #[cfg(feature = "rkyv")]
-    #[test]
-    fn bootload_sentinel_is_not_a_valid_input() {
-        let err = ValidationInput::from_reader(io::Cursor::new(SP1_BOOTLOAD_SENTINEL)).unwrap_err();
-        assert!(err.contains("rkyv"), "unexpected error: {err}");
     }
 
     #[test]

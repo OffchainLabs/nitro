@@ -46,6 +46,11 @@ func (s *Schedule) RoundIsOver() bool {
 	return time.Now().After(s.deadline)
 }
 
+func (s *Schedule) RoundElapsed() time.Duration {
+	roundStart := s.deadline.Add(-s.roundLength)
+	return time.Since(roundStart)
+}
+
 func (s *Schedule) ElapsedInterval() time.Duration {
 	return arbmath.SaturatingCast[time.Duration](s.activeRound) * s.roundLength
 }
