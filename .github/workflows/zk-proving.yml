@@ -73,19 +73,18 @@ jobs:
         # Generate and verify a proof of correct Stylus compilation.
         run: make -C crates/sp1 stylus-compiler-prove
 
-      # The SP1 replay pipeline is mocked for now (NIT-5337): the guest
-      # performs no real validation, so this step only proves the
-      # build-and-execute plumbing end-to-end. It is replaced by a real
-      # SP1-vs-JIT hash comparison as guest functionality lands.
+      - name: Record block inputs
+        run: make -C crates/sp1 record-blocks
+
+      # The SP1 guest validation is mocked for now (NIT-5337): the runner
+      # assembles and sends the real ValidationInput, but the guest does not
+      # validate it yet.
       - name: Run SP1 validation (MOCKED)
         run: |
           set -o pipefail
           # The guest's output is forwarded on the executor's stderr.
-          make -C crates/sp1 run 2>&1 | tee run.log
+          make -C crates/sp1 run BLOCK=transfer 2>&1 | tee run.log
           grep -q "Validation MOCKED" run.log
-
-      - name: Record block inputs
-        run: make -C crates/sp1 record-blocks
 
       # Ground-truth check: every recorded block must validate under JIT.
       # Once the SP1 runner is ported, it joins this loop and its hash is
