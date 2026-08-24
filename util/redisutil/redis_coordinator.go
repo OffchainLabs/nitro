@@ -79,7 +79,7 @@ func (c *RedisCoordinator) RecommendSequencerWantingLockoutAndPriorities(ctx con
 			continue
 		}
 		if err != nil {
-			return "", nil, err
+			return "", priorities, err
 		}
 		// We found a sequencer that wants the lockout, so we reset the last time we observed the error
 		// to a value of zero for logging purposes below.
