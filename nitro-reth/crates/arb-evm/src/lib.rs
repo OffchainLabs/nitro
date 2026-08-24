@@ -18,9 +18,7 @@ pub mod state_overlay;
 pub mod transaction;
 
 pub use assembler::ArbBlockAssembler;
-pub use build::{
-    ArbBlockExecutor, ArbBlockExecutorFactory, ArbScheduledTxDrain, ArbTransactionEnv,
-};
+pub use build::{ArbBlockExecutor, ArbBlockExecutorFactory, ArbTransactionEnv};
 pub use config::ArbEvmConfig;
 pub use context::{
     ActivatedWasm, ArbBlockExecutionCtx, ArbNextBlockEnvCtx, ArbitrumExtraData,

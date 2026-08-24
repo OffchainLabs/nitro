@@ -121,7 +121,7 @@ impl Database for MockDatabase {
             .lock()
             .unwrap()
             .head_block_num
-            .ok_or_else(|| MelRunnerError::NotFound("HeadMelStateBlockNum".to_string()))
+            .ok_or_else(|| MelRunnerError::NotFound("head mel state block number".to_string()))
     }
 
     async fn state(&self, parent_chain_block_number: u64) -> Result<MelState> {
