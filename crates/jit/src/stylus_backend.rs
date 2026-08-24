@@ -146,7 +146,7 @@ pub fn exec_wasm(
         rx: tothread_rx,
     };
 
-    let evm_api = EvmApiRequestor::new(cothread);
+    let evm_api = EvmApiRequestor::new(cothread, evm_data.storage_cache_limit);
 
     let mut instance =
         unsafe { NativeInstance::deserialize(&module, compile.clone(), evm_api, evm_data) }?;

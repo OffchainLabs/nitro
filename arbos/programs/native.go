@@ -636,6 +636,12 @@ func callProgram(
 		}
 	}
 
+	if status == userStorageCacheLimitExceeded {
+		log.Info("stylus storage cache limit exceeded", "program", address,
+			"limit", evmData.storageCacheLimit, "runMode", runCtx.RunModeMetricName())
+		evm.StateDB.FilterTx()
+	}
+
 	if status == userFailure && debug {
 		log.Warn("program failure", "err", err, "msg", msg, "program", address, "depth", depth)
 	}
@@ -958,22 +964,23 @@ func (params *ProgParams) encode() C.StylusConfig {
 
 func (data *EvmData) encode() C.EvmData {
 	return C.EvmData{
-		arbos_version:    u64(data.arbosVersion),
-		block_basefee:    hashToBytes32(data.blockBasefee),
-		chainid:          u64(data.chainId),
-		block_coinbase:   addressToBytes20(data.blockCoinbase),
-		block_gas_limit:  u64(data.blockGasLimit),
-		block_number:     u64(data.blockNumber),
-		block_timestamp:  u64(data.blockTimestamp),
-		contract_address: addressToBytes20(data.contractAddress),
-		module_hash:      hashToBytes32(data.moduleHash),
-		msg_sender:       addressToBytes20(data.msgSender),
-		msg_value:        hashToBytes32(data.msgValue),
-		tx_gas_price:     hashToBytes32(data.txGasPrice),
-		tx_origin:        addressToBytes20(data.txOrigin),
-		reentrant:        u32(data.reentrant),
-		return_data_len:  0,
-		cached:           cbool(data.cached),
-		tracing:          cbool(data.tracing),
+		arbos_version:       u64(data.arbosVersion),
+		block_basefee:       hashToBytes32(data.blockBasefee),
+		chainid:             u64(data.chainId),
+		block_coinbase:      addressToBytes20(data.blockCoinbase),
+		block_gas_limit:     u64(data.blockGasLimit),
+		block_number:        u64(data.blockNumber),
+		block_timestamp:     u64(data.blockTimestamp),
+		contract_address:    addressToBytes20(data.contractAddress),
+		module_hash:         hashToBytes32(data.moduleHash),
+		msg_sender:          addressToBytes20(data.msgSender),
+		msg_value:           hashToBytes32(data.msgValue),
+		tx_gas_price:        hashToBytes32(data.txGasPrice),
+		tx_origin:           addressToBytes20(data.txOrigin),
+		reentrant:           u32(data.reentrant),
+		return_data_len:     0,
+		storage_cache_limit: u32(data.storageCacheLimit),
+		cached:              cbool(data.cached),
+		tracing:             cbool(data.tracing),
 	}
 }

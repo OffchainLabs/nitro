@@ -185,7 +185,7 @@ impl Program {
         let program = Self {
             args,
             outs: vec![],
-            evm_api: EvmApiRequestor::new(RequesterProxy),
+            evm_api: EvmApiRequestor::new(RequesterProxy, evm_data.storage_cache_limit),
             evm_data,
             benchmark: Benchmark::default(),
             module,
