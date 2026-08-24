@@ -61,18 +61,11 @@ func (p *PGAState) ResetBoost() {
 	p.boost = 0
 }
 
-func (p *PGAState) AddBoost(delta uint64) {
-	// Overflow should not happen, use saturating function just to be safe.
-	p.boost = arbmath.SaturatingUAdd(p.boost, delta)
-}
-
 // ApplyRoundBoundary counts a PGA round boundary the tx sat through in the priority queue,
 // applying the round's anti-starvation boost.
 func (p *PGAState) ApplyRoundBoundary(boostDelta uint64) {
 	p.roundsWaited++
-	if boostDelta != 0 {
-		p.AddBoost(boostDelta)
-	}
+	p.boost = arbmath.SaturatingUAdd(p.boost, boostDelta)
 }
 
 // MarkPromoted records the tx's first promotion into the priority queue, reporting whether this
