@@ -261,6 +261,7 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	Forwarder:                    DefaultTestForwarderConfig,
 	QueueSize:                    128,
 	QueueTimeout:                 time.Second * 5,
+	MaxBlockTxCandidates:         gethexec.DefaultSequencerConfig.MaxBlockTxCandidates,
 	NonceCacheSize:               4,
 	MaxTxDataSize:                95000,
 	NonceFailureCacheSize:        1024,

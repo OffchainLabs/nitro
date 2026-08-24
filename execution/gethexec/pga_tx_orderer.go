@@ -5,7 +5,6 @@ package gethexec
 
 import (
 	"context"
-	"math/big"
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/state"
@@ -37,26 +36,24 @@ var (
 
 // pgaTxOrderer is the priority-gas-auction TxOrderer.
 type pgaTxOrderer struct {
+	txOrdererConfig
 	seq txOrdererSequencer
 	ctx context.Context // bounds the round-boundary waits
 
 	mempool  *pga.Mempool[txQueueItem]
 	schedule *pga.Schedule
 
-	baseFee        *big.Int
 	roundsPerBlock uint
-	roundLength    time.Duration
 }
 
 var _ txOrderer = (*pgaTxOrderer)(nil)
 
-func NewPGATxOrderer(ctx context.Context, seq txOrdererSequencer, roundsPerBlock uint, roundLength time.Duration, baseFee *big.Int) *pgaTxOrderer {
+func NewPGATxOrderer(ctx context.Context, seq txOrdererSequencer, config txOrdererConfig, roundsPerBlock uint) *pgaTxOrderer {
 	return &pgaTxOrderer{
-		seq:            seq,
-		ctx:            ctx,
-		roundsPerBlock: roundsPerBlock,
-		roundLength:    roundLength,
-		baseFee:        baseFee,
+		txOrdererConfig: config,
+		seq:             seq,
+		ctx:             ctx,
+		roundsPerBlock:  roundsPerBlock,
 	}
 }
 
@@ -91,7 +88,8 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 				log.Warn("PGA round wait interrupted; ending the block early", "err", err)
 				return txQueueItem{}, blockInterrupted
 			}
-			p.promote(p.seq.drainValidatedTxs(statedb, p.baseFee))
+			mempoolCapacity := max(p.maxBlockTxCandidates-p.mempool.PriorityQueueLen(), 0)
+			p.promote(p.seq.drainValidatedTxs(statedb, p.baseFee, mempoolCapacity))
 		}
 		item, ok := p.mempool.ValidateAndPeek()
 		if !ok {
@@ -154,10 +152,11 @@ func recordIncludedPGATx(item txQueueItem) {
 }
 
 func (p *pgaTxOrderer) StartBlock(statedb *state.StateDB) (hasWork bool) {
-	p.schedule = pga.NewSchedule(uint64(p.roundsPerBlock), p.roundLength)
+	roundLength := pgaRoundLength(p.maxBlockSpeed, p.roundsPerBlock)
+	p.schedule = pga.NewSchedule(uint64(p.roundsPerBlock), roundLength)
 	p.mempool = pga.NewMempool[txQueueItem](p.roundsPerBlock, p.baseFee)
 
-	p.promote(p.seq.drainValidatedTxs(statedb, p.baseFee))
+	p.promote(p.seq.drainValidatedTxs(statedb, p.baseFee, p.maxBlockTxCandidates))
 
 	return p.mempool.PriorityQueueLen() > 0
 }

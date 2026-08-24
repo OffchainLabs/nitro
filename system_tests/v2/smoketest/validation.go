@@ -8,6 +8,7 @@ import (
 
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/core/vm/program"
 
@@ -16,6 +17,7 @@ import (
 
 var blockValidatorTests = []systest.Scenario{
 	systest.Test(testRunBlockValidatorSimple, systest.WithL1(), systest.WithValidation()),
+	systest.Test(testRunStakingValidation, systest.WithStakingValidation()),
 }
 
 func testRunBlockValidatorSimple(env *systest.Env) {
@@ -38,4 +40,17 @@ func testRunBlockValidatorSimple(env *systest.Env) {
 	env.L2.Info.GenerateAccount("User2")
 	delayedTx := env.L2.Info.PrepareTx("Owner", "User2", 30002, big.NewInt(1e12), nil)
 	env.SendSignedTxViaL1(delayedTx)
+}
+
+func testRunStakingValidation(env *systest.Env) {
+	env.L2.Info.GenerateAccount("User2")
+	txs := []*types.Transaction{
+		env.L2.Info.PrepareTx("Owner", "User2", env.L2.Info.TransferGas, big.NewInt(1e12), nil),
+		env.L2.Info.PrepareTx("Owner", "User2", env.L2.Info.TransferGas, big.NewInt(1e12), nil),
+	}
+	env.L2.SendWaitTestTransactions(txs)
+
+	env.WaitForFollowersSync()
+	bal := env.Follower().BalanceAt(env.L2.Info.GetAddress("User2"))
+	env.EqualBig(big.NewInt(2e12), bal, "follower balance")
 }

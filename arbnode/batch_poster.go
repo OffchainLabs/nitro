@@ -290,7 +290,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".check-batch-correctness", DefaultBatchPosterConfig.CheckBatchCorrectness, "setting this to true will run the batch against an inbox multiplexer and verifies that it produces the correct set of messages")
 	f.Duration(prefix+".max-empty-batch-delay", DefaultBatchPosterConfig.MaxEmptyBatchDelay, "maximum empty batch posting delay, batch poster will only be able to post an empty batch if this time period building a batch has passed; if 0, disable automatic empty batch posting")
 	f.Uint64(prefix+".delay-buffer-threshold-margin", DefaultBatchPosterConfig.DelayBufferThresholdMargin, "the number of blocks to post the batch before reaching the delay buffer threshold")
-	f.String(prefix+".parent-chain-eip7623", DefaultBatchPosterConfig.ParentChainEip7623, "if parent chain uses EIP7623 (\"yes\", \"no\", \"auto\")")
+	f.String(prefix+".parent-chain-eip7623", DefaultBatchPosterConfig.ParentChainEip7623, "DEPRECATED: if parent chain uses EIP7623 (\"yes\", \"no\", \"auto\"); the dynamic price comparison this feeds is deprecated, use ignore-blob-price instead")
 	f.Bool(prefix+".delay-buffer-always-updatable", DefaultBatchPosterConfig.DelayBufferAlwaysUpdatable, "always treat delay buffer as updatable")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposterconfig.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposterconfig.DefaultDataPosterConfig, dataposterconfig.DataPosterUsageBatchPoster)
@@ -317,7 +317,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	GasRefunderAddress:             "",
 	ExtraBatchGas:                  50_000,
 	Post4844Blobs:                  false,
-	IgnoreBlobPrice:                false,
+	IgnoreBlobPrice:                true,
 	DataPoster:                     dataposterconfig.DefaultDataPosterConfig,
 	ParentChainWallet:              DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:                   "",
@@ -408,6 +408,9 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	case "auto":
 		checkEip7623 = true
 		useEip7623 = false
+	}
+	if opts.Config().Post4844Blobs && !opts.Config().IgnoreBlobPrice {
+		log.Warn("the dynamic price calculation and fallback to calldata is deprecated post-Amsterdam and may not function correctly if used; set --node.batch-poster.ignore-blob-price=true to always post blobs when --node.batch-poster.post-4844-blobs is enabled and the parent chain supports them")
 	}
 	seqInboxABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
 	if err != nil {

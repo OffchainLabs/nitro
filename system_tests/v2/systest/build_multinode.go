@@ -7,10 +7,14 @@ import (
 	"context"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+
 	"github.com/offchainlabs/nitro/arbnode"
+	legacystaker "github.com/offchainlabs/nitro/staker/legacy"
 )
 
-// buildMultiNodeStack builds a sequencer stack plus a plain non-sequencer follower.
+// buildMultiNodeStack builds a sequencer stack plus a non-sequencer follower.
+// Under TopologyStakingValidation the follower also runs block validation and a staker.
 func buildMultiNodeStack(t *testing.T, ctx context.Context, spec Spec, overrides overrides) (*Env, func()) {
 	t.Helper()
 
@@ -31,6 +35,7 @@ func buildMultiNodeStack(t *testing.T, ctx context.Context, spec Spec, overrides
 }
 
 // buildFollowerNode spins a non-sequencer L2 reusing the sequencer's L1 setup.
+// Under TopologyStakingValidation it also runs block validation and a staker.
 func buildFollowerNode(t *testing.T, ctx context.Context, spec Spec, overrides overrides, env *Env) (*L2Handle, func()) {
 	t.Helper()
 
@@ -38,6 +43,16 @@ func buildFollowerNode(t *testing.T, ctx context.Context, spec Spec, overrides o
 	// The follower must not sequence its own txs; with ForwardingTarget "null"
 	// sends to it fail loudly instead of silently forking the chain.
 	execCfg.Sequencer.Enable = false
+
+	var validatorTxOpts *bind.TransactOpts
+	if spec.Topology == TopologyStakingValidation {
+		mustEnableValidation(t, execCfg, nodeConfig, "staker requires wasm machines")
+		nodeConfig.Staker.Enable = true
+		nodeConfig.Staker.Strategy = legacystaker.MakeNodesStrategy.ToString()
+		nodeConfig.Staker.UseSmartContractWallet = true
+		opts := env.L1.Info.GetDefaultTransactOpts("Validator", ctx)
+		validatorTxOpts = &opts
+	}
 
 	var rb rollbackGuard
 	defer rb.run()
@@ -49,7 +64,7 @@ func buildFollowerNode(t *testing.T, ctx context.Context, spec Spec, overrides o
 	execNode, fatalCh := newExecNode(t, ctx, "follower", stack, executionDB, blockchain, execCfg, env.L1.Client, env.L2.Consensus.ParentChain)
 	seqTxOpts, dataSigner := sequencerCredentials(ctx, env.L1.Info)
 	consensusNode := newConsensusNode(t, ctx, "follower", stack, execNode, consensusDB, nodeConfig, blockchain.Config(),
-		env.L1.Client, env.L2.Consensus.DeployInfo, nil, seqTxOpts, dataSigner, fatalCh, env.L1.blobReader, env.L1.wasmRoot, env.L2.Consensus.ParentChain)
+		env.L1.Client, env.L2.Consensus.DeployInfo, validatorTxOpts, seqTxOpts, dataSigner, fatalCh, env.L1.blobReader, env.L1.wasmRoot, env.L2.Consensus.ParentChain)
 
 	handle, fullCleanup := startNode(t, ctx, &rb, env, "follower", env.L2.Info, stack, execNode, consensusNode, fatalCh, nil)
 
