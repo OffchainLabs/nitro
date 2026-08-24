@@ -12,15 +12,14 @@
 use std::sync::Arc;
 
 use alloy_primitives::{Address, B256};
-use arb_rpc::block_producer::{
-    BlockProducer, BlockProducerError, BlockProductionInput, ProducedBlock,
-};
+use arb_rpc::block_producer::{BlockProducer, BlockProducerError, ProducedBlock};
+use arbos::types::{L1IncomingMessage, L1IncomingMessageHeader, MessageWithMetadata};
 use parking_lot::{Mutex, RwLock};
 
 #[derive(Default, Debug)]
 struct Stub {
     inits: Mutex<Vec<Vec<u8>>>,
-    produces: Mutex<Vec<(u64, BlockProductionInput)>>,
+    produces: Mutex<Vec<(u64, MessageWithMetadata)>>,
     resets: Mutex<Vec<u64>>,
     finality: Mutex<Vec<(Option<B256>, Option<B256>, Option<B256>)>>,
     watchers: Mutex<Vec<Arc<RwLock<B256>>>>,
@@ -36,7 +35,7 @@ impl BlockProducer for Stub {
     async fn produce_block(
         &self,
         msg_idx: u64,
-        input: BlockProductionInput,
+        input: MessageWithMetadata,
     ) -> Result<ProducedBlock, BlockProducerError> {
         self.produces.lock().push((msg_idx, input));
         Ok(ProducedBlock {
@@ -72,18 +71,22 @@ fn rt() -> tokio::runtime::Runtime {
         .unwrap()
 }
 
-fn sample_input() -> BlockProductionInput {
-    BlockProductionInput {
-        kind: 3,
-        sender: Address::repeat_byte(0xAB),
-        l1_block_number: 100,
-        l1_timestamp: 1_700_000_000,
-        request_id: Some(B256::repeat_byte(0x42)),
-        l1_base_fee: None,
-        l2_msg: vec![1, 2, 3, 4],
+fn sample_input() -> MessageWithMetadata {
+    MessageWithMetadata {
+        message: L1IncomingMessage {
+            header: L1IncomingMessageHeader {
+                kind: 3,
+                poster: Address::repeat_byte(0xAB),
+                block_number: 100,
+                timestamp: 1_700_000_000,
+                request_id: Some(B256::repeat_byte(0x42)),
+                l1_base_fee: None,
+            },
+            l2_msg: vec![1, 2, 3, 4].into(),
+            legacy_batch_gas_cost: None,
+            batch_data_stats: None,
+        },
         delayed_messages_read: 5,
-        batch_gas_cost: None,
-        batch_data_stats: None,
     }
 }
 
@@ -115,11 +118,14 @@ fn produce_block_preserves_input_fields() {
     assert_eq!(recorded.len(), 1);
     let (idx, ref captured) = recorded[0];
     assert_eq!(idx, 42);
-    assert_eq!(captured.kind, 3);
-    assert_eq!(captured.sender, Address::repeat_byte(0xAB));
-    assert_eq!(captured.l1_block_number, 100);
-    assert_eq!(captured.request_id, Some(B256::repeat_byte(0x42)));
-    assert_eq!(captured.l2_msg, vec![1, 2, 3, 4]);
+    assert_eq!(captured.message.header.kind, 3);
+    assert_eq!(captured.message.header.poster, Address::repeat_byte(0xAB));
+    assert_eq!(captured.message.header.block_number, 100);
+    assert_eq!(
+        captured.message.header.request_id,
+        Some(B256::repeat_byte(0x42))
+    );
+    assert_eq!(captured.message.l2_msg, vec![1, 2, 3, 4]);
 }
 
 #[test]
@@ -181,7 +187,7 @@ fn default_set_finality_is_noop_ok() {
         async fn produce_block(
             &self,
             _: u64,
-            _: BlockProductionInput,
+            _: MessageWithMetadata,
         ) -> Result<ProducedBlock, BlockProducerError> {
             unreachable!()
         }
@@ -206,7 +212,7 @@ fn default_reset_to_block_returns_unsupported_error() {
         async fn produce_block(
             &self,
             _: u64,
-            _: BlockProductionInput,
+            _: MessageWithMetadata,
         ) -> Result<ProducedBlock, BlockProducerError> {
             unreachable!()
         }

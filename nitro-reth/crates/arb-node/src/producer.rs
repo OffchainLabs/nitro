@@ -24,14 +24,12 @@ use arb_evm::{
     config::{ArbEvmConfig, arbos_version_from_mix_hash, l1_block_number_from_mix_hash},
 };
 use arb_primitives::{ArbPrimitives, signed_tx::ArbTransactionSigned, tx_types::ArbInternalTx};
-use arb_rpc::block_producer::{
-    BlockProducer, BlockProducerError, BlockProductionInput, ProducedBlock,
-};
+use arb_rpc::block_producer::{BlockProducer, BlockProducerError, ProducedBlock};
 use arbos::{
     header::{ArbHeaderInfo, derive_arb_header_info},
     internal_tx,
     parse_l2::{ParsedTransaction, parse_l2_transactions, parsed_tx_to_signed},
-    types::parse_init_message,
+    types::{MessageWithMetadata, parse_init_message},
 };
 use parking_lot::Mutex;
 use reth_chain_state::{CanonicalInMemoryState, ExecutedBlock, NewCanonicalChain};
@@ -420,7 +418,7 @@ where
 
     fn produce_block_with_execution(
         &self,
-        input: &BlockProductionInput,
+        input: &MessageWithMetadata,
         parsed_txs: Vec<ParsedTransaction>,
     ) -> Result<ProducedBlock, BlockProducerError> {
         self.drain_completed_flush();
@@ -429,7 +427,11 @@ where
         let l2_block_number = head_num + 1;
         let parent_header = self.parent_header(head_num)?;
 
-        let timestamp = input.l1_timestamp.max(parent_header.timestamp());
+        let timestamp = input
+            .message
+            .header
+            .timestamp
+            .max(parent_header.timestamp());
         let time_passed = timestamp.saturating_sub(parent_header.timestamp());
 
         let parent_mix_hash = parent_header.mix_hash().unwrap_or_default();
@@ -437,7 +439,7 @@ where
 
         // The StartBlock tx carries the reported value verbatim; the EVM sees
         // the monotonic one.
-        let l1_block_number = input.l1_block_number;
+        let l1_block_number = input.message.header.block_number;
         let block_l1_block_number = monotonic_l1_block_number(l1_block_number, &parent_mix_hash);
         let arbos_version = parent_arbos_version; // May upgrade during StartBlock
 
@@ -475,7 +477,7 @@ where
         let provisional_header = Header {
             parent_hash: parent_header.hash(),
             ommers_hash: EMPTY_OMMER_ROOT_HASH,
-            beneficiary: input.sender,
+            beneficiary: input.message.header.poster,
             state_root: B256::ZERO, // placeholder
             transactions_root: B256::ZERO,
             receipts_root: B256::ZERO,
@@ -621,7 +623,7 @@ where
         let mut all_txs: Vec<ArbTransactionSigned> = Vec::new();
 
         // 1. Generate and execute the StartBlock internal tx (always first).
-        let l1_base_fee = input.l1_base_fee.unwrap_or(U256::ZERO);
+        let l1_base_fee = input.message.header.l1_base_fee.unwrap_or(U256::ZERO);
         let start_block_data = internal_tx::encode_start_block(
             l1_base_fee,
             l1_block_number,
@@ -670,7 +672,8 @@ where
                     let report_data =
                         if parent_arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_50 {
                             // V2: pass raw batch data stats + extra_gas.
-                            let (length, non_zeros) = input.batch_data_stats.unwrap_or((0, 0));
+                            let stats = input.message.batch_data_stats.unwrap_or_default();
+                            let (length, non_zeros) = (stats.length, stats.non_zeros);
                             internal_tx::encode_batch_posting_report_v2(
                                 *batch_timestamp,
                                 *batch_poster,
@@ -682,7 +685,7 @@ where
                             )
                         } else {
                             // V1: combine legacy gas cost + extra_gas into single field.
-                            let legacy_gas = input.batch_gas_cost.unwrap_or(0);
+                            let legacy_gas = input.message.legacy_batch_gas_cost.unwrap_or(0);
                             let batch_data_gas = legacy_gas.saturating_add(*extra_gas);
                             internal_tx::encode_batch_posting_report(
                                 *batch_timestamp,
@@ -939,8 +942,11 @@ where
         };
 
         // Derive header info (send_root, send_count, etc.) from post-execution state.
-        let arb_info =
-            derive_header_info_from_state(state_provider.as_ref(), &bundle, input.sender)?;
+        let arb_info = derive_header_info_from_state(
+            state_provider.as_ref(),
+            &bundle,
+            input.message.header.poster,
+        )?;
 
         let final_mix_hash = arb_info
             .as_ref()
@@ -987,7 +993,7 @@ where
         let header = Header {
             parent_hash: parent_header.hash(),
             ommers_hash: EMPTY_OMMER_ROOT_HASH,
-            beneficiary: input.sender,
+            beneficiary: input.message.header.poster,
             state_root,
             transactions_root,
             receipts_root,
@@ -1163,7 +1169,7 @@ where
     async fn produce_block(
         &self,
         msg_idx: u64,
-        input: BlockProductionInput,
+        input: MessageWithMetadata,
     ) -> Result<ProducedBlock, BlockProducerError> {
         let _lock = self.produce_lock.lock().await;
 
@@ -1182,11 +1188,11 @@ where
         let chain_id = self.chain_spec.chain().id();
 
         let parsed_txs = parse_l2_transactions(
-            input.kind,
-            input.sender,
-            &input.l2_msg,
-            input.request_id,
-            input.l1_base_fee,
+            input.message.header.kind,
+            input.message.header.poster,
+            &input.message.l2_msg,
+            input.message.header.request_id,
+            input.message.header.l1_base_fee,
             chain_id,
         )
         .unwrap_or_else(|e| {
@@ -1197,7 +1203,7 @@ where
         debug!(
             target: "block_producer",
             msg_idx,
-            kind = input.kind,
+            kind = input.message.header.kind,
             num_txs = parsed_txs.len(),
             "Parsed L1 message"
         );

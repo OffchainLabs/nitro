@@ -6,6 +6,7 @@
 extern crate alloc;
 
 pub mod assembler;
+pub mod block_producer;
 pub mod build;
 pub mod config;
 pub mod context;
@@ -18,6 +19,7 @@ pub mod state_overlay;
 pub mod transaction;
 
 pub use assembler::ArbBlockAssembler;
+pub use block_producer::{BlockProducerError, ProducedBlock};
 pub use build::{
     ArbBlockExecutor, ArbBlockExecutorFactory, ArbScheduledTxDrain, ArbTransactionEnv,
 };

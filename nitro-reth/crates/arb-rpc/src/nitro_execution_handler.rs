@@ -8,6 +8,9 @@ use std::sync::{Arc, OnceLock};
 use alloy_consensus::BlockHeader;
 use alloy_primitives::B256;
 use alloy_rpc_types_eth::BlockNumberOrTag;
+use arbos::types::{
+    BatchDataStats, L1IncomingMessage, L1IncomingMessageHeader, MessageWithMetadata,
+};
 use base64::{
     Engine as _, alphabet,
     engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig},
@@ -22,7 +25,7 @@ use reth_provider::{BlockNumReader, BlockReaderIdExt, HeaderProvider};
 use tracing::{debug, info, warn};
 
 use crate::{
-    block_producer::{BlockProducer, BlockProductionInput},
+    block_producer::BlockProducer,
     error::{RpcError, RpcResult as ArbRpcResult},
     nitro_execution::{
         NitroExecutionApiServer, RpcConsensusSyncData, RpcFinalityData, RpcMaintenanceStatus,
@@ -150,6 +153,35 @@ fn decode_l2_msg(l2_msg: &Option<String>) -> ArbRpcResult<Vec<u8>> {
     }
 }
 
+/// Convert a wire message into the canonical arbos message.
+fn to_message_with_metadata(msg: &RpcMessageWithMetadata) -> ArbRpcResult<MessageWithMetadata> {
+    let l2_msg = decode_l2_msg(&msg.message.l2_msg)?;
+    let batch_data_stats = msg
+        .message
+        .batch_data_tokens
+        .as_ref()
+        .map(|s| BatchDataStats {
+            length: s.length,
+            non_zeros: s.nonzeros,
+        });
+    Ok(MessageWithMetadata {
+        message: L1IncomingMessage {
+            header: L1IncomingMessageHeader {
+                kind: msg.message.header.kind,
+                poster: msg.message.header.sender,
+                block_number: msg.message.header.block_number,
+                timestamp: msg.message.header.timestamp,
+                request_id: msg.message.header.request_id,
+                l1_base_fee: msg.message.header.base_fee_l1,
+            },
+            l2_msg: l2_msg.into(),
+            legacy_batch_gas_cost: msg.message.batch_gas_cost,
+            batch_data_stats,
+        },
+        delayed_messages_read: msg.delayed_messages_read,
+    })
+}
+
 const STANDARD_ALPHABET: &[u8; 64] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -237,30 +269,9 @@ where
             });
         }
 
-        let l2_msg = decode_l2_msg(&message.message.l2_msg).inspect_err(|err| {
+        let input = to_message_with_metadata(&message).inspect_err(|err| {
             warn!(target: "nitroexecution", msg_idx, block_num, kind, %err, "digestMessage failed to decode L2 message");
         })?;
-
-        // Build batch data stats if present
-        let batch_data_stats = message
-            .message
-            .batch_data_tokens
-            .as_ref()
-            .map(|s| (s.length, s.nonzeros));
-
-        // Build the block production input
-        let input = BlockProductionInput {
-            kind,
-            sender: message.message.header.sender,
-            l1_block_number: message.message.header.block_number,
-            l1_timestamp: message.message.header.timestamp,
-            request_id: message.message.header.request_id,
-            l1_base_fee: message.message.header.base_fee_l1,
-            l2_msg,
-            delayed_messages_read: message.delayed_messages_read,
-            batch_gas_cost: message.message.batch_gas_cost,
-            batch_data_stats,
-        };
 
         let result = self
             .block_producer
@@ -309,25 +320,7 @@ where
         let mut results = Vec::with_capacity(new_messages.len());
         for (i, wrapped) in new_messages.into_iter().enumerate() {
             let msg_idx = msg_idx_of_first_msg_to_add + i as u64;
-            let meta = wrapped.message;
-            let l2_msg = decode_l2_msg(&meta.message.l2_msg)?;
-            let batch_data_stats = meta
-                .message
-                .batch_data_tokens
-                .as_ref()
-                .map(|s| (s.length, s.nonzeros));
-            let input = BlockProductionInput {
-                kind: meta.message.header.kind,
-                sender: meta.message.header.sender,
-                l1_block_number: meta.message.header.block_number,
-                l1_timestamp: meta.message.header.timestamp,
-                request_id: meta.message.header.request_id,
-                l1_base_fee: meta.message.header.base_fee_l1,
-                l2_msg,
-                delayed_messages_read: meta.delayed_messages_read,
-                batch_gas_cost: meta.message.batch_gas_cost,
-                batch_data_stats,
-            };
+            let input = to_message_with_metadata(&wrapped.message)?;
             let produced = self
                 .block_producer
                 .produce_block(msg_idx, input)
