@@ -98,7 +98,7 @@ func (d *DB) Ancients() (uint64, error) {
 	return 0, errors.New("unimplemented")
 }
 
-func (d *DB) Tail() (uint64, error) {
+func (d *DB) Tail(group string) (uint64, error) {
 	return 0, errors.New("unimplemented")
 }
 
@@ -118,7 +118,7 @@ func (d *DB) TruncateHead(n uint64) (uint64, error) {
 	return 0, errors.New("unimplemented")
 }
 
-func (d *DB) TruncateTail(n uint64) (uint64, error) {
+func (d *DB) TruncateTail(group string, n uint64) (uint64, error) {
 	return 0, errors.New("unimplemented")
 }
 

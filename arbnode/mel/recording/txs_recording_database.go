@@ -56,7 +56,7 @@ func (rdb *TxsRecordingDatabase) SyncAncient() error {
 func (rdb *TxsRecordingDatabase) TruncateHead(n uint64) (uint64, error) {
 	return 0, fmt.Errorf("TruncateHead not supported on recording DB")
 }
-func (rdb *TxsRecordingDatabase) TruncateTail(n uint64) (uint64, error) {
+func (rdb *TxsRecordingDatabase) TruncateTail(group string, n uint64) (uint64, error) {
 	return 0, fmt.Errorf("TruncateTail not supported on recording DB")
 }
 func (rdb *TxsRecordingDatabase) Append(kind string, number uint64, item interface{}) error {
@@ -80,7 +80,7 @@ func (rdb *TxsRecordingDatabase) AncientBytes(kind string, id, offset, length ui
 func (rdb *TxsRecordingDatabase) Ancients() (uint64, error) {
 	return 0, fmt.Errorf("Ancients not supported on recording DB")
 }
-func (rdb *TxsRecordingDatabase) Tail() (uint64, error) {
+func (rdb *TxsRecordingDatabase) Tail(group string) (uint64, error) {
 	return 0, fmt.Errorf("Tail not supported on recording DB")
 }
 func (rdb *TxsRecordingDatabase) AncientSize(kind string) (uint64, error) {
