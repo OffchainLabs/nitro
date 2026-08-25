@@ -3921,6 +3921,7 @@ dependencies = [
  "rkyv",
  "serde_json",
  "sp1-core-executor",
+ "sp1-sdk",
  "stylus-compiler-program",
  "validation",
 ]

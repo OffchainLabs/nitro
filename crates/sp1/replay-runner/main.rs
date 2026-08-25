@@ -11,6 +11,7 @@ use std::{
 use anyhow::{Context, bail};
 use clap::{ArgAction, Parser};
 use sp1_core_executor::{MinimalExecutor, Program, UserMode};
+use sp1_sdk::SP1Stdin;
 use stylus_compiler_program::CompileInput;
 use validation::{ValidationInput, ValidationRequest};
 
@@ -102,10 +103,14 @@ fn compile_in_sp1(cli: &Cli, wasm: &[u8]) -> anyhow::Result<Vec<u8>> {
         wasm: wasm.to_vec(),
     };
 
+    let mut stdin = SP1Stdin::new();
+    stdin.write(&compile_input);
+
     let program = build_program(&cli.stylus_compiler_program)?;
     let mut executor = MinimalExecutor::<UserMode>::simple(Arc::new(program));
-    let input = bincode::serialize(&compile_input).context("serialize compile input")?;
-    executor.with_input(&input);
+    for input in &stdin.buffer {
+        executor.with_input(input);
+    }
 
     if executor.execute_chunk().is_some() {
         bail!("stylus compilation in SP1 failed: executor returned a trace chunk unexpectedly");
