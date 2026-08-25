@@ -28,7 +28,9 @@ COPY --from=brotli-library-builder /workspace/install/ /
 FROM node:24.4.1-bookworm-slim AS contracts-builder
 RUN apt-get update && \
     apt-get install -y git python3 make g++ curl
-RUN curl -fL --retry 3 https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup -i 1.2.3
+# foundryup-init no longer adds ~/.foundry/bin to the shell profile, so put it on PATH explicitly
+ENV PATH="/root/.foundry/bin:${PATH}"
+RUN curl -fL --retry 3 https://foundry.paradigm.xyz | bash && foundryup -i 1.2.3
 WORKDIR /workspace
 COPY contracts-legacy/package.json contracts-legacy/yarn.lock contracts-legacy/
 RUN cd contracts-legacy && yarn install
@@ -40,7 +42,7 @@ COPY contracts contracts/
 COPY safe-smart-account safe-smart-account/
 RUN cd safe-smart-account && npm install
 COPY Makefile .
-RUN . ~/.bashrc && NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
 
 FROM debian:bookworm-20231218 AS wasm-base
 WORKDIR /workspace
