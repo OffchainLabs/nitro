@@ -542,7 +542,11 @@ func ProduceBlockAdvanced(
 			}
 
 			snap := buildState.statedb.Snapshot()
-			buildState.statedb.SetTxContext(tx.Hash(), len(buildState.receipts)) // the number of successful state transitions
+			// The block access list index follows geth's convention of txIndex+1, with
+			// index 0 reserved for pre-execution system calls. It is only consumed when
+			// EIP-7928 block access lists are active, which for Arbitrum chains requires
+			// ArbOS >= params.ArbosVersion_Amsterdam; below that the value is inert.
+			buildState.statedb.SetTxContext(tx.Hash(), len(buildState.receipts), uint32(len(buildState.receipts)+1)) // the number of successful state transitions
 
 			// Also snapshot the warm-start cache so a dropped or rolled-back tx that warmed a
 			// program leaves nothing behind for later included txs
