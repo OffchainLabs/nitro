@@ -593,7 +593,7 @@ func ProduceBlockAdvanced(
 				// function; restore also undoes any warm-start it left behind.
 				checkpoint.restore(buildState.statedb)
 				buildState.statedb.ClearTxFilter()
-				// Restore gas pool: state_transition's normal path already ran SubGas/ReturnGas
+				// Restore gas pool: state_transition's normal path already ran CheckGasLegacy/ChargeGasLegacy
 				// before resultFilter (which is what reported the error here), so gp's
 				// cumulativeUsed and remaining were charged for this discarded tx.
 				// Leaving them as-is would inflate subsequent receipts' CumulativeGasUsed

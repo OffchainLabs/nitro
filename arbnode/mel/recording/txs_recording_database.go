@@ -50,7 +50,7 @@ func (rdb *TxsRecordingDatabase) ReadAncients(fn func(ethdb.AncientReaderOp) err
 	return fmt.Errorf("ReadAncients not supported on recording DB")
 }
 func (rdb *TxsRecordingDatabase) ModifyAncients(func(ethdb.AncientWriteOp) error) (int64, error) {
-	return 0, fmt.Errorf("ReadAncients not supported on recording DB")
+	return 0, fmt.Errorf("ModifyAncients not supported on recording DB")
 }
 func (rdb *TxsRecordingDatabase) SyncAncient() error {
 	return fmt.Errorf("SyncAncient not supported on recording DB")
