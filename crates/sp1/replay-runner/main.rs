@@ -80,8 +80,6 @@ fn build_payload(cli: &Cli) -> anyhow::Result<Vec<u8>> {
 
     if let Some(wasms) = request.user_wasms.get("wasm") {
         for (module_hash, wasm) in wasms.iter() {
-            // rv64 binaries take precedence. This way when nitro introduces caching for rv64
-            // binaries, no changes will be needed for the runner.
             if input.module_asms.contains_key(module_hash.deref()) {
                 continue;
             }
