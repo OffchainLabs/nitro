@@ -5,19 +5,24 @@
 
 extern crate alloc;
 
+#[cfg(feature = "link")]
 pub mod cgo;
+
 mod dicts;
+pub use dicts::Dictionary;
+
 mod types;
+pub use types::{BrotliStatus, DEFAULT_WINDOW_SIZE};
 
 #[cfg(feature = "wasmer_traits")]
 mod wasmer_traits;
 
 #[cfg(feature = "link")]
 mod native;
-
 #[cfg(feature = "link")]
 pub use native::*;
-pub use {
-    dicts::Dictionary,
-    types::{BrotliStatus, DEFAULT_WINDOW_SIZE}
-};
+
+#[cfg(not(feature = "link"))]
+mod host_imports;
+#[cfg(not(feature = "link"))]
+pub use host_imports::*;
