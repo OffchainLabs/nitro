@@ -17,4 +17,5 @@ path = "main.rs"
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
+replay-io = { workspace = true }
 sp1-core-executor = { workspace = true }

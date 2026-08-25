@@ -305,6 +305,7 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	Forwarder:                    DefaultTestForwarderConfig,
 	QueueSize:                    128,
 	QueueTimeout:                 time.Second * 5,
+	MaxBlockTxCandidates:         gethexec.DefaultSequencerConfig.MaxBlockTxCandidates,
 	NonceCacheSize:               4,
 	MaxTxDataSize:                95000,
 	NonceFailureCacheSize:        1024,
@@ -694,6 +695,13 @@ func (b *NodeBuilder) waitForMelToReadInitMsg(t *testing.T, tc *TestClient) {
 	}
 }
 
+// batchProgressSource reports how far a node has read the parent chain's posted batches. The
+// legacy InboxTracker and the MEL message extractor both satisfy it.
+type batchProgressSource interface {
+	GetBatchCount() (uint64, error)
+	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
+}
+
 // waitForNodeToCatchUpWithParentChain blocks until the node has executed every
 // message from the batches already posted to the parent chain. A node built on
 // a parent chain that already holds batches starts behind and catches up in the
@@ -702,7 +710,18 @@ func (b *NodeBuilder) waitForMelToReadInitMsg(t *testing.T, tc *TestClient) {
 func (b *NodeBuilder) waitForNodeToCatchUpWithParentChain(t *testing.T) {
 	t.Helper()
 	node := b.L2.ConsensusNode
-	if node == nil || node.InboxTracker == nil || b.L1 == nil || b.addresses == nil {
+	if node == nil || b.L1 == nil || b.addresses == nil {
+		return
+	}
+	// Under MEL the message extractor replaces the inbox tracker, so read whichever is wired.
+	// Keying only off InboxTracker silently skipped the wait for every MEL node.
+	var batches batchProgressSource
+	switch {
+	case node.InboxTracker != nil:
+		batches = node.InboxTracker
+	case node.MessageExtractor != nil:
+		batches = node.MessageExtractor
+	default:
 		return
 	}
 	// The target has to come from the parent chain; the node's own batch count
@@ -718,11 +737,11 @@ func (b *NodeBuilder) waitForNodeToCatchUpWithParentChain(t *testing.T) {
 
 	deadline := time.Now().Add(time.Minute)
 	for {
-		trackedBatches, err := node.InboxTracker.GetBatchCount()
+		trackedBatches, err := batches.GetBatchCount()
 		Require(t, err)
 		var targetMessage, executedMessage arbutil.MessageIndex
 		if trackedBatches >= targetBatch {
-			targetMessage, err = node.InboxTracker.GetBatchMessageCount(targetBatch - 1)
+			targetMessage, err = batches.GetBatchMessageCount(targetBatch - 1)
 			Require(t, err)
 			head, err := b.L2.ExecNode.ExecEngine.HeadMessageIndex()
 			Require(t, err)

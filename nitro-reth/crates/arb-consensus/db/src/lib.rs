@@ -81,9 +81,7 @@ impl<S: kv::KvStore> ConsensusDb<S> {
     }
 
     /// Iterate all entries under a positional key's prefix, in ascending position order.
-    pub fn iter<K: schema::PositionalKey>(
-        &self,
-    ) -> impl Iterator<Item = Result<(u64, K::StoredValue)>> + '_ {
+    pub fn iter<K: schema::PositionalKey>(&self) -> Result<Vec<(u64, K::StoredValue)>> {
         self.iter_decoded::<K>(kv::KeyBuf::new())
     }
 
@@ -91,7 +89,7 @@ impl<S: kv::KvStore> ConsensusDb<S> {
     pub fn iter_from<K: schema::PositionalKey>(
         &self,
         from: K,
-    ) -> impl Iterator<Item = Result<(u64, K::StoredValue)>> + '_ {
+    ) -> Result<Vec<(u64, K::StoredValue)>> {
         let start = schema::ConsensusDbKey::position(&from)
             .expect("positional key has a position")
             .to_be_bytes()
@@ -103,16 +101,20 @@ impl<S: kv::KvStore> ConsensusDb<S> {
     fn iter_decoded<K: schema::PositionalKey>(
         &self,
         start: kv::KeyBuf,
-    ) -> impl Iterator<Item = Result<(u64, K::StoredValue)>> + '_ {
-        self.store.iter_prefix(K::PREFIX, start).map(|res| {
-            let (k, v) = res.map_err(ConsensusDbError::from_store)?;
-            let pos = u64::from_be_bytes(
-                k[K::PREFIX.len()..]
-                    .try_into()
-                    .map_err(|_| ConsensusDbError::InvalidStoredValue)?,
-            );
-            Ok((pos, schema::ConsensusDbValue::decode(&v)?))
-        })
+    ) -> Result<Vec<(u64, K::StoredValue)>> {
+        self.store
+            .iter_prefix(K::PREFIX, start)
+            .map_err(ConsensusDbError::from_store)?
+            .into_iter()
+            .map(|(k, v)| {
+                let pos = u64::from_be_bytes(
+                    k[K::PREFIX.len()..]
+                        .try_into()
+                        .map_err(|_| ConsensusDbError::InvalidStoredValue)?,
+                );
+                Ok((pos, schema::ConsensusDbValue::decode(&v)?))
+            })
+            .collect()
     }
 
     /// Check stored schema version, and perform migration to current version.
@@ -326,10 +328,9 @@ mod tests {
         }
         let got: Vec<(u64, B256)> = db
             .iter::<MessageResultAt>()
-            .map(|r| {
-                let (pos, v) = r.unwrap();
-                (pos, v.block_hash)
-            })
+            .unwrap()
+            .into_iter()
+            .map(|(pos, v)| (pos, v.block_hash))
             .collect();
         assert_eq!(
             got,
@@ -349,7 +350,9 @@ mod tests {
         }
         let positions: Vec<u64> = db
             .iter_from::<MessageResultAt>(MessageResultAt(2))
-            .map(|r| r.unwrap().0)
+            .unwrap()
+            .into_iter()
+            .map(|(pos, _)| pos)
             .collect();
         assert_eq!(positions, vec![2, 3]);
     }

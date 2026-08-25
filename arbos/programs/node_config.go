@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -30,14 +31,15 @@ const DefaultTargetDescriptionX86 = "x86_64-linux-unknown+sse4.2+lzcnt+bmi"
 // StylusTargetConfig carries the node-level Stylus configuration through the
 // geth state database boundary.
 type StylusTargetConfig struct {
-	Arm64              string   `koanf:"arm64"`
-	Amd64              string   `koanf:"amd64"`
-	Host               string   `koanf:"host"`
-	ExtraArchs         []string `koanf:"extra-archs"`
-	AllowFallback      bool     `koanf:"allow-fallback"`
-	MaxOpenPages       uint16   `koanf:"max-open-pages"`
-	MaxStylusCallDepth uint16   `koanf:"max-stylus-call-depth"`
-	NativeStackSize    uint64   `koanf:"native-stack-size"`
+	Arm64                string   `koanf:"arm64"`
+	Amd64                string   `koanf:"amd64"`
+	Host                 string   `koanf:"host"`
+	ExtraArchs           []string `koanf:"extra-archs"`
+	AllowFallback        bool     `koanf:"allow-fallback"`
+	MaxOpenPages         uint16   `koanf:"max-open-pages"`
+	MaxStylusCallDepth   uint16   `koanf:"max-stylus-call-depth"`
+	MaxStorageCacheSlots uint32   `koanf:"max-storage-cache-slots"`
+	NativeStackSize      uint64   `koanf:"native-stack-size"`
 
 	// non-configurable values
 	MaxWavmOps uint64 // `koanf:"max-wavm-ops"`
@@ -87,15 +89,16 @@ func (c *StylusTargetConfig) Validate() error {
 }
 
 var DefaultStylusTargetConfig = StylusTargetConfig{
-	Arm64:              DefaultTargetDescriptionArm,
-	Amd64:              DefaultTargetDescriptionX86,
-	Host:               "",
-	ExtraArchs:         []string{string(rawdb.TargetWavm)},
-	AllowFallback:      true,
-	MaxOpenPages:       128, // fits the default stylus pageLimit; 0 disables the limit
-	MaxStylusCallDepth: 0,   // 0 disables the limit
-	NativeStackSize:    0,   // 0 means use the Wasmer default (1 MB)
-	MaxWavmOps:         1 << 23,
+	Arm64:                DefaultTargetDescriptionArm,
+	Amd64:                DefaultTargetDescriptionX86,
+	Host:                 "",
+	ExtraArchs:           []string{string(rawdb.TargetWavm)},
+	AllowFallback:        true,
+	MaxOpenPages:         128, // fits the default stylus pageLimit; 0 disables the limit
+	MaxStylusCallDepth:   0,   // 0 disables the limit
+	MaxStorageCacheSlots: 0,   // 0 disables the limit
+	NativeStackSize:      0,   // 0 means use the Wasmer default (1 MB)
+	MaxWavmOps:           1 << 23,
 }
 
 func StylusTargetConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -106,6 +109,7 @@ func StylusTargetConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".allow-fallback", DefaultStylusTargetConfig.AllowFallback, "if true, fall back to an alternative compiler when compilation of a Stylus program fails")
 	f.Uint16(prefix+".max-open-pages", DefaultStylusTargetConfig.MaxOpenPages, "max open WASM pages per tx; exceeding the limit rejects non-on-chain calls and filters sequencer-committed txs (delayed inbox is exempt); 0 disables the limit")
 	f.Uint16(prefix+".max-stylus-call-depth", DefaultStylusTargetConfig.MaxStylusCallDepth, "max number of Stylus frames simultaneously on the call stack (counts only Stylus frames; EVM frames between two Stylus frames do not decrement it); exceeding the limit rejects non-on-chain calls; 0 disables the limit")
+	f.Uint32(prefix+".max-storage-cache-slots", DefaultStylusTargetConfig.MaxStorageCacheSlots, "maximum storage slots cached by one Stylus call frame. Exceeding the limit rejects calls not executed onchain and filters directly sequenced transactions. Chain following and delayed inbox processing are exempt. A value of 0 disables the limit")
 	f.Uint64(prefix+".native-stack-size", DefaultStylusTargetConfig.NativeStackSize, "initial native stack size in bytes for Wasmer coroutines used by Stylus execution (0 = default 1MB)")
 	// f.Uint64(prefix+".max-wavm-ops", DefaultStylusTargetConfig.MaxWavmOps, "maximum wavm opcodes")
 }
@@ -131,4 +135,14 @@ func GetStylusConfig(statedb vm.StateDB) *StylusTargetConfig {
 		return cfg
 	}
 	return &DefaultStylusTargetConfig
+}
+
+func stylusStorageCacheLimit(statedb vm.StateDB, runCtx *core.MessageRunContext) uint32 {
+	if runCtx == nil || (runCtx.IsExecutedOnChain() && !runCtx.IsSequencing()) {
+		return 0
+	}
+	if cfg := getStylusConfigOrNil(statedb); cfg != nil {
+		return cfg.MaxStorageCacheSlots
+	}
+	return 0
 }

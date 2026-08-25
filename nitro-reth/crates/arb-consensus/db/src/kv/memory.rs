@@ -54,11 +54,12 @@ impl KvStore for MemoryKvStore {
         &self,
         prefix: Key,
         start: impl AsRef<[u8]>,
-    ) -> impl Iterator<Item = Result<(KeyBuf, Value), Self::Error>> {
+    ) -> Result<Vec<(KeyBuf, Value)>, Self::Error> {
         self.values
             .range([prefix, start.as_ref()].concat()..)
             .take_while(move |(k, _)| k.starts_with(prefix))
             .map(|(k, v)| Ok((k.clone(), v.clone())))
+            .collect()
     }
 
     fn delete_range(&mut self, start: Key, end: Key) -> Result<(), Self::Error> {
@@ -125,7 +126,12 @@ mod tests {
         s.put(b"m2", vec![2]).unwrap();
         s.put(b"n1", vec![99]).unwrap();
 
-        let got: Vec<_> = s.iter_prefix(b"m", b"").map(|r| r.unwrap().1).collect();
+        let got: Vec<_> = s
+            .iter_prefix(b"m", b"")
+            .unwrap()
+            .into_iter()
+            .map(|(_, v)| v)
+            .collect();
         assert_eq!(got, vec![vec![1], vec![2], vec![3]]);
     }
 
@@ -137,7 +143,12 @@ mod tests {
         s.put(b"m3", vec![3]).unwrap();
 
         // `start` is appended to the prefix, so iteration begins at "m2".
-        let got: Vec<_> = s.iter_prefix(b"m", b"2").map(|r| r.unwrap().1).collect();
+        let got: Vec<_> = s
+            .iter_prefix(b"m", b"2")
+            .unwrap()
+            .into_iter()
+            .map(|(_, v)| v)
+            .collect();
         assert_eq!(got, vec![vec![2], vec![3]]);
     }
 

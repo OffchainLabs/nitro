@@ -38,7 +38,8 @@ pub struct TxProcessor {
     pub current_retryable: Option<B256>,
     /// The refund-to address for retryable redeems.
     pub current_refund_to: Option<Address>,
-    /// Scheduled transactions (e.g., retryable auto-redeems).
+    /// Encoded retry txs scheduled by the current tx (auto-redeem and the Redeem precompile),
+    /// moved to the executor's block-scoped redeem queue on commit.
     pub scheduled_txs: Vec<Vec<u8>>,
     /// Count of open Stylus program contexts per contract address.
     /// Used to detect reentrance.

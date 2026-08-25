@@ -114,7 +114,7 @@ build: $(BROTLI_LIB_DIR)/lib/libbrotlienc-static.a
 
 .PHONY: run
 run: # Validate a block with the SP1 replay runner.
-	$(OUTPUT_DIR)/replay-runner --program $(OUTPUT_DIR)/replay-program.elf
+	$(OUTPUT_DIR)/replay-runner --program $(OUTPUT_DIR)/dumped_replay_wasm.elf
 
 .PHONY: test
 test: # Run the sp1 workspace unit tests.

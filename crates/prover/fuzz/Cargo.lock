@@ -109,12 +109,12 @@ version = "0.1.0"
 dependencies = [
  "digest 0.10.7",
  "eyre",
- "fnv",
  "hex",
  "num-traits",
  "num_enum",
  "ruint2",
  "serde",
+ "thiserror 1.0.69",
  "tiny-keccak",
  "wasmparser 0.245.1",
 ]
@@ -1919,7 +1919,7 @@ version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e17d47ce914bf4de440332250b0edd23ce48c005f59fab39d3335866b114f11a"
 dependencies = [
- "thiserror 1.0.31",
+ "thiserror 1.0.69",
  "toml",
 ]
 
@@ -2326,7 +2326,7 @@ dependencies = [
  "derive_more 0.99.17",
  "ruint2-macro",
  "rustc_version",
- "thiserror 1.0.31",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -2700,11 +2700,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.31"
+version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd829fe32373d27f76265620b5309d0340cb8550f523c1dda251d6298069069a"
+checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
 dependencies = [
- "thiserror-impl 1.0.31",
+ "thiserror-impl 1.0.69",
 ]
 
 [[package]]
@@ -2718,13 +2718,13 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.31"
+version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0396bc89e626244658bef819e22d0cc459e795a5ebe878e6ec336d1674a8d79a"
+checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.117",
 ]
 
 [[package]]
