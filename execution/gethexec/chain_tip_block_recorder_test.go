@@ -372,7 +372,7 @@ func TestBlockRecordsFreezerWritesStraightToFreezer(t *testing.T) {
 	if frozen != uint64(latestPos)+1 {
 		t.Fatalf("expected freezer head at %d, got %d", uint64(latestPos)+1, frozen)
 	}
-	tail, err := freezer.Tail()
+	tail, err := freezer.Tail(rawdb.ChainTipBlockRecordsGroup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -576,7 +576,7 @@ func TestBlockRecordsFreezerReorgToTailRewritesHead(t *testing.T) {
 	if loaded == nil || loaded.record.BlockHash != reorged.record.BlockHash {
 		t.Fatalf("expected the reorged recording at the tail, got loaded=%+v", loaded)
 	}
-	if tail, err := freezer.Tail(); err != nil || tail != uint64(firstPos) {
+	if tail, err := freezer.Tail(rawdb.ChainTipBlockRecordsGroup); err != nil || tail != uint64(firstPos) {
 		t.Fatalf("expected the tail to stay at %d, got tail=%d err=%v", firstPos, tail, err)
 	}
 }
@@ -710,7 +710,7 @@ func testBlockRecordsFreezerResetsForUnrepresentablePositions(t *testing.T, newF
 				}
 			}
 			if testCase.prune > 0 {
-				if _, err := freezer.TruncateTail(testCase.prune); err != nil {
+				if _, err := freezer.TruncateTail(rawdb.ChainTipBlockRecordsGroup, testCase.prune); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -726,7 +726,7 @@ func testBlockRecordsFreezerResetsForUnrepresentablePositions(t *testing.T, newF
 			if frozen != uint64(testCase.writePos)+1 {
 				t.Fatalf("expected freezer head at %d after reset, got %d", uint64(testCase.writePos)+1, frozen)
 			}
-			tail, err := freezer.Tail()
+			tail, err := freezer.Tail(rawdb.ChainTipBlockRecordsGroup)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -802,14 +802,14 @@ func testBlockRecordsFreezerAdvancesOverGapWhenEmpty(t *testing.T, newFreezer fu
 			t.Fatal(err)
 		}
 	}
-	if _, err := freezer.TruncateTail(1003); err != nil {
+	if _, err := freezer.TruncateTail(rawdb.ChainTipBlockRecordsGroup, 1003); err != nil {
 		t.Fatal(err)
 	}
 	pos := arbutil.MessageIndex(2000)
 	if err := store.writeRecording(testChainTipRecording(pos)); err != nil {
 		t.Fatal(err)
 	}
-	tail, err := freezer.Tail()
+	tail, err := freezer.Tail(rawdb.ChainTipBlockRecordsGroup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -840,7 +840,7 @@ func TestBlockRecordsFreezerPrunesRecordings(t *testing.T) {
 			if err := store.pruneRecordingsBefore(firstPos); err != nil {
 				t.Fatal(err)
 			}
-			tail, err := freezer.Tail()
+			tail, err := freezer.Tail(rawdb.ChainTipBlockRecordsGroup)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -861,7 +861,7 @@ func TestBlockRecordsFreezerPrunesRecordings(t *testing.T) {
 			if loaded == nil || loaded.record.Pos != firstPos+1 {
 				t.Fatalf("expected recording %d to remain, got loaded=%+v", firstPos+1, loaded)
 			}
-			tail, err = freezer.Tail()
+			tail, err = freezer.Tail(rawdb.ChainTipBlockRecordsGroup)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -880,7 +880,7 @@ func TestBlockRecordsFreezerPrunesRecordings(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			tail, err = freezer.Tail()
+			tail, err = freezer.Tail(rawdb.ChainTipBlockRecordsGroup)
 			if err != nil {
 				t.Fatal(err)
 			}
