@@ -11,52 +11,79 @@ use crate::{
     types::BrotliSharedDictionaryType,
 };
 
-unsafe extern "C" {
-    /// Prepares an LZ77 dictionary for use during compression.
-    fn BrotliEncoderPrepareDictionary(
-        dict_type: BrotliSharedDictionaryType,
-        dict_len: c_int,
-        dictionary: *const u8,
-        quality: c_int,
-        alloc: Option<extern "C" fn(opaque: *const CustomAllocator, size: usize) -> *mut HeapItem>,
-        free: Option<extern "C" fn(opaque: *const CustomAllocator, address: *mut HeapItem)>,
-        opaque: *mut CustomAllocator,
-    ) -> *mut EncoderPreparedDictionary;
+#[cfg(feature = "link")]
+mod native {
+    use crate::{BrotliStatus, Dictionary};
+    use crate::native::{CustomAllocator, EncoderPreparedDictionary, HeapItem};
+    use crate::types::BrotliSharedDictionaryType;
+    use lazy_static::lazy_static;
+    use std::ffi::c_int;
+    use std::ptr;
 
-    /// Nonzero when valid.
-    fn BrotliEncoderGetPreparedDictionarySize(
-        dictionary: *const EncoderPreparedDictionary,
-    ) -> usize;
-}
+    unsafe extern "C" {
+        /// Prepares an LZ77 dictionary for use during compression.
+        fn BrotliEncoderPrepareDictionary(
+            dict_type: BrotliSharedDictionaryType,
+            dict_len: c_int,
+            dictionary: *const u8,
+            quality: c_int,
+            alloc: Option<
+                extern "C" fn(opaque: *const CustomAllocator, size: usize) -> *mut HeapItem,
+            >,
+            free: Option<extern "C" fn(opaque: *const CustomAllocator, address: *mut HeapItem)>,
+            opaque: *mut CustomAllocator,
+        ) -> *mut EncoderPreparedDictionary;
 
-/// Forces a type to implement [`Sync`] and [`Send`].
-/// Only used to wrap static dictionary pointers (`*const EncoderPreparedDictionary`)
-/// which point to immutable, process-lifetime data initialized once via `lazy_static`.
-struct ForceSyncSend<T>(T);
+        /// Nonzero when valid.
+        fn BrotliEncoderGetPreparedDictionarySize(
+            dictionary: *const EncoderPreparedDictionary,
+        ) -> usize;
+    }
 
-// SAFETY: ForceSyncSend only wraps raw pointers to immutable, static dictionary data.
-// The data is initialized once (via lazy_static) and never mutated or freed,
-// so sharing across threads is safe.
-unsafe impl<T> Sync for ForceSyncSend<T> {}
-unsafe impl<T> Send for ForceSyncSend<T> {}
+    /// Forces a type to implement [`Sync`] and [`Send`].
+    /// Only used to wrap static dictionary pointers (`*const EncoderPreparedDictionary`)
+    /// which point to immutable, process-lifetime data initialized once via `lazy_static`.
+    struct ForceSyncSend<T>(T);
 
-lazy_static! {
-    /// Memoizes dictionary preperation.
-    static ref STYLUS_PROGRAM_DICT: ForceSyncSend<*const EncoderPreparedDictionary> =
-        ForceSyncSend(unsafe {
-            let data = Dictionary::StylusProgram.slice().unwrap();
-            let dict = BrotliEncoderPrepareDictionary(
-                BrotliSharedDictionaryType::Raw,
-                data.len() as c_int,
-                data.as_ptr(),
-                11,
-                None,
-                None,
-                ptr::null_mut(),
-            );
-            assert!(BrotliEncoderGetPreparedDictionarySize(dict) > 0); // check integrity
-            dict as _
-        });
+    // SAFETY: ForceSyncSend only wraps raw pointers to immutable, static dictionary data.
+    // The data is initialized once (via lazy_static) and never mutated or freed,
+    // so sharing across threads is safe.
+    unsafe impl<T> Sync for ForceSyncSend<T> {}
+    unsafe impl<T> Send for ForceSyncSend<T> {}
+
+    lazy_static! {
+        /// Memoizes dictionary preperation.
+        static ref STYLUS_PROGRAM_DICT: ForceSyncSend<*const EncoderPreparedDictionary> =
+            ForceSyncSend(unsafe {
+                let data = Dictionary::StylusProgram.slice().unwrap();
+                let dict = BrotliEncoderPrepareDictionary(
+                    BrotliSharedDictionaryType::Raw,
+                    data.len() as c_int,
+                    data.as_ptr(),
+                    11,
+                    None,
+                    None,
+                    ptr::null_mut(),
+                );
+                assert!(BrotliEncoderGetPreparedDictionarySize(dict) > 0); // check integrity
+                dict as _
+            });
+    }
+
+    impl Dictionary {
+        /// Returns a pointer to a compression-ready instance of the given dictionary.
+        /// Note: this function fails when the specified level doesn't match.
+        pub fn ptr(
+            &self,
+            level: u32,
+        ) -> Result<Option<*const EncoderPreparedDictionary>, BrotliStatus> {
+            Ok(match self {
+                Self::StylusProgram if level == 11 => Some(STYLUS_PROGRAM_DICT.0),
+                Self::StylusProgram => return Err(BrotliStatus::Failure),
+                _ => None,
+            })
+        }
+    }
 }
 
 /// Brotli dictionary selection.
@@ -74,19 +101,6 @@ impl Dictionary {
             Self::StylusProgram => Some(include_bytes!("stylus-program-11.lz")),
             _ => None,
         }
-    }
-
-    /// Returns a pointer to a compression-ready instance of the given dictionary.
-    /// Note: this function fails when the specified level doesn't match.
-    pub fn ptr(
-        &self,
-        level: u32,
-    ) -> Result<Option<*const EncoderPreparedDictionary>, BrotliStatus> {
-        Ok(match self {
-            Self::StylusProgram if level == 11 => Some(STYLUS_PROGRAM_DICT.0),
-            Self::StylusProgram => return Err(BrotliStatus::Failure),
-            _ => None,
-        })
     }
 }
 
