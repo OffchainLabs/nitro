@@ -8,8 +8,9 @@ use std::{
 };
 
 use anyhow::{Context, bail};
-use clap::Parser;
+use clap::{ArgAction, Parser};
 use sp1_core_executor::{MinimalExecutor, Program, UserMode};
+use stylus_compiler_program::CompileInput;
 use validation::{ValidationInput, ValidationRequest};
 
 #[derive(Parser)]
@@ -19,9 +20,21 @@ struct Cli {
     #[arg(long)]
     program: PathBuf,
 
+    /// Path to the SP1 stylus compiler ELF, produced by replay-builder.
+    #[arg(long)]
+    stylus_compiler_program: PathBuf,
+
     /// Path to the recorded block JSON (a `ValidationRequest`).
     #[arg(long)]
     block_file: PathBuf,
+
+    /// Arbitrum version. Used by the stylus compiler.
+    #[arg(long, default_value_t = 2)]
+    version: u16,
+
+    /// Debug flag, true by default; passing `--debug` makes it false. Used by the stylus compiler.
+    #[arg(long, action = ArgAction::SetFalse, default_value_t = true)]
+    debug: bool,
 }
 
 fn main() -> anyhow::Result<()> {
