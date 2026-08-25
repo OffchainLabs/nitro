@@ -562,7 +562,7 @@ func ProduceBlockAdvanced(
 			preTxGasPool := gethGas.Snapshot()
 			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
 			evm := vm.NewEVM(blockContext, buildState.statedb, chainConfig, vm.Config{ExposeMultiGas: exposeMultiGas})
-			receipt, result, err := core.ApplyTransactionWithResultFilter(
+			receipt, _, result, err := core.ApplyTransactionWithResultFilter(
 				evm,
 				gethGas,
 				buildState.statedb,
