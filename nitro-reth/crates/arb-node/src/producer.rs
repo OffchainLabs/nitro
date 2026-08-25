@@ -815,7 +815,7 @@ where
         }
 
         filter_unchanged_storage(&mut bundle);
-        delete_empty_accounts(&mut bundle, &zombie_accounts, &mut db.database);
+        delete_empty_accounts(&mut bundle, &zombie_accounts, &mut db.database)?;
 
         let hashed_state =
             HashedPostState::from_bundle_state::<reth_trie_common::KeccakKeyHasher>(bundle.state());

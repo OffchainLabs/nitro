@@ -423,6 +423,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn wire_message_round_trips_to_canonical() {
+        let canonical = MessageWithMetadata {
+            message: L1IncomingMessage {
+                header: arbos::types::L1IncomingMessageHeader {
+                    kind: 3,
+                    poster: alloy_primitives::Address::repeat_byte(0xAB),
+                    block_number: 100,
+                    timestamp: 1_700_000_000,
+                    request_id: Some(B256::repeat_byte(0x42)),
+                    l1_base_fee: Some(alloy_primitives::U256::from(7u64)),
+                },
+                l2_msg: vec![1, 2, 3, 4].into(),
+                legacy_batch_gas_cost: Some(21_000),
+                batch_data_stats: Some(BatchDataStats {
+                    length: 163,
+                    non_zeros: 42,
+                }),
+            },
+            delayed_messages_read: 5,
+        };
+        let wire = crate::nitro_execution::RpcMessageWithMetadata {
+            message: (&canonical.message).into(),
+            delayed_messages_read: canonical.delayed_messages_read,
+        };
+
+        let out = to_message_with_metadata(&wire).unwrap();
+
+        assert_eq!(format!("{out:?}"), format!("{canonical:?}"));
+    }
+
+    #[test]
     fn decode_empty_option_is_ok() {
         assert_eq!(decode_l2_msg(&None).unwrap(), Vec::<u8>::new());
         assert_eq!(

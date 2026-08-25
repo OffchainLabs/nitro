@@ -68,11 +68,15 @@ where
 }
 
 /// EIP-161: mark empty non-zombie accounts for trie deletion.
+/// `db` must read parent-block state, not the in-flight `State` overlay.
 pub fn delete_empty_accounts<DB: Database>(
     bundle: &mut BundleState,
     zombie_accounts: &rustc_hash::FxHashSet<Address>,
     db: &mut DB,
-) {
+) -> Result<(), BlockProducerError>
+where
+    DB::Error: core::fmt::Display,
+{
     let keccak_empty = alloy_primitives::B256::from(alloy_primitives::keccak256([]));
     let mut to_remove = Vec::new();
     for (addr, account) in bundle.state.iter_mut() {
@@ -80,7 +84,10 @@ pub fn delete_empty_accounts<DB: Database>(
             let is_empty =
                 info.nonce == 0 && info.balance.is_zero() && info.code_hash == keccak_empty;
             if is_empty && !zombie_accounts.contains(addr) {
-                let existed_before = db.basic(*addr).ok().flatten().is_some();
+                let existed_before = db
+                    .basic(*addr)
+                    .map_err(|e| BlockProducerError::Storage(e.to_string()))?
+                    .is_some();
                 if existed_before {
                     debug!(
                         target: "block_producer",
@@ -97,6 +104,7 @@ pub fn delete_empty_accounts<DB: Database>(
     for addr in to_remove {
         bundle.state.remove(&addr);
     }
+    Ok(())
 }
 
 /// Remove unchanged storage slots from the bundle.
@@ -109,6 +117,7 @@ pub fn filter_unchanged_storage(bundle: &mut BundleState) {
 }
 
 /// Augment the bundle with direct cache modifications not captured by EVM transitions.
+/// `db` must read parent-block state, not the in-flight `State` overlay.
 pub fn augment_bundle_from_cache<DB: Database>(
     bundle: &mut BundleState,
     cache: &revm_database::CacheState,
