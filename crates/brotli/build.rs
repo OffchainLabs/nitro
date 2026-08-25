@@ -2,21 +2,22 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 fn main() {
-    cfg_if::cfg_if! {
-        if #[cfg(not(feature = "link"))]{
-            if #[cfg(not(cfg(target_family = "wasm")))] {
-                panic!("The `link` feature is required unless wasm is the compilation target");
-            }
-            return;
-        } else if #[cfg(feature = "cc_brotli")] {
-            link_with_cc();
-        } else {
-            link_static_libs();
-        }
+    // Without `link` nothing is compiled or linked: brotli is reached through the
+    // `arbcompress` host imports, which only exist on wasm targets. Note: build scripts
+    // run on the host, so the target must be read from the environment, not via cfg.
+    if std::env::var_os("CARGO_FEATURE_LINK").is_none() {
+        let target = std::env::var("TARGET").unwrap();
+        assert!(
+            target.contains("wasm32"),
+            "the `link` feature is required for non-wasm targets"
+        );
+        return;
     }
+    link();
 }
 
-fn link_static_libs() {
+#[cfg(not(feature = "cc_brotli"))]
+fn link() {
     let target_arch = std::env::var("TARGET").unwrap();
 
     if target_arch.contains("wasm32") {
@@ -33,8 +34,14 @@ fn link_static_libs() {
 }
 
 #[cfg(feature = "cc_brotli")]
-fn link_with_cc() {
+fn link() {
     use std::{env, path::PathBuf};
+
+    assert!(
+        !env::var("TARGET").unwrap().contains("wasm32"),
+        "cc_brotli cannot target wasm; wasm builds link prebuilt libs or use host imports"
+    );
+
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let include_dir = manifest_dir.join("../../brotli/c/include");
     cc::Build::new()
