@@ -3,12 +3,11 @@
 
 fn main() {
     cfg_if::cfg_if! {
-        if #[cfg(feature = "do_not_link")] {
-            if #[cfg(feature = "cc_brotli")] {
-                panic!("Can't enable both `do_not_link` and `cc_brotli` at the same time.");
-            } else if #[cfg(not(target_family = "wasm"))] {
-                panic!("The `do_not_link` feature is supported only for the wasm target compilation");
+        if #[cfg(not(feature = "link"))]{
+            if #[cfg(not(cfg(target_family = "wasm")))] {
+                panic!("The `link` feature is required unless wasm is the compilation target");
             }
+            return;
         } else if #[cfg(feature = "cc_brotli")] {
             link_with_cc();
         } else {

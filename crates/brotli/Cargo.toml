@@ -10,7 +10,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-lazy_static = { workspace = true }
+lazy_static = { workspace = true, optional = true }
 num_enum = { workspace = true }
 wasmer = { workspace = true, optional = true }
 
@@ -22,6 +22,7 @@ cfg-if = { workspace = true }
 crate-type = ["lib"]
 
 [features]
-cc_brotli = ["dep:cc"]
-do_not_link = []
+default = ["link"]
+cc_brotli = ["dep:cc", "link"]
+link = ["dep:lazy_static"]
 wasmer_traits = ["dep:wasmer"]
