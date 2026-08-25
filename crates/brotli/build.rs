@@ -1,11 +1,24 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-#[cfg(not(feature = "cc_brotli"))]
 fn main() {
-    use std::env;
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "do_not_link")] {
+            if #[cfg(feature = "cc_brotli")] {
+                panic!("Can't enable both `do_not_link` and `cc_brotli` at the same time.");
+            } else if #[cfg(not(target_family = "wasm"))] {
+                panic!("The `do_not_link` feature is supported only for the wasm target compilation");
+            }
+        } else if #[cfg(feature = "cc_brotli")] {
+            link_with_cc();
+        } else {
+            link_static_libs();
+        }
+    }
+}
 
-    let target_arch = env::var("TARGET").unwrap();
+fn link_static_libs() {
+    let target_arch = std::env::var("TARGET").unwrap();
 
     if target_arch.contains("wasm32") {
         println!("cargo:rustc-link-search=target/lib-wasm/");
@@ -21,7 +34,7 @@ fn main() {
 }
 
 #[cfg(feature = "cc_brotli")]
-fn main() {
+fn link_with_cc() {
     use std::{env, path::PathBuf};
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let include_dir = manifest_dir.join("../../brotli/c/include");
