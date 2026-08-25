@@ -3,6 +3,7 @@
 
 use std::{
     fs,
+    ops::Deref,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -91,4 +92,30 @@ fn build_payload(cli: &Cli) -> anyhow::Result<Vec<u8>> {
     Ok(rkyv::to_bytes::<rkyv::rancor::Error>(&input)
         .context("rkyv-serialize validation input")?
         .to_vec())
+}
+
+/// Compiles a Stylus wasm to a rv64 binary by running the stylus compiler inside SP1.
+fn compile_in_sp1(cli: &Cli, wasm: &[u8]) -> anyhow::Result<Vec<u8>> {
+    let compile_input = CompileInput {
+        version: cli.version,
+        debug: cli.debug,
+        wasm: wasm.to_vec(),
+    };
+
+    let program = build_program(&cli.stylus_compiler_program)?;
+    let mut executor = MinimalExecutor::<UserMode>::simple(Arc::new(program));
+    // Bincode to match the compiler guest's `sp1_zkvm::io::read::<CompileInput>()`.
+    let input = bincode::serialize(&compile_input).context("serialize compile input")?;
+    executor.with_input(&input);
+
+    if executor.execute_chunk().is_some() {
+        bail!("stylus compilation in SP1 failed: executor returned a trace chunk unexpectedly");
+    }
+    let exit_code = executor.exit_code();
+    if exit_code != 0 {
+        bail!("stylus compiler exited with non-zero code: {exit_code}");
+    }
+
+    bincode::deserialize(&executor.into_public_values_stream())
+        .context("deserialize compiled binary")
 }
