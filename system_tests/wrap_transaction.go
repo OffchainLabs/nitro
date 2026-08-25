@@ -10,6 +10,9 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"os"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +28,26 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
+
+// testTimeoutScale reads NITRO_TEST_TIMEOUT_SCALE once and returns a multiplier
+// applied to pollUntil/retryUntilFound timeouts. CI sets this to >1.0 so tests
+// designed for a quiet machine can breathe on loaded shared runners. Defaults to 1.0.
+var (
+	testTimeoutScale     float64
+	testTimeoutScaleOnce sync.Once
+)
+
+func getTestTimeoutScale() float64 {
+	testTimeoutScaleOnce.Do(func() {
+		testTimeoutScale = 1.0
+		if v := os.Getenv("NITRO_TEST_TIMEOUT_SCALE"); v != "" {
+			if parsed, err := strconv.ParseFloat(v, 64); err == nil && parsed > 0 {
+				testTimeoutScale = parsed
+			}
+		}
+	})
+	return testTimeoutScale
+}
 
 func GetPendingBlockNumber(ctx context.Context, client *ethclient.Client) (*big.Int, error) {
 	// Attempt to get the block number from ArbSys, if it exists
@@ -114,6 +137,20 @@ func EnsureTxSucceededWithTimeout(ctx context.Context, client *ethclient.Client,
 		return receipt, fmt.Errorf("receipt gas used %d doesn't match multigas single gas used %d", receipt.GasUsed, receipt.MultiGasUsed.SingleGas())
 	}
 	return receipt, arbutil.DetailTxError(ctx, client, tx, receipt)
+}
+
+func SendWaitTestTransactions(t *testing.T, ctx context.Context, client *ethclient.Client, txs []*types.Transaction) []*types.Receipt {
+	t.Helper()
+	receipts := make([]*types.Receipt, len(txs))
+	for _, tx := range txs {
+		Require(t, client.SendTransaction(ctx, tx))
+	}
+	for i, tx := range txs {
+		var err error
+		receipts[i], err = EnsureTxSucceeded(ctx, client, tx)
+		Require(t, err)
+	}
+	return receipts
 }
 
 func EnsureTxFailed(t *testing.T, ctx context.Context, client *ethclient.Client, tx *types.Transaction) *types.Receipt {

@@ -205,7 +205,8 @@ func setupL1WithRollupAddresses(
 	}
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
 	// The external harness registers its process cleanup directly on the test.
-	l1info, l1client, _, _, _, _, _ = createExternalL1(t, ctx, nil, false, externalL1Binary(t), nil)
+	extL1 := CreateExternalL1(t, ctx, ExternalL1Params{GethBinary: externalL1Binary(t)})
+	l1info, l1client = extL1.Info, extL1.Client
 
 	var err error
 	if useExternalSigner {

@@ -107,8 +107,6 @@ import (
 	valnoderedis "github.com/offchainlabs/nitro/validator/valnode/redis"
 )
 
-type info = *BlockchainTestInfo
-
 type SecondNodeParams struct {
 	nodeConfig             *arbnode.Config
 	execConfig             *gethexec.Config
@@ -138,13 +136,6 @@ type TestClient struct {
 	// having cleanup() field makes cleanup customizable from default cleanup methods after calling build
 	cleanup func()
 }
-
-var RollupOwner = "RollupOwner"
-var Sequencer = "Sequencer"
-var Validator = "Validator"
-var User = "User"
-
-var DefaultChainAccounts = []string{RollupOwner, Sequencer, Validator, User}
 
 func NewTestClient(ctx context.Context) *TestClient {
 	return &TestClient{ctx: ctx}
@@ -927,9 +918,19 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.L1 = NewTestClient(b.ctx)
-	b.L1Info, b.L1.Client, b.L1.GethClient, b.L1.ClientWrapper, b.L1.ExternalL1Mining, b.L1.L1BlobReader, b.L1.cleanup = createExternalL1(
-		t, b.ctx, b.L1Info, b.withL1ClientWrapper, gethBinary, b.externalL1GenesisOverrides,
-	)
+	extL1 := CreateExternalL1(t, b.ctx, ExternalL1Params{
+		Info:              b.L1Info,
+		GethBinary:        gethBinary,
+		WithClientWrapper: b.withL1ClientWrapper,
+		GenesisOverrides:  b.externalL1GenesisOverrides,
+	})
+	b.L1Info = extL1.Info
+	b.L1.Client = extL1.Client
+	b.L1.GethClient = extL1.GethClient
+	b.L1.ClientWrapper = extL1.ClientWrapper
+	b.L1.ExternalL1Mining = extL1.MiningClient
+	b.L1.L1BlobReader = extL1.BlobReader
+	b.L1.cleanup = extL1.Close
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	deployConfig := DeployConfig{
@@ -1501,20 +1502,6 @@ func (b *NodeBuilder) Build2ndNodeOnL3(t *testing.T, params *SecondNodeParams) (
 
 func (b *NodeBuilder) BridgeBalance(t *testing.T, account string, amount *big.Int) (*types.Transaction, *types.Receipt) {
 	return BridgeBalance(t, account, amount, b.L1Info, b.L2Info, b.L1.Client, b.L2.Client, b.ctx)
-}
-
-func SendWaitTestTransactions(t *testing.T, ctx context.Context, client *ethclient.Client, txs []*types.Transaction) []*types.Receipt {
-	t.Helper()
-	receipts := make([]*types.Receipt, len(txs))
-	for _, tx := range txs {
-		Require(t, client.SendTransaction(ctx, tx))
-	}
-	for i, tx := range txs {
-		var err error
-		receipts[i], err = EnsureTxSucceeded(ctx, client, tx)
-		Require(t, err)
-	}
-	return receipts
 }
 
 // checkBatchPosting sends a transaction and verifies it gets posted to L1 and syncs to followers. Returns the L2 block
@@ -2292,26 +2279,6 @@ func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error
 // The effective timeout is capped by the context's deadline if one is set.
 // On timeout or context cancellation it calls t.Fatalf, so it must be called from the test goroutine.
 // The check function should handle errors by logging and returning false, not by calling Fatal/Require.
-// testTimeoutScale reads NITRO_TEST_TIMEOUT_SCALE once and returns a multiplier
-// applied to pollUntil/retryUntilFound timeouts. CI sets this to >1.0 so tests
-// designed for a quiet machine can breathe on loaded shared runners. Defaults to 1.0.
-var (
-	testTimeoutScale     float64
-	testTimeoutScaleOnce sync.Once
-)
-
-func getTestTimeoutScale() float64 {
-	testTimeoutScaleOnce.Do(func() {
-		testTimeoutScale = 1.0
-		if v := os.Getenv("NITRO_TEST_TIMEOUT_SCALE"); v != "" {
-			if parsed, err := strconv.ParseFloat(v, 64); err == nil && parsed > 0 {
-				testTimeoutScale = parsed
-			}
-		}
-	})
-	return testTimeoutScale
-}
-
 func pollUntil(t *testing.T, ctx context.Context, timeout time.Duration, interval time.Duration, desc string, check func() bool) {
 	t.Helper()
 	timeout = time.Duration(float64(timeout) * getTestTimeoutScale())
@@ -2389,16 +2356,6 @@ func goroutineErrorf(t *testing.T, ctx context.Context, cancel context.CancelFun
 	}
 	cancel()
 	return true
-}
-
-func Require(t *testing.T, err error, text ...interface{}) {
-	t.Helper()
-	testhelpers.RequireImpl(t, err, text...)
-}
-
-func Fatal(t *testing.T, printables ...interface{}) {
-	t.Helper()
-	testhelpers.FailImpl(t, printables...)
 }
 
 // waitForFindInboxBatch polls FindInboxBatchContainingMessage until the batch

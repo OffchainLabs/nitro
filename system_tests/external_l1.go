@@ -313,18 +313,37 @@ func (b *synchronizedBuffer) tail(limit int) string {
 	return string(data)
 }
 
-func createExternalL1(
-	t *testing.T,
-	ctx context.Context,
-	l1info info,
-	withClientWrapper bool,
-	gethBinary string,
-	// genesisOverrides is merged into the genesis chain config (nil deletes a
+type ExternalL1Params struct {
+	// Info is the L1 test info to use; nil creates a fresh NewL1TestInfo.
+	Info       *BlockchainTestInfo
+	GethBinary string
+	// WithClientWrapper wraps the returned client so tests can intercept and
+	// stall L1 RPC traffic.
+	WithClientWrapper bool
+	// GenesisOverrides is merged into the genesis chain config (nil deletes a
 	// key). A non-nil map makes the caller authoritative for the fork schedule.
-	genesisOverrides map[string]interface{},
-) (info, *ethclient.Client, *gethclient.Client, *ClientWrapper, *externalL1MiningClient, containers.Option[daprovider.BlobReader], func()) {
+	GenesisOverrides map[string]interface{}
+}
+
+type ExternalL1 struct {
+	Info          *BlockchainTestInfo
+	Client        *ethclient.Client
+	GethClient    *gethclient.Client
+	ClientWrapper *ClientWrapper // nil unless WithClientWrapper was set
+	MiningClient  *externalL1MiningClient
+	BlobReader    containers.Option[daprovider.BlobReader]
+	// Close shuts down the geth process. It is idempotent and also registered
+	// via t.Cleanup.
+	Close func()
+}
+
+func CreateExternalL1(t *testing.T, ctx context.Context, params ExternalL1Params) *ExternalL1 {
 	t.Helper()
 
+	l1info := params.Info
+	gethBinary := params.GethBinary
+	withClientWrapper := params.WithClientWrapper
+	genesisOverrides := params.GenesisOverrides
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
 	}
@@ -496,7 +515,15 @@ func createExternalL1(
 		client = ethclient.NewClient(clientWrapper)
 	}
 	t.Logf("Using external L1 from %s", gethBinary)
-	return l1info, client, gethClient, clientWrapper, miningClient, containers.Some[daprovider.BlobReader](blobReader), cleanup
+	return &ExternalL1{
+		Info:          l1info,
+		Client:        client,
+		GethClient:    gethClient,
+		ClientWrapper: clientWrapper,
+		MiningClient:  miningClient,
+		BlobReader:    containers.Some[daprovider.BlobReader](blobReader),
+		Close:         cleanup,
+	}
 }
 
 var bigChainID1337 = new(big.Int).SetUint64(1337)

@@ -21,9 +21,29 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 var testL1ChainID = big.NewInt(1337)
+
+type info = *BlockchainTestInfo
+
+var RollupOwner = "RollupOwner"
+var Sequencer = "Sequencer"
+var Validator = "Validator"
+var User = "User"
+
+var DefaultChainAccounts = []string{RollupOwner, Sequencer, Validator, User}
+
+func Require(t *testing.T, err error, text ...interface{}) {
+	t.Helper()
+	testhelpers.RequireImpl(t, err, text...)
+}
+
+func Fatal(t *testing.T, printables ...interface{}) {
+	t.Helper()
+	testhelpers.FailImpl(t, printables...)
+}
 
 type AccountInfo struct {
 	Address    common.Address
