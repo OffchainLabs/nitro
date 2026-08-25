@@ -18,6 +18,8 @@ type TxsRecordingDatabase struct {
 	recorder   daprovider.PreimageRecorder
 }
 
+var _ ethdb.Database = (*TxsRecordingDatabase)(nil)
+
 func (rdb *TxsRecordingDatabase) Get(key []byte) ([]byte, error) {
 	hash := common.BytesToHash(key)
 	value, err := rdb.underlying.Node(hash)
