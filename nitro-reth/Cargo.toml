@@ -33,6 +33,7 @@ members = [
     "crates/arbos-types",
     "bin/arb-mel-node",
     "bin/arb-reth",
+    "bin/arb-replay",
     "bin/arb-test",
 ]
 resolver = "3"

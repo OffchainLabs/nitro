@@ -1454,6 +1454,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "arb-replay"
+version = "0.1.5"
+dependencies = [
+ "brotli 0.1.0",
+]
+
+[[package]]
 name = "arb-reth"
 version = "0.1.5"
 dependencies = [
