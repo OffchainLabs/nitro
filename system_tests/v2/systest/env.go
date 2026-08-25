@@ -162,7 +162,7 @@ func (e *Env) waitFollowersSynced() error {
 		var lastErr, sendErr error
 		var lastGot uint64
 		werr := waitFor(e.Ctx, "follower to execute sequencer message count", func() bool {
-			got, err := f.Consensus.TxStreamer.GetProcessedMessageCount()
+			got, err := f.Consensus.TxStreamer.GetProcessedMessageCount(e.Ctx)
 			lastErr = err
 			lastGot = uint64(got)
 			if err != nil {

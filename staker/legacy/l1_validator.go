@@ -265,7 +265,7 @@ func (v *L1Validator) generateNodeAction(
 		return nil, false, nil
 	}
 
-	caughtUp, startCount, err := staker.GlobalStateToMsgCount(v.inboxTracker, v.txStreamer, startState.GlobalState)
+	caughtUp, startCount, err := staker.GlobalStateToMsgCount(ctx, v.inboxTracker, v.txStreamer, startState.GlobalState)
 	if err != nil {
 		return nil, false, fmt.Errorf("start state not in chain: %w", err)
 	}
@@ -275,7 +275,7 @@ func (v *L1Validator) generateNodeAction(
 			PosInBatch:  startState.GlobalState.PosInBatch,
 		}
 		var current staker.GlobalStatePosition
-		head, err := v.txStreamer.GetProcessedMessageCount()
+		head, err := v.txStreamer.GetProcessedMessageCount(ctx)
 		if err != nil {
 			_, current, err = v.blockValidator.GlobalStatePositionsAtCount(head)
 		}
@@ -296,7 +296,7 @@ func (v *L1Validator) generateNodeAction(
 		}
 		validatedGlobalState = valInfo.GlobalState
 		caughtUp, validatedCount, err = staker.GlobalStateToMsgCount(
-			v.inboxTracker, v.txStreamer, valInfo.GlobalState,
+			ctx, v.inboxTracker, v.txStreamer, valInfo.GlobalState,
 		)
 		if err != nil {
 			return nil, false, fmt.Errorf("%w: not found validated block in blockchain", err)
@@ -328,7 +328,7 @@ func (v *L1Validator) generateNodeAction(
 			log.Warn("wasmroot doesn't match rollup", "rollup", v.lastWasmModuleRoot, "blockValidator", valInfo.WasmRoots)
 		}
 	} else {
-		validatedCount, err = v.txStreamer.GetProcessedMessageCount()
+		validatedCount, err = v.txStreamer.GetProcessedMessageCount(ctx)
 		if err != nil || validatedCount == 0 {
 			return nil, false, err
 		}
@@ -428,7 +428,7 @@ func (v *L1Validator) generateNodeAction(
 			log.Error("Found incorrect assertion: Machine status not finished", "node", nd.NodeNum, "machineStatus", nd.Assertion.AfterState.MachineStatus)
 			continue
 		}
-		caughtUp, nodeMsgCount, err := staker.GlobalStateToMsgCount(v.inboxTracker, v.txStreamer, afterGS)
+		caughtUp, nodeMsgCount, err := staker.GlobalStateToMsgCount(ctx, v.inboxTracker, v.txStreamer, afterGS)
 		if errors.Is(err, staker.ErrGlobalStateNotInChain) {
 			wrongNodesExist = true
 			log.Error("Found incorrect assertion", "node", nd.NodeNum, "afterGS", afterGS, "err", err)

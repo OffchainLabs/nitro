@@ -834,7 +834,7 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 			log.Error("myurl main sequencer, but no sequencer exists")
 			return c.noRedisError(), nil
 		}
-		processedMessages, err := c.streamer.GetProcessedMessageCount()
+		processedMessages, err := c.streamer.GetProcessedMessageCount(ctx)
 		if err != nil {
 			log.Warn("coordinator: failed to read processed message count", "err", err)
 			processedMessages = 0

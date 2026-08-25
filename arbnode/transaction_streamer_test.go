@@ -22,8 +22,71 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
+
+type blockingHeadExecutionClient struct {
+	execution.ExecutionClient
+	headRequestStarted chan struct{}
+	headRequestStopped chan struct{}
+}
+
+func (c *blockingHeadExecutionClient) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (arbutil.MessageIndex, error) {
+		close(c.headRequestStarted)
+		<-ctx.Done()
+		close(c.headRequestStopped)
+		return 0, ctx.Err()
+	})
+}
+
+func TestGetProcessedMessageCountReturnsWhenCallerStops(t *testing.T) {
+	execClient := &blockingHeadExecutionClient{
+		headRequestStarted: make(chan struct{}),
+		headRequestStopped: make(chan struct{}),
+	}
+	streamer := &TransactionStreamer{
+		db:         rawdb.NewMemoryDatabase(),
+		execClient: execClient,
+	}
+	Require(t, streamer.db.Put(schema.MessageCountKey, []byte{1}))
+	streamer.StopWaiter.Start(t.Context(), streamer)
+	defer streamer.StopAndWait()
+
+	caller := &stopwaiter.StopWaiter{}
+	caller.Start(t.Context(), caller)
+	defer caller.StopAndWait()
+
+	result := make(chan error, 1)
+	caller.LaunchThread(func(ctx context.Context) {
+		_, err := streamer.GetProcessedMessageCount(ctx)
+		result <- err
+	})
+	<-execClient.headRequestStarted
+	caller.StopOnly()
+
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected caller cancellation, got %v", err)
+		}
+	case <-time.After(time.Second):
+		// Release a broken implementation so the test and its cleanup cannot hang.
+		streamer.StopOnly()
+		<-result
+		t.Fatal("GetProcessedMessageCount remained blocked after its caller stopped")
+	}
+
+	select {
+	case <-execClient.headRequestStopped:
+	case <-time.After(time.Second):
+		t.Fatal("caller cancellation did not propagate to the execution request")
+	}
+	if streamer.Stopped() {
+		t.Fatal("transaction streamer stopped while canceling only the caller")
+	}
+}
 
 // stubBatchDataProvider returns getErr from the GetSequencerMessageBytes* methods
 // (the only ones exercised by these tests). All other methods return zero values

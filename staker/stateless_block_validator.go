@@ -67,7 +67,7 @@ type InboxTrackerInterface interface {
 
 type TransactionStreamerInterface interface {
 	BlockValidatorRegistrer
-	GetProcessedMessageCount() (arbutil.MessageIndex, error)
+	GetProcessedMessageCount(ctx context.Context) (arbutil.MessageIndex, error)
 	GetMessage(msgIdx arbutil.MessageIndex) (*arbostypes.MessageWithMetadata, error)
 	ResultAtMessageIndex(msgIdx arbutil.MessageIndex) (*execution.MessageResult, error)
 	PauseReorgs()
