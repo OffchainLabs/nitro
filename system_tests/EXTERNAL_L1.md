@@ -8,19 +8,16 @@ override fails instead of falling back to the default. Tests that do not create
 an L1 never resolve the path. The independent `system_tests/v2` harness keeps
 its own simulated L1.
 
-The Makefile installs the configured upstream geth into `target/bin/geth`:
+The Makefile installs the configured upstream geth into `target/bin/geth`.
+Beyond that one target the interface is plain `go test`:
 
 ```sh
 make build-upstream-geth
-make test-system-external-l1-smoke
-make test-system-external-l1 run='^TestStakersCooperative$'
+go test ./system_tests -run '^TestBlockHash$'
+go test -tags challengetest ./system_tests -run TestChallenge -skip Flaky
 ```
 
-To use another compatible geth binary:
-
-```sh
-NITRO_TEST_L1_GETH=/path/to/geth go test ./system_tests -run '^TestBlockHash$'
-```
+`NITRO_TEST_L1_GETH=/path/to/geth` overrides the binary.
 
 The external harness derives a developer genesis from geth, removes the
 post-Osaka `bogotaTime` activation to match Nitro's current in-process test

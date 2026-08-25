@@ -97,6 +97,7 @@ arbitrator_stylus_lib=$(output_root)/lib/libstylus.a
 prover_bin=$(output_root)/bin/prover
 arbitrator_jit=$(output_root)/bin/jit
 validation_server=$(output_root)/bin/validator
+
 arbitrator_cases=crates/prover/test-cases
 
 arbitrator_tests_wat=$(wildcard $(arbitrator_cases)/*.wat)
@@ -248,17 +249,6 @@ test-go-deps: \
 build-upstream-geth:
 	GOTOOLCHAIN=$(upstream_geth_toolchain) GOBIN=$(abspath target/bin) \
 		go install github.com/ethereum/go-ethereum/cmd/geth@$(upstream_geth_version)
-
-.PHONY: test-system-external-l1 ## Run system tests against an external geth L1. Use run=<pattern> (bare * means .*), lane=<build tags> and args="<extra go test flags>".
-test-system-external-l1: build-node-deps test-go-deps build-upstream-geth
-	@run_pattern=$$(printf '%s' '$(run)' | sed -E 's/(^|[^.])\*/\1.*/g'); \
-	cmd="go test ./system_tests -tags '$(or $(lane),challengetest)' -count=1 -timeout 240m -skip Flaky $${run_pattern:+-run \"$$run_pattern\"} $(args)"; \
-	echo "$$cmd"; \
-	go test ./system_tests -tags '$(or $(lane),challengetest)' -count=1 -timeout 240m -skip Flaky $${run_pattern:+-run "$$run_pattern"} $(args)
-
-.PHONY: test-system-external-l1-smoke ## Run TestBlockHash against an external geth L1.
-test-system-external-l1-smoke:
-	$(MAKE) test-system-external-l1 run='^TestBlockHash$$$$'
 
 .PHONY: build-prover-header ## Build the prover generated header.
 build-prover-header: $(arbitrator_generated_header)
