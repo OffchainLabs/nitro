@@ -43,7 +43,7 @@ fn main() -> anyhow::Result<()> {
     let program = build_program(&cli.program)?;
     let mut executor = MinimalExecutor::<UserMode>::simple(Arc::new(program));
 
-    let payload = build_payload(&cli.block_file)?;
+    let payload = build_payload(&cli)?;
     replay_io::send::validation_mode(&mut executor, &payload);
 
     if executor.execute_chunk().is_some() {
@@ -64,17 +64,29 @@ fn build_program(program_file: &Path) -> anyhow::Result<Program> {
 }
 
 /// Builds the validation payload from a recorded block: the rkyv-serialized `ValidationInput`.
-fn build_payload(block_file: &Path) -> anyhow::Result<Vec<u8>> {
-    let block = fs::read(block_file)
-        .with_context(|| format!("read block file from {}", block_file.display()))?;
+fn build_payload(cli: &Cli) -> anyhow::Result<Vec<u8>> {
+    let block = fs::read(&cli.block_file)
+        .with_context(|| format!("read block file from {}", cli.block_file.display()))?;
     let request =
         serde_json::from_slice::<ValidationRequest>(&block).context("parse block file")?;
 
-    // Missing rv64 binaries are expected: compiling Stylus programs arriving as wasm sources via
-    // the SP1 stylus compiler is the next step to port from the feature branch.
-    let input = ValidationInput::from_request_allowing_missing_binaries(&request, "rv64")
+    // Missing rv64 binaries are expected: Stylus programs arriving as wasm sources are compiled
+    // via the SP1 stylus compiler right below.
+    let mut input = ValidationInput::from_request_allowing_missing_binaries(&request, "rv64")
         .map_err(anyhow::Error::msg)
         .context("build validation input")?;
+
+    if let Some(wasms) = request.user_wasms.get("wasm") {
+        for (module_hash, wasm) in wasms.iter() {
+            // rv64 binaries take precedence. This way when nitro introduces caching for rv64
+            // binaries, no changes will be needed for the runner.
+            if input.module_asms.contains_key(module_hash.deref()) {
+                continue;
+            }
+            let binary = compile_in_sp1(cli, wasm.as_ref())?;
+            input.module_asms.insert(**module_hash, binary);
+        }
+    }
 
     Ok(rkyv::to_bytes::<rkyv::rancor::Error>(&input)
         .context("rkyv-serialize validation input")?
