@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -104,6 +105,7 @@ type txOrderer interface {
 
 // txOrdererConfig carries the constants fixed for one block that every tx orderer uses.
 type txOrdererConfig struct {
+	latestHeader         *types.Header
 	baseFee              *big.Int
 	maxBlockTxCandidates int
 	maxBlockSpeed        time.Duration
@@ -113,7 +115,7 @@ type txOrdererConfig struct {
 type txOrdererSequencer interface {
 	// drainValidatedTxs drains, validates, and nonce-prechecks the pending txs for the next
 	// block, in priority order.
-	drainValidatedTxs(statedb *state.StateDB, baseFee *big.Int, maxQueueItems int) []txQueueItem
+	drainValidatedTxs(latestHeader *types.Header, statedb *state.StateDB, baseFee *big.Int, maxQueueItems int) []txQueueItem
 }
 
 // fifoTxOrderer yields the block's candidates in the order the sequencer drained them.
@@ -139,7 +141,7 @@ func newFIFOTxOrderer(seq txOrdererSequencer, config txOrdererConfig, pollInterv
 
 // StartBlock drains the sequencer's pending txs as the block's candidates.
 func (o *fifoTxOrderer) StartBlock(statedb *state.StateDB) bool {
-	items := o.seq.drainValidatedTxs(statedb, o.baseFee, o.maxBlockTxCandidates)
+	items := o.seq.drainValidatedTxs(o.latestHeader, statedb, o.baseFee, o.maxBlockTxCandidates)
 	o.fixedTxFetcher = fixedTxFetcher{items: items}
 	o.started = len(items) > 0
 	return o.started
