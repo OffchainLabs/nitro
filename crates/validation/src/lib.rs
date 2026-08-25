@@ -7,7 +7,7 @@
 extern crate alloc;
 
 #[cfg(not(feature = "std"))]
-use alloc::{collections::BTreeMap, vec::Vec};
+use alloc::{collections::BTreeMap, format, string::String, vec::Vec};
 
 #[cfg(feature = "std")]
 use {
@@ -110,8 +110,11 @@ impl ValidationInput {
         })
     }
 
+}
+
+#[cfg(feature = "rkyv")]
+impl ValidationInput {
     /// Deserializes a rkyv-serialized `ValidationInput`.
-    #[cfg(feature = "rkyv")]
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         let archived = rkyv::access::<ArchivedValidationInput, rkyv::rancor::Error>(bytes)
             .map_err(|e| format!("rkyv access error: {e:?}"))?;
