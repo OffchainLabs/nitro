@@ -30,7 +30,7 @@ RUN apt-get update && \
     apt-get install -y git python3 make g++ curl
 # foundryup-init no longer adds ~/.foundry/bin to the shell profile, so put it on PATH explicitly
 ENV PATH="/root/.foundry/bin:${PATH}"
-RUN curl -fL --retry 3 https://foundry.paradigm.xyz | bash && foundryup -i 1.2.3
+RUN curl --proto '=https' --tlsv1.2 -sSf --retry 3 https://foundry.paradigm.xyz | bash && foundryup -i 1.2.3
 WORKDIR /workspace
 COPY contracts-legacy/package.json contracts-legacy/yarn.lock contracts-legacy/
 RUN cd contracts-legacy && yarn install
