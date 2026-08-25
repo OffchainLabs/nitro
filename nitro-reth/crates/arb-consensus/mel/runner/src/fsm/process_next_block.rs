@@ -146,6 +146,18 @@ where
             Err(e) => return (retry, Err(e.into())),
         };
 
+        // After processing every N parent-chain blocks, print a status log.
+        if output.post_state.parent_chain_block_number
+            % self.config.log_extraction_status_frequency_blocks.get()
+            == 0
+        {
+            tracing::info!(
+                parent_chain_block_number = output.post_state.parent_chain_block_number,
+                msg_count = output.post_state.msg_count,
+                "message extraction successful"
+            );
+        }
+
         self.fsm_state = FsmState::SavingMessages {
             pre_state_msg_count: pre_msg_count,
             post_state: output.post_state,

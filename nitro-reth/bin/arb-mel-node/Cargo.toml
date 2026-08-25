@@ -1,0 +1,34 @@
+[package]
+name = "arb-mel-node"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+clap = { workspace = true, features = ["derive"] }
+eyre.workspace = true
+humantime.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+# Alloy
+alloy-eips.workspace = true
+alloy-primitives.workspace = true
+alloy-provider.workspace = true
+
+# Internal
+arb-consensus-db.workspace = true
+arb-da-provider.workspace = true
+arb-mel-db.workspace = true
+arb-mel-runner.workspace = true
+arb-mel-types.workspace = true
+arb-parent-chain-client.workspace = true
+arbos-types.workspace = true
+
+[lints]
+workspace = true

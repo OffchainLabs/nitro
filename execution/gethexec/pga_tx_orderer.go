@@ -87,7 +87,7 @@ func (p *pgaTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize 
 				return txQueueItem{}, blockInterrupted
 			}
 			mempoolCapacity := max(p.maxBlockTxCandidates-p.mempool.PriorityQueueLen(), 0)
-			p.promote(p.seq.drainValidatedTxs(statedb, p.baseFee, mempoolCapacity))
+			p.promote(p.seq.drainValidatedTxs(p.latestHeader, statedb, p.baseFee, mempoolCapacity))
 		}
 		item, ok := p.mempool.ValidateAndPeek()
 		if !ok {
@@ -153,9 +153,7 @@ func (p *pgaTxOrderer) StartBlock(statedb *state.StateDB) (hasWork bool) {
 	roundLength := pgaRoundLength(p.maxBlockSpeed, p.roundsPerBlock)
 	p.schedule = pga.NewSchedule(uint64(p.roundsPerBlock), roundLength)
 	p.mempool = pga.NewMempool[txQueueItem](p.roundsPerBlock, p.baseFee)
-
-	p.promote(p.seq.drainValidatedTxs(statedb, p.baseFee, p.maxBlockTxCandidates))
-
+	p.promote(p.seq.drainValidatedTxs(p.latestHeader, statedb, p.baseFee, p.maxBlockTxCandidates))
 	return p.mempool.PriorityQueueLen() > 0
 }
 
