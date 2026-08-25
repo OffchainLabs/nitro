@@ -7,7 +7,10 @@
 extern crate alloc;
 
 #[cfg(not(feature = "std"))]
-use alloc::{collections::BTreeMap, format, string::String, vec::Vec};
+use alloc::{collections::BTreeMap, vec::Vec};
+
+#[cfg(all(not(feature = "std"), feature = "rkyv"))]
+use alloc::{format, string::String};
 
 #[cfg(feature = "std")]
 use {
