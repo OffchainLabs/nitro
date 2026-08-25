@@ -64,6 +64,8 @@ var (
 	successfulBlocksCounter                 = metrics.NewRegisteredCounter("arb/sequencer/block/successful", nil)
 	blockTxSizeHistogram                    = metrics.NewRegisteredHistogram("arb/sequencer/block/txsize", nil, metrics.NewBoundedHistogramSample())
 	txSizeHistogram                         = metrics.NewRegisteredHistogram("arb/sequencer/transactions/txsize", nil, metrics.NewBoundedHistogramSample())
+	txDroppedQueueTimeoutCounter            = metrics.NewRegisteredCounter("arb/sequencer/transactions/dropped/queuetimeout", nil)
+	txDroppedCanceledCounter                = metrics.NewRegisteredCounter("arb/sequencer/transactions/dropped/canceled", nil)
 	conditionalTxRejectedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/conditionaltx/rejected", nil)
 	conditionalTxAcceptedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/conditionaltx/accepted", nil)
 	l1GasPriceGauge                         = metrics.NewRegisteredGauge("arb/sequencer/l1gasprice", nil)
@@ -349,6 +351,11 @@ func (i *txQueueItem) returnResultMaybeLog(err error, outputLog bool) {
 			log.Error("attempting to return result to already finished queue item", "err", err)
 		}
 		return
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		txDroppedQueueTimeoutCounter.Inc(1)
+	} else if errors.Is(err, context.Canceled) {
+		txDroppedCanceledCounter.Inc(1)
 	}
 	i.resultChan <- err
 	close(i.resultChan)
