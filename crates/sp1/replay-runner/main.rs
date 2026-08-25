@@ -9,7 +9,7 @@ use std::{
 };
 
 use anyhow::{Context, bail};
-use clap::{ArgAction, Parser};
+use clap::Parser;
 use sp1_core_executor::{MinimalExecutor, Program, UserMode};
 use sp1_sdk::SP1Stdin;
 use stylus_compiler_program::CompileInput;
