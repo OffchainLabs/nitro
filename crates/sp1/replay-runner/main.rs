@@ -21,21 +21,21 @@ struct Cli {
     #[arg(long)]
     program: PathBuf,
 
-    /// Path to the SP1 stylus compiler ELF, produced by replay-builder.
-    #[arg(long)]
-    stylus_compiler_program: PathBuf,
-
     /// Path to the recorded block JSON (a `ValidationRequest`).
     #[arg(long)]
     block_file: PathBuf,
 
-    /// Arbitrum version. Used by the stylus compiler.
-    #[arg(long, default_value_t = 2)]
-    version: u16,
+    /// Path to the SP1 stylus compiler ELF, produced by replay-builder.
+    #[arg(long)]
+    stylus_compiler_program: PathBuf,
 
-    /// Debug flag, true by default; passing `--debug` makes it false. Used by the stylus compiler.
-    #[arg(long, action = ArgAction::SetFalse, default_value_t = true)]
-    debug: bool,
+    /// Stylus version, used by the Stylus compiler.
+    #[arg(long, default_value_t = 2)]
+    stylus_version: u16,
+
+    /// Turns the debug mode for Stylus compilation off.
+    #[arg(long)]
+    stylus_debug_off: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -97,14 +97,13 @@ fn build_payload(cli: &Cli) -> anyhow::Result<Vec<u8>> {
 /// Compiles a Stylus wasm to a rv64 binary by running the stylus compiler inside SP1.
 fn compile_in_sp1(cli: &Cli, wasm: &[u8]) -> anyhow::Result<Vec<u8>> {
     let compile_input = CompileInput {
-        version: cli.version,
-        debug: cli.debug,
+        version: cli.stylus_version,
+        debug: !cli.stylus_debug_off,
         wasm: wasm.to_vec(),
     };
 
     let program = build_program(&cli.stylus_compiler_program)?;
     let mut executor = MinimalExecutor::<UserMode>::simple(Arc::new(program));
-    // Bincode to match the compiler guest's `sp1_zkvm::io::read::<CompileInput>()`.
     let input = bincode::serialize(&compile_input).context("serialize compile input")?;
     executor.with_input(&input);
 
