@@ -271,6 +271,34 @@ func TestDownloadInitInPartsWithChecksum(t *testing.T) {
 	}
 }
 
+func TestLatestSnapshotKind(t *testing.T) {
+	testCases := []struct {
+		kind        string
+		stateScheme string
+		want        string
+		wantErr     bool
+	}{
+		{kind: "archive", stateScheme: rawdb.HashScheme, want: "archive"},
+		{kind: "pruned", stateScheme: rawdb.HashScheme, want: "pruned"},
+		{kind: "genesis", stateScheme: rawdb.HashScheme, want: "genesis"},
+		{kind: "archive", stateScheme: rawdb.PathScheme, want: "archive-path"},
+		{kind: "pruned", stateScheme: rawdb.PathScheme, want: "full-path"},
+		{kind: "genesis", stateScheme: rawdb.PathScheme, wantErr: true},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.stateScheme+" "+testCase.kind, func(t *testing.T) {
+			got, err := latestSnapshotKind(testCase.kind, testCase.stateScheme)
+			if testCase.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, testCase.want, got)
+		})
+	}
+}
+
 func TestSetLatestSnapshotUrl(t *testing.T) {
 	const (
 		chain        = "arb1"
@@ -339,7 +367,7 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 			if configChain == "" {
 				configChain = chain
 			}
-			err = setLatestSnapshotUrl(ctx, &initConfig, configChain)
+			err = setLatestSnapshotUrl(ctx, &initConfig, configChain, rawdb.HashScheme)
 			Require(t, err)
 
 			// Check url

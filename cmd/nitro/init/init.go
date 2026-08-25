@@ -321,7 +321,7 @@ func joinArchive(parts []string, archivePath string) (string, error) {
 }
 
 // setLatestSnapshotUrl sets the Url in initConfig to the latest one available on the mirror.
-func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chain string) error {
+func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chain string, stateScheme string) error {
 	if initConfig.Latest == "" {
 		return nil
 	}
@@ -332,7 +332,11 @@ func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chai
 	if err != nil {
 		return fmt.Errorf("failed to parse latest mirror \"%s\": %w", initConfig.LatestBase, err)
 	}
-	latestFileUrl := baseUrl.JoinPath(chain, "latest-"+initConfig.Latest+".txt").String()
+	snapshotKind, err := latestSnapshotKind(initConfig.Latest, stateScheme)
+	if err != nil {
+		return err
+	}
+	latestFileUrl := baseUrl.JoinPath(chain, "latest-"+snapshotKind+".txt").String()
 	latestFileUrl = strings.ToLower(latestFileUrl)
 	latestFileBytes, err := httpGet(ctx, latestFileUrl)
 	if err != nil {
@@ -348,6 +352,22 @@ func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chai
 	initConfig.Url = strings.ToLower(initConfig.Url)
 	log.Info("Set latest snapshot url", "url", initConfig.Url)
 	return nil
+}
+
+func latestSnapshotKind(snapshotKind string, stateScheme string) (string, error) {
+	if stateScheme != rawdb.PathScheme {
+		return snapshotKind, nil
+	}
+	switch snapshotKind {
+	case "archive":
+		return "archive-path", nil
+	case "pruned":
+		return "full-path", nil
+	case "genesis":
+		return "", errors.New("genesis snapshots are not available for the path state scheme")
+	default:
+		return "", fmt.Errorf("snapshot kind %q is not supported for the path state scheme", snapshotKind)
+	}
 }
 
 // validateConfiguredChainId errors when the chain config the database was
@@ -1113,7 +1133,7 @@ func checkDBDir(stack *node.Node, config *config.NodeConfig) error {
 }
 
 func downloadDB(ctx context.Context, stack *node.Node, config *config.NodeConfig) (bool, error) {
-	if err := setLatestSnapshotUrl(ctx, &config.Init, config.Chain.Name); err != nil {
+	if err := setLatestSnapshotUrl(ctx, &config.Init, config.Chain.Name, config.Execution.Caching.StateScheme); err != nil {
 		return false, err
 	}
 
