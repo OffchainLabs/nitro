@@ -85,6 +85,10 @@ jobs:
           set -e -o pipefail
           shopt -s nullglob
           INPUTS=(target/sp1/block-inputs/*.json)
+          if [ ${#INPUTS[@]} -eq 0 ]; then
+            echo "::error::No recorded block inputs found"
+            exit 1
+          fi
           for INPUT in "${INPUTS[@]}"; do
             BLOCK=$(basename "$INPUT" .json)
             echo "--- Running SP1 (mocked) validation ($BLOCK) ---"

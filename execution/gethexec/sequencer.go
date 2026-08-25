@@ -64,6 +64,8 @@ var (
 	successfulBlocksCounter                 = metrics.NewRegisteredCounter("arb/sequencer/block/successful", nil)
 	blockTxSizeHistogram                    = metrics.NewRegisteredHistogram("arb/sequencer/block/txsize", nil, metrics.NewBoundedHistogramSample())
 	txSizeHistogram                         = metrics.NewRegisteredHistogram("arb/sequencer/transactions/txsize", nil, metrics.NewBoundedHistogramSample())
+	txDroppedQueueTimeoutCounter            = metrics.NewRegisteredCounter("arb/sequencer/transactions/dropped/queuetimeout", nil)
+	txDroppedCanceledCounter                = metrics.NewRegisteredCounter("arb/sequencer/transactions/dropped/canceled", nil)
 	conditionalTxRejectedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/conditionaltx/rejected", nil)
 	conditionalTxAcceptedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/conditionaltx/accepted", nil)
 	l1GasPriceGauge                         = metrics.NewRegisteredGauge("arb/sequencer/l1gasprice", nil)
@@ -349,6 +351,11 @@ func (i *txQueueItem) returnResultMaybeLog(err error, outputLog bool) {
 			log.Error("attempting to return result to already finished queue item", "err", err)
 		}
 		return
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		txDroppedQueueTimeoutCounter.Inc(1)
+	} else if errors.Is(err, context.Canceled) {
+		txDroppedCanceledCounter.Inc(1)
 	}
 	i.resultChan <- err
 	close(i.resultChan)
@@ -836,7 +843,7 @@ func (s *Sequencer) PostTxFilter(header *types.Header, statedb *state.StateDB, _
 	if result.Err != nil && result.UsedGas > dataGas && result.UsedGas-dataGas <= s.config().MaxRevertGasReject {
 		return arbitrum.NewRevertReason(result)
 	}
-	newNonce := tx.Nonce() + 1
+	newNonce := statedb.GetNonce(sender)
 	s.nonceCache.Update(header, sender, newNonce)
 	newAddrAndNonce := addressAndNonce{sender, newNonce}
 	nonceFailure, haveNonceFailure := s.nonceFailures.Take(newAddrAndNonce)
@@ -1029,9 +1036,8 @@ func (s *Sequencer) expireNonceFailures() {
 }
 
 // There's no guarantee that returned tx nonces will be correct
-func (s *Sequencer) precheckNonces(queueItems []txQueueItem, latestState *state.StateDB) []txQueueItem {
+func (s *Sequencer) precheckNonces(queueItems []txQueueItem, latestHeader *types.Header, latestState *state.StateDB) []txQueueItem {
 	bc := s.execEngine.bc
-	latestHeader := bc.CurrentBlock()
 	nextHeaderNumber := arbmath.BigAdd(latestHeader.Number, common.Big1)
 	arbosVersion := types.DeserializeHeaderExtraInformation(latestHeader).ArbOSFormatVersion
 	signer := types.MakeSigner(bc.Config(), nextHeaderNumber, latestHeader.Time, arbosVersion)
@@ -1181,22 +1187,17 @@ func (s *Sequencer) drainAndValidateQueueItems(config *SequencerConfig, currentH
 	return queueItems
 }
 
-func (s *Sequencer) drainValidatedTxs(statedb *state.StateDB, baseFee *big.Int, maxQueueItems int) []txQueueItem {
+func (s *Sequencer) drainValidatedTxs(latestHeader *types.Header, statedb *state.StateDB, baseFee *big.Int, maxQueueItems int) []txQueueItem {
 	// This config snapshot can lag the block creator's if a hot reload lands in between, so the
 	// drain may validate with different limits than the rest of the block; that's acceptable.
-	queueItems := s.drainAndValidateQueueItems(s.config(), s.execEngine.bc.CurrentBlock(), baseFee, maxQueueItems)
+	queueItems := s.drainAndValidateQueueItems(s.config(), latestHeader, baseFee, maxQueueItems)
 	if len(queueItems) == 0 {
 		return nil
 	}
-	return s.precheckNonces(queueItems, statedb)
+	return s.precheckNonces(queueItems, latestHeader, statedb)
 }
 
-func (s *Sequencer) readBaseFeeAndCollectTips() (*big.Int, bool, error) {
-	statedb, err := s.execEngine.bc.State()
-	if err != nil {
-		log.Error("failed to get the latest state to sequence a block", "err", err)
-		return nil, false, err
-	}
+func readBaseFeeAndCollectTips(statedb *state.StateDB) (*big.Int, bool, error) {
 	baseFee, err := arbosState.BaseFee(statedb)
 	if err != nil {
 		log.Error("failed to read the base fee from the latest state", "err", err)
@@ -1216,12 +1217,19 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 	defer s.createBlockMutex.Unlock()
 
 	config := s.config()
-	baseFee, collectTips, err := s.readBaseFeeAndCollectTips()
+	latestHeader := s.execEngine.bc.CurrentBlock()
+	statedb, err := s.execEngine.bc.StateAt(latestHeader)
+	if err != nil {
+		log.Error("failed to get the latest state to sequence a block", "err", err)
+		return nil, config.MaxBlockSpeed
+	}
+	baseFee, collectTips, err := readBaseFeeAndCollectTips(statedb)
 	if err != nil {
 		return nil, config.MaxBlockSpeed
 	}
 
 	ordererConfig := txOrdererConfig{
+		latestHeader:         latestHeader,
 		baseFee:              baseFee,
 		maxBlockTxCandidates: config.MaxBlockTxCandidates,
 		maxBlockSpeed:        config.MaxBlockSpeed,
@@ -1236,7 +1244,7 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 		fifoOrderingCounter.Inc(1)
 	}
 	if s.loggedOrderingStrategy != strategy {
-		log.Info("Sequencer transaction ordering strategy", "strategy", strategy, "blockNumber", s.execEngine.bc.CurrentBlock().Number.Uint64()+1)
+		log.Info("Sequencer transaction ordering strategy", "strategy", strategy, "blockNumber", latestHeader.Number.Uint64()+1)
 		s.loggedOrderingStrategy = strategy
 	}
 
@@ -1245,12 +1253,12 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 		s.blockTxOrderer = containers.None[txOrderer]()
 	}()
 
-	return s.createBlockWithTxOrderer(ctx, orderer)
+	return s.createBlockWithTxOrderer(ctx, orderer, statedb)
 }
 
 // createBlockWithTxOrderer creates one block from the txs yielded by the orderer; split from
 // createBlockWithRegularTxs so tests can inject the orderer.
-func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrderer) (sequencedMsg *execution.SequencedMsg, throttleRegularSequencingFor time.Duration) {
+func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrderer, statedb *state.StateDB) (sequencedMsg *execution.SequencedMsg, throttleRegularSequencingFor time.Duration) {
 	s.pendingQueueItemsResults = nil
 	forwarder := s.getForwarder()
 
@@ -1301,11 +1309,6 @@ func (s *Sequencer) createBlockWithTxOrderer(ctx context.Context, orderer txOrde
 	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
 	s.nonceCache.BeginNewBlock()
 
-	statedb, stateErr := s.execEngine.bc.State()
-	if stateErr != nil {
-		log.Error("failed to get the latest state to start a block", "err", stateErr)
-		return nil, config.MaxBlockSpeed
-	}
 	if !orderer.StartBlock(statedb) {
 		return nil, orderer.BlockInterval()
 	}
@@ -1791,6 +1794,34 @@ func (s *Sequencer) hasPendingRegularTxs() bool {
 	return s.txRetryQueue.Len() > 0 ||
 		len(s.txQueue) > 0 ||
 		len(s.timeboostAuctionResolutionTxQueue) > 0
+}
+
+// DigestMessage ensures the engine call doesn't race with sequencing.
+func (s *Sequencer) DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
+	s.createBlockMutex.Lock()
+	defer s.createBlockMutex.Unlock()
+	return s.execEngine.DigestMessage(msgIdx, msg, msgForPrefetch)
+}
+
+// Reorg ensures the engine call doesn't race with sequencing.
+func (s *Sequencer) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) ([]*execution.MessageResult, error) {
+	s.createBlockMutex.Lock()
+	defer s.createBlockMutex.Unlock()
+	return s.execEngine.Reorg(msgIdxOfFirstMsgToAdd, newMessages)
+}
+
+// ResequenceReorgedMessage ensures the engine call doesn't race with sequencing.
+func (s *Sequencer) ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*execution.SequencedMsg, error) {
+	s.createBlockMutex.Lock()
+	defer s.createBlockMutex.Unlock()
+	return s.execEngine.ResequenceReorgedMessage(msg)
+}
+
+// AppendLastSequencedBlock ensures the engine call doesn't race with sequencing.
+func (s *Sequencer) AppendLastSequencedBlock() error {
+	s.createBlockMutex.Lock()
+	defer s.createBlockMutex.Unlock()
+	return s.execEngine.AppendLastSequencedBlock()
 }
 
 func (s *Sequencer) StartSequencing(ctx context.Context) (*execution.SequencedMsg, time.Duration) {

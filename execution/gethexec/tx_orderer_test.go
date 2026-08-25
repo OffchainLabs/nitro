@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -36,7 +37,7 @@ func newStubOrdererSequencerWithBatches(batches ...[]txQueueItem) *stubOrdererSe
 	}
 }
 
-func (s *stubOrdererSequencer) drainValidatedTxs(statedb *state.StateDB, baseFee *big.Int, maxQueueItems int) []txQueueItem {
+func (s *stubOrdererSequencer) drainValidatedTxs(latestHeader *types.Header, statedb *state.StateDB, baseFee *big.Int, maxQueueItems int) []txQueueItem {
 	s.drainLimits = append(s.drainLimits, maxQueueItems)
 	if maxQueueItems <= 0 || len(s.batches) == 0 {
 		return nil
