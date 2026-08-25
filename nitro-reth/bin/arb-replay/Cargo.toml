@@ -12,12 +12,8 @@ description = "The classic replay entrypoint: re-executes one block inside the p
 name = "arb-replay"
 path = "src/main.rs"
 
-# The wasm build — this binary's real target — must link nothing: brotli is reached through
-# the `arbcompress` host imports, resolved by the runner. Native builds link brotli like the
-# rest of the workspace. Keep `nitro-prover` (and anything else enabling `link`/`cc_brotli`)
-# out of this crate's dependency graph, or feature unification silently re-enables linking.
 [target.'cfg(target_family = "wasm")'.dependencies]
-nitro-brotli = { package = "brotli", path = "../../../crates/brotli", default-features = false }
+nitro-brotli = { workspace = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 nitro-brotli = { workspace = true, features = ["cc_brotli"] }
