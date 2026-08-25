@@ -3915,11 +3915,13 @@ name = "replay-runner"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bincode",
  "clap",
  "replay-io",
  "rkyv",
  "serde_json",
  "sp1-core-executor",
+ "stylus-compiler-program",
  "validation",
 ]
 
