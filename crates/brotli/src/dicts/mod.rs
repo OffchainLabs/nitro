@@ -37,12 +37,15 @@ impl TryFrom<u8> for Dictionary {
 
 #[cfg(feature = "link")]
 mod native {
-    use crate::native::{CustomAllocator, EncoderPreparedDictionary, HeapItem};
-    use crate::types::BrotliSharedDictionaryType;
-    use crate::{BrotliStatus, Dictionary};
+    use core::{ffi::c_int, ptr};
+
     use lazy_static::lazy_static;
-    use std::ffi::c_int;
-    use std::ptr;
+
+    use crate::{
+        BrotliStatus, Dictionary,
+        native::{CustomAllocator, EncoderPreparedDictionary, HeapItem},
+        types::BrotliSharedDictionaryType,
+    };
 
     unsafe extern "C" {
         /// Prepares an LZ77 dictionary for use during compression.

@@ -1,15 +1,22 @@
-use std::{
-    ffi::c_void,
-    mem::MaybeUninit,
-    mem,
-    ptr
-};
+// Copyright 2021-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
+//! Native brotli implementation: the C library, linked from prebuilt static libs by default
+//! (`target/lib*`) or compiled inline with the `cc_brotli` feature.
+
 #[cfg(target_arch = "wasm32")]
 use alloc::vec::Vec;
+use core::{
+    ffi::c_void,
+    mem::{self, MaybeUninit},
+    ptr,
+};
+
 use crate::{
-    BrotliStatus,
-    Dictionary,
-    types::{BrotliBool, BrotliEncoderOperation, BrotliEncoderParameter, BrotliSharedDictionaryType}
+    BrotliStatus, Dictionary,
+    types::{
+        BrotliBool, BrotliEncoderOperation, BrotliEncoderParameter, BrotliSharedDictionaryType,
+    },
 };
 
 pub(crate) type DecoderState = c_void;
