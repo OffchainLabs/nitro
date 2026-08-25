@@ -546,6 +546,7 @@ func ProduceBlockAdvanced(
 			// index 0 reserved for pre-execution system calls. It is only consumed when
 			// EIP-7928 block access lists are active, which for Arbitrum chains requires
 			// ArbOS >= params.ArbosVersion_Amsterdam; below that the value is inert.
+			// #nosec G115
 			buildState.statedb.SetTxContext(tx.Hash(), len(buildState.receipts), uint32(len(buildState.receipts)+1)) // the number of successful state transitions
 
 			// Also snapshot the warm-start cache so a dropped or rolled-back tx that warmed a
