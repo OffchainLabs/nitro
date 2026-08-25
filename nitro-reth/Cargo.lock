@@ -2672,7 +2672,6 @@ name = "brotli"
 version = "0.1.0"
 dependencies = [
  "cc",
- "cfg-if",
  "lazy_static",
  "num_enum",
 ]

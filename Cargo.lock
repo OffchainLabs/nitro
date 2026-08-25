@@ -860,7 +860,6 @@ name = "brotli"
 version = "0.1.0"
 dependencies = [
  "cc",
- "cfg-if 1.0.4",
  "lazy_static",
  "num_enum",
  "wasmer",
