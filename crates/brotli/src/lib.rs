@@ -5,14 +5,6 @@
 
 extern crate alloc;
 
-#[cfg(target_arch = "wasm32")]
-use alloc::vec::Vec;
-use core::{
-    ffi::c_void,
-    mem::{self, MaybeUninit},
-    ptr,
-};
-
 pub mod cgo;
 mod dicts;
 mod types;
@@ -20,9 +12,12 @@ mod types;
 #[cfg(feature = "wasmer_traits")]
 mod wasmer_traits;
 
-pub use dicts::Dictionary;
-use types::*;
-pub use types::{BrotliStatus, DEFAULT_WINDOW_SIZE};
-
 #[cfg(feature = "link")]
 mod native;
+
+#[cfg(feature = "link")]
+pub use native::*;
+pub use {
+    dicts::Dictionary,
+    types::{BrotliStatus, DEFAULT_WINDOW_SIZE}
+};

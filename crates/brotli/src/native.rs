@@ -4,17 +4,19 @@ use std::{
     mem,
     ptr
 };
+#[cfg(target_arch = "wasm32")]
+use alloc::vec::Vec;
 use crate::{
     BrotliStatus,
     Dictionary,
     types::{BrotliBool, BrotliEncoderOperation, BrotliEncoderParameter, BrotliSharedDictionaryType}
 };
 
-type DecoderState = c_void;
-type EncoderState = c_void;
-type EncoderPreparedDictionary = c_void;
-type CustomAllocator = c_void;
-type HeapItem = c_void;
+pub(crate) type DecoderState = c_void;
+pub(crate) type EncoderState = c_void;
+pub(crate) type EncoderPreparedDictionary = c_void;
+pub(crate) type CustomAllocator = c_void;
+pub(crate) type HeapItem = c_void;
 
 // compression API
 unsafe extern "C" {
