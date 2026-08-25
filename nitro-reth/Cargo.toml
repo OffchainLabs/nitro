@@ -31,6 +31,7 @@ members = [
     "crates/arb-bench",
     "crates/arbos",
     "crates/arbos-types",
+    "bin/arb-mel-node",
     "bin/arb-reth",
     "bin/arb-test",
 ]
@@ -85,6 +86,7 @@ reth-evm = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-execution-errors = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-execution-types = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-libmdbx = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-network = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-node-api = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-node-builder = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
@@ -217,6 +219,7 @@ axum = { version = "0.7", default-features = false }
 chrono = { version = "0.4", default-features = false }
 csv = { version = "1" }
 futures-util = { version = "0.3" }
+humantime = { version = "2" }
 k256 = { version = "0.13", default-features = false }
 libc = { version = "0.2" }
 rand = { version = "0.8", default-features = false }

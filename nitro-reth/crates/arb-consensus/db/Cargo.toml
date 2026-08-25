@@ -16,5 +16,11 @@ arbos-types.workspace = true
 alloy-primitives = { workspace = true, features = ["rlp"] }
 alloy-rlp = { workspace = true, features = ["derive"] }
 
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+reth-libmdbx = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [lints]
 workspace = true

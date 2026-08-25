@@ -187,7 +187,8 @@ func createMockValidationNode(t *testing.T, ctx context.Context, config *server_
 	}
 	configFetcher := func() *server_arb.ArbitratorSpawnerConfig { return config }
 	spawner := &mockSpawner{}
-	serverAPI := valnode.NewExecutionServerAPI(spawner, spawner, configFetcher)
+	execServer := valnode.NewExecServer(spawner, configFetcher)
+	serverAPI := valnode.NewExecServerAPI(spawner, execServer)
 
 	valAPIs := []rpc.API{{
 		Namespace:     server_api.Namespace,
@@ -201,7 +202,7 @@ func createMockValidationNode(t *testing.T, ctx context.Context, config *server_
 	err = stack.Start()
 	Require(t, err)
 
-	serverAPI.Start(ctx)
+	execServer.Start(ctx)
 
 	var redisConsumer *valnoderedis.ValidationServer
 	if config.RedisValidationServerConfig.Enabled() {
@@ -213,7 +214,7 @@ func createMockValidationNode(t *testing.T, ctx context.Context, config *server_
 	go func() {
 		<-ctx.Done()
 		stack.Close()
-		serverAPI.StopOnly()
+		execServer.StopOnly()
 		if redisConsumer != nil {
 			redisConsumer.StopOnly()
 		}

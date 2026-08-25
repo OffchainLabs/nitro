@@ -85,9 +85,6 @@ pub trait ArbOsHooks {
     /// Returns the amount of gas held for compute.
     fn held_gas(&self) -> u64;
 
-    /// Returns scheduled internal transactions generated during execution.
-    fn scheduled_txs(&mut self) -> Vec<Vec<u8>>;
-
     /// Whether the priority fee tip should be dropped (not sent to coinbase).
     fn drop_tip(&self) -> bool;
 
@@ -128,10 +125,6 @@ impl ArbOsHooks for NoopArbOsHooks {
 
     fn held_gas(&self) -> u64 {
         0
-    }
-
-    fn scheduled_txs(&mut self) -> Vec<Vec<u8>> {
-        vec![]
     }
 
     fn drop_tip(&self) -> bool {

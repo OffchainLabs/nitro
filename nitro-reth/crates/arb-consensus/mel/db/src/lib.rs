@@ -100,6 +100,16 @@ impl<S: kv::KvStore> MelDb<S> {
             .flatten())
     }
 
+    /// Move the head pointer (`_headMelStateBlockNum`) to `parent_chain_block_number`,
+    /// leaving all state records untouched (mirrors nitro's `setHeadMelStateBlockNum`;
+    /// used when reorging to a batch). Like nitro, does not verify a state is stored
+    /// at that block.
+    pub fn set_head_state_block_num(&mut self, parent_chain_block_number: u64) -> Result<()> {
+        Ok(self
+            .consensus_db
+            .put(schema::HeadMelStateBlockNum, &parent_chain_block_number)?)
+    }
+
     /// Save `state` as the new head: writes it under `l` and advances the head pointer
     /// (`_headMelStateBlockNum`) to its block number, atomically (mirrors nitro's `SaveState`).
     pub fn save_state(&mut self, state: &MelState) -> Result<()> {
@@ -661,6 +671,32 @@ mod tests {
         let mel = db.delayed_message(2).unwrap().expect("mel index 2");
         assert_eq!(alloy_rlp::encode(&mel), alloy_rlp::encode(&mel_msg));
         assert_ne!(mel.block_hash, B256::ZERO);
+    }
+
+    #[test]
+    fn set_head_state_block_num_rewinds_head() {
+        let mut db = mel_db();
+        db.save_state(&mel_state(50, 3, 2)).unwrap();
+        db.save_state(&mel_state(60, 4, 2)).unwrap();
+        assert_eq!(db.head_state_block_num().unwrap(), Some(60));
+
+        // Reorg-to-batch: move the pointer back; the block-50 state is head again.
+        db.set_head_state_block_num(50).unwrap();
+        assert_eq!(db.head_state_block_num().unwrap(), Some(50));
+        assert_eq!(
+            db.head_state().unwrap().unwrap().parent_chain_block_number,
+            50
+        );
+    }
+
+    #[test]
+    fn set_head_state_block_num_does_not_validate() {
+        // Like nitro, the pointer write is unvalidated: pointing at a block with
+        // no stored state succeeds, and head_state() then reads None, not an error.
+        let mut db = mel_db();
+        db.set_head_state_block_num(999).unwrap();
+        assert_eq!(db.head_state_block_num().unwrap(), Some(999));
+        assert!(db.head_state().unwrap().is_none());
     }
 
     #[test]
