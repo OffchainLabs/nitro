@@ -173,6 +173,14 @@ func newApiClosures(
 
 		db.TouchAddress(&filter.FilteredAddressWithReason{Address: contract, FilterReason: filter.FilterReason{Reason: filter.ReasonCallTarget, EventRuleMatch: nil}})
 
+		// EIP-8037 state-gas hand-off: the EVM's call opcodes forward the
+		// caller's state-gas reservoir to the child (opCall passes
+		// NewGasBudget(gas, scope.Contract.Gas.StateGas)) and recover the
+		// leftover via GasBudget.Absorb. This path passes a zero reservoir and
+		// keeps scalar gas accounting, which is only correct below ArbOS
+		// params.ArbosVersion_Amsterdam, where state gas is never charged. The
+		// reservoir hand-off must be plumbed through here before Amsterdam
+		// activates.
 		switch opcode {
 		case vm.CALL:
 			ret, returnGas, returnMultiGas, err = evm.Call(scope.Contract.Address(), contract, input, vm.NewGasBudget(gas, 0), value)
@@ -240,6 +248,8 @@ func newApiClosures(
 			suberr         error
 		)
 
+		// The zero state-gas reservoir is only valid below ArbOS
+		// params.ArbosVersion_Amsterdam; see the EIP-8037 comment in doCall.
 		if opcode == vm.CREATE {
 			res, addr, returnGas, returnMultiGas, suberr = evm.Create(contract.Address(), code, vm.NewGasBudget(gas, 0), endowment)
 		} else {
