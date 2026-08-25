@@ -1,21 +1,45 @@
 // Copyright 2024-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use core::{ffi::c_int, ptr};
-
-use lazy_static::lazy_static;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
-use crate::{
-    BrotliStatus, CustomAllocator, EncoderPreparedDictionary, HeapItem,
-    types::BrotliSharedDictionaryType,
-};
+/// Brotli dictionary selection.
+#[derive(Clone, Copy, Debug, PartialEq, IntoPrimitive, TryFromPrimitive)]
+#[repr(u32)]
+pub enum Dictionary {
+    Empty,
+    StylusProgram,
+}
+
+impl Dictionary {
+    /// Gets the raw bytes of the underlying LZ77 dictionary.
+    pub fn slice(&self) -> Option<&[u8]> {
+        match self {
+            Self::StylusProgram => Some(include_bytes!("stylus-program-11.lz")),
+            _ => None,
+        }
+    }
+}
+
+impl From<Dictionary> for u8 {
+    fn from(value: Dictionary) -> Self {
+        value as u32 as u8
+    }
+}
+
+impl TryFrom<u8> for Dictionary {
+    type Error = <Dictionary as TryFrom<u32>>::Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        (value as u32).try_into()
+    }
+}
 
 #[cfg(feature = "link")]
 mod native {
-    use crate::{BrotliStatus, Dictionary};
     use crate::native::{CustomAllocator, EncoderPreparedDictionary, HeapItem};
     use crate::types::BrotliSharedDictionaryType;
+    use crate::{BrotliStatus, Dictionary};
     use lazy_static::lazy_static;
     use std::ffi::c_int;
     use std::ptr;
@@ -83,37 +107,5 @@ mod native {
                 _ => None,
             })
         }
-    }
-}
-
-/// Brotli dictionary selection.
-#[derive(Clone, Copy, Debug, PartialEq, IntoPrimitive, TryFromPrimitive)]
-#[repr(u32)]
-pub enum Dictionary {
-    Empty,
-    StylusProgram,
-}
-
-impl Dictionary {
-    /// Gets the raw bytes of the underlying LZ77 dictionary.
-    pub fn slice(&self) -> Option<&[u8]> {
-        match self {
-            Self::StylusProgram => Some(include_bytes!("stylus-program-11.lz")),
-            _ => None,
-        }
-    }
-}
-
-impl From<Dictionary> for u8 {
-    fn from(value: Dictionary) -> Self {
-        value as u32 as u8
-    }
-}
-
-impl TryFrom<u8> for Dictionary {
-    type Error = <Dictionary as TryFrom<u32>>::Error;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        (value as u32).try_into()
     }
 }
