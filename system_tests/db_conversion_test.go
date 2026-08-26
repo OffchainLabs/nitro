@@ -116,7 +116,7 @@ func TestDatabaseConversion(t *testing.T) {
 	}
 	for ; i <= current.Number.Uint64(); i++ {
 		header := bc.GetHeaderByNumber(i)
-		_, err := bc.StateAt(header.Root)
+		_, err := bc.StateAt(header)
 		Require(t, err)
 		tr, err := trie.New(trie.TrieID(header.Root), triedb)
 		Require(t, err)

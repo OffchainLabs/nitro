@@ -1540,7 +1540,7 @@ func testMemoryGrowMachineLimit(t *testing.T, jit bool, builderOpts ...func(*Nod
 func testMaxStylusOpenPages(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	const pageLimit uint16 = 20
 	builderOpts = append(builderOpts, func(b *NodeBuilder) {
-		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
+		b.execConfig.StylusTarget.MaxOpenPages = pageLimit
 	})
 	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
@@ -1601,7 +1601,7 @@ func TestProgramDelayedInboxPageLimitBypassNative(t *testing.T) {
 }
 
 // testDelayedInboxPageLimitBypass verifies that a Stylus call which would
-// exceed MaxStylusOpenPages lands on-chain when delivered via the delayed
+// exceed MaxOpenPages lands on-chain when delivered via the delayed
 // inbox (censorship resistance). Delayed-inbox messages cannot be filtered
 // post-commitment, so addPages must skip FilterTx for them.
 //
@@ -1615,7 +1615,7 @@ func TestProgramDelayedInboxPageLimitBypassNative(t *testing.T) {
 func testDelayedInboxPageLimitBypass(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
 	const pageLimit uint16 = 20
 	builderOpts = append(builderOpts, func(b *NodeBuilder) {
-		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
+		b.execConfig.StylusTarget.MaxOpenPages = pageLimit
 	})
 	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
@@ -1653,7 +1653,7 @@ func testMaxStylusOpenPagesInitialFootprint(t *testing.T, jit bool, builderOpts 
 	// arbos/programs/programs.go.
 	const pageLimit uint16 = 50
 	builderOpts = append(builderOpts, func(b *NodeBuilder) {
-		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
+		b.execConfig.StylusTarget.MaxOpenPages = pageLimit
 	})
 	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
@@ -1826,7 +1826,7 @@ func testNestedStylusCumulativeFootprintNodeLevel(t *testing.T, jit bool, builde
 	// node-level MaxOpenPages path this test is designed to exercise.
 	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithArbOSVersion(params.ArbosVersion_51)
-		b.execConfig.StylusTarget.MaxStylusOpenPages = pageLimit
+		b.execConfig.StylusTarget.MaxOpenPages = pageLimit
 	})
 	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
@@ -3005,7 +3005,11 @@ func checkWasmStoreContent(t *testing.T, wasmDB ethdb.KeyValueStore, expectedTar
 					t.Fatalf("Failed to read activated asm for target: %v, module: %v", target, module)
 				}
 			}()
-			return rawdb.ReadActivatedAsm(wasmDB, wasmTarget, module)
+			val, err := rawdb.ReadActivatedAsm(wasmDB, wasmTarget, module)
+			if err != nil {
+				t.Fatalf("read activated asm failed: %v", err)
+			}
+			return val
 		}()
 	}
 	for _, module := range modules {
@@ -3586,5 +3590,53 @@ func testProgramMemoryFillOverflow(t *testing.T, builderOpts ...func(*NodeBuilde
 	err := l2client.SendTransaction(ctx, tx)
 	if err == nil || !strings.Contains(err.Error(), state.ErrSeqFilter.Error()) {
 		t.Fatal("should get filtered, got: ", err)
+	}
+}
+
+func TestProgramSinglepassOutputSizeLimit(t *testing.T) {
+	const maxOutputSize = 64 * 1024
+
+	savedFallback := programs.GetAllowFallback()
+	t.Cleanup(func() { programs.SetAllowFallback(savedFallback) })
+
+	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+		b.DontParalellise()
+		b.execConfig.StylusTarget.AllowFallback = true
+		b.execConfig.StylusTarget.MaxSinglepassOutputSize = maxOutputSize
+	})
+	defer cleanup()
+
+	statedb, err := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().State()
+	Require(t, err)
+	nodeConfig := programs.GetStylusConfig(statedb)
+	if nodeConfig.MaxSinglepassOutputSize != maxOutputSize {
+		t.Fatalf("expected Singlepass output limit %d, got: %+v", maxOutputSize, nodeConfig)
+	}
+
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+
+	wasm, _ := readWasmFile(t, rustFile("multicall"))
+	program := deployContract(t, ctx, auth, l2client, wasm)
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
+
+	auth.Value = oneEth
+	auth.GasLimit = 32_000_000
+	tx, err := arbWasm.ActivateProgram(&auth, program)
+	Require(t, err)
+	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	if len(receipt.Logs) != 1 {
+		t.Fatalf("expected one activation log, got %d", len(receipt.Logs))
+	}
+	activationLog, err := arbWasm.ParseProgramActivated(*receipt.Logs[0])
+	Require(t, err)
+	craneliftTarget, err := rawdb.CraneliftTarget(rawdb.LocalTarget())
+	Require(t, err)
+	statedb, err = builder.L2.ExecNode.Backend.ArbInterface().BlockChain().State()
+	Require(t, err)
+	if asm := statedb.ActivatedAsm(craneliftTarget, activationLog.ModuleHash); len(asm) == 0 {
+		t.Fatalf("expected activation to store Cranelift output for target %s", craneliftTarget)
 	}
 }

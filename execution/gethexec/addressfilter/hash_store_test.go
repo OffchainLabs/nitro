@@ -26,6 +26,47 @@ func storeHashes(t testing.TB, store *HashStore, id uuid.UUID, salt uuid.UUID, s
 	}))
 }
 
+func TestHashStorePlaintextScheme(t *testing.T) {
+	addr1 := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	addr2 := common.HexToAddress("0x2222222222222222222222222222222222222222")
+
+	for _, mode := range []struct {
+		name  string
+		store *HashStore
+	}{
+		{"no preallocation", NewHashStore(100)},
+		{"preallocated", newHashStore(100, 1000)},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			id := uuid.New()
+			storeHashes(t, mode.store, id, uuid.Nil, HashingSchemePlaintext, []common.Hash{common.BytesToHash(addr1.Bytes())}, "e1")
+
+			restricted, gotId := mode.store.IsRestricted(addr1)
+			require.True(t, restricted)
+			require.Equal(t, id, gotId)
+
+			restricted, _ = mode.store.IsRestricted(addr2)
+			require.False(t, restricted)
+		})
+	}
+}
+
+func TestHashStoreUninitialized(t *testing.T) {
+	for _, mode := range []struct {
+		name  string
+		store *HashStore
+	}{
+		{"no preallocation", NewHashStore(100)},
+		{"preallocated", newHashStore(100, 1000)},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			restricted, id := mode.store.IsRestricted(common.HexToAddress("0x1111111111111111111111111111111111111111"))
+			require.False(t, restricted)
+			require.Equal(t, uuid.Nil, id)
+		})
+	}
+}
+
 func TestHashStorePingPongReuse(t *testing.T) {
 	store := newHashStore(100, 1000)
 	salt := uuid.New()

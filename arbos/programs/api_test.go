@@ -30,7 +30,7 @@ func TestApiClosuresMultiGas_GetBytes32(t *testing.T) {
 	acting := common.Address{1}
 	var key common.Hash // dummy hash
 	contractGas := uint64(1_000_000)
-	contract := vm.NewContract(caller, acting, new(uint256.Int), contractGas, nil)
+	contract := vm.NewContract(caller, acting, new(uint256.Int), vm.NewGasBudget(contractGas), nil)
 	scope := &vm.ScopeContext{Contract: contract}
 
 	// Execute handler to update contract multi-gas usage
@@ -57,11 +57,11 @@ func buildAddPagesTestHandler(t *testing.T, coinbase common.Address, runCtx *cor
 	t.Helper()
 	db := state.NewDatabaseForTesting()
 	statedb, _ := state.New(types.EmptyRootHash, db)
-	statedb.Database().CodeDB().SetArbNodeConfig(&ArbNodeConfig{MaxOpenPages: maxPages})
+	statedb.Database().CodeDB().SetArbNodeConfig(&StylusTargetConfig{MaxOpenPages: maxPages})
 	evm := vm.NewEVM(vm.BlockContext{Coinbase: coinbase, ArbOSVersion: arbosVersion}, statedb, params.TestChainConfig, vm.Config{})
 	caller := common.Address{}
 	acting := common.Address{1}
-	contract := vm.NewContract(caller, acting, new(uint256.Int), 1_000_000, nil)
+	contract := vm.NewContract(caller, acting, new(uint256.Int), vm.NewGasBudget(1_000_000), nil)
 	scope := &vm.ScopeContext{Contract: contract}
 	model := NewMemoryModel(InitialFreePages, InitialPageGas)
 	stylusParams := &StylusParams{PageLimit: pageLimit}
@@ -268,7 +268,7 @@ func TestAddPages_WrongConfigTypeFailsOpen(t *testing.T) {
 	evm := vm.NewEVM(vm.BlockContext{}, statedb, params.TestChainConfig, vm.Config{})
 	caller := common.Address{}
 	acting := common.Address{1}
-	contract := vm.NewContract(caller, acting, new(uint256.Int), 1_000_000, nil)
+	contract := vm.NewContract(caller, acting, new(uint256.Int), vm.NewGasBudget(1_000_000), nil)
 	scope := &vm.ScopeContext{Contract: contract}
 	model := NewMemoryModel(InitialFreePages, InitialPageGas)
 	// Use an eth_call runCtx so that if the limit *were* enforced, we'd expect
@@ -382,7 +382,7 @@ func buildEnforceTestArgs(t *testing.T, maxPages uint16, setConfig bool, arbosVe
 	db := state.NewDatabaseForTesting()
 	statedb, _ := state.New(types.EmptyRootHash, db)
 	if setConfig {
-		statedb.Database().CodeDB().SetArbNodeConfig(&ArbNodeConfig{MaxOpenPages: maxPages})
+		statedb.Database().CodeDB().SetArbNodeConfig(&StylusTargetConfig{MaxOpenPages: maxPages})
 	}
 	evm := vm.NewEVM(vm.BlockContext{ArbOSVersion: arbosVersion}, statedb, params.TestChainConfig, vm.Config{})
 	return evm, statedb

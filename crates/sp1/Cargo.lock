@@ -152,12 +152,12 @@ version = "0.1.0"
 dependencies = [
  "digest 0.10.7",
  "eyre",
- "fnv",
  "hex",
  "num-traits",
  "num_enum 0.7.3",
  "ruint2",
  "serde",
+ "thiserror 1.0.63",
  "tiny-keccak",
  "wasmparser 0.245.1",
 ]
@@ -3880,18 +3880,31 @@ name = "replay-builder"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "clap",
+ "replay-io",
  "serde_json",
  "sp1-build",
+ "sp1-core-executor",
  "sp1-sdk",
  "wasm-encoder 0.245.1",
+ "wasmer",
  "wasmparser 0.245.1",
+]
+
+[[package]]
+name = "replay-io"
+version = "0.1.0"
+dependencies = [
+ "sp1-core-executor",
+ "sp1-zkvm",
 ]
 
 [[package]]
 name = "replay-program"
 version = "0.1.0"
 dependencies = [
+ "replay-io",
  "sp1-zkvm",
 ]
 
@@ -3901,6 +3914,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "replay-io",
  "sp1-core-executor",
 ]
 

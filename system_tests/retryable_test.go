@@ -322,7 +322,7 @@ func TestSubmitRetryableProcessResultGasUsed(t *testing.T) {
 	if parent == nil {
 		Fatal(t, "parent block not found:", block.ParentHash())
 	}
-	statedb, err := bc.StateAt(parent.Root())
+	statedb, err := bc.StateAt(parent.Header())
 	Require(t, err)
 	res, err := bc.Processor().Process(ctx, block, statedb, vm.Config{})
 	Require(t, err)

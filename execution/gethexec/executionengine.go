@@ -417,7 +417,7 @@ func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	}
 }
 
-func PopulateStylusTargetCache(targetConfig *StylusTargetConfig) error {
+func PopulateStylusTargetCache(targetConfig *programs.StylusTargetConfig) error {
 	localTarget := rawdb.LocalTarget()
 	targets := targetConfig.WasmTargets()
 	var nativeSet bool
@@ -455,7 +455,7 @@ func PopulateStylusTargetCache(targetConfig *StylusTargetConfig) error {
 	return nil
 }
 
-func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *StylusTargetConfig) error {
+func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *programs.StylusTargetConfig) error {
 	if rustCacheCapacityMB != 0 {
 		programs.SetWasmLruCacheCapacity(arbmath.SaturatingUMul(uint64(rustCacheCapacityMB), 1024*1024))
 	}
@@ -464,10 +464,7 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 	}
 	s.wasmTargets = targetConfig.WasmTargets()
 	programs.SetAllowFallback(targetConfig.AllowFallback)
-	s.bc.CodeDB().SetArbNodeConfig(&programs.ArbNodeConfig{
-		MaxOpenPages:       targetConfig.MaxStylusOpenPages,
-		MaxStylusCallDepth: targetConfig.MaxStylusCallDepth,
-	})
+	s.bc.CodeDB().SetArbNodeConfig(targetConfig)
 	// Establishes the baseline for doubleNativeStackSize (overflow recovery).
 	programs.SetInitialNativeStackSize(targetConfig.NativeStackSize)
 	return nil
@@ -1139,7 +1136,7 @@ func (s *ExecutionEngine) broadcastBlockTxs(block *types.Block, receipts types.R
 	header := block.Header()
 
 	for i, tx := range block.Transactions() {
-		msg, err := transactionfeed.BuildFeedMessage(header, tx, receipts[i])
+		msg, err := transactionfeed.BuildFeedMessage(header, tx, receipts[i], 0)
 		if err != nil {
 			log.Error("Transaction feed: failed to build message", "block", header.Number, "err", err)
 			continue
@@ -1305,13 +1302,13 @@ type tipRecordingSession struct {
 
 func (s *ExecutionEngine) beginTipRecording(parentHeader *types.Header, runCtx *core.MessageRunContext, recordAtTip bool) (*tipRecordingSession, error) {
 	if !recordAtTip {
-		statedb, err := s.bc.StateAt(parentHeader.Root)
+		statedb, err := s.bc.StateAt(parentHeader)
 		if err != nil {
 			return nil, err
 		}
 		return &tipRecordingSession{statedb: statedb, chainContext: s.bc, runCtx: runCtx}, nil
 	}
-	stateDatabase := state.NewDatabase(s.bc.TrieDB(), s.bc.CodeDB()).WithSnapshot(s.bc.Snapshots())
+	stateDatabase := state.NewMPTDatabase(s.bc.TrieDB(), s.bc.CodeDB()).WithSnapshot(s.bc.Snapshots())
 	recordingStateDatabase := arbitrum.NewTipRecordingStateDatabase(stateDatabase)
 	recordingChainContext := arbitrum.NewRecordingChainContext(s.bc, parentHeader)
 	statedb, err := state.NewRecording(parentHeader.Root, recordingStateDatabase)
@@ -1439,7 +1436,7 @@ func (s *ExecutionEngine) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) (*ex
 func (s *ExecutionEngine) updateL1GasPriceEstimateMetric() {
 	bc := s.bc
 	latestHeader := bc.CurrentBlock()
-	latestState, err := bc.StateAt(latestHeader.Root)
+	latestState, err := bc.StateAt(latestHeader)
 	if err != nil {
 		log.Error("error getting latest statedb while fetching l2 Estimate of L1 GasPrice")
 		return
@@ -1460,7 +1457,7 @@ func (s *ExecutionEngine) updateL1GasPriceEstimateMetric() {
 func (s *ExecutionEngine) getL1PricingSurplus() (int64, error) {
 	bc := s.bc
 	latestHeader := bc.CurrentBlock()
-	latestState, err := bc.StateAt(latestHeader.Root)
+	latestState, err := bc.StateAt(latestHeader)
 	if err != nil {
 		return 0, errors.New("error getting latest statedb while fetching current L1 pricing surplus")
 	}
@@ -1765,7 +1762,7 @@ func (s *ExecutionEngine) isTxHashInOnchainFilter(txHash common.Hash) (bool, err
 		return false, err
 	}
 
-	statedb, err := s.bc.StateAt(currentHeader.Root)
+	statedb, err := s.bc.StateAt(currentHeader)
 	if err != nil {
 		return false, err
 	}

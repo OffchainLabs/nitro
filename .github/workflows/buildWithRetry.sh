@@ -60,7 +60,7 @@ capture_diagnostics() {
 }
 
 for attempt in $(seq 1 "$ATTEMPTS"); do
-    make -j "$(nproc)" build test-go-deps &
+    make -j "${BUILD_JOBS:-$(nproc)}" build test-go-deps &
     make_pid=$!
 
     deadline=$((SECONDS + ATTEMPT_TIMEOUT_SECS))

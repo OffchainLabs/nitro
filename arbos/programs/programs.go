@@ -60,6 +60,7 @@ var activationGasKey = []byte{5}
 
 var ErrProgramActivation = errors.New("program activation failed")
 var ErrNativeStackOverflow = errors.New("native stack overflow")
+var ErrStorageCacheLimitExceeded = errors.New("storage cache limit exceeded")
 
 var ProgramNotWasmError func() error
 var ProgramNotActivatedError func() error
@@ -202,7 +203,7 @@ func (p Programs) CallProgram(
 ) ([]byte, error) {
 	contract := scope.Contract
 	codeHash := contract.CodeHash
-	startingGas := contract.Gas
+	startingGas := contract.Gas.RegularGas
 	debugMode := evm.ChainConfig().DebugMode()
 
 	params, err := p.Params()
@@ -265,22 +266,23 @@ func (p Programs) CallProgram(
 	localAsm := handleProgramPrepare(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params, evm.Context.Time, debugMode, program, runCtx)
 
 	evmData := &EvmData{
-		arbosVersion:    evm.Context.ArbOSVersion,
-		blockBasefee:    common.BigToHash(evm.Context.BaseFee),
-		chainId:         evm.ChainConfig().ChainID.Uint64(),
-		blockCoinbase:   evm.Context.Coinbase,
-		blockGasLimit:   evm.Context.GasLimit,
-		blockNumber:     l1BlockNumber,
-		blockTimestamp:  evm.Context.Time,
-		contractAddress: scope.Contract.Address(),
-		moduleHash:      moduleHash,
-		msgSender:       scope.Contract.Caller(),
-		msgValue:        scope.Contract.Value().Bytes32(),
-		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice.ToBig()),
-		txOrigin:        evm.TxContext.Origin,
-		reentrant:       arbmath.BoolToUint32(reentrant),
-		cached:          program.cached,
-		tracing:         tracingInfo != nil,
+		arbosVersion:      evm.Context.ArbOSVersion,
+		blockBasefee:      common.BigToHash(evm.Context.BaseFee),
+		chainId:           evm.ChainConfig().ChainID.Uint64(),
+		blockCoinbase:     evm.Context.Coinbase,
+		blockGasLimit:     evm.Context.GasLimit,
+		blockNumber:       l1BlockNumber,
+		blockTimestamp:    evm.Context.Time,
+		contractAddress:   scope.Contract.Address(),
+		moduleHash:        moduleHash,
+		msgSender:         scope.Contract.Caller(),
+		msgValue:          scope.Contract.Value().Bytes32(),
+		txGasPrice:        common.BigToHash(evm.TxContext.GasPrice.ToBig()),
+		txOrigin:          evm.TxContext.Origin,
+		reentrant:         arbmath.BoolToUint32(reentrant),
+		storageCacheLimit: stylusStorageCacheLimit(statedb, runCtx),
+		cached:            program.cached,
+		tracing:           tracingInfo != nil,
 	}
 
 	address := contract.Address()
@@ -291,7 +293,7 @@ func (p Programs) CallProgram(
 		evmCost := evmMemoryCost(uint64(len(ret)))
 		if startingGas < evmCost {
 			// burn all remaining gas for this call
-			contract.Gas = 0
+			contract.Gas.Exhaust()
 			attributeWasmComputation(contract, startingGas)
 			// #nosec G115
 			metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas))
@@ -299,19 +301,19 @@ func (p Programs) CallProgram(
 		}
 
 		maxGasToReturn := startingGas - evmCost
-		contract.Gas = arbmath.MinInt(contract.Gas, maxGasToReturn)
+		contract.Gas.RegularGas = arbmath.MinInt(contract.Gas.RegularGas, maxGasToReturn)
 	}
 	attributeWasmComputation(contract, startingGas)
 
 	// #nosec G115
-	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas - contract.Gas))
+	metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas - contract.Gas.RegularGas))
 	return ret, err
 }
 
 // attributeWasmComputation attributes the residual WASM computation gas so that
 // UsedMultiGas.SingleGas() matches the gross used gas for this stylus call.
 func attributeWasmComputation(contract *vm.Contract, startingGas uint64) {
-	usedGas := startingGas - contract.Gas
+	usedGas := startingGas - contract.Gas.RegularGas
 	accountedGas := contract.UsedMultiGas.SingleGas()
 
 	var residual uint64
@@ -753,22 +755,23 @@ func (p Programs) progParams(version uint16, debug bool, params *StylusParams) *
 }
 
 type EvmData struct {
-	arbosVersion    uint64
-	blockBasefee    common.Hash
-	chainId         uint64
-	blockCoinbase   common.Address
-	blockGasLimit   uint64
-	blockNumber     uint64
-	blockTimestamp  uint64
-	contractAddress common.Address
-	moduleHash      common.Hash
-	msgSender       common.Address
-	msgValue        common.Hash
-	txGasPrice      common.Hash
-	txOrigin        common.Address
-	reentrant       uint32
-	cached          bool
-	tracing         bool
+	arbosVersion      uint64
+	blockBasefee      common.Hash
+	chainId           uint64
+	blockCoinbase     common.Address
+	blockGasLimit     uint64
+	blockNumber       uint64
+	blockTimestamp    uint64
+	contractAddress   common.Address
+	moduleHash        common.Hash
+	msgSender         common.Address
+	msgValue          common.Hash
+	txGasPrice        common.Hash
+	txOrigin          common.Address
+	reentrant         uint32
+	storageCacheLimit uint32
+	cached            bool
+	tracing           bool
 }
 
 type activationInfo struct {
@@ -788,6 +791,7 @@ const (
 	userOutOfInk
 	userOutOfStack
 	userNativeStackOverflow
+	userStorageCacheLimitExceeded
 )
 
 func (status userStatus) toResult(data []byte, _debug bool) ([]byte, string, error) {
@@ -808,6 +812,8 @@ func (status userStatus) toResult(data []byte, _debug bool) ([]byte, string, err
 		// before calling toResult when status is userNativeStackOverflow.
 		log.Error("unexpected userNativeStackOverflow in toResult", "data", msg)
 		return nil, "", ErrNativeStackOverflow
+	case userStorageCacheLimitExceeded:
+		return nil, ErrStorageCacheLimitExceeded.Error(), ErrStorageCacheLimitExceeded
 	default:
 		log.Error("program errored with unknown status", "status", status, "data", msg)
 		return nil, msg, vm.ErrExecutionReverted

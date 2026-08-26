@@ -6,8 +6,96 @@ package gethexec
 import (
 	"errors"
 	"math"
+	"math/big"
 	"testing"
+	"testing/synctest"
+	"time"
+
+	"github.com/ethereum/go-ethereum/core/types"
+
+	"github.com/offchainlabs/nitro/transactionfeed"
 )
+
+// recordingBroadcaster records the feed messages broadcast through TxAccepted.
+type recordingBroadcaster struct {
+	msgs []*transactionfeed.TransactionFeedMessage
+}
+
+func (r *recordingBroadcaster) BroadcastTransaction(msg *transactionfeed.TransactionFeedMessage) {
+	r.msgs = append(r.msgs, msg)
+}
+
+// TestFullSequencingHooksTxAcceptedReportsPGARound covers the feed's round attribution
+func TestFullSequencingHooksTxAcceptedReportsPGARound(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		items := []txQueueItem{
+			makePGAQueueItem(t, 0, 100),
+			makePGAQueueItem(t, 1, 0),
+		}
+		orderer := newTestPGATxOrderer(newStubOrdererSequencer(items...))
+		if !orderer.StartBlock(nil) {
+			t.Fatal("StartBlock = false, want true")
+		}
+		feed := &recordingBroadcaster{}
+		hooks := MakeSequencingHooks(orderer, math.MaxInt, nil, feed)
+
+		header := &types.Header{Number: big.NewInt(testBlockNumber), BaseFee: big.NewInt(testBaseFee)}
+		receipt := &types.Receipt{Status: types.ReceiptStatusSuccessful, EffectiveGasPrice: big.NewInt(testBaseFee)}
+
+		pull := func() *types.Transaction {
+			t.Helper()
+			tx, _, err := hooks.NextTxToSequence(nil, math.MaxUint64)
+			if err != nil || tx == nil {
+				t.Fatalf("NextTxToSequence = (%v, %v), want a tx", tx, err)
+			}
+			return tx
+		}
+
+		tx := pull()
+		hooks.TxSucceeded()
+		hooks.TxAccepted(header, tx, receipt)
+
+		// Round 1 expires: the leftover is pulled and accepted in round 2.
+		time.Sleep(testPGARoundLength + time.Millisecond)
+		tx = pull()
+		hooks.TxSucceeded()
+		hooks.TxAccepted(header, tx, receipt)
+
+		if len(feed.msgs) != 2 {
+			t.Fatalf("broadcast %d messages, want 2", len(feed.msgs))
+		}
+		if got := feed.msgs[0].PGARound; got != 1 {
+			t.Errorf("round-1 tx pga_round = %d, want 1", got)
+		}
+		if got := feed.msgs[1].PGARound; got != 2 {
+			t.Errorf("round-2 tx pga_round = %d, want 2", got)
+		}
+	})
+}
+
+// A non-PGA fetcher has no rounds: the feed message carries pga_round 0.
+func TestFullSequencingHooksTxAcceptedNonPGARoundIsZero(t *testing.T) {
+	item, _ := makeTestQueueItem(t, 0, testBaseFee)
+	feed := &recordingBroadcaster{}
+	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item}}, math.MaxInt, nil, feed)
+
+	header := &types.Header{Number: big.NewInt(testBlockNumber), BaseFee: big.NewInt(testBaseFee)}
+	receipt := &types.Receipt{Status: types.ReceiptStatusSuccessful, EffectiveGasPrice: big.NewInt(testBaseFee)}
+
+	tx, _, err := hooks.NextTxToSequence(nil, math.MaxUint64)
+	if err != nil || tx == nil {
+		t.Fatalf("NextTxToSequence = (%v, %v), want a tx", tx, err)
+	}
+	hooks.TxSucceeded()
+	hooks.TxAccepted(header, tx, receipt)
+
+	if len(feed.msgs) != 1 {
+		t.Fatalf("broadcast %d messages, want 1", len(feed.msgs))
+	}
+	if got := feed.msgs[0].PGARound; got != 0 {
+		t.Errorf("pga_round = %d, want 0", got)
+	}
+}
 
 // spyTxFetcher wraps fixedTxFetcher and records the queue items reported through OnTxInclusion.
 type spyTxFetcher struct {
@@ -27,7 +115,7 @@ func TestFullSequencingHooksNotifyFetcherOnSuccessOnly(t *testing.T) {
 	fetcher := &spyTxFetcher{fixedTxFetcher: fixedTxFetcher{items: []txQueueItem{item0, item1}}}
 	hooks := MakeSequencingHooks(fetcher, math.MaxInt, nil, nil)
 
-	if tx, _, err := hooks.NextTxToSequence(nil); err != nil || tx == nil {
+	if tx, _, err := hooks.NextTxToSequence(nil, math.MaxUint64); err != nil || tx == nil {
 		t.Fatalf("first NextTxToSequence = (%v, %v), want a tx", tx, err)
 	}
 	hooks.TxSucceeded()
@@ -35,7 +123,7 @@ func TestFullSequencingHooksNotifyFetcherOnSuccessOnly(t *testing.T) {
 		t.Fatalf("inclusions after TxSucceeded = %v, want just the nonce-0 tx", queueItemNonces(fetcher.inclusions))
 	}
 
-	if tx, _, err := hooks.NextTxToSequence(nil); err != nil || tx == nil {
+	if tx, _, err := hooks.NextTxToSequence(nil, math.MaxUint64); err != nil || tx == nil {
 		t.Fatalf("second NextTxToSequence = (%v, %v), want a tx", tx, err)
 	}
 	hooks.TxFailed(errors.New("intrinsic gas too low"))
@@ -55,7 +143,7 @@ func TestFullSequencingHooksTxResultLifecycle(t *testing.T) {
 
 	pull := func() {
 		t.Helper()
-		tx, _, err := hooks.NextTxToSequence(nil)
+		tx, _, err := hooks.NextTxToSequence(nil, math.MaxUint64)
 		if err != nil || tx == nil {
 			t.Fatalf("NextTxToSequence = (%v, %v), want a tx", tx, err)
 		}
@@ -92,14 +180,14 @@ func TestFullSequencingHooksLateFailureOverridesSuccess(t *testing.T) {
 	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item0, item1}}, math.MaxInt, nil, nil)
 
 	rollback := errors.New("group rolled back")
-	if tx, _, err := hooks.NextTxToSequence(nil); err != nil || tx == nil {
+	if tx, _, err := hooks.NextTxToSequence(nil, math.MaxUint64); err != nil || tx == nil {
 		t.Fatalf("first NextTxToSequence = (%v, %v), want a tx", tx, err)
 	}
 	hooks.TxSucceeded()
 	hooks.TxFailed(rollback)
 
 	failure := errors.New("intrinsic gas too low")
-	if tx, _, err := hooks.NextTxToSequence(nil); err != nil || tx == nil {
+	if tx, _, err := hooks.NextTxToSequence(nil, math.MaxUint64); err != nil || tx == nil {
 		t.Fatalf("second NextTxToSequence = (%v, %v), want a tx", tx, err)
 	}
 	hooks.TxFailed(failure)
@@ -126,14 +214,14 @@ func TestFullSequencingHooksFailedTxDoesNotConsumeBudget(t *testing.T) {
 	fits.txSize = 20
 	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{failed, fits}}, 25, nil, nil)
 
-	tx, _, err := hooks.NextTxToSequence(nil)
+	tx, _, err := hooks.NextTxToSequence(nil, math.MaxUint64)
 	if err != nil || tx.Nonce() != 0 {
 		t.Fatalf("first NextTxToSequence = (%v, %v), want nonce 0", tx, err)
 	}
 	hooks.TxFailed(errors.New("intrinsic gas too low"))
 
 	// The failed tx's 20 bytes must not count against the 25-byte budget.
-	tx, _, err = hooks.NextTxToSequence(nil)
+	tx, _, err = hooks.NextTxToSequence(nil, math.MaxUint64)
 	if err != nil || tx == nil || tx.Nonce() != 1 {
 		t.Fatalf("second NextTxToSequence = (%v, %v), want nonce 1", tx, err)
 	}
@@ -146,12 +234,12 @@ func TestFullSequencingHooksFailsOnUnreportedResult(t *testing.T) {
 	item1, _ := makeTestQueueItem(t, 1, testBaseFee)
 	hooks := MakeSequencingHooks(&fixedTxFetcher{items: []txQueueItem{item0, item1}}, math.MaxInt, nil, nil)
 
-	tx, _, err := hooks.NextTxToSequence(nil)
+	tx, _, err := hooks.NextTxToSequence(nil, math.MaxUint64)
 	if err != nil || tx == nil {
 		t.Fatalf("first NextTxToSequence = (%v, %v), want a tx", tx, err)
 	}
 	// The pulled tx's result is never reported.
-	tx, _, err = hooks.NextTxToSequence(nil)
+	tx, _, err = hooks.NextTxToSequence(nil, math.MaxUint64)
 	if err == nil {
 		t.Fatalf("second NextTxToSequence = (%v, nil), want an error", tx)
 	}

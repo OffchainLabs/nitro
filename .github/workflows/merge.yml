@@ -23,6 +23,13 @@ jobs:
     uses: ./.github/workflows/_rust-tests.yml
     secrets: inherit
 
+  # --- Check Cargo.lock files are in sync ---
+  cargo-lock-check:
+    needs: changes
+    if: needs.changes.outputs.rust_changed == 'true' || needs.changes.outputs.nitro_reth_changed == 'true'
+    uses: ./.github/workflows/_cargo-lock-check.yml
+    secrets: inherit
+
   # --- Run Bold Legacy challenge tests ---
   bold-legacy:
     needs: changes
@@ -93,7 +100,7 @@ jobs:
   can_proceed:
     runs-on: ubuntu-4
     timeout-minutes: 5
-    needs: [changes, fast, rust-tests, bold-legacy, nitro-reth-tests, go-tests, tested-tree]
+    needs: [changes, fast, rust-tests, cargo-lock-check, bold-legacy, nitro-reth-tests, go-tests, tested-tree]
     if: always()
     steps:
       - name: Aggregate results
@@ -103,6 +110,7 @@ jobs:
           rust_tests_result="${{ needs['rust-tests'].result }}"
           bold_legacy_result="${{ needs['bold-legacy'].result }}"
           nitro_reth_result="${{ needs['nitro-reth-tests'].result }}"
+          cargo_lock_result="${{ needs['cargo-lock-check'].result }}"
           already_tested="${{ needs['tested-tree'].outputs.already-tested }}"
           code_changed="${{ needs.changes.outputs.code_changed }}"
           ok=1
@@ -127,6 +135,11 @@ jobs:
           if [ "$nitro_reth_result" != "success" ] && [ "$nitro_reth_result" != "skipped" ]; then
             ok=0
             echo "Nitro Reth job failed"
+          fi
+          # Skipped when no Rust manifest changed, which is a pass.
+          if [ "$cargo_lock_result" != "success" ] && [ "$cargo_lock_result" != "skipped" ]; then
+            ok=0
+            echo "Cargo.lock check failed"
           fi
           if [ $ok -eq 1 ]; then
             echo "All required jobs passed or were skipped"

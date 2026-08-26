@@ -172,7 +172,8 @@ if [ "$cover" == true ]; then
 fi
 
 if [ "$reduce_parallelism" == true ]; then
-  cmd="$cmd -p 1 -parallel $(( $(nproc) > 4 ? $(nproc) / 4 : 1 ))"
+  jobs=${BUILD_JOBS:-$(nproc)}
+  cmd="$cmd -p 1 -parallel $(( jobs > 4 ? jobs / 4 : 1 ))"
 elif [ "$test_redis" != "" ]; then
   # Tests share a single external redis instance, so run packages serially.
   cmd="$cmd -p 1"

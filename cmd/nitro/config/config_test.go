@@ -5,8 +5,10 @@ package config
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -17,6 +19,9 @@ import (
 
 	"github.com/r3labs/diff/v3"
 	"github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -41,6 +46,7 @@ func TestEmptyCliConfig(t *testing.T) {
 	var emptyCliNodeConfig NodeConfig
 	err = confighelpers.EndCommonParse(k, &emptyCliNodeConfig)
 	Require(t, err)
+	emptyCliNodeConfig.Execution.StylusTarget.SetUnconfigurableDefaults()
 	if !reflect.DeepEqual(emptyCliNodeConfig, NodeConfigDefault) {
 		changelog, err := diff.Diff(emptyCliNodeConfig, NodeConfigDefault)
 		Require(t, err)
@@ -129,7 +135,7 @@ func TestCompressionLevelsConflict(t *testing.T) {
 	}
 }
 
-func TestGenesisJsonFileDirectoryClearsDefaultEmptyInit(t *testing.T) {
+func TestGenesisJsonFileDirectorySuppressesDefaultEmptyInit(t *testing.T) {
 	chainId := uint64(42170)
 	tempDir := t.TempDir()
 	genesisFile := filepath.Join(tempDir, fmt.Sprintf("%d.json", chainId))
@@ -139,11 +145,189 @@ func TestGenesisJsonFileDirectoryClearsDefaultEmptyInit(t *testing.T) {
 	nodeConfig, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
-	if nodeConfig.Init.GenesisJsonFile != genesisFile {
-		Fail(t, "expected genesis file from directory", genesisFile, "got", nodeConfig.Init.GenesisJsonFile)
+	if nodeConfig.Init.ResolvedGenesisJsonFile() != genesisFile {
+		Fail(t, "expected genesis file resolved from directory", genesisFile, "got", nodeConfig.Init.ResolvedGenesisJsonFile())
+	}
+	if nodeConfig.Init.GenesisJsonFile != "" {
+		Fail(t, "expected genesis-json-file to stay untouched by directory discovery, got", nodeConfig.Init.GenesisJsonFile)
 	}
 	if nodeConfig.Init.Empty {
-		Fail(t, "expected genesis file from directory to disable empty init")
+		Fail(t, "expected genesis file from directory to suppress the empty init default")
+	}
+}
+
+func TestExplicitEmptyInitConflictsWithDirectoryDiscovery(t *testing.T) {
+	chainId := uint64(42170)
+	tempDir := t.TempDir()
+	Require(t, os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("%d.json", chainId)), []byte("{}"), 0600))
+
+	args := strings.Split(fmt.Sprintf("--persistent.chain /tmp/data --chain.id %d --init.empty --init.genesis-json-file-directory %s", chainId, tempDir), " ")
+	_, _, err := ParseNode(context.Background(), args)
+	if err == nil {
+		Fail(t, "expected error when explicit init.empty is combined with a discovered genesis file")
+	}
+	if !strings.Contains(err.Error(), "cannot be both empty") {
+		Fail(t, "expected empty init conflict error, got:", err.Error())
+	}
+}
+
+const testInlineGenesisConfig = `{
+	"persistent": {"chain": "/tmp/data"},
+	"chain": {"id": 42170},
+	"init": {
+		"genesis-json": {
+			"gasLimit": "0x11e1a300",
+			"difficulty": "0x0",
+			"alloc": {
+				"0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E": {
+					"balance": "0xde0b6b3a7640000",
+					"nonce": "0x5",
+					"code": "0x60ff",
+					"storage": {"0x0000000000000000000000000000000000000000000000000000000000000001": "0x0000000000000000000000000000000000000000000000000000000000000002"}
+				}
+			},
+			"serializedChainConfig": "{\"chainId\":42170,\"arbitrum\":{\"InitialArbOSVersion\":1}}"
+		}
+	}
+}`
+
+func TestInlineGenesisConfigFile(t *testing.T) {
+	configFile := filepath.Join(t.TempDir(), "config.json")
+	Require(t, WriteToConfigFile(configFile, testInlineGenesisConfig))
+
+	nodeConfig, _, err := ParseNode(context.Background(), []string{"--conf.file", configFile})
+	Require(t, err)
+
+	if nodeConfig.Init.Empty {
+		Fail(t, "expected inline genesis to disable the empty init default")
+	}
+	if nodeConfig.Init.GenesisJsonFile != "" {
+		Fail(t, "expected genesis json file to stay empty, got", nodeConfig.Init.GenesisJsonFile)
+	}
+	var gen core.Genesis
+	Require(t, json.Unmarshal([]byte(nodeConfig.Init.GenesisJson), &gen))
+	if gen.GasLimit != 0x11e1a300 {
+		Fail(t, "wrong gas limit", gen.GasLimit)
+	}
+	if !strings.Contains(gen.SerializedChainConfig, "42170") {
+		Fail(t, "wrong serialized chain config", gen.SerializedChainConfig)
+	}
+	account, ok := gen.Alloc[common.HexToAddress("0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E")]
+	if !ok {
+		Fail(t, "expected account missing from genesis alloc")
+	}
+	expectedBalance, _ := new(big.Int).SetString("de0b6b3a7640000", 16)
+	if account.Balance.Cmp(expectedBalance) != 0 {
+		Fail(t, "wrong balance", account.Balance)
+	}
+	if account.Nonce != 5 {
+		Fail(t, "wrong nonce", account.Nonce)
+	}
+	if len(account.Code) != 2 || account.Code[0] != 0x60 || account.Code[1] != 0xff {
+		Fail(t, "wrong code", account.Code)
+	}
+	if account.Storage[common.HexToHash("0x01")] != common.HexToHash("0x02") {
+		Fail(t, "wrong storage", account.Storage)
+	}
+}
+
+func TestInlineGenesisAsJsonString(t *testing.T) {
+	args := []string{
+		"--persistent.chain", "/tmp/data",
+		"--chain.id", "42170",
+		"--init.genesis-json", `{"gasLimit":"0x11e1a300","difficulty":"0x0","alloc":{},"serializedChainConfig":"{\"chainId\":42170}"}`,
+	}
+	nodeConfig, _, err := ParseNode(context.Background(), args)
+	Require(t, err)
+	var gen core.Genesis
+	Require(t, json.Unmarshal([]byte(nodeConfig.Init.GenesisJson), &gen))
+	if gen.GasLimit != 0x11e1a300 {
+		Fail(t, "wrong gas limit", gen.GasLimit)
+	}
+	if nodeConfig.Init.Empty {
+		Fail(t, "expected inline genesis to disable the empty init default")
+	}
+}
+
+func TestAutoEmptyInitPreservedWithoutGenesis(t *testing.T) {
+	// the init.genesis-json flag default (an empty string) is always present
+	// in the parsed config tree and must not count as a configured genesis,
+	// which would suppress the chain's init.empty default
+	args := strings.Split("--persistent.chain /tmp/data --chain.id 42170", " ")
+	nodeConfig, _, err := ParseNode(context.Background(), args)
+	Require(t, err)
+	if !nodeConfig.Init.Empty {
+		Fail(t, "expected the empty init default for a chain without pre-existing genesis state")
+	}
+
+	args = append(args, "--init.genesis-json", "")
+	nodeConfig, _, err = ParseNode(context.Background(), args)
+	Require(t, err)
+	if !nodeConfig.Init.Empty {
+		Fail(t, "expected an explicitly empty init.genesis-json to keep the empty init default")
+	}
+}
+
+func TestInlineGenesisSkipsDirectoryDiscovery(t *testing.T) {
+	tempDir := t.TempDir()
+	Require(t, os.WriteFile(filepath.Join(tempDir, "42170.json"), []byte("{}"), 0600))
+
+	configFile := filepath.Join(t.TempDir(), "config.json")
+	Require(t, WriteToConfigFile(configFile, testInlineGenesisConfig))
+
+	args := []string{"--conf.file", configFile, "--init.genesis-json-file-directory", tempDir}
+	nodeConfig, _, err := ParseNode(context.Background(), args)
+	Require(t, err)
+	if nodeConfig.Init.GenesisJsonFile != "" {
+		Fail(t, "expected inline genesis to skip directory discovery, got", nodeConfig.Init.GenesisJsonFile)
+	}
+}
+
+func TestGenesisFileWinsOverDirectoryDiscovery(t *testing.T) {
+	tempDir := t.TempDir()
+	Require(t, os.WriteFile(filepath.Join(tempDir, "42170.json"), []byte("{}"), 0600))
+
+	explicitFile := "/explicit/genesis.json"
+	args := strings.Split(fmt.Sprintf("--persistent.chain /tmp/data --chain.id 42170 --init.genesis-json-file %s --init.genesis-json-file-directory %s", explicitFile, tempDir), " ")
+	nodeConfig, _, err := ParseNode(context.Background(), args)
+	Require(t, err)
+	if nodeConfig.Init.GenesisJsonFile != explicitFile {
+		Fail(t, "expected explicit genesis file to win over directory discovery, got", nodeConfig.Init.GenesisJsonFile)
+	}
+	if nodeConfig.Init.Empty {
+		Fail(t, "expected configured genesis file to disable the empty init default")
+	}
+}
+
+func TestGenesisModeDirectoryForcesLookup(t *testing.T) {
+	tempDir := t.TempDir()
+	genesisFile := filepath.Join(tempDir, "42170.json")
+	Require(t, os.WriteFile(genesisFile, []byte("{}"), 0600))
+
+	args := strings.Split(fmt.Sprintf("--persistent.chain /tmp/data --chain.id 42170 --init.genesis-mode directory --init.genesis-json-file /nonexistent.json --init.genesis-json-file-directory %s", tempDir), " ")
+	nodeConfig, _, err := ParseNode(context.Background(), args)
+	Require(t, err)
+	if nodeConfig.Init.ResolvedGenesisJsonFile() != genesisFile {
+		Fail(t, "expected genesis-mode directory to resolve the directory file, got", nodeConfig.Init.ResolvedGenesisJsonFile())
+	}
+	if nodeConfig.Init.GenesisJsonFile != "/nonexistent.json" {
+		Fail(t, "expected the ignored genesis-json-file to stay untouched, got", nodeConfig.Init.GenesisJsonFile)
+	}
+}
+
+func TestGenesisModeDirectoryWithoutMatchFails(t *testing.T) {
+	args := strings.Split(fmt.Sprintf("--persistent.chain /tmp/data --chain.id 42170 --init.genesis-mode directory --init.genesis-json-file-directory %s", t.TempDir()), " ")
+	_, _, err := ParseNode(context.Background(), args)
+	if err == nil {
+		Fail(t, "expected error when genesis-mode is directory but no genesis file matches")
+	}
+}
+
+func TestGenesisModeInlineWithoutGenesisFails(t *testing.T) {
+	args := strings.Split("--persistent.chain /tmp/data --chain.id 42170 --init.genesis-mode inline", " ")
+	_, _, err := ParseNode(context.Background(), args)
+	if err == nil {
+		Fail(t, "expected error when genesis-mode is inline but init.genesis-json is empty")
 	}
 }
 

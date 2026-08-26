@@ -62,7 +62,7 @@ func WriteToKeyValueStore[T any](store ethdb.KeyValueStore, key []byte, val T) e
 // It also stores a special value that is only set once when rebuilding commenced in RebuildingStartBlockHashKey as the block
 // time of the latest block when rebuilding was first called, this is used to avoid recomputing of assembly and module of
 // contracts that were created after rebuilding commenced since they would anyway already be added during sync.
-func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, executionDB ethdb.Database, maxRecreateStateDepth int64, targetConfig *StylusTargetConfig, l2Blockchain *core.BlockChain, position, rebuildingStartBlockHash common.Hash) error {
+func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, executionDB ethdb.Database, maxRecreateStateDepth int64, targetConfig *programs.StylusTargetConfig, l2Blockchain *core.BlockChain, position, rebuildingStartBlockHash common.Hash) error {
 	var err error
 	var stateDB *state.StateDB
 

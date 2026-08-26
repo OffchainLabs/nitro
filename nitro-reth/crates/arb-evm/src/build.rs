@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use alloy_consensus::{Transaction, TransactionEnvelope, TxReceipt};
 use alloy_eips::eip2718::{Encodable2718, Typed2718};
 use alloy_evm::{
@@ -21,7 +23,9 @@ use arb_primitives::{
 };
 use arbos::{
     arbos_state::ArbosState,
+    balance_ledger::BalanceLedger,
     burn::SystemBurner,
+    compute_budget::ComputeBudget,
     internal_tx::{self, InternalTxContext},
     l1_pricing, retryables,
     tx_processor::{
@@ -69,26 +73,6 @@ impl ArbTransactionEnv for TxEnv {
     }
 }
 
-/// Extension trait for draining scheduled transactions from the executor.
-///
-/// After executing a SubmitRetryable or a manual Redeem precompile call,
-/// auto-redeem retry transactions may be queued. The block producer must
-/// drain and re-inject them in the same block.
-pub trait ArbScheduledTxDrain {
-    /// Drain any scheduled transactions (e.g. auto-redeem retry txs) produced
-    /// by the most recently committed transaction.
-    fn drain_scheduled_txs(&mut self) -> Vec<Vec<u8>>;
-}
-
-impl<'a, Evm, Spec, R: ReceiptBuilder> ArbScheduledTxDrain for ArbBlockExecutor<'a, Evm, Spec, R> {
-    fn drain_scheduled_txs(&mut self) -> Vec<Vec<u8>> {
-        self.arb_hooks
-            .as_mut()
-            .map(|hooks| std::mem::take(&mut hooks.tx_proc.scheduled_txs))
-            .unwrap_or_default()
-    }
-}
-
 /// Arbitrum block executor factory.
 ///
 /// Wraps an `EthBlockExecutor` with ArbOS-specific hooks for gas charging,
@@ -127,7 +111,7 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
     /// Create an executor with the concrete `ArbBlockExecutor` return type.
     ///
     /// Unlike the trait method which returns an opaque type, this provides
-    /// access to Arbitrum-specific methods like `drain_scheduled_txs`.
+    /// access to Arbitrum-specific methods like `next_scheduled_tx`.
     pub fn create_arb_executor<'a, DB, I>(
         &'a self,
         evm: EvmF::Evm<&'a mut State<DB>, I>,
@@ -161,11 +145,11 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
             // through the same `Arc<ArbPrecompileCtx>`.
             precompile_ctx: self.evm_factory.staged_precompile_ctx().unwrap_or_default(),
             pending_tx: None,
-            block_gas_left: 0,
-            user_txs_processed: 0,
+            compute_budget: ComputeBudget::new(0),
             gas_used_for_l1: Vec::new(),
             multi_gas_used: Vec::new(),
-            expected_balance_delta: 0,
+            balance_ledger: BalanceLedger::new(),
+            redeem_queue: VecDeque::new(),
             zombie_accounts: rustc_hash::FxHashSet::default(),
             finalise_deleted: rustc_hash::FxHashSet::default(),
             touched_accounts: rustc_hash::FxHashSet::default(),
@@ -273,20 +257,18 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     pub precompile_ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>,
     /// Per-tx state between execute and commit.
     pending_tx: Option<PendingArbTx>,
-    /// Remaining block gas for rate limiting.
-    /// Starts at per_block_gas_limit and decreases with each tx's compute gas.
-    pub block_gas_left: u64,
-    /// Number of user transactions successfully committed.
-    /// Used for ArbOS < 50 block gas check (first user tx may exceed limit).
-    user_txs_processed: u64,
+    /// Per-block compute budget for block gas rate limiting.
+    compute_budget: ComputeBudget,
     /// Per-receipt poster gas (L1 gas component), parallel to the receipts vector.
     /// Used to populate `gasUsedForL1` in RPC receipt responses.
     pub gas_used_for_l1: Vec<u64>,
     /// Per-receipt multi-dimensional gas, parallel to the receipts vector.
     pub multi_gas_used: Vec<MultiGas>,
-    /// Expected balance delta from deposits (positive) and L2→L1 withdrawals (negative).
-    /// Used for post-block safety verification.
-    expected_balance_delta: i128,
+    /// Ledger of expected balance changes from deposits and L2→L1 withdrawals.
+    balance_ledger: BalanceLedger,
+    /// Block-scoped FIFO of scheduled retry txs pending execution, fed from the per-tx
+    /// `scheduled_txs` staging on commit.
+    pub redeem_queue: VecDeque<Vec<u8>>,
     /// Zombie accounts: empty accounts preserved from EIP-161 deletion because
     /// they were touched by a zero-value transfer on pre-Stylus ArbOS.
     zombie_accounts: rustc_hash::FxHashSet<Address>,
@@ -352,21 +334,12 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
     /// and user-tx counter stay in sync (TX_GAS is charged for invalid txs
     /// and userTxsProcessed is incremented).
     pub fn deduct_failed_tx_gas(&mut self, is_user_tx: bool) {
-        const TX_GAS: u64 = 21_000;
-        self.block_gas_left = self.block_gas_left.saturating_sub(TX_GAS);
-        if is_user_tx {
-            self.user_txs_processed += 1;
-        }
+        self.compute_budget.charge_failed_tx(is_user_tx);
     }
 
-    /// Drain any scheduled transactions (e.g. auto-redeem retry txs) produced
-    /// by the most recently committed transaction. The caller should decode and
-    /// re-inject these as new transactions in the same block.
-    pub fn drain_scheduled_txs(&mut self) -> Vec<Vec<u8>> {
-        self.arb_hooks
-            .as_mut()
-            .map(|hooks| std::mem::take(&mut hooks.tx_proc.scheduled_txs))
-            .unwrap_or_default()
+    /// Pops the next scheduled retry tx (e.g. an auto-redeem) pending execution, in FIFO order.
+    pub fn next_scheduled_tx(&mut self) -> Option<Vec<u8>> {
+        self.redeem_queue.pop_front()
     }
 }
 
@@ -605,8 +578,7 @@ where
         self.touched_accounts.insert(sender);
 
         // Track retryable deposit for balance delta verification.
-        let dep_i128: i128 = info.deposit_value.try_into().unwrap_or(i128::MAX);
-        self.expected_balance_delta = self.expected_balance_delta.saturating_add(dep_i128);
+        self.balance_ledger.track_deposit(info.deposit_value);
 
         // Get sender balance after minting.
         let _ = db.load_cache_account(sender);
@@ -1098,10 +1070,12 @@ where
             &arb_state,
         );
 
-        self.block_gas_left = arb_state
-            .l2_pricing_state
-            .per_block_gas_limit(state_ref)
-            .unwrap_or(0);
+        self.compute_budget = ComputeBudget::new(
+            arb_state
+                .l2_pricing_state
+                .per_block_gas_limit(state_ref)
+                .unwrap_or(0),
+        );
 
         if let Ok(l1_block_number) = arb_state.blockhashes.l1_block_number(state_ref) {
             let lower = l1_block_number.saturating_sub(256);
@@ -1185,8 +1159,7 @@ where
         // (they are block-critical or come from the delayed inbox).
         let is_user_tx =
             !is_arb_internal && !is_arb_deposit && !is_submit_retryable && !is_retry_tx;
-        const TX_GAS_MIN: u64 = 21_000;
-        if is_user_tx && self.block_gas_left < TX_GAS_MIN {
+        if is_user_tx && self.compute_budget.exhausted_for_user_tx() {
             return Err(BlockExecutionError::msg("block gas limit reached"));
         }
 
@@ -1469,8 +1442,7 @@ where
             self.touched_accounts.insert(to);
 
             // Track deposit for balance delta verification.
-            let value_i128: i128 = value.try_into().unwrap_or(i128::MAX);
-            self.expected_balance_delta = self.expected_balance_delta.saturating_add(value_i128);
+            self.balance_ledger.track_deposit(value);
 
             self.pending_tx = Some(PendingArbTx {
                 sender,
@@ -1784,19 +1756,13 @@ where
             }
         }
 
-        // ArbOS < 50: reject user txs whose compute gas exceeds block gas left,
-        // but always allow the first user tx through (userTxsProcessed > 0).
-        // ArbOS >= 50 uses per-tx gas limit clamping (compute_hold_gas) instead.
-        // computeGas is clamped to at least TxGas before this check.
-        if is_user_tx
-            && self.arb_ctx.arbos_version < arb_chainspec::arbos_version::ARBOS_VERSION_50
-            && self.user_txs_processed > 0
-        {
-            const TX_GAS: u64 = 21_000;
-            let compute_gas = tx_gas_limit.saturating_sub(poster_gas).max(TX_GAS);
-            if compute_gas > self.block_gas_left {
-                return Err(BlockExecutionError::msg("block gas limit reached"));
-            }
+        if self.compute_budget.rejects_compute_gas(
+            self.arb_ctx.arbos_version,
+            tx_gas_limit,
+            poster_gas,
+            is_user_tx,
+        ) {
+            return Err(BlockExecutionError::msg("block gas limit reached"));
         }
 
         // Add calldata units to L1 pricing state before EVM execution, and
@@ -2425,9 +2391,7 @@ where
                     if log.data.data.len() >= 160 {
                         let callvalue = U256::from_be_slice(&log.data.data[128..160]);
                         withdrawal_value = withdrawal_value.saturating_add(callvalue);
-                        let val_i128: i128 = callvalue.try_into().unwrap_or(i128::MAX);
-                        self.expected_balance_delta =
-                            self.expected_balance_delta.saturating_sub(val_i128);
+                        self.balance_ledger.track_withdrawal(callvalue);
                     }
                 }
             }
@@ -2965,31 +2929,19 @@ where
                 }
             }
 
-            // FixRedeemGas (ArbOS >= 11): subtract gas allocated to scheduled
-            // retry txs from this tx's gas_used for block rate limiting, since
-            // that gas will be accounted for when the retry tx itself executes.
-            let mut adjusted_gas_used = gas_used_total;
-            if self.arb_ctx.arbos_version
+            // `charge` gates internally too; gating here skips the decode (and
+            // its warn) pre-FixRedeemGas, matching Go.
+            let scheduled_retry_gas: Vec<u64> = if self.arb_ctx.arbos_version
                 >= arb_chainspec::arbos_version::ARBOS_VERSION_FIX_REDEEM_GAS
-                && let Some(hooks) = self.arb_hooks.as_ref()
             {
-                for scheduled in &hooks.tx_proc.scheduled_txs {
-                    if let Some(retry_gas) = decode_retry_tx_gas(scheduled) {
-                        adjusted_gas_used = adjusted_gas_used.saturating_sub(retry_gas);
-                    }
-                }
-            }
-
-            // Block gas rate limiting: deduct compute gas from block budget.
-            const TX_GAS: u64 = 21_000;
-            let data_gas = pending.poster_gas;
-            let compute_used = if adjusted_gas_used < data_gas {
-                TX_GAS
+                self.arb_hooks
+                    .iter()
+                    .flat_map(|hooks| &hooks.tx_proc.scheduled_txs)
+                    .filter_map(|scheduled| decode_retry_tx_gas(scheduled))
+                    .collect()
             } else {
-                let compute = adjusted_gas_used - data_gas;
-                if compute < TX_GAS { TX_GAS } else { compute }
+                Vec::new()
             };
-            self.block_gas_left = self.block_gas_left.saturating_sub(compute_used);
 
             // Track user txs for the ArbOS < 50 first-tx bypass.
             let is_user_tx = !matches!(
@@ -2999,11 +2951,23 @@ where
                     | Some(ArbTxType::ArbitrumSubmitRetryableTx)
                     | Some(ArbTxType::ArbitrumRetryTx)
             );
-            if is_user_tx {
-                self.user_txs_processed += 1;
-            }
+
+            // Block gas rate limiting: deduct compute gas from block budget.
+            self.compute_budget.charge(
+                self.arb_ctx.arbos_version,
+                gas_used_total,
+                pending.poster_gas,
+                &scheduled_retry_gas,
+                is_user_tx,
+            );
 
             let _ = is_retry; // suppress unused warning
+        }
+
+        // The committed tx's scheduled retries join the back of the block-scoped queue
+        if let Some(hooks) = self.arb_hooks.as_mut() {
+            self.redeem_queue
+                .extend(hooks.tx_proc.scheduled_txs.drain(..));
         }
 
         self.precompile_ctx.reset_tx();
@@ -3069,10 +3033,10 @@ where
 
     fn finish(self) -> Result<(Self::Evm, BlockExecutionResult<R::Receipt>), BlockExecutionError> {
         // Log if expected balance delta is non-zero (deposits/withdrawals occurred).
-        if self.expected_balance_delta != 0 {
+        if !self.balance_ledger.expected_delta().is_zero() {
             tracing::trace!(
                 target: "arb::executor",
-                delta = self.expected_balance_delta,
+                delta = %self.balance_ledger.expected_delta(),
                 "expected balance delta from deposits/withdrawals"
             );
         }

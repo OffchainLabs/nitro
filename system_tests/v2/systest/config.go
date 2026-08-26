@@ -46,6 +46,7 @@ var defaultSequencerConfig = gethexec.SequencerConfig{
 	Forwarder:                    defaultForwarderConfig,
 	QueueSize:                    128,
 	QueueTimeout:                 5 * time.Second,
+	MaxBlockTxCandidates:         gethexec.DefaultSequencerConfig.MaxBlockTxCandidates,
 	NonceCacheSize:               4,
 	MaxTxDataSize:                95000,
 	NonceFailureCacheSize:        1024,
@@ -54,7 +55,7 @@ var defaultSequencerConfig = gethexec.SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	ExpectedSurplusGasPriceMode:  "CalldataPrice",
 	EnableProfiling:              false,
-	ExperimentalPGA:              gethexec.DefaultPGAConfig,
+	PGA:                          gethexec.DefaultPGAConfig,
 	FilterSetReportingInterval:   time.Minute,
 }
 

@@ -30,7 +30,7 @@ func (i txQueueItem) ComputePgaPriority(baseFee *big.Int) bool {
 		i.returnResult(err)
 		return false
 	}
-	i.SetPriority(arbmath.SaturatingCastToUint(tip))
+	i.SetTip(arbmath.SaturatingCastToUint(tip))
 	return true
 }
 

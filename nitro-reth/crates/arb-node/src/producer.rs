@@ -19,7 +19,11 @@ use alloy_evm::{
 };
 use alloy_primitives::{Address, B64, B256, Bytes, U256};
 use alloy_rpc_types_eth::BlockNumberOrTag;
-use arb_evm::config::{ArbEvmConfig, arbos_version_from_mix_hash, l1_block_number_from_mix_hash};
+use arb_evm::{
+    ArbBlockExecutor, ArbEvm, ArbReceiptBuilder,
+    config::{ArbEvmConfig, arbos_version_from_mix_hash, l1_block_number_from_mix_hash},
+    multi_gas::MultiGasInspector,
+};
 use arb_primitives::{ArbPrimitives, signed_tx::ArbTransactionSigned, tx_types::ArbInternalTx};
 use arb_rpc::block_producer::{
     BlockProducer, BlockProducerError, BlockProductionInput, ProducedBlock,
@@ -30,7 +34,7 @@ use arbos::{
     parse_l2::{ParsedTransaction, parse_l2_transactions, parsed_tx_to_signed},
     types::parse_init_message,
 };
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use reth_chain_state::{CanonicalInMemoryState, ExecutedBlock, NewCanonicalChain};
 use reth_chainspec::ChainSpec;
 use reth_evm::ConfigureEvm;
@@ -45,7 +49,7 @@ use reth_revm::database::StateProviderDatabase;
 use reth_storage_api::{StateProvider, StateProviderBox};
 use reth_trie_common::{HashedPostState, TrieInputSorted};
 use revm::database::{BundleState, StateBuilder};
-use revm_database::states::bundle_state::BundleRetention;
+use revm_database::{State, states::bundle_state::BundleRetention};
 use tracing::{debug, info, warn};
 
 use crate::{genesis, progress::ProgressCounters};
@@ -167,7 +171,7 @@ pub struct ArbBlockProducer<Provider> {
     /// External shared slot pushed to on every set_finality update so
     /// the `arb_getValidatedBlock` RPC handler can read it without
     /// holding a strong reference to the producer.
-    validated_watcher: Mutex<Option<Arc<parking_lot::RwLock<alloy_primitives::B256>>>>,
+    validated_watcher: Mutex<Option<Arc<RwLock<B256>>>>,
     cross_block_cache_size: usize,
     cached_execution: Mutex<Option<CachedExecution>>,
     cached_prestate: Mutex<Option<CachedPrestate>>,
@@ -177,9 +181,9 @@ pub struct ArbBlockProducer<Provider> {
 
 #[derive(Debug, Default, Clone)]
 struct FinalityMarkers {
-    safe: Option<alloy_primitives::B256>,
-    finalized: Option<alloy_primitives::B256>,
-    validated: Option<alloy_primitives::B256>,
+    safe: Option<B256>,
+    finalized: Option<B256>,
+    validated: Option<B256>,
 }
 
 struct CachedExecution {
@@ -291,13 +295,10 @@ where
 
     fn extend_cached_prestate(&self, new_block_hash: B256, bundle: &BundleState) {
         let mut cache = self.cached_prestate.lock();
-        let mut contracts = match cache.take() {
-            Some(c) => match Arc::try_unwrap(c.contracts) {
-                Ok(map) => map,
-                Err(arc) => (*arc).clone(),
-            },
-            None => Default::default(),
-        };
+        let mut contracts = cache
+            .take()
+            .map(|cached| Arc::unwrap_or_clone(cached.contracts))
+            .unwrap_or_default();
         for (hash, code) in &bundle.contracts {
             contracts.entry(*hash).or_insert_with(|| code.clone());
         }
@@ -312,13 +313,7 @@ where
     }
 
     /// Currently-tracked finality markers (for RPC / debugging use).
-    pub fn finality_markers(
-        &self,
-    ) -> (
-        Option<alloy_primitives::B256>,
-        Option<alloy_primitives::B256>,
-        Option<alloy_primitives::B256>,
-    ) {
+    pub fn finality_markers(&self) -> (Option<B256>, Option<B256>, Option<B256>) {
         let f = self.finality.lock();
         (f.safe, f.finalized, f.validated)
     }
@@ -674,7 +669,7 @@ where
             .create_evm_with_inspector(
                 &mut db,
                 evm_env.clone(),
-                arb_evm::multi_gas::MultiGasInspector::with_sink(multi_gas_sink.clone()),
+                MultiGasInspector::with_sink(multi_gas_sink.clone()),
             );
         let mut executor = self
             .evm_config
@@ -832,99 +827,23 @@ where
                 executor.execute_transaction_without_commit(recovered)
             });
             match exec_outcome {
-                Ok(result) => {
-                    match executor.commit_transaction(result) {
-                        Ok(_gas_used) => {
-                            all_txs.push(signed_tx);
-                            if !hostio_records.is_empty() {
-                                arb_rpc::stylus_tracer::cache_trace(tx_hash, hostio_records);
-                            }
-
-                            // Drain and execute any scheduled txs (auto-redeems).
-                            // After a SubmitRetryable or manual Redeem precompile call,
-                            // the executor queues retry txs that must execute in the
-                            // same block, immediately after the triggering tx.
-                            loop {
-                                let scheduled = executor.drain_scheduled_txs();
-                                debug!(
-                                    target: "block_producer",
-                                    count = scheduled.len(),
-                                    "Drained scheduled txs"
-                                );
-                                if scheduled.is_empty() {
-                                    break;
-                                }
-                                for encoded in scheduled {
-                                    let retry_tx: Option<ArbTransactionSigned> =
-                                        ArbTransactionSigned::decode_2718(&mut &encoded[..]).ok();
-                                    if let Some(retry_tx) = retry_tx {
-                                        let retry_signed = retry_tx.clone();
-                                        let retry_hash = *retry_signed.tx_hash();
-                                        match retry_tx.try_into_recovered() {
-                                            Ok(recovered_retry) => {
-                                                let (retry_outcome, retry_records) =
-                                                    arb_rpc::stylus_tracer::with_trace_buffer(
-                                                        || {
-                                                            executor
-                                                                .execute_transaction_without_commit(
-                                                                    recovered_retry,
-                                                                )
-                                                        },
-                                                    );
-                                                match retry_outcome {
-                                                    Ok(retry_result) => {
-                                                        match executor
-                                                            .commit_transaction(retry_result)
-                                                        {
-                                                            Ok(_) => {
-                                                                all_txs.push(retry_signed);
-                                                                if !retry_records.is_empty() {
-                                                                    arb_rpc::stylus_tracer::cache_trace(
-                                                                        retry_hash,
-                                                                        retry_records,
-                                                                    );
-                                                                }
-                                                            }
-                                                            Err(e) => {
-                                                                warn!(
-                                                                    target: "block_producer",
-                                                                    error = %e,
-                                                                    "Failed to commit auto-redeem tx"
-                                                                );
-                                                            }
-                                                        }
-                                                    }
-                                                    Err(e) => {
-                                                        warn!(
-                                                            target: "block_producer",
-                                                            error = %e,
-                                                            "Auto-redeem tx execution failed"
-                                                        );
-                                                    }
-                                                }
-                                            }
-                                            Err(e) => {
-                                                warn!(
-                                                    target: "block_producer",
-                                                    error = %e,
-                                                    "Failed to recover auto-redeem tx sender"
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                Ok(result) => match executor.commit_transaction(result) {
+                    Ok(_) => {
+                        all_txs.push(signed_tx);
+                        if !hostio_records.is_empty() {
+                            arb_rpc::stylus_tracer::cache_trace(tx_hash, hostio_records);
                         }
-                        Err(e) => {
-                            warn!(target: "block_producer", error = %e, "Failed to commit transaction");
-                        }
+                        drain_scheduled_txs(&mut executor, &mut all_txs);
                     }
-                }
-                Err(ref e) if e.to_string().contains("block gas limit reached") => {
+                    Err(err) => {
+                        warn!(target: "block_producer", error = %err, "Failed to commit transaction");
+                    }
+                },
+                Err(ref err) if err.to_string().contains("block gas limit reached") => {
                     break;
                 }
-                Err(e) => {
-                    warn!(target: "block_producer", error = %e, "Transaction execution failed, skipping");
+                Err(err) => {
+                    warn!(target: "block_producer", error = %err, "Transaction execution failed, skipping");
                 }
             }
         }
@@ -944,7 +863,7 @@ where
         augment_bundle_from_cache(&mut bundle, &db.cache, &*state_provider)?;
 
         // Mark per-tx finalise deletions, skipping zombie accounts.
-        let keccak_empty_hash = alloy_primitives::B256::from(alloy_primitives::keccak256([]));
+        let keccak_empty_hash = B256::from(alloy_primitives::keccak256([]));
         for addr in &finalise_deleted {
             if zombie_accounts.contains(addr) {
                 continue;
@@ -1301,10 +1220,10 @@ where
             input.l1_base_fee,
             chain_id,
         )
-        .unwrap_or_else(|e| {
-            warn!(target: "block_producer", error=%e, "Error parsing L2 message, treating as empty");
-            vec![]
-        });
+            .unwrap_or_else(|err| {
+                warn!(target: "block_producer", error=%err, "Error parsing L2 message, treating as empty");
+                vec![]
+            });
 
         debug!(
             target: "block_producer",
@@ -1354,7 +1273,7 @@ where
         // them as "old" for a reorg. Without them, the canonical head
         // points at the truncated block but consumers still see the
         // stale blocks in memory.
-        let mut old_blocks: Vec<reth_chain_state::ExecutedBlock<ArbPrimitives>> = Vec::new();
+        let mut old_blocks: Vec<ExecutedBlock<ArbPrimitives>> = Vec::new();
         for bn in (target_block_number + 1)..=current {
             if let Some(state) = self.in_memory_state.state_by_number(bn) {
                 old_blocks.push(state.block());
@@ -1363,11 +1282,10 @@ where
 
         // Reorg with no new blocks => pure rollback.
         if !old_blocks.is_empty() {
-            self.in_memory_state
-                .update_chain(reth_chain_state::NewCanonicalChain::Reorg {
-                    new: Vec::new(),
-                    old: old_blocks,
-                });
+            self.in_memory_state.update_chain(NewCanonicalChain::Reorg {
+                new: Vec::new(),
+                old: old_blocks,
+            });
         }
 
         self.invalidate_execution_cache();
@@ -1415,9 +1333,9 @@ where
 
     fn set_finality(
         &self,
-        safe: Option<alloy_primitives::B256>,
-        finalized: Option<alloy_primitives::B256>,
-        validated: Option<alloy_primitives::B256>,
+        safe: Option<B256>,
+        finalized: Option<B256>,
+        validated: Option<B256>,
     ) -> Result<(), BlockProducerError> {
         let mut f = self.finality.lock();
         if safe.is_some() {
@@ -1455,7 +1373,7 @@ where
         Ok(())
     }
 
-    fn attach_validated_watcher(&self, watcher: Arc<parking_lot::RwLock<alloy_primitives::B256>>) {
+    fn attach_validated_watcher(&self, watcher: Arc<RwLock<B256>>) {
         *self.validated_watcher.lock() = Some(watcher);
     }
 }
@@ -1516,7 +1434,7 @@ fn delete_empty_accounts(
     zombie_accounts: &rustc_hash::FxHashSet<Address>,
     state_provider: &dyn StateProvider,
 ) {
-    let keccak_empty = alloy_primitives::B256::from(alloy_primitives::keccak256([]));
+    let keccak_empty = B256::from(alloy_primitives::keccak256([]));
     let mut to_remove = Vec::new();
     for (addr, account) in bundle.state.iter_mut() {
         if let Some(ref info) = account.info {
@@ -1676,6 +1594,69 @@ fn augment_bundle_from_cache(
         }
     }
     Ok(())
+}
+
+/// Execute any scheduled txs (auto-redeems). After a SubmitRetryable or manual Redeem precompile
+/// call, the executor queues retry txs that must execute in the same block, immediately after the
+/// triggering tx; retries scheduled by a retry join the back of the queue.
+fn drain_scheduled_txs<'a>(
+    executor: &mut ArbBlockExecutor<
+        'a,
+        ArbEvm<&mut State<StateProviderDatabase<&(dyn StateProvider + Send)>>, MultiGasInspector>,
+        &'a Arc<ChainSpec>,
+        &'a ArbReceiptBuilder,
+    >,
+    all_txs: &mut Vec<ArbTransactionSigned>,
+) {
+    while let Some(encoded) = executor.next_scheduled_tx() {
+        let Ok(retry_tx) = ArbTransactionSigned::decode_2718(&mut &encoded[..]) else {
+            continue;
+        };
+
+        let retry_signed = retry_tx.clone();
+        let retry_hash = *retry_signed.tx_hash();
+
+        let recovered_retry = match retry_tx.try_into_recovered() {
+            Ok(retry) => retry,
+            Err(err) => {
+                warn!(
+                    target: "block_producer",
+                    error = %err,
+                    "Failed to recover auto-redeem tx sender"
+                );
+                continue;
+            }
+        };
+
+        let (retry_outcome, retry_records) = arb_rpc::stylus_tracer::with_trace_buffer(|| {
+            executor.execute_transaction_without_commit(recovered_retry)
+        });
+        let retry_result = match retry_outcome {
+            Ok(result) => result,
+            Err(err) => {
+                warn!(
+                    target: "block_producer",
+                    error = %err,
+                    "Auto-redeem tx execution failed"
+                );
+                continue;
+            }
+        };
+
+        if let Err(err) = executor.commit_transaction(retry_result) {
+            warn!(
+                target: "block_producer",
+                error = %err,
+                "Failed to commit auto-redeem tx"
+            );
+            continue;
+        }
+
+        all_txs.push(retry_signed);
+        if !retry_records.is_empty() {
+            arb_rpc::stylus_tracer::cache_trace(retry_hash, retry_records);
+        }
+    }
 }
 
 #[cfg(test)]

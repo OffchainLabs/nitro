@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/holiman/uint256"
-
 	"github.com/ethereum/go-ethereum/arbitrum/filter"
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
@@ -44,10 +42,10 @@ type TxProcessor struct {
 	computeHoldGas   uint64 // amount of gas temporarily held to prevent compute from exceeding the gas limit
 	delayedInbox     bool   // whether this tx was submitted through the delayed inbox
 	Contracts        []*vm.Contract
-	Programs         map[common.Address]uint // # of distinct context spans for each program
-	stylusCallDepth  uint16                  // # of Stylus frames currently on the call stack
-	arbNodeConfig    *programs.ArbNodeConfig // resolved once at construction; nil if unset
-	TopTxType        *byte                   // set once in StartTxHook
+	Programs         map[common.Address]uint      // # of distinct context spans for each program
+	stylusCallDepth  uint16                       // # of Stylus frames currently on the call stack
+	arbNodeConfig    *programs.StylusTargetConfig // resolved once at construction; nil if unset
+	TopTxType        *byte                        // set once in StartTxHook
 	evm              *vm.EVM
 	CurrentRetryable *common.Hash
 	CurrentRefundTo  *common.Address
@@ -69,7 +67,7 @@ func NewTxProcessor(evm *vm.EVM, msg *core.Message) *TxProcessor {
 		delayedInbox:        evm.Context.Coinbase != l1pricing.BatchPosterAddress,
 		Contracts:           []*vm.Contract{},
 		Programs:            make(map[common.Address]uint),
-		arbNodeConfig:       programs.GetArbNodeConfig(evm.StateDB),
+		arbNodeConfig:       programs.GetStylusConfig(evm.StateDB),
 		TopTxType:           nil,
 		evm:                 evm,
 		CurrentRetryable:    nil,
@@ -185,7 +183,7 @@ func (p *TxProcessor) emitSkippedCallFrame(to *common.Address, gasUsed uint64, e
 	}
 	depth := p.evm.Depth()
 	if tracer.OnEnter != nil {
-		tracer.OnEnter(depth, byte(typ), p.msg.From, dest, p.msg.Data, p.msg.GasLimit, p.msg.Value)
+		tracer.OnEnter(depth, byte(typ), p.msg.From, dest, p.msg.Data, p.msg.GasLimit, p.msg.Value.ToBig())
 	}
 	if tracer.OnExit != nil {
 		// Wrap with VMErrorFromErr to match the real evm.Call (core/vm/evm.go), so tracers
@@ -217,7 +215,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 		}
 		from := p.msg.From
 		if tracer.OnEnter != nil {
-			tracer.OnEnter(evm.Depth(), byte(vm.CALL), from, *p.msg.To, p.msg.Data, p.msg.GasLimit, p.msg.Value)
+			tracer.OnEnter(evm.Depth(), byte(vm.CALL), from, *p.msg.To, p.msg.Data, p.msg.GasLimit, p.msg.Value.ToBig())
 		}
 		evm.IncrementDepth() // fake a call
 
@@ -259,14 +257,14 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, multiGasUsed multigas.MultiG
 			to = &recipient
 			txnErr = &core.ErrFilteredOnChain{TxHash: txHash}
 		}
-		util.MintBalance(&from, value, evm, util.TracingBeforeEVM, tracing.BalanceIncreaseDeposit)
+		util.MintBalance(&from, value.ToBig(), evm, util.TracingBeforeEVM, tracing.BalanceIncreaseDeposit)
 		defer (startTracer())()
 		// We intentionally use the variant here that doesn't do tracing,
 		// because this transfer is represented as the outer eth transaction.
 		// This transfer is necessary because we don't actually invoke the EVM.
 		// Since MintBalance already called AddBalance on `from`,
 		// we don't have EIP-161 concerns around not touching `from`.
-		core.Transfer(evm.StateDB, from, *to, uint256.MustFromBig(value), evm.ChainRules())
+		core.Transfer(evm.StateDB, from, *to, value, evm.ChainRules())
 		return true, multigas.ZeroGas(), txnErr, nil
 	case *types.ArbitrumInternalTx:
 		defer (startTracer())()

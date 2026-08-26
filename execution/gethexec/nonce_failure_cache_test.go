@@ -15,7 +15,7 @@ import (
 func TestNonceFailureCacheDropsPgaBoost(t *testing.T) {
 	cache := newNonceFailureCache(16, func() time.Duration { return time.Hour })
 	item, _ := makeTestQueueItem(t, 1, testBaseFee)
-	item.AddBoost(25)
+	item.ApplyRoundBoundary(25)
 
 	nonceErr := NonceError{sender: common.Address{1}, txNonce: 1, stateNonce: 0}
 	cache.Add(nonceErr, item)

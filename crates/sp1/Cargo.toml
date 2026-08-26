@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "replay-builder",
+    "replay-io",
     "replay-program",
     "replay-runner",
     "stylus-compiler-program",
@@ -20,6 +21,7 @@ rust-version = "1.93"
 [workspace.dependencies]
 anyhow = { version = "1.0.100" }
 bincode = { version = "1.3.3" }
+bytes = { version = "1" }
 clap = { version = "4.4.8" }
 corosensei = { version = "=0.3.3" }
 serde = { version = "1.0.130" }
@@ -33,6 +35,7 @@ wasm-encoder = { version = "0.245.0" }
 wasmparser = { version = "0.245.0" }
 
 prover = { path = "../prover", default-features = false }
+replay-io = { path = "replay-io" }
 stylus-compiler-program = { path = "stylus-compiler-program" }
 
 # wasmer

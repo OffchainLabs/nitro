@@ -167,7 +167,7 @@ func newApiClosures(
 
 		var (
 			ret            []byte
-			returnGas      uint64
+			returnGas      vm.GasBudget
 			returnMultiGas multigas.MultiGas
 		)
 
@@ -175,11 +175,11 @@ func newApiClosures(
 
 		switch opcode {
 		case vm.CALL:
-			ret, returnGas, returnMultiGas, err = evm.Call(scope.Contract.Address(), contract, input, gas, value)
+			ret, returnGas, returnMultiGas, err = evm.Call(scope.Contract.Address(), contract, input, vm.NewGasBudget(gas), value)
 		case vm.DELEGATECALL:
-			ret, returnGas, returnMultiGas, err = evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), contract, input, gas, scope.Contract.Value())
+			ret, returnGas, returnMultiGas, err = evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), contract, input, vm.NewGasBudget(gas), scope.Contract.Value())
 		case vm.STATICCALL:
-			ret, returnGas, returnMultiGas, err = evm.StaticCall(scope.Contract.Address(), contract, input, gas)
+			ret, returnGas, returnMultiGas, err = evm.StaticCall(scope.Contract.Address(), contract, input, vm.NewGasBudget(gas))
 		default:
 			panic("unsupported call type: " + opcode.String())
 		}
@@ -189,7 +189,7 @@ func newApiClosures(
 		mgCost.SaturatingAddInto(returnMultiGas)
 		scope.Contract.UsedMultiGas.SaturatingAddInto(mgCost)
 
-		cost := arbmath.SaturatingUAdd(baseCost, arbmath.SaturatingUSub(gas, returnGas))
+		cost := arbmath.SaturatingUAdd(baseCost, arbmath.SaturatingUSub(gas, returnGas.RegularGas))
 
 		return ret, cost, err
 	}
@@ -235,15 +235,15 @@ func newApiClosures(
 		var (
 			res            []byte
 			addr           common.Address // zero on failure
-			returnGas      uint64
+			returnGas      vm.GasBudget
 			returnMultiGas multigas.MultiGas
 			suberr         error
 		)
 
 		if opcode == vm.CREATE {
-			res, addr, returnGas, returnMultiGas, suberr = evm.Create(contract.Address(), code, gas, endowment)
+			res, addr, returnGas, returnMultiGas, suberr = evm.Create(contract.Address(), code, vm.NewGasBudget(gas), endowment)
 		} else {
-			res, addr, returnGas, returnMultiGas, suberr = evm.Create2(contract.Address(), code, gas, endowment, salt)
+			res, addr, returnGas, returnMultiGas, suberr = evm.Create2(contract.Address(), code, vm.NewGasBudget(gas), endowment, salt)
 		}
 		if suberr != nil {
 			addr = zeroAddr
@@ -257,7 +257,7 @@ func newApiClosures(
 			res = nil // returnData is only provided in the revert case (opCreate)
 		}
 		evm.SetReturnData(res)
-		cost := arbmath.SaturatingUSub(startGas, returnGas+one64th) // user gets 1/64th back
+		cost := arbmath.SaturatingUSub(startGas, returnGas.RegularGas+one64th) // user gets 1/64th back
 		return addr, res, cost, nil
 	}
 	emitLog := func(topics []common.Hash, data []byte) error {
@@ -512,7 +512,7 @@ func enforceStylusPageLimit(evm *vm.EVM, statedb vm.StateDB, runCtx *core.Messag
 	}
 
 	var limit uint16
-	if cfg := GetArbNodeConfig(statedb); cfg != nil {
+	if cfg := getStylusConfigOrNil(statedb); cfg != nil {
 		limit = cfg.MaxOpenPages
 	} else {
 		log.Debug("ArbNodeConfig not set; page limit inactive")

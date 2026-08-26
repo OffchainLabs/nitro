@@ -290,7 +290,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".check-batch-correctness", DefaultBatchPosterConfig.CheckBatchCorrectness, "setting this to true will run the batch against an inbox multiplexer and verifies that it produces the correct set of messages")
 	f.Duration(prefix+".max-empty-batch-delay", DefaultBatchPosterConfig.MaxEmptyBatchDelay, "maximum empty batch posting delay, batch poster will only be able to post an empty batch if this time period building a batch has passed; if 0, disable automatic empty batch posting")
 	f.Uint64(prefix+".delay-buffer-threshold-margin", DefaultBatchPosterConfig.DelayBufferThresholdMargin, "the number of blocks to post the batch before reaching the delay buffer threshold")
-	f.String(prefix+".parent-chain-eip7623", DefaultBatchPosterConfig.ParentChainEip7623, "if parent chain uses EIP7623 (\"yes\", \"no\", \"auto\")")
+	f.String(prefix+".parent-chain-eip7623", DefaultBatchPosterConfig.ParentChainEip7623, "DEPRECATED: if parent chain uses EIP7623 (\"yes\", \"no\", \"auto\"); the dynamic price comparison this feeds is deprecated, use ignore-blob-price instead")
 	f.Bool(prefix+".delay-buffer-always-updatable", DefaultBatchPosterConfig.DelayBufferAlwaysUpdatable, "always treat delay buffer as updatable")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposterconfig.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposterconfig.DefaultDataPosterConfig, dataposterconfig.DataPosterUsageBatchPoster)
@@ -317,7 +317,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	GasRefunderAddress:             "",
 	ExtraBatchGas:                  50_000,
 	Post4844Blobs:                  false,
-	IgnoreBlobPrice:                false,
+	IgnoreBlobPrice:                true,
 	DataPoster:                     dataposterconfig.DefaultDataPosterConfig,
 	ParentChainWallet:              DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:                   "",
@@ -408,6 +408,9 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	case "auto":
 		checkEip7623 = true
 		useEip7623 = false
+	}
+	if opts.Config().Post4844Blobs && !opts.Config().IgnoreBlobPrice {
+		log.Warn("the dynamic price calculation and fallback to calldata is deprecated post-Amsterdam and may not function correctly if used; set --node.batch-poster.ignore-blob-price=true to always post blobs when --node.batch-poster.post-4844-blobs is enabled and the parent chain supports them")
 	}
 	seqInboxABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
 	if err != nil {
@@ -1286,11 +1289,23 @@ type StateOverride map[common.Address]OverrideAccount
 func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams, blockHex string) (uint64, error) {
 	var gas hexutil.Uint64
 	err := client.CallContext(ctx, &gas, "eth_estimateGas", params, blockHex)
-	// If eth_estimateGas fails due to a revert, we try again with eth_call to get a detailed error.
-	if err != nil && headerreader.IsExecutionReverted(err) {
-		err = client.CallContext(ctx, nil, "eth_call", params, blockHex)
+	estimate, err := util.CheckedGasEstimate(uint64(gas), err)
+	if err != nil {
+		return 0, detailedEstimateGasError(ctx, client, err, params, blockHex)
 	}
-	return uint64(gas), err
+	return estimate, nil
+}
+
+// detailedEstimateGasError enriches a reverted eth_estimateGas error with the
+// reason reported by eth_call. It always returns a non-nil error.
+func detailedEstimateGasError(ctx context.Context, client rpc.ClientInterface, estimateErr error, callArgs ...interface{}) error {
+	if !headerreader.IsExecutionReverted(estimateErr) {
+		return estimateErr
+	}
+	if callErr := client.CallContext(ctx, nil, "eth_call", callArgs...); callErr != nil {
+		return fmt.Errorf("%w (eth_call reported: %w)", estimateErr, callErr)
+	}
+	return estimateErr
 }
 
 func (b *BatchPoster) estimateGasSimple(
@@ -1384,15 +1399,14 @@ func (b *BatchPoster) estimateGasForFutureTx(
 	}
 	var gas hexutil.Uint64
 	err = rawRpcClient.CallContext(ctx, &gas, "eth_estimateGas", gasParams, rpc.PendingBlockNumber, stateOverride)
+	estimate, err := util.CheckedGasEstimate(uint64(gas), err)
 	if err != nil {
 		sequencerMessageHeader := sequencerMessage
 		if len(sequencerMessageHeader) > 33 {
 			sequencerMessageHeader = sequencerMessageHeader[:33]
 		}
 		// If eth_estimateGas fails due to a revert, we try again with eth_call to get a detailed error.
-		if headerreader.IsExecutionReverted(err) {
-			err = rawRpcClient.CallContext(ctx, nil, "eth_call", gasParams, rpc.PendingBlockNumber, stateOverride)
-		}
+		err = detailedEstimateGasError(ctx, rawRpcClient, err, gasParams, rpc.PendingBlockNumber, stateOverride)
 		log.Warn(
 			"error estimating gas for batch",
 			"err", err,
@@ -1403,7 +1417,7 @@ func (b *BatchPoster) estimateGasForFutureTx(
 		)
 		return 0, fmt.Errorf("error estimating gas for batch: %w", err)
 	}
-	return uint64(gas) + config.ExtraBatchGas, nil
+	return estimate + config.ExtraBatchGas, nil
 }
 
 const ethPosBlockTime = 12 * time.Second

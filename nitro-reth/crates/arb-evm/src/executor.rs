@@ -158,10 +158,6 @@ impl ArbOsHooks for DefaultArbOsHooks {
         self.tx_proc.held_gas()
     }
 
-    fn scheduled_txs(&mut self) -> Vec<Vec<u8>> {
-        core::mem::take(&mut self.tx_proc.scheduled_txs)
-    }
-
     fn drop_tip(&self) -> bool {
         self.tx_proc
             .drop_tip_with_collect(self.arbos_version, self.collect_tips_enabled)
