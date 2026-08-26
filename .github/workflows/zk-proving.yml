@@ -73,6 +73,11 @@ jobs:
         # Generate and verify a proof of correct Stylus compilation.
         run: make -C crates/sp1 stylus-compiler-prove
 
+      # The recording tests boot an external geth binary as the L1
+      # (see externalL1Binary in system_tests/common_test.go).
+      - name: Build external L1 geth
+        run: make -j8 build-upstream-geth
+
       - name: Record block inputs
         run: make -C crates/sp1 record-blocks
 

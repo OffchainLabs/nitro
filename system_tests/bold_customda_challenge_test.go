@@ -170,7 +170,6 @@ func createNodeBWithSharedContracts(
 	t *testing.T,
 	ctx context.Context,
 	first *arbnode.Node,
-	l1stack *node.Node,
 	l1info *BlockchainTestInfo,
 	l2InitData *statetransfer.ArbosInitializationInfo,
 	nodeConfig *arbnode.Config,
@@ -288,10 +287,9 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, recorderCase blockRecorderT
 	nodeConfigA.DA.ExternalProvider.Enable = true
 
 	// Set up L1 first to get validator address
-	l1info, _, l1client, l1stack, addresses, stakeTokenAddr, asserterOpts, signerCfg := setupL1WithRollupAddresses(
+	l1info, l1client, addresses, stakeTokenAddr, asserterOpts, signerCfg := setupL1WithRollupAddresses(
 		t, ctx, sconf, false, nodeConfigA, l2chainConfig, true, // useExternalSigner=false, enableCustomDA=true
 	)
-	defer requireClose(t, l1stack)
 
 	// Now we can get the validator address and DA signer
 	validatorAddr := l1info.GetAddress("ReferenceDAProofValidator")
@@ -361,7 +359,6 @@ func testChallengeProtocolBOLDCustomDA(t *testing.T, recorderCase blockRecorderT
 		t,
 		ctx,
 		l2nodeA,
-		l1stack,
 		l1info,
 		&l2info.ArbInitData,
 		l2nodeConfig,

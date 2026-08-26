@@ -20,7 +20,7 @@ use eyre::{Result, bail, ensure};
 use prover::{
     Machine, binary,
     programs::{
-        MiddlewareWrapper, ModuleMod,
+        DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT, MiddlewareWrapper, ModuleMod,
         counter::{Counter, CountingMachine},
         prelude::*,
         start::StartMover,
@@ -32,14 +32,110 @@ use wasmer::{
     wasmparser::Operator,
 };
 use wasmer_compiler_singlepass::Singlepass;
+use wasmer_types::CompileError;
 
 use crate::{
+    native,
     run::RunProgram,
     test::{
         TestInstance, api::TestEvmApi, check_instrumentation, random_bytes20, random_bytes32,
         random_ink, run_machine, run_native, test_compile_config, test_configs,
     },
 };
+
+const SINGLEPASS_LIMIT_TEST_WAT: &str = r#"
+    (module
+        (memory (export "memory") 0 0)
+        (func (export "user_entrypoint") (param i32) (result i32)
+            i32.const 0))
+"#;
+
+fn compile_singlepass_example(max_output_size: Option<usize>) -> Result<Vec<u8>> {
+    native::module(
+        SINGLEPASS_LIMIT_TEST_WAT.as_bytes(),
+        CompileConfig::version(0, false).with_max_singlepass_output_size(max_output_size),
+        Target::default(),
+        false,
+    )
+}
+
+fn assert_singlepass_limit_error(error: &eyre::Report, limit: usize) {
+    let Some(CompileError::Aborted(abort)) = error.downcast_ref::<CompileError>() else {
+        panic!("unexpected compilation error: {error:?}");
+    };
+    assert_eq!(
+        abort.reason(),
+        format!("singlepass compiler output exceeds limit of {limit} bytes")
+    );
+}
+
+#[test]
+fn singlepass_output_size_limit_matches_emitted_code_boundary() {
+    assert_eq!(
+        CompileConfig::default().max_singlepass_output_size(),
+        Some(DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT)
+    );
+    assert_eq!(
+        CompileConfig::default()
+            .with_max_singlepass_output_size(Some(1234))
+            .max_singlepass_output_size(),
+        Some(1234)
+    );
+
+    compile_singlepass_example(None).expect("unbounded compilation should succeed");
+    let zero_limit_error = compile_singlepass_example(Some(0))
+        .expect_err("a zero emitted-code budget should abort during compilation");
+    assert_singlepass_limit_error(&zero_limit_error, 0);
+
+    // Find the exact emitted-code size without coupling the test to an architecture.
+    let mut passing_limit = 1;
+    loop {
+        match compile_singlepass_example(Some(passing_limit)) {
+            Ok(_) => break,
+            Err(error) => {
+                assert_singlepass_limit_error(&error, passing_limit);
+                passing_limit = passing_limit
+                    .checked_mul(2)
+                    .expect("example output size should fit in usize");
+            }
+        }
+    }
+    let mut failing_limit = 0;
+    while passing_limit - failing_limit > 1 {
+        let limit = failing_limit + (passing_limit - failing_limit) / 2;
+        match compile_singlepass_example(Some(limit)) {
+            Ok(_) => passing_limit = limit,
+            Err(error) => {
+                assert_singlepass_limit_error(&error, limit);
+                failing_limit = limit;
+            }
+        }
+    }
+
+    let error = compile_singlepass_example(Some(passing_limit - 1))
+        .expect_err("a limit below the emitted-code size should fail");
+    assert_singlepass_limit_error(&error, passing_limit - 1);
+    assert!(compile_singlepass_example(Some(passing_limit)).is_ok());
+    assert!(
+        compile_singlepass_example(Some(
+            passing_limit
+                .checked_add(1)
+                .expect("example output size should leave room in usize")
+        ))
+        .is_ok()
+    );
+
+    let cranelift = native::module(
+        SINGLEPASS_LIMIT_TEST_WAT.as_bytes(),
+        CompileConfig::version(0, false).with_max_singlepass_output_size(Some(0)),
+        Target::default(),
+        true,
+    );
+    assert!(
+        cranelift.is_ok(),
+        "the Singlepass cap must not apply to Cranelift"
+    );
+}
 
 #[test]
 fn test_ink() -> Result<()> {
