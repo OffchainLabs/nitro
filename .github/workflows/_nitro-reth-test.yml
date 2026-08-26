@@ -57,7 +57,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: nitro-reth
-      - run: cargo test -p arb-replay --test wasm_smoke -- --ignored
+      - run: cargo test -p arb-replay --release --test wasm_smoke -- --ignored
 
   doctests:
     name: doctests

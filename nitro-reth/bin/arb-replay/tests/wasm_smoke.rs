@@ -46,12 +46,12 @@ impl ExecEnv for SmokeEnv {
     }
 }
 
-/// Builds `arb-replay.wasm` and returns its path.
+/// Builds `arb-replay.wasm` in release mode (the profile we ship) and returns its path.
 fn build_wasm() -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
     let status = Command::new(env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
-        .args(["build", "-p", "arb-replay", "--target", "wasm32-wasip1"])
+        .args(["build", "-p", "arb-replay", "--release", "--target", "wasm32-wasip1"])
         .current_dir(workspace_root)
         .status()
         .expect("failed to spawn cargo");
@@ -60,7 +60,7 @@ fn build_wasm() -> PathBuf {
     let target_dir = env::var_os("CARGO_TARGET_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| workspace_root.join("target"));
-    target_dir.join("wasm32-wasip1/debug/arb-replay.wasm")
+    target_dir.join("wasm32-wasip1/release/arb-replay.wasm")
 }
 
 #[test]
