@@ -1037,7 +1037,7 @@ func TestBatchPosterPostsReportOnlyBatchAfterMaxEmptyBatchDelay(t *testing.T) {
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 1)
 
 	// The batch posting report's timestamp comes from the L1 block that included it.
-	// In the simulated beacon, block timestamps can race far ahead of wall clock
+	// With on-demand L1 mining, block timestamps can race far ahead of wall clock
 	// (each block gets lastBlockTime+1 when blocks are mined faster than 1/second).
 	// We need wall clock to pass the report's L1 timestamp + MaxEmptyBatchDelay
 	// before the batch poster will consider the report old enough to trigger posting.

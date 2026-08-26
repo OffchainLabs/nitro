@@ -22,6 +22,12 @@ func TestConstants(t *testing.T) {
 	}
 }
 
+func TestSinglepassOutputLimit(t *testing.T) {
+	if err := testSinglepassOutputLimit(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // normal test will not write anything to disk
 // to test cross-compilation:
 // * run test with -test_compile=STORE on one machine

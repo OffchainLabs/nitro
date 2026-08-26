@@ -24,6 +24,7 @@ use {
     wasmer_compiler_singlepass::Singlepass,
 };
 
+use super::DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT;
 use crate::{programs::meter, value::FunctionType};
 
 /// Minimum Stylus version that uses the spec-compliant `memory.fill` implementation.
@@ -96,7 +97,8 @@ impl PricingParams {
 pub type SigMap = HashMap<SignatureIndex, FunctionType>;
 pub type OpCosts = fn(&Operator, &SigMap) -> u64;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Derivative)]
+#[derivative(Default)]
 pub struct CompileConfig {
     /// Version of the compiler to use
     pub version: u16,
@@ -106,6 +108,9 @@ pub struct CompileConfig {
     pub bounds: CompileMemoryParams,
     /// Debug parameters for test chains
     pub debug: CompileDebugParams,
+    /// Maximum emitted machine code size for a Singlepass module
+    #[derivative(Default(value = "Some(DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT)"))]
+    max_singlepass_output_size: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -164,6 +169,15 @@ impl Default for CompileMemoryParams {
 }
 
 impl CompileConfig {
+    pub fn with_max_singlepass_output_size(mut self, limit: Option<usize>) -> Self {
+        self.max_singlepass_output_size = limit;
+        self
+    }
+
+    pub fn max_singlepass_output_size(&self) -> Option<usize> {
+        self.max_singlepass_output_size
+    }
+
     pub fn version(version: u16, debug_chain: bool) -> Self {
         let mut config = Self::default();
         config.version = version;
