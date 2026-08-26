@@ -4,7 +4,7 @@
 //! Brotli via the `arbcompress` host-import module, for replay-style wasm builds.
 //!
 //! Nothing is linked here: the module only declares imports, and the runner resolves them —
-//! the arbitrator with the `arbcompress.wasm` library, the JIT with native bindings, etc. The ABI 
+//! the arbitrator with the `arbcompress.wasm` library, the JIT with native bindings, etc. The ABI
 //! mirrors `arbcompress/wasm.go` and the exports of `crates/wasm-libraries/arbcompress`.
 
 use alloc::{vec, vec::Vec};

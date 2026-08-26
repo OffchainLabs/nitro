@@ -22,6 +22,7 @@ mod native;
 #[cfg(feature = "link")]
 pub use native::*;
 
+/// cbindgen:ignore
 #[cfg(not(feature = "link"))]
 mod host_imports;
 #[cfg(not(feature = "link"))]
