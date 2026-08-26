@@ -73,17 +73,6 @@ jobs:
         # Generate and verify a proof of correct Stylus compilation.
         run: make -C crates/sp1 stylus-compiler-prove
 
-      # The SP1 replay pipeline is mocked for now (NIT-5337): the guest
-      # performs no real validation, so this step only proves the
-      # build-and-execute plumbing end-to-end. It is replaced by a real
-      # SP1-vs-JIT hash comparison as guest functionality lands.
-      - name: Run SP1 validation (MOCKED)
-        run: |
-          set -o pipefail
-          # The guest's output is forwarded on the executor's stderr.
-          make -C crates/sp1 run 2>&1 | tee run.log
-          grep -q "Validation MOCKED" run.log
-
       # The recording tests boot an external geth binary as the L1
       # (see externalL1Binary in system_tests/common_test.go).
       - name: Build external L1 geth
@@ -91,6 +80,27 @@ jobs:
 
       - name: Record block inputs
         run: make -C crates/sp1 record-blocks
+
+      # The SP1 guest validation is mocked for now (NIT-5337): the guest parses
+      # the ValidationInput and echoes its start-state block hash instead of
+      # validating. Matching the echo against each recorded block proves the
+      # payload survives the protocol and parses inside the zkVM.
+      - name: Run SP1 validation (MOCKED)
+        run: |
+          set -e -o pipefail
+          shopt -s nullglob
+          INPUTS=(target/sp1/block-inputs/*.json)
+          if [ ${#INPUTS[@]} -eq 0 ]; then
+            echo "::error::No recorded block inputs found"
+            exit 1
+          fi
+          for INPUT in "${INPUTS[@]}"; do
+            BLOCK=$(basename "$INPUT" .json)
+            echo "--- Running SP1 (mocked) validation ($BLOCK) ---"
+            make -C crates/sp1 run BLOCK="$BLOCK" 2>&1 | tee run.log
+            EXPECTED=$(python3 -c "import json; print(json.load(open('$INPUT'))['StartState']['BlockHash'])")
+            grep -q "Validation MOCKED with hash $EXPECTED" run.log
+          done
 
       # Ground-truth check: every recorded block must validate under JIT.
       # Once the SP1 runner is ported, it joins this loop and its hash is
