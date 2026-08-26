@@ -238,6 +238,7 @@ wiremock = { version = "0.6" }
 nitro-arbutil = { package = "arbutil", path = "../crates/arbutil" }
 nitro-brotli = { package = "brotli", path = "../crates/brotli", default-features = false }
 nitro-prover = { package = "prover", path = "../crates/prover", default-features = false }
+caller-env = { path = "../crates/caller-env", default-features = false }
 wasmer = { path = "../crates/tools/wasmer/lib/api", default-features = false }
 wasmer-compiler = { path = "../crates/tools/wasmer/lib/compiler" }
 wasmer-types = { path = "../crates/tools/wasmer/lib/types" }

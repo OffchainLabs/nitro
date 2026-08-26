@@ -18,5 +18,9 @@ nitro-brotli = { workspace = true }
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 nitro-brotli = { workspace = true, features = ["cc_brotli"] }
 
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
+caller-env = { workspace = true, features = ["brotli", "wasmer_traits"] }
+wasmer = { workspace = true, features = ["sys", "cranelift"] }
+
 [lints]
 workspace = true
