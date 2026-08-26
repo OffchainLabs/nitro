@@ -157,49 +157,20 @@ fn replay_wasm_routes_brotli_through_the_runner_imports() {
             Function::new_typed_with_env(&mut store, &func_env, $func)
         };
     }
-    let imports = imports! {
+    let mut imports = imports! {
         "arbcompress" => {
             "brotli_compress" => func!(mock_compress),
             "brotli_decompress" => func!(mock_decompress),
         },
-        "wasi_snapshot_preview1" => {
-            "proc_exit" => func!(|_: FunctionEnvMut<RunnerEnv>, code: u32| {
-                Err::<(), _>(RuntimeError::new(format!("proc_exit({code})")))
-            }),
-            "environ_sizes_get" => func!(wasi::environ_sizes_get::<RunnerEnv>),
-            "fd_write" => func!(wasi::fd_write::<RunnerEnv>),
-            "environ_get" => func!(wasi::environ_get::<RunnerEnv>),
-            "fd_close" => func!(wasi::fd_close::<RunnerEnv>),
-            "fd_read" => func!(wasi::fd_read::<RunnerEnv>),
-            "fd_readdir" => func!(wasi::fd_readdir::<RunnerEnv>),
-            "fd_sync" => func!(wasi::fd_sync::<RunnerEnv>),
-            "fd_seek" => func!(wasi::fd_seek::<RunnerEnv>),
-            "fd_datasync" => func!(wasi::fd_datasync::<RunnerEnv>),
-            "path_open" => func!(wasi::path_open::<RunnerEnv>),
-            "path_create_directory" => func!(wasi::path_create_directory::<RunnerEnv>),
-            "path_remove_directory" => func!(wasi::path_remove_directory::<RunnerEnv>),
-            "path_readlink" => func!(wasi::path_readlink::<RunnerEnv>),
-            "path_rename" => func!(wasi::path_rename::<RunnerEnv>),
-            "path_filestat_get" => func!(wasi::path_filestat_get::<RunnerEnv>),
-            "path_unlink_file" => func!(wasi::path_unlink_file::<RunnerEnv>),
-            "fd_prestat_get" => func!(wasi::fd_prestat_get::<RunnerEnv>),
-            "fd_prestat_dir_name" => func!(wasi::fd_prestat_dir_name::<RunnerEnv>),
-            "fd_filestat_get" => func!(wasi::fd_filestat_get::<RunnerEnv>),
-            "fd_filestat_set_size" => func!(wasi::fd_filestat_set_size::<RunnerEnv>),
-            "fd_pread" => func!(wasi::fd_pread::<RunnerEnv>),
-            "fd_pwrite" => func!(wasi::fd_pwrite::<RunnerEnv>),
-            "sock_accept" => func!(wasi::sock_accept::<RunnerEnv>),
-            "sock_shutdown" => func!(wasi::sock_shutdown::<RunnerEnv>),
-            "sched_yield" => func!(wasi::sched_yield::<RunnerEnv>),
-            "clock_time_get" => func!(wasi::clock_time_get::<RunnerEnv>),
-            "random_get" => func!(wasi::random_get::<RunnerEnv>),
-            "args_sizes_get" => func!(wasi::args_sizes_get::<RunnerEnv>),
-            "args_get" => func!(wasi::args_get::<RunnerEnv>),
-            "poll_oneoff" => func!(wasi::poll_oneoff::<RunnerEnv>),
-            "fd_fdstat_get" => func!(wasi::fd_fdstat_get::<RunnerEnv>),
-            "fd_fdstat_set_flags" => func!(wasi::fd_fdstat_set_flags::<RunnerEnv>),
-        },
     };
+    let mut wasi_ns = wasi::exports(&mut store, &func_env);
+    wasi_ns.insert(
+        "proc_exit",
+        func!(|_: FunctionEnvMut<RunnerEnv>, code: u32| {
+            Err::<(), _>(RuntimeError::new(format!("proc_exit({code})")))
+        }),
+    );
+    imports.register_namespace("wasi_snapshot_preview1", wasi_ns);
 
     let instance = Instance::new(&mut store, &module, &imports).expect("instantiate");
     let memory = instance
