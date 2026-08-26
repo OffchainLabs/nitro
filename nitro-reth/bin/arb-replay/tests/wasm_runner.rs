@@ -15,7 +15,8 @@ use caller_env::{
 };
 use nitro_brotli::{BrotliStatus, DEFAULT_WINDOW_SIZE, Dictionary};
 use wasmer::{
-    Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module, RuntimeError, Store, imports,
+    Function, FunctionEnv, FunctionEnvMut, Imports, Instance, Memory, Module, RuntimeError, Store,
+    imports,
 };
 
 /// Prefix the mock compressor frames its output with.
@@ -143,18 +144,12 @@ fn build_wasm() -> PathBuf {
     target_dir.join("wasm32-wasip1/release/arb-replay.wasm")
 }
 
-#[test]
-#[ignore = "needs the wasm32-wasip1 target; run by the wasm-replay CI job"]
-fn replay_wasm_routes_brotli_through_the_runner_imports() {
-    let wasm = std::fs::read(build_wasm()).expect("read arb-replay.wasm");
-
-    let mut store = Store::default();
-    let module = Module::new(&store, wasm).expect("compile module");
-    let func_env = FunctionEnv::new(&mut store, RunnerEnv::default());
-
+/// Binds everything the module imports: the mocked `arbcompress` pair plus
+/// the stubbed WASI namespace with a runner-specific `proc_exit`.
+fn build_imports(store: &mut Store, func_env: &FunctionEnv<RunnerEnv>) -> Imports {
     macro_rules! func {
         ($func:expr) => {
-            Function::new_typed_with_env(&mut store, &func_env, $func)
+            Function::new_typed_with_env(store, func_env, $func)
         };
     }
     let mut imports = imports! {
@@ -163,7 +158,7 @@ fn replay_wasm_routes_brotli_through_the_runner_imports() {
             "brotli_decompress" => func!(mock_decompress),
         },
     };
-    let mut wasi_ns = wasi::exports(&mut store, &func_env);
+    let mut wasi_ns = wasi::exports(store, func_env);
     wasi_ns.insert(
         "proc_exit",
         func!(|_: FunctionEnvMut<RunnerEnv>, code: u32| {
@@ -171,22 +166,55 @@ fn replay_wasm_routes_brotli_through_the_runner_imports() {
         }),
     );
     imports.register_namespace("wasi_snapshot_preview1", wasi_ns);
+    imports
+}
 
-    let instance = Instance::new(&mut store, &module, &imports).expect("instantiate");
+/// Compiles the module, resolves its imports, and wires the exported memory
+/// back into the runner env so host functions can reach guest memory.
+fn instantiate_guest(
+    store: &mut Store,
+    wasm: &[u8],
+    func_env: &FunctionEnv<RunnerEnv>,
+) -> Instance {
+    let module = Module::new(store, wasm).expect("compile module");
+    let imports = build_imports(store, func_env);
+    let instance = Instance::new(store, &module, &imports).expect("instantiate");
+
     let memory = instance
         .exports
         .get_memory("memory")
-        .expect("exported memory");
-    func_env.as_mut(&mut store).memory = Some(memory.clone());
+        .expect("exported memory")
+        .clone();
+    func_env.as_mut(store).memory = Some(memory);
+    instance
+}
 
+/// Runs the guest's entrypoint to completion.
+fn run_guest(store: &mut Store, instance: &Instance) {
     let start = instance
         .exports
-        .get_typed_function::<(), ()>(&store, "_start")
+        .get_typed_function::<(), ()>(store, "_start")
         .expect("_start export");
-    start.call(&mut store).expect("wasm execution");
+    start.call(store).expect("wasm execution");
+}
 
+/// Returns everything the guest printed.
+fn guest_stdout(store: &Store, func_env: &FunctionEnv<RunnerEnv>) -> String {
+    String::from_utf8(func_env.as_ref(store).stdout.clone()).expect("utf8 stdout")
+}
+
+#[test]
+#[ignore = "needs the wasm32-wasip1 target; run by the wasm-replay CI job"]
+fn replay_wasm_routes_brotli_through_the_runner_imports() {
+    let wasm = std::fs::read(build_wasm()).expect("read arb-replay.wasm");
+    let mut store = Store::default();
+    let func_env = FunctionEnv::new(&mut store, RunnerEnv::default());
+
+    let instance = instantiate_guest(&mut store, &wasm, &func_env);
+    run_guest(&mut store, &instance);
+
+    let stdout = guest_stdout(&store, &func_env);
     let env = func_env.as_ref(&store);
-    let stdout = String::from_utf8(env.stdout.clone()).expect("utf8 stdout");
 
     // The guest prints "(<in> -> <out> bytes)". The mock's framing makes
     // out == in + marker exactly — a size real brotli cannot hit on the guest's
