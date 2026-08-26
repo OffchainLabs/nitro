@@ -153,33 +153,35 @@ fn decode_l2_msg(l2_msg: &Option<String>) -> ArbRpcResult<Vec<u8>> {
     }
 }
 
-/// Convert a wire message into the canonical arbos message.
-fn to_message_with_metadata(msg: &RpcMessageWithMetadata) -> ArbRpcResult<MessageWithMetadata> {
-    let l2_msg = decode_l2_msg(&msg.message.l2_msg)?;
-    let batch_data_stats = msg
-        .message
-        .batch_data_tokens
-        .as_ref()
-        .map(|s| BatchDataStats {
-            length: s.length,
-            non_zeros: s.nonzeros,
-        });
-    Ok(MessageWithMetadata {
-        message: L1IncomingMessage {
-            header: L1IncomingMessageHeader {
-                kind: msg.message.header.kind,
-                poster: msg.message.header.sender,
-                block_number: msg.message.header.block_number,
-                timestamp: msg.message.header.timestamp,
-                request_id: msg.message.header.request_id,
-                l1_base_fee: msg.message.header.base_fee_l1,
+impl RpcMessageWithMetadata {
+    /// Convert the wire message into the canonical arbos message.
+    fn to_message_with_metadata(&self) -> ArbRpcResult<MessageWithMetadata> {
+        let l2_msg = decode_l2_msg(&self.message.l2_msg)?;
+        let batch_data_stats = self
+            .message
+            .batch_data_tokens
+            .as_ref()
+            .map(|s| BatchDataStats {
+                length: s.length,
+                non_zeros: s.nonzeros,
+            });
+        Ok(MessageWithMetadata {
+            message: L1IncomingMessage {
+                header: L1IncomingMessageHeader {
+                    kind: self.message.header.kind,
+                    poster: self.message.header.sender,
+                    block_number: self.message.header.block_number,
+                    timestamp: self.message.header.timestamp,
+                    request_id: self.message.header.request_id,
+                    l1_base_fee: self.message.header.base_fee_l1,
+                },
+                l2_msg: l2_msg.into(),
+                legacy_batch_gas_cost: self.message.batch_gas_cost,
+                batch_data_stats,
             },
-            l2_msg: l2_msg.into(),
-            legacy_batch_gas_cost: msg.message.batch_gas_cost,
-            batch_data_stats,
-        },
-        delayed_messages_read: msg.delayed_messages_read,
-    })
+            delayed_messages_read: self.delayed_messages_read,
+        })
+    }
 }
 
 const STANDARD_ALPHABET: &[u8; 64] =
@@ -269,7 +271,7 @@ where
             });
         }
 
-        let input = to_message_with_metadata(&message).inspect_err(|err| {
+        let input = message.to_message_with_metadata().inspect_err(|err| {
             warn!(target: "nitroexecution", msg_idx, block_num, kind, %err, "digestMessage failed to decode L2 message");
         })?;
 
@@ -320,7 +322,7 @@ where
         let mut results = Vec::with_capacity(new_messages.len());
         for (i, wrapped) in new_messages.into_iter().enumerate() {
             let msg_idx = msg_idx_of_first_msg_to_add + i as u64;
-            let input = to_message_with_metadata(&wrapped.message)?;
+            let input = wrapped.message.to_message_with_metadata()?;
             let produced = self
                 .block_producer
                 .produce_block(msg_idx, input)
@@ -448,7 +450,7 @@ mod tests {
             delayed_messages_read: canonical.delayed_messages_read,
         };
 
-        let out = to_message_with_metadata(&wire).unwrap();
+        let out = wire.to_message_with_metadata().unwrap();
 
         assert_eq!(format!("{out:?}"), format!("{canonical:?}"));
     }

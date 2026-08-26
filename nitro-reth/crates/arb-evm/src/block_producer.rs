@@ -2,9 +2,17 @@
 
 use alloy_consensus::transaction::SignerRecoverable;
 use alloy_evm::block::BlockExecutor;
-use alloy_primitives::{Address, B256, Bytes, U256};
-use arb_primitives::{signed_tx::ArbTransactionSigned, tx_types::ArbInternalTx};
+use alloy_primitives::{Address, B256, Bytes, Signature, U256};
+use arb_primitives::{
+    signed_tx::{ArbTransactionSigned, ArbTypedTransaction},
+    tx_types::ArbInternalTx,
+};
 use revm::{Database, database::BundleState};
+use revm_database::{
+    AccountStatus, BundleAccount, CacheState, StorageWithOriginalValues,
+    states::plain_account::StorageSlot,
+};
+use rustc_hash::FxHashSet;
 use tracing::debug;
 
 /// Result of producing a block.
@@ -33,13 +41,13 @@ pub enum BlockProducerError {
 
 /// Create an internal transaction (type 0x6A).
 pub fn create_internal_tx(chain_id: u64, data: &[u8]) -> ArbTransactionSigned {
-    use arb_primitives::signed_tx::ArbTypedTransaction;
-    let tx = ArbTypedTransaction::Internal(ArbInternalTx {
-        chain_id: U256::from(chain_id),
-        data: Bytes::copy_from_slice(data),
-    });
-    let sig = alloy_primitives::Signature::new(U256::ZERO, U256::ZERO, false);
-    ArbTransactionSigned::new_unhashed(tx, sig)
+    ArbTransactionSigned::new_unhashed(
+        ArbTypedTransaction::Internal(ArbInternalTx {
+            chain_id: U256::from(chain_id),
+            data: Bytes::copy_from_slice(data),
+        }),
+        Signature::new(U256::ZERO, U256::ZERO, false),
+    )
 }
 
 /// Execute and commit an internal transaction via the block executor.
@@ -71,13 +79,13 @@ where
 /// `db` must read parent-block state, not the in-flight `State` overlay.
 pub fn delete_empty_accounts<DB: Database>(
     bundle: &mut BundleState,
-    zombie_accounts: &rustc_hash::FxHashSet<Address>,
+    zombie_accounts: &FxHashSet<Address>,
     db: &mut DB,
 ) -> Result<(), BlockProducerError>
 where
     DB::Error: core::fmt::Display,
 {
-    let keccak_empty = alloy_primitives::B256::from(alloy_primitives::keccak256([]));
+    let keccak_empty = B256::from(alloy_primitives::keccak256([]));
     let mut to_remove = Vec::new();
     for (addr, account) in bundle.state.iter_mut() {
         if let Some(ref info) = account.info {
@@ -120,14 +128,12 @@ pub fn filter_unchanged_storage(bundle: &mut BundleState) {
 /// `db` must read parent-block state, not the in-flight `State` overlay.
 pub fn augment_bundle_from_cache<DB: Database>(
     bundle: &mut BundleState,
-    cache: &revm_database::CacheState,
+    cache: &CacheState,
     db: &mut DB,
 ) -> Result<(), BlockProducerError>
 where
     DB::Error: core::fmt::Display,
 {
-    use revm_database::states::plain_account::StorageSlot;
-
     for (addr, cache_acct) in &cache.accounts {
         let current_info = cache_acct.account.as_ref().map(|a| a.info.clone());
         let current_storage = cache_acct
@@ -162,21 +168,21 @@ where
             }
         } else {
             // Account not in bundle — check if modified from original.
-            let original = db
+            let original_info = db
                 .basic(*addr)
                 .map_err(|e| BlockProducerError::Storage(e.to_string()))?;
 
-            let info_changed = match (&original, &current_info) {
+            let info_changed = match (&original_info, &current_info) {
                 (None, None) => false,
                 (Some(_), None) | (None, Some(_)) => true,
-                (Some(orig), Some(curr)) => {
-                    orig.balance != curr.balance
-                        || orig.nonce != curr.nonce
-                        || orig.code_hash != curr.code_hash
+                (Some(original), Some(current)) => {
+                    original.balance != current.balance
+                        || original.nonce != current.nonce
+                        || original.code_hash != current.code_hash
                 }
             };
 
-            let mut storage_changes: revm_database::StorageWithOriginalValues = Default::default();
+            let mut storage_changes: StorageWithOriginalValues = Default::default();
             for (key, value) in &current_storage {
                 let original_value = db
                     .storage(*addr, *key)
@@ -193,17 +199,15 @@ where
             }
 
             if info_changed || !storage_changes.is_empty() {
-                let original_info = original.clone();
-
-                let status = if original.is_some() {
-                    revm_database::AccountStatus::Changed
+                let status = if original_info.is_some() {
+                    AccountStatus::Changed
                 } else {
-                    revm_database::AccountStatus::InMemoryChange
+                    AccountStatus::InMemoryChange
                 };
 
                 bundle.state.insert(
                     *addr,
-                    revm_database::BundleAccount {
+                    BundleAccount {
                         info: current_info,
                         original_info,
                         storage: storage_changes,

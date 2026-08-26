@@ -48,11 +48,15 @@ use crate::{
     state_overlay::StateOverlay,
 };
 
-const BLOCK_GAS_LIMIT_REACHED: &str = "block gas limit reached";
+/// The executor's block-gas-limit rejection.
+#[derive(thiserror::Error, Debug)]
+#[error("block gas limit reached")]
+pub struct BlockGasLimitReached;
 
 /// True if the error is the executor's block-gas-limit rejection.
 pub fn is_block_gas_limit_reached(err: &BlockExecutionError) -> bool {
-    err.to_string().contains(BLOCK_GAS_LIMIT_REACHED)
+    err.as_internal()
+        .is_some_and(|internal| internal.is_other::<BlockGasLimitReached>())
 }
 
 /// Extension trait for transaction environments that support gas price mutation.
@@ -1167,7 +1171,7 @@ where
         let is_user_tx =
             !is_arb_internal && !is_arb_deposit && !is_submit_retryable && !is_retry_tx;
         if is_user_tx && self.compute_budget.exhausted_for_user_tx() {
-            return Err(BlockExecutionError::msg(BLOCK_GAS_LIMIT_REACHED));
+            return Err(BlockExecutionError::other(BlockGasLimitReached));
         }
 
         // Reset per-tx processor state.
@@ -1769,7 +1773,7 @@ where
             poster_gas,
             is_user_tx,
         ) {
-            return Err(BlockExecutionError::msg(BLOCK_GAS_LIMIT_REACHED));
+            return Err(BlockExecutionError::other(BlockGasLimitReached));
         }
 
         // Add calldata units to L1 pricing state before EVM execution, and

@@ -280,7 +280,7 @@ pub fn is_arbos_initialized<D: Database>(state: &mut State<D>) -> bool {
 ///     the real value.
 pub fn apply_cached_init<D: Database>(
     state: &mut State<D>,
-    init_msg: &ParsedInitMessage,
+    initial_message: &ParsedInitMessage,
     chain_id: u64,
     parent_arbos_version: u64,
     l2_block_number: u64,
@@ -309,7 +309,7 @@ pub fn apply_cached_init<D: Database>(
         );
         return initialize_arbos_state(
             state,
-            init_msg,
+            initial_message,
             chain_id,
             initial_version,
             DEFAULT_CHAIN_OWNER,
@@ -319,7 +319,7 @@ pub fn apply_cached_init<D: Database>(
 
     info!(
         target: "block_producer",
-        initial_l1_base_fee = %init_msg.initial_l1_base_fee,
+        initial_l1_base_fee = %initial_message.initial_l1_base_fee,
         "ArbOS already initialized; overriding L1 price_per_unit from Init message"
     );
     let mut arb_state =
@@ -332,9 +332,13 @@ pub fn apply_cached_init<D: Database>(
     // SAFETY: see `Storage::state_mut()` invariant. The returned reference
     // inherits the storage handle's `'a` lifetime, decoupled from `&arb_state`.
     let state_ref = unsafe { arb_state.backing_storage.state_mut() };
-    let _ = arb_state
+    arb_state
         .l1_pricing_state
-        .set_price_per_unit(&mut *state_ref, init_msg.initial_l1_base_fee);
+        .set_price_per_unit(&mut *state_ref, initial_message.initial_l1_base_fee)
+        .map_err(|e| GenesisError::InitSubsystem {
+            subsystem: "L1 pricing",
+            source: e.into(),
+        })?;
     if let Ok(target) = std::env::var("ARB_INITIAL_ARBOS_VERSION")
         && let Ok(target_version) = target.parse::<u64>()
     {
