@@ -8,7 +8,7 @@ use std::mem::MaybeUninit;
 use nitro_brotli::{DEFAULT_WINDOW_SIZE, Dictionary};
 
 fn main() {
-    let payload = b"arb-replay brotli smoke payload ".repeat(16);
+    let payload = b"arb-replay brotli test payload ".repeat(16);
 
     let compressed = nitro_brotli::compress(&payload, 11, DEFAULT_WINDOW_SIZE, Dictionary::Empty)
         .expect("compress failed");
@@ -19,7 +19,7 @@ fn main() {
     assert_eq!(decompressed, payload, "brotli round-trip mismatch");
 
     println!(
-        "arb-replay brotli smoke: ok ({} -> {} bytes)",
+        "arb-replay brotli round-trip: ok ({} -> {} bytes)",
         payload.len(),
         compressed.len()
     );

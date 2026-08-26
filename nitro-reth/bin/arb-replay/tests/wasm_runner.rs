@@ -14,20 +14,20 @@ use wasmer::{
 };
 
 #[derive(Default)]
-struct SmokeEnv {
+struct RunnerEnv {
     memory: Option<Memory>,
     time: u64,
     rand_state: u32,
     stdout: Vec<u8>,
 }
 
-impl HasMemory for SmokeEnv {
+impl HasMemory for RunnerEnv {
     fn memory(&self) -> Memory {
-        self.memory.clone().expect("memory not set in SmokeEnv")
+        self.memory.clone().expect("memory not set in RunnerEnv")
     }
 }
 
-impl ExecEnv for SmokeEnv {
+impl ExecEnv for RunnerEnv {
     fn advance_time(&mut self, ns: u64) {
         self.time += ns;
     }
@@ -51,7 +51,14 @@ fn build_wasm() -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
     let status = Command::new(env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
-        .args(["build", "-p", "arb-replay", "--release", "--target", "wasm32-wasip1"])
+        .args([
+            "build",
+            "-p",
+            "arb-replay",
+            "--release",
+            "--target",
+            "wasm32-wasip1",
+        ])
         .current_dir(workspace_root)
         .status()
         .expect("failed to spawn cargo");
@@ -70,7 +77,7 @@ fn replay_wasm_runs_under_a_jit_style_runner() {
 
     let mut store = Store::default();
     let module = Module::new(&store, wasm).expect("compile module");
-    let func_env = FunctionEnv::new(&mut store, SmokeEnv::default());
+    let func_env = FunctionEnv::new(&mut store, RunnerEnv::default());
 
     macro_rules! func {
         ($func:expr) => {
@@ -79,45 +86,45 @@ fn replay_wasm_runs_under_a_jit_style_runner() {
     }
     let imports = imports! {
         "arbcompress" => {
-            "brotli_compress" => func!(arbcompress::brotli_compress::<SmokeEnv>),
-            "brotli_decompress" => func!(arbcompress::brotli_decompress::<SmokeEnv>),
+            "brotli_compress" => func!(arbcompress::brotli_compress::<RunnerEnv>),
+            "brotli_decompress" => func!(arbcompress::brotli_decompress::<RunnerEnv>),
         },
         "wasi_snapshot_preview1" => {
-            "proc_exit" => func!(|_: FunctionEnvMut<SmokeEnv>, code: u32| {
+            "proc_exit" => func!(|_: FunctionEnvMut<RunnerEnv>, code: u32| {
                 Err::<(), _>(RuntimeError::new(format!("proc_exit({code})")))
             }),
-            "environ_sizes_get" => func!(wasi::environ_sizes_get::<SmokeEnv>),
-            "fd_write" => func!(wasi::fd_write::<SmokeEnv>),
-            "environ_get" => func!(wasi::environ_get::<SmokeEnv>),
-            "fd_close" => func!(wasi::fd_close::<SmokeEnv>),
-            "fd_read" => func!(wasi::fd_read::<SmokeEnv>),
-            "fd_readdir" => func!(wasi::fd_readdir::<SmokeEnv>),
-            "fd_sync" => func!(wasi::fd_sync::<SmokeEnv>),
-            "fd_seek" => func!(wasi::fd_seek::<SmokeEnv>),
-            "fd_datasync" => func!(wasi::fd_datasync::<SmokeEnv>),
-            "path_open" => func!(wasi::path_open::<SmokeEnv>),
-            "path_create_directory" => func!(wasi::path_create_directory::<SmokeEnv>),
-            "path_remove_directory" => func!(wasi::path_remove_directory::<SmokeEnv>),
-            "path_readlink" => func!(wasi::path_readlink::<SmokeEnv>),
-            "path_rename" => func!(wasi::path_rename::<SmokeEnv>),
-            "path_filestat_get" => func!(wasi::path_filestat_get::<SmokeEnv>),
-            "path_unlink_file" => func!(wasi::path_unlink_file::<SmokeEnv>),
-            "fd_prestat_get" => func!(wasi::fd_prestat_get::<SmokeEnv>),
-            "fd_prestat_dir_name" => func!(wasi::fd_prestat_dir_name::<SmokeEnv>),
-            "fd_filestat_get" => func!(wasi::fd_filestat_get::<SmokeEnv>),
-            "fd_filestat_set_size" => func!(wasi::fd_filestat_set_size::<SmokeEnv>),
-            "fd_pread" => func!(wasi::fd_pread::<SmokeEnv>),
-            "fd_pwrite" => func!(wasi::fd_pwrite::<SmokeEnv>),
-            "sock_accept" => func!(wasi::sock_accept::<SmokeEnv>),
-            "sock_shutdown" => func!(wasi::sock_shutdown::<SmokeEnv>),
-            "sched_yield" => func!(wasi::sched_yield::<SmokeEnv>),
-            "clock_time_get" => func!(wasi::clock_time_get::<SmokeEnv>),
-            "random_get" => func!(wasi::random_get::<SmokeEnv>),
-            "args_sizes_get" => func!(wasi::args_sizes_get::<SmokeEnv>),
-            "args_get" => func!(wasi::args_get::<SmokeEnv>),
-            "poll_oneoff" => func!(wasi::poll_oneoff::<SmokeEnv>),
-            "fd_fdstat_get" => func!(wasi::fd_fdstat_get::<SmokeEnv>),
-            "fd_fdstat_set_flags" => func!(wasi::fd_fdstat_set_flags::<SmokeEnv>),
+            "environ_sizes_get" => func!(wasi::environ_sizes_get::<RunnerEnv>),
+            "fd_write" => func!(wasi::fd_write::<RunnerEnv>),
+            "environ_get" => func!(wasi::environ_get::<RunnerEnv>),
+            "fd_close" => func!(wasi::fd_close::<RunnerEnv>),
+            "fd_read" => func!(wasi::fd_read::<RunnerEnv>),
+            "fd_readdir" => func!(wasi::fd_readdir::<RunnerEnv>),
+            "fd_sync" => func!(wasi::fd_sync::<RunnerEnv>),
+            "fd_seek" => func!(wasi::fd_seek::<RunnerEnv>),
+            "fd_datasync" => func!(wasi::fd_datasync::<RunnerEnv>),
+            "path_open" => func!(wasi::path_open::<RunnerEnv>),
+            "path_create_directory" => func!(wasi::path_create_directory::<RunnerEnv>),
+            "path_remove_directory" => func!(wasi::path_remove_directory::<RunnerEnv>),
+            "path_readlink" => func!(wasi::path_readlink::<RunnerEnv>),
+            "path_rename" => func!(wasi::path_rename::<RunnerEnv>),
+            "path_filestat_get" => func!(wasi::path_filestat_get::<RunnerEnv>),
+            "path_unlink_file" => func!(wasi::path_unlink_file::<RunnerEnv>),
+            "fd_prestat_get" => func!(wasi::fd_prestat_get::<RunnerEnv>),
+            "fd_prestat_dir_name" => func!(wasi::fd_prestat_dir_name::<RunnerEnv>),
+            "fd_filestat_get" => func!(wasi::fd_filestat_get::<RunnerEnv>),
+            "fd_filestat_set_size" => func!(wasi::fd_filestat_set_size::<RunnerEnv>),
+            "fd_pread" => func!(wasi::fd_pread::<RunnerEnv>),
+            "fd_pwrite" => func!(wasi::fd_pwrite::<RunnerEnv>),
+            "sock_accept" => func!(wasi::sock_accept::<RunnerEnv>),
+            "sock_shutdown" => func!(wasi::sock_shutdown::<RunnerEnv>),
+            "sched_yield" => func!(wasi::sched_yield::<RunnerEnv>),
+            "clock_time_get" => func!(wasi::clock_time_get::<RunnerEnv>),
+            "random_get" => func!(wasi::random_get::<RunnerEnv>),
+            "args_sizes_get" => func!(wasi::args_sizes_get::<RunnerEnv>),
+            "args_get" => func!(wasi::args_get::<RunnerEnv>),
+            "poll_oneoff" => func!(wasi::poll_oneoff::<RunnerEnv>),
+            "fd_fdstat_get" => func!(wasi::fd_fdstat_get::<RunnerEnv>),
+            "fd_fdstat_set_flags" => func!(wasi::fd_fdstat_set_flags::<RunnerEnv>),
         },
     };
 
@@ -136,7 +143,7 @@ fn replay_wasm_runs_under_a_jit_style_runner() {
 
     let stdout = String::from_utf8(func_env.as_ref(&store).stdout.clone()).expect("utf8 stdout");
     assert!(
-        stdout.contains("arb-replay brotli smoke: ok"),
+        stdout.contains("arb-replay brotli round-trip: ok"),
         "unexpected wasm output: {stdout:?}"
     );
 }
