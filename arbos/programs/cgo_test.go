@@ -86,7 +86,7 @@ func TestSystemErrorToResultPanics(t *testing.T) {
 			t.Fatalf("panic omitted system failure details: %v", value)
 		}
 	}()
-	userSystemError.toResult([]byte("host failure"), false)
+	_, _, _ = userSystemError.toResult([]byte("host failure"), false)
 }
 
 func TestNativeStackSizeMaxCap(t *testing.T) {
