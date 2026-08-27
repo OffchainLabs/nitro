@@ -95,6 +95,8 @@ func startRustValidatorServer(t *testing.T, ctx context.Context, jwtSecretFile s
 		args = append(args, "--jwt-secret", jwtSecretFile)
 	}
 	cmd := exec.CommandContext(ctx, validatorBin, args...)
+	// The test discovers the kernel-assigned port from the server's info log.
+	cmd.Env = append(os.Environ(), "RUST_LOG=info")
 	stdout, err := cmd.StdoutPipe()
 	Require(t, err)
 	cmd.Stderr = os.Stderr

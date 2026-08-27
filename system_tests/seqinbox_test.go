@@ -18,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient/gethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -147,10 +146,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 
 	l2Backend := builder.L2.ExecNode.Backend
 
-	l1BlockChain := builder.L1.L1Backend.BlockChain()
-
-	rpcC := builder.L1.Stack.Attach()
-	gethClient := gethclient.New(rpcC)
+	gethClient := builder.L1.GethClient
 
 	seqInbox, err := bridgegen.NewSequencerInbox(builder.L1Info.GetAddress("SequencerInbox"), builder.L1.Client)
 	Require(t, err)
@@ -226,8 +222,10 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 				Fatal(t, "Less than 65 blocks of difference between current block", currentHeader.Number, "and target", reorgTargetNumber)
 			}
 			t.Logf("Reorganizing to L1 block %v", reorgTargetNumber)
-			reorgTarget := l1BlockChain.GetBlockByNumber(reorgTargetNumber)
-			err = l1BlockChain.ReorgToOldBlock(reorgTarget)
+			// #nosec G115
+			reorgTarget, err := builder.L1.Client.BlockByNumber(ctx, new(big.Int).SetUint64(reorgTargetNumber))
+			Require(t, err)
+			err = builder.L1.ReorgToOldBlock(reorgTarget)
 			Require(t, err)
 			blockStates = blockStates[:(reorgTo + 1)]
 
@@ -388,7 +386,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 		t.Logf("Iteration %v: state %v block %v", i, len(blockStates)-1, blockStates[len(blockStates)-1].l2BlockNumber)
 
 		// Wait for the on-chain batch count to reflect the batch we just posted.
-		// Under -race the simulated L1 RPC calls become 5-10x slower, and after
+		// Under -race the L1 RPC calls become 5-10x slower, and after
 		// reorg iterations (every 10th) the node must reprocess 65+ blocks.
 		for i := 0; ; i++ {
 			batchCount, err := seqInbox.BatchCount(&bind.CallOpts{})

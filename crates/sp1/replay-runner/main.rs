@@ -1,11 +1,16 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use anyhow::{Context, bail};
 use clap::Parser;
 use sp1_core_executor::{MinimalExecutor, Program, UserMode};
+use validation::{ValidationInput, ValidationRequest};
 
 #[derive(Parser)]
 #[command(about = "Validate an Arbitrum block in SP1")]
@@ -13,19 +18,21 @@ struct Cli {
     /// Path to the *dumped* SP1 replay program ELF, produced by replay-builder.
     #[arg(long)]
     program: PathBuf,
+
+    /// Path to the recorded block JSON (a `ValidationRequest`).
+    #[arg(long)]
+    block_file: PathBuf,
 }
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    let elf = std::fs::read(&cli.program)
-        .with_context(|| format!("read program ELF from {}", cli.program.display()))?;
-    let program = Program::from(&elf).map_err(|e| anyhow::anyhow!("parse program ELF: {e:#}"))?;
-
+    let program = build_program(&cli.program)?;
     let mut executor = MinimalExecutor::<UserMode>::simple(Arc::new(program));
-    // Placeholder for the rkyv ValidationInput (next PR): any non-sentinel payload makes the
-    // bootloaded guest run its (mocked) validation.
-    replay_io::send::validation_mode(&mut executor, &[]);
+
+    let payload = build_payload(&cli.block_file)?;
+    replay_io::send::validation_mode(&mut executor, &payload);
+
     if executor.execute_chunk().is_some() {
         bail!("execution failed: executor returned a trace chunk unexpectedly");
     }
@@ -35,4 +42,28 @@ fn main() -> anyhow::Result<()> {
         bail!("program exited with non-zero code: {exit_code}");
     }
     Ok(())
+}
+
+fn build_program(program_file: &Path) -> anyhow::Result<Program> {
+    let elf = fs::read(program_file)
+        .with_context(|| format!("read program ELF from {}", program_file.display()))?;
+    Program::from(&elf).map_err(|e| anyhow::anyhow!("parse program ELF: {e:#}"))
+}
+
+/// Builds the validation payload from a recorded block: the rkyv-serialized `ValidationInput`.
+fn build_payload(block_file: &Path) -> anyhow::Result<Vec<u8>> {
+    let block = fs::read(block_file)
+        .with_context(|| format!("read block file from {}", block_file.display()))?;
+    let request =
+        serde_json::from_slice::<ValidationRequest>(&block).context("parse block file")?;
+
+    // Missing rv64 binaries are expected: compiling Stylus programs arriving as wasm sources via
+    // the SP1 stylus compiler is the next step to port from the feature branch.
+    let input = ValidationInput::from_request_allowing_missing_binaries(&request, "rv64")
+        .map_err(anyhow::Error::msg)
+        .context("build validation input")?;
+
+    Ok(rkyv::to_bytes::<rkyv::rancor::Error>(&input)
+        .context("rkyv-serialize validation input")?
+        .to_vec())
 }
