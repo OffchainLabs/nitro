@@ -30,6 +30,7 @@ type ChainCommitter interface {
 	Commit() common.Hash
 }
 
+// lint:require-exhaustive-initialization
 type transactConfig struct {
 	waitForDesiredBlockNum bool
 }
