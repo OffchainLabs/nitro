@@ -612,6 +612,7 @@ type trieLayout struct {
 	writeMutex sync.Mutex
 }
 
+// lint:require-exhaustive-initialization
 type trieLayoutIterator struct {
 	levels  [][]string
 	filters []layerFilter
