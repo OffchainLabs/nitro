@@ -95,6 +95,7 @@ const (
 	SequencerMessageHeaderSize = 40
 )
 
+// lint:require-exhaustive-initialization
 type batchPosterPosition struct {
 	MessageCount        arbutil.MessageIndex
 	DelayedMessageCount uint64
