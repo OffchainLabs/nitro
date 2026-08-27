@@ -1038,6 +1038,7 @@ func deployRollupCreator(
 		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
 
+	// lint:require-exhaustive-initialization
 	type creatorResult struct {
 		rollupCreatorAddress common.Address
 		rollupCreator        *rollupgen.RollupCreator
