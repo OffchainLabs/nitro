@@ -172,6 +172,7 @@ func (trivialLimitChecker) IsLimitExceeded() (bool, error) {
 
 func (trivialLimitChecker) String() string { return "trivial" }
 
+// lint:require-exhaustive-initialization
 type cgroupsMemoryFiles struct {
 	limitFile, usageFile, statsFile string
 	activeRe, inactiveRe            *regexp.Regexp
