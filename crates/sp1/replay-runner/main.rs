@@ -60,35 +60,23 @@ fn main() -> anyhow::Result<()> {
     let payload = build_payload(&cli)?;
     let stdin = replay_io::send::validation_stdin(&payload);
 
-    let exit_code = match cli.mode {
-        Mode::Fast => run_fast(&cli.program, stdin)?,
-        Mode::Normal => run_normal(&cli.program, stdin)?,
-        Mode::Prove => return run_prove(&cli.program, stdin),
-    };
-    if exit_code != 0 {
-        bail!("program exited with non-zero code: {exit_code}");
+    match cli.mode {
+        Mode::Fast => run_fast(&cli.program, stdin),
+        Mode::Normal => run_normal(&cli.program, stdin),
+        Mode::Prove => run_prove(&cli.program, stdin),
     }
-    Ok(())
 }
 
 /// Executes the program directly in the minimal executor.
-fn run_fast(program_file: &Path, stdin: SP1Stdin) -> anyhow::Result<u64> {
-    let program = build_program(program_file)?;
-    let mut executor = MinimalExecutor::<UserMode>::simple(Arc::new(program));
-    replay_io::send::inject(stdin, &mut executor);
-
-    if executor.execute_chunk().is_some() {
-        bail!("execution failed: executor returned a trace chunk unexpectedly");
-    }
-    Ok(executor.exit_code().into())
+fn run_fast(program_file: &Path, stdin: SP1Stdin) -> anyhow::Result<()> {
+    let program = Arc::new(build_program(program_file)?);
+    execute_minimal(program, stdin)?;
+    Ok(())
 }
 
 /// Executes the program in the full executor and reports its diagnostics.
-fn run_normal(program_file: &Path, stdin: SP1Stdin) -> anyhow::Result<u64> {
-    let elf = Elf::from(
-        fs::read(program_file)
-            .with_context(|| format!("read program ELF from {}", program_file.display()))?,
-    );
+fn run_normal(program_file: &Path, stdin: SP1Stdin) -> anyhow::Result<()> {
+    let elf = read_elf(program_file)?;
 
     let client = ProverClient::from_env();
     let (_output, report) = client
@@ -109,15 +97,15 @@ fn run_normal(program_file: &Path, stdin: SP1Stdin) -> anyhow::Result<u64> {
         tracing::info!("  {entry}: {cycles}");
     }
 
-    Ok(report.exit_code)
+    if report.exit_code != 0 {
+        bail!("program exited with non-zero code: {}", report.exit_code);
+    }
+    Ok(())
 }
 
 /// Executes the program in the full prover, then verifies the generated proof.
 fn run_prove(program_file: &Path, stdin: SP1Stdin) -> anyhow::Result<()> {
-    let elf = Elf::from(
-        fs::read(program_file)
-            .with_context(|| format!("read program ELF from {}", program_file.display()))?,
-    );
+    let elf = read_elf(program_file)?;
 
     let client = ProverClient::from_env();
     let pk = client.setup(elf).context("setup ELF")?;
@@ -129,10 +117,33 @@ fn run_prove(program_file: &Path, stdin: SP1Stdin) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn build_program(program_file: &Path) -> anyhow::Result<Program> {
+fn read_elf(program_file: &Path) -> anyhow::Result<Elf> {
     let elf = fs::read(program_file)
         .with_context(|| format!("read program ELF from {}", program_file.display()))?;
+    Ok(Elf::from(elf))
+}
+
+fn build_program(program_file: &Path) -> anyhow::Result<Program> {
+    let elf = read_elf(program_file)?;
     Program::from(&elf).map_err(|e| anyhow::anyhow!("parse program ELF: {e:#}"))
+}
+
+/// Runs a program in the minimal executor; fails unless it completes with a zero exit code.
+fn execute_minimal(
+    program: Arc<Program>,
+    stdin: SP1Stdin,
+) -> anyhow::Result<MinimalExecutor<UserMode>> {
+    let mut executor = MinimalExecutor::<UserMode>::simple(program);
+    replay_io::send::inject(stdin, &mut executor);
+
+    if executor.execute_chunk().is_some() {
+        bail!("execution failed: executor returned a trace chunk unexpectedly");
+    }
+    let exit_code = executor.exit_code();
+    if exit_code != 0 {
+        bail!("program exited with non-zero code: {exit_code}");
+    }
+    Ok(executor)
 }
 
 /// Builds the validation payload from a recorded block: the rkyv-serialized `ValidationInput`.
@@ -185,17 +196,7 @@ fn compile_in_sp1(
     let mut stdin = SP1Stdin::new();
     stdin.write(&compile_input);
 
-    let mut executor = MinimalExecutor::<UserMode>::simple(compiler);
-    replay_io::send::inject(stdin, &mut executor);
-
-    if executor.execute_chunk().is_some() {
-        bail!("stylus compilation in SP1 failed: executor returned a trace chunk unexpectedly");
-    }
-    let exit_code = executor.exit_code();
-    if exit_code != 0 {
-        bail!("stylus compiler exited with non-zero code: {exit_code}");
-    }
-
+    let executor = execute_minimal(compiler, stdin).context("stylus compilation in SP1")?;
     bincode::deserialize(&executor.into_public_values_stream())
         .context("deserialize compiled binary")
 }
