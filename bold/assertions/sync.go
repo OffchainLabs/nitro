@@ -319,6 +319,7 @@ func (m *Manager) findCanonicalAssertionBranch(
 	return nil
 }
 
+// lint:require-exhaustive-initialization
 type rivalPosterArgs struct {
 	canonicalParent  *protocol.AssertionCreatedInfo
 	invalidAssertion *protocol.AssertionCreatedInfo
