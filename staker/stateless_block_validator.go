@@ -54,8 +54,10 @@ type BlockValidatorRegistrer interface {
 	SetBlockValidator(*BlockValidator)
 }
 
+// InboxTrackerInterface is implemented by the legacy InboxTracker and by MEL. It deliberately
+// omits BlockValidatorRegistrer, since arbnode/mel must not depend on staker; the block validator
+// is registered by the caller instead.
 type InboxTrackerInterface interface {
-	BlockValidatorRegistrer
 	GetDelayedMessageBytes(context.Context, uint64) ([]byte, error)
 	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
 	GetBatchAcc(seqNum uint64) (common.Hash, error)

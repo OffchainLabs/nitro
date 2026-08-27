@@ -21,18 +21,21 @@ use alloy_primitives::{Address, B64, B256, Bytes, U256};
 use alloy_rpc_types_eth::BlockNumberOrTag;
 use arb_evm::{
     ArbBlockExecutor, ArbEvm, ArbReceiptBuilder,
-    config::{ArbEvmConfig, arbos_version_from_mix_hash, l1_block_number_from_mix_hash},
+    block_producer::{
+        BlockProducerError, ProducedBlock, augment_bundle_from_cache, create_internal_tx,
+        delete_empty_accounts, execute_and_commit_tx, filter_unchanged_storage,
+    },
+    build::is_block_gas_limit_reached,
+    config::{ArbEvmConfig, arbos_version_from_mix_hash, monotonic_l1_block_number},
     multi_gas::MultiGasInspector,
 };
-use arb_primitives::{ArbPrimitives, signed_tx::ArbTransactionSigned, tx_types::ArbInternalTx};
-use arb_rpc::block_producer::{
-    BlockProducer, BlockProducerError, BlockProductionInput, ProducedBlock,
-};
+use arb_primitives::{ArbPrimitives, signed_tx::ArbTransactionSigned};
+use arb_rpc::block_producer::BlockProducer;
 use arbos::{
-    header::{ArbHeaderInfo, derive_arb_header_info},
+    header::{ArbHeaderInfo, compute_arbos_mixhash, derive_arb_header_info},
     internal_tx,
     parse_l2::{ParsedTransaction, parse_l2_transactions, parsed_tx_to_signed},
-    types::parse_init_message,
+    types::{MessageWithMetadata, parse_init_message},
 };
 use parking_lot::{Mutex, RwLock};
 use reth_chain_state::{CanonicalInMemoryState, ExecutedBlock, NewCanonicalChain};
@@ -52,7 +55,11 @@ use revm::database::{BundleState, StateBuilder};
 use revm_database::{State, states::bundle_state::BundleRetention};
 use tracing::{debug, info, warn};
 
-use crate::{genesis, progress::ProgressCounters};
+use crate::{
+    flush::{FlushScheduler, read_dirty_pages_mb},
+    genesis,
+    progress::ProgressCounters,
+};
 
 /// Trait to access the in-memory canonical state from a provider.
 ///
@@ -75,7 +82,6 @@ where
     }
 }
 
-pub const DEFAULT_FLUSH_INTERVAL: u64 = 128;
 const DEFAULT_MAX_INFLIGHT: usize = 512;
 
 fn max_inflight() -> usize {
@@ -87,51 +93,6 @@ fn max_inflight() -> usize {
             .filter(|n| *n > 0)
             .unwrap_or(DEFAULT_MAX_INFLIGHT)
     })
-}
-
-/// Fixed-interval flush scheduler with an EMA of commit latency tracked for
-/// observability. The interval is set at construction and does not change.
-pub struct FlushScheduler {
-    interval: u64,
-    ema_commit_latency_ms: u64,
-}
-
-impl FlushScheduler {
-    pub fn new(interval: u64) -> Self {
-        Self {
-            interval,
-            ema_commit_latency_ms: 0,
-        }
-    }
-
-    pub fn should_flush(&self, since_last: u64) -> bool {
-        since_last >= self.interval
-    }
-
-    pub fn observe(&mut self, commit_latency_ms: u64) {
-        self.ema_commit_latency_ms = (self.ema_commit_latency_ms * 7 + commit_latency_ms * 3) / 10;
-    }
-
-    pub fn current_interval(&self) -> u64 {
-        self.interval
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn read_dirty_pages_mb() -> Option<u64> {
-    let content = std::fs::read_to_string("/proc/meminfo").ok()?;
-    for line in content.lines() {
-        if let Some(rest) = line.strip_prefix("Dirty:") {
-            let kb: u64 = rest.trim().trim_end_matches(" kB").trim().parse().ok()?;
-            return Some(kb / 1024);
-        }
-    }
-    None
-}
-
-#[cfg(not(target_os = "linux"))]
-fn read_dirty_pages_mb() -> Option<u64> {
-    None
 }
 
 /// Prometheus metrics for block production.
@@ -454,7 +415,7 @@ where
 
     fn produce_block_with_execution(
         &self,
-        input: &BlockProductionInput,
+        input: &MessageWithMetadata,
         parsed_txs: Vec<ParsedTransaction>,
     ) -> Result<ProducedBlock, BlockProducerError> {
         self.drain_completed_flush();
@@ -463,7 +424,11 @@ where
         let l2_block_number = head_num + 1;
         let parent_header = self.parent_header(head_num)?;
 
-        let timestamp = input.l1_timestamp.max(parent_header.timestamp());
+        let timestamp = input
+            .message
+            .header
+            .timestamp
+            .max(parent_header.timestamp());
         let time_passed = timestamp.saturating_sub(parent_header.timestamp());
 
         let parent_mix_hash = parent_header.mix_hash().unwrap_or_default();
@@ -471,7 +436,7 @@ where
 
         // The StartBlock tx carries the reported value verbatim; the EVM sees
         // the monotonic one.
-        let l1_block_number = input.l1_block_number;
+        let l1_block_number = input.message.header.block_number;
         let block_l1_block_number = monotonic_l1_block_number(l1_block_number, &parent_mix_hash);
         let arbos_version = parent_arbos_version; // May upgrade during StartBlock
 
@@ -482,7 +447,7 @@ where
             u64::from_be_bytes(buf)
         };
         let provisional_mix_hash =
-            compute_mix_hash(send_count, block_l1_block_number, arbos_version);
+            compute_arbos_mixhash(send_count, block_l1_block_number, arbos_version, false);
 
         // Open state at parent block via block hash.
         let raw_state_provider = self
@@ -509,7 +474,7 @@ where
         let provisional_header = Header {
             parent_hash: parent_header.hash(),
             ommers_hash: EMPTY_OMMER_ROOT_HASH,
-            beneficiary: input.sender,
+            beneficiary: input.message.header.poster,
             state_root: B256::ZERO, // placeholder
             transactions_root: B256::ZERO,
             receipts_root: B256::ZERO,
@@ -559,88 +524,15 @@ where
 
         let chain_id = self.chain_spec.chain().id();
 
-        // Apply cached ArbOS Init during block 1.
-        // Two cases:
-        //   - ArbOS not yet initialized (no chainspec alloc): full init from message.
-        //   - ArbOS already initialized (chainspec did it with placeholder L1 base fee): override
-        //     the L1 price_per_unit slot with the value from the init message, since chainspec has
-        //     no way to know the real value.
         if let Some(init_msg) = self.cached_init.lock().take() {
-            if !genesis::is_arbos_initialized(&mut db) {
-                // Honor the genesis-declared ArbOS version from the parent
-                // header's mix_hash so chain specs that target a higher
-                // initial version (e.g. v30 / v50 spec fixtures) get the
-                // matching hardfork-equivalent EVM activation rather than
-                // booting at the v10 default.
-                let initial_version = std::env::var("ARB_INITIAL_ARBOS_VERSION")
-                    .ok()
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .unwrap_or({
-                        if parent_arbos_version > 0 {
-                            parent_arbos_version
-                        } else {
-                            genesis::INITIAL_ARBOS_VERSION
-                        }
-                    });
-                info!(
-                    target: "block_producer",
-                    initial_version,
-                    "Applying cached ArbOS Init during block {} execution",
-                    l2_block_number
-                );
-                genesis::initialize_arbos_state(
-                    &mut db,
-                    &init_msg,
-                    chain_id,
-                    initial_version,
-                    genesis::DEFAULT_CHAIN_OWNER,
-                    genesis::ArbOSInit::default(),
-                )
-                .map_err(|e| BlockProducerError::Execution(e.to_string()))?;
-            } else {
-                use arbos::{arbos_state::ArbosState, burn::SystemBurner};
-                info!(
-                    target: "block_producer",
-                    initial_l1_base_fee = %init_msg.initial_l1_base_fee,
-                    "ArbOS already initialized; overriding L1 price_per_unit from Init message"
-                );
-                // SAFETY: `state_ptr` points at the local `db` owned by
-                // this scope; reads through it are sequential and the
-                // `&mut *state_ptr` re-borrows are dropped at each call
-                // site before the next one, so the type-level aliasing
-                // does not overlap at runtime.
-                let state_ptr: *mut _ = &mut db;
-                let mut arb_state =
-                    ArbosState::open(unsafe { &mut *state_ptr }, SystemBurner::new(None, false))
-                        .map_err(|e| BlockProducerError::Execution(e.to_string()))?;
-                let _ = arb_state
-                    .l1_pricing_state
-                    .set_price_per_unit(unsafe { &mut *state_ptr }, init_msg.initial_l1_base_fee);
-                if let Ok(target) = std::env::var("ARB_INITIAL_ARBOS_VERSION")
-                    && let Ok(target_version) = target.parse::<u64>()
-                {
-                    let current = arb_state.arbos_version();
-                    if target_version > current {
-                        match arb_state.upgrade_arbos_version(
-                            unsafe { &mut *state_ptr },
-                            target_version,
-                            true,
-                        ) {
-                            Err(e) => {
-                                info!(target: "block_producer", err = ?e, target_version, "ArbOS upgrade via env var failed");
-                            }
-                            _ => {
-                                info!(
-                                    target: "block_producer",
-                                    from = current,
-                                    to = target_version,
-                                    "ArbOS upgraded via ARB_INITIAL_ARBOS_VERSION"
-                                );
-                            }
-                        }
-                    }
-                }
-            }
+            genesis::apply_cached_init(
+                &mut db,
+                &init_msg,
+                chain_id,
+                parent_arbos_version,
+                l2_block_number,
+            )
+            .map_err(|e| BlockProducerError::Execution(e.to_string()))?;
         }
 
         let parent_extra = parent_header.extra_data().to_vec();
@@ -728,7 +620,7 @@ where
         let mut all_txs: Vec<ArbTransactionSigned> = Vec::new();
 
         // 1. Generate and execute the StartBlock internal tx (always first).
-        let l1_base_fee = input.l1_base_fee.unwrap_or(U256::ZERO);
+        let l1_base_fee = input.message.header.l1_base_fee.unwrap_or(U256::ZERO);
         let start_block_data = internal_tx::encode_start_block(
             l1_base_fee,
             l1_block_number,
@@ -777,7 +669,8 @@ where
                     let report_data =
                         if parent_arbos_version >= arb_chainspec::arbos_version::ARBOS_VERSION_50 {
                             // V2: pass raw batch data stats + extra_gas.
-                            let (length, non_zeros) = input.batch_data_stats.unwrap_or((0, 0));
+                            let stats = input.message.batch_data_stats.unwrap_or_default();
+                            let (length, non_zeros) = (stats.length, stats.non_zeros);
                             internal_tx::encode_batch_posting_report_v2(
                                 *batch_timestamp,
                                 *batch_poster,
@@ -789,7 +682,7 @@ where
                             )
                         } else {
                             // V1: combine legacy gas cost + extra_gas into single field.
-                            let legacy_gas = input.batch_gas_cost.unwrap_or(0);
+                            let legacy_gas = input.message.legacy_batch_gas_cost.unwrap_or(0);
                             let batch_data_gas = legacy_gas.saturating_add(*extra_gas);
                             internal_tx::encode_batch_posting_report(
                                 *batch_timestamp,
@@ -839,7 +732,7 @@ where
                         warn!(target: "block_producer", error = %err, "Failed to commit transaction");
                     }
                 },
-                Err(ref err) if err.to_string().contains("block gas limit reached") => {
+                Err(ref err) if is_block_gas_limit_reached(err) => {
                     break;
                 }
                 Err(err) => {
@@ -860,7 +753,7 @@ where
         db.merge_transitions(BundleRetention::Reverts);
         let mut bundle = db.take_bundle();
 
-        augment_bundle_from_cache(&mut bundle, &db.cache, &*state_provider)?;
+        augment_bundle_from_cache(&mut bundle, &db.cache, &mut db.database)?;
 
         // Mark per-tx finalise deletions, skipping zombie accounts.
         let keccak_empty_hash = B256::from(alloy_primitives::keccak256([]));
@@ -922,7 +815,7 @@ where
         }
 
         filter_unchanged_storage(&mut bundle);
-        delete_empty_accounts(&mut bundle, &zombie_accounts, &*state_provider);
+        delete_empty_accounts(&mut bundle, &zombie_accounts, &mut db.database)?;
 
         let hashed_state =
             HashedPostState::from_bundle_state::<reth_trie_common::KeccakKeyHasher>(bundle.state());
@@ -970,8 +863,11 @@ where
         };
 
         // Derive header info (send_root, send_count, etc.) from post-execution state.
-        let arb_info =
-            derive_header_info_from_state(state_provider.as_ref(), &bundle, input.sender)?;
+        let arb_info = derive_header_info_from_state(
+            state_provider.as_ref(),
+            &bundle,
+            input.message.header.poster,
+        )?;
 
         let final_mix_hash = arb_info
             .as_ref()
@@ -1018,7 +914,7 @@ where
         let header = Header {
             parent_hash: parent_header.hash(),
             ommers_hash: EMPTY_OMMER_ROOT_HASH,
-            beneficiary: input.sender,
+            beneficiary: input.message.header.poster,
             state_root,
             transactions_root,
             receipts_root,
@@ -1194,7 +1090,7 @@ where
     async fn produce_block(
         &self,
         msg_idx: u64,
-        input: BlockProductionInput,
+        input: MessageWithMetadata,
     ) -> Result<ProducedBlock, BlockProducerError> {
         let _lock = self.produce_lock.lock().await;
 
@@ -1213,11 +1109,11 @@ where
         let chain_id = self.chain_spec.chain().id();
 
         let parsed_txs = parse_l2_transactions(
-            input.kind,
-            input.sender,
-            &input.l2_msg,
-            input.request_id,
-            input.l1_base_fee,
+            input.message.header.kind,
+            input.message.header.poster,
+            &input.message.l2_msg,
+            input.message.header.request_id,
+            input.message.header.l1_base_fee,
             chain_id,
         )
             .unwrap_or_else(|err| {
@@ -1228,7 +1124,7 @@ where
         debug!(
             target: "block_producer",
             msg_idx,
-            kind = input.kind,
+            kind = input.message.header.kind,
             num_txs = parsed_txs.len(),
             "Parsed L1 message"
         );
@@ -1382,93 +1278,6 @@ where
 // Helper functions
 // ---------------------------------------------------------------------------
 
-/// Create an internal transaction (type 0x6A).
-fn create_internal_tx(chain_id: u64, data: &[u8]) -> ArbTransactionSigned {
-    use arb_primitives::signed_tx::ArbTypedTransaction;
-    let tx = ArbTypedTransaction::Internal(ArbInternalTx {
-        chain_id: U256::from(chain_id),
-        data: Bytes::copy_from_slice(data),
-    });
-    let sig = alloy_primitives::Signature::new(U256::ZERO, U256::ZERO, false);
-    ArbTransactionSigned::new_unhashed(tx, sig)
-}
-
-/// Execute and commit an internal transaction via the block executor.
-fn execute_and_commit_tx<E>(
-    executor: &mut E,
-    tx: &ArbTransactionSigned,
-    label: &str,
-) -> Result<(), BlockProducerError>
-where
-    E: BlockExecutor<Transaction = ArbTransactionSigned>,
-{
-    let recovered = tx
-        .clone()
-        .try_into_recovered()
-        .map_err(|e| BlockProducerError::Execution(format!("{label} recovery: {e}")))?;
-
-    let result = executor
-        .execute_transaction_without_commit(recovered)
-        .map_err(|e| BlockProducerError::Execution(format!("{label} execution: {e}")))?;
-
-    executor
-        .commit_transaction(result)
-        .map_err(|e| BlockProducerError::Execution(format!("{label} commit: {e}")))?;
-
-    Ok(())
-}
-
-fn compute_mix_hash(send_count: u64, l1_block_number: u64, arbos_version: u64) -> B256 {
-    arbos::header::compute_arbos_mixhash(send_count, l1_block_number, arbos_version, false)
-}
-
-/// L1 block number for the `NUMBER` opcode: monotonic, so a reported value
-/// below the parent's (recovered from its mix_hash) is clamped up to it.
-fn monotonic_l1_block_number(reported: u64, parent_mix_hash: &B256) -> u64 {
-    reported.max(l1_block_number_from_mix_hash(parent_mix_hash))
-}
-
-/// EIP-161: mark empty non-zombie accounts for trie deletion.
-fn delete_empty_accounts(
-    bundle: &mut BundleState,
-    zombie_accounts: &rustc_hash::FxHashSet<Address>,
-    state_provider: &dyn StateProvider,
-) {
-    let keccak_empty = B256::from(alloy_primitives::keccak256([]));
-    let mut to_remove = Vec::new();
-    for (addr, account) in bundle.state.iter_mut() {
-        if let Some(ref info) = account.info {
-            let is_empty =
-                info.nonce == 0 && info.balance.is_zero() && info.code_hash == keccak_empty;
-            if is_empty && !zombie_accounts.contains(addr) {
-                let existed_before = state_provider.basic_account(addr).ok().flatten().is_some();
-                if existed_before {
-                    debug!(
-                        target: "block_producer",
-                        addr = ?addr,
-                        "EIP-161: deleting empty account from state"
-                    );
-                    account.info = None;
-                } else {
-                    to_remove.push(*addr);
-                }
-            }
-        }
-    }
-    for addr in to_remove {
-        bundle.state.remove(&addr);
-    }
-}
-
-/// Remove unchanged storage slots from the bundle.
-fn filter_unchanged_storage(bundle: &mut BundleState) {
-    for (_addr, account) in bundle.state.iter_mut() {
-        account
-            .storage
-            .retain(|_key, slot| slot.present_value != slot.previous_or_original_value);
-    }
-}
-
 /// Derive ArbHeaderInfo from post-execution state.
 fn derive_header_info_from_state(
     state_provider: &dyn StateProvider,
@@ -1487,113 +1296,6 @@ fn derive_header_info_from_state(
 
     derive_arb_header_info(&read_slot, coinbase)
         .map_err(|e| BlockProducerError::Storage(e.to_string()))
-}
-
-/// Augment the bundle with direct cache modifications not captured by EVM transitions.
-fn augment_bundle_from_cache(
-    bundle: &mut BundleState,
-    cache: &revm_database::CacheState,
-    state_provider: &dyn StateProvider,
-) -> Result<(), BlockProducerError> {
-    use revm_database::states::plain_account::StorageSlot;
-
-    for (addr, cache_acct) in &cache.accounts {
-        let current_info = cache_acct.account.as_ref().map(|a| a.info.clone());
-        let current_storage = cache_acct
-            .account
-            .as_ref()
-            .map(|a| &a.storage)
-            .cloned()
-            .unwrap_or_default();
-
-        if let Some(bundle_acct) = bundle.state.get_mut(addr) {
-            // Update existing bundle entry from cache.
-            bundle_acct.info = current_info;
-
-            for (key, value) in &current_storage {
-                if let Some(slot) = bundle_acct.storage.get_mut(key) {
-                    slot.present_value = *value;
-                } else {
-                    // Slot written via direct cache modification.
-                    let original_value = state_provider
-                        .storage(*addr, B256::from(*key))
-                        .map_err(|e| BlockProducerError::Storage(e.to_string()))?
-                        .unwrap_or(U256::ZERO);
-                    if *value != original_value {
-                        bundle_acct.storage.insert(
-                            *key,
-                            StorageSlot {
-                                previous_or_original_value: original_value,
-                                present_value: *value,
-                            },
-                        );
-                    }
-                }
-            }
-        } else {
-            // Account not in bundle — check if modified from original.
-            let original = state_provider
-                .basic_account(addr)
-                .map_err(|e| BlockProducerError::Storage(e.to_string()))?;
-
-            let info_changed = match (&original, &current_info) {
-                (None, None) => false,
-                (Some(_), None) | (None, Some(_)) => true,
-                (Some(orig), Some(curr)) => {
-                    orig.balance != curr.balance
-                        || orig.nonce != curr.nonce
-                        || orig
-                            .bytecode_hash
-                            .unwrap_or(alloy_primitives::KECCAK256_EMPTY)
-                            != curr.code_hash
-                }
-            };
-
-            let mut storage_changes: revm_database::StorageWithOriginalValues = Default::default();
-            for (key, value) in &current_storage {
-                let original_value = state_provider
-                    .storage(*addr, B256::from(*key))
-                    .map_err(|e| BlockProducerError::Storage(e.to_string()))?
-                    .unwrap_or(U256::ZERO);
-                if original_value != *value {
-                    storage_changes.insert(
-                        *key,
-                        StorageSlot {
-                            previous_or_original_value: original_value,
-                            present_value: *value,
-                        },
-                    );
-                }
-            }
-
-            if info_changed || !storage_changes.is_empty() {
-                let original_info = original.as_ref().map(|a| revm::state::AccountInfo {
-                    balance: a.balance,
-                    nonce: a.nonce,
-                    code_hash: a.bytecode_hash.unwrap_or(alloy_primitives::KECCAK256_EMPTY),
-                    code: None,
-                    account_id: None,
-                });
-
-                let status = if original.is_some() {
-                    revm_database::AccountStatus::Changed
-                } else {
-                    revm_database::AccountStatus::InMemoryChange
-                };
-
-                bundle.state.insert(
-                    *addr,
-                    revm_database::BundleAccount {
-                        info: current_info,
-                        original_info,
-                        storage: storage_changes,
-                        status,
-                    },
-                );
-            }
-        }
-    }
-    Ok(())
 }
 
 /// Execute any scheduled txs (auto-redeems). After a SubmitRetryable or manual Redeem precompile
@@ -1656,23 +1358,5 @@ fn drain_scheduled_txs<'a>(
         if !retry_records.is_empty() {
             arb_rpc::stylus_tracer::cache_trace(retry_hash, retry_records);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use arbos::header::compute_arbos_mixhash;
-
-    use super::*;
-
-    #[test]
-    fn l1_block_number_clamps_to_parent() {
-        let parent = compute_arbos_mixhash(0, 10_538_022, 51, false);
-        // A lower sequencer-reported value is clamped up to the parent's.
-        assert_eq!(monotonic_l1_block_number(10_537_967, &parent), 10_538_022);
-        // A higher value advances normally.
-        assert_eq!(monotonic_l1_block_number(10_538_099, &parent), 10_538_099);
-        // Equal stays put.
-        assert_eq!(monotonic_l1_block_number(10_538_022, &parent), 10_538_022);
     }
 }
