@@ -1,2 +1,2 @@
 ### Ignored
-- The SP1 replay-runner supports two execution modes: fast (direct execution, the default) and normal (full proof generation)
+- The SP1 replay-runner supports three execution modes: fast (direct execution, the default), normal (full execution reporting cycles, gas, syscall counts, and cycle trackers), and prove (full execution with a verified validity proof)

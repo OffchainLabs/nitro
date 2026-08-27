@@ -23,5 +23,6 @@ rkyv = { workspace = true }
 serde_json = { workspace = true }
 sp1-core-executor = { workspace = true }
 sp1-sdk = { workspace = true }
+tracing = { workspace = true }
 stylus-compiler-program = { workspace = true }
 validation = { workspace = true, features = ["rkyv", "std"] }

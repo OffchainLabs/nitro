@@ -3897,6 +3897,7 @@ name = "replay-io"
 version = "0.1.0"
 dependencies = [
  "sp1-core-executor",
+ "sp1-sdk",
  "sp1-zkvm",
 ]
 
@@ -3923,6 +3924,7 @@ dependencies = [
  "sp1-core-executor",
  "sp1-sdk",
  "stylus-compiler-program",
+ "tracing",
  "validation",
 ]
 

@@ -9,9 +9,12 @@ use std::{
 };
 
 use anyhow::{Context, bail};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use sp1_core_executor::{MinimalExecutor, Program, UserMode};
-use sp1_sdk::SP1Stdin;
+use sp1_sdk::{
+    Elf, ProvingKey, SP1Stdin,
+    blocking::{ProveRequest, Prover, ProverClient},
+};
 use stylus_compiler_program::CompileInput;
 use validation::{ValidationInput, ValidationRequest};
 
@@ -26,6 +29,10 @@ struct Cli {
     #[arg(long)]
     block_file: PathBuf,
 
+    /// Execution mode.
+    #[arg(value_enum, long, default_value_t = Mode::Fast)]
+    mode: Mode,
+
     /// Path to the SP1 stylus compiler ELF, produced by replay-builder.
     #[arg(long)]
     stylus_compiler_program: PathBuf,
@@ -35,23 +42,90 @@ struct Cli {
     stylus_version: u16,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+enum Mode {
+    /// Direct execution, without diagnostics.
+    Fast,
+    /// Full execution: slower and more memory-hungry, but reports cycles, gas, syscall counts,
+    /// and cycle trackers.
+    Normal,
+    /// Full execution with a validity proof, generated and verified. The most expensive mode.
+    Prove,
+}
+
 fn main() -> anyhow::Result<()> {
+    sp1_sdk::utils::setup_logger();
     let cli = Cli::parse();
 
-    let program = build_program(&cli.program)?;
-    let mut executor = MinimalExecutor::<UserMode>::simple(Arc::new(program));
-
     let payload = build_payload(&cli)?;
-    replay_io::send::validation_mode(&mut executor, &payload);
+    let stdin = replay_io::send::validation_stdin(&payload);
+
+    let exit_code = match cli.mode {
+        Mode::Fast => run_fast(&cli.program, stdin)?,
+        Mode::Normal => run_normal(&cli.program, stdin)?,
+        Mode::Prove => return run_prove(&cli.program, stdin),
+    };
+    if exit_code != 0 {
+        bail!("program exited with non-zero code: {exit_code}");
+    }
+    Ok(())
+}
+
+/// Executes the program directly in the minimal executor.
+fn run_fast(program_file: &Path, stdin: SP1Stdin) -> anyhow::Result<u64> {
+    let program = build_program(program_file)?;
+    let mut executor = MinimalExecutor::<UserMode>::simple(Arc::new(program));
+    replay_io::send::inject(stdin, &mut executor);
 
     if executor.execute_chunk().is_some() {
         bail!("execution failed: executor returned a trace chunk unexpectedly");
     }
+    Ok(executor.exit_code().into())
+}
 
-    let exit_code = executor.exit_code();
-    if exit_code != 0 {
-        bail!("program exited with non-zero code: {exit_code}");
+/// Executes the program in the full executor and reports its diagnostics.
+fn run_normal(program_file: &Path, stdin: SP1Stdin) -> anyhow::Result<u64> {
+    let elf = Elf::from(
+        fs::read(program_file)
+            .with_context(|| format!("read program ELF from {}", program_file.display()))?,
+    );
+
+    let client = ProverClient::from_env();
+    let (_output, report) = client
+        .execute(elf, stdin)
+        .run()
+        .context("normal-mode execution")?;
+
+    tracing::info!("cycles: {}", report.total_instruction_count());
+    tracing::info!("gas: {}", report.gas().unwrap_or(0));
+    tracing::info!("syscalls:");
+    for (code, count) in report.syscall_counts.iter() {
+        if *count > 0 {
+            tracing::info!("  {code}: {count}");
+        }
     }
+    tracing::info!("cycle trackers:");
+    for (entry, cycles) in &report.cycle_tracker {
+        tracing::info!("  {entry}: {cycles}");
+    }
+
+    Ok(report.exit_code)
+}
+
+/// Executes the program in the full prover, then verifies the generated proof.
+fn run_prove(program_file: &Path, stdin: SP1Stdin) -> anyhow::Result<()> {
+    let elf = Elf::from(
+        fs::read(program_file)
+            .with_context(|| format!("read program ELF from {}", program_file.display()))?,
+    );
+
+    let client = ProverClient::from_env();
+    let pk = client.setup(elf).context("setup ELF")?;
+    let proof = client.prove(&pk, stdin).run().context("generate proof")?;
+    client
+        .verify(&proof, pk.verifying_key(), None)
+        .context("verify proof")?;
+    tracing::info!("proof generated and verified successfully");
     Ok(())
 }
 
