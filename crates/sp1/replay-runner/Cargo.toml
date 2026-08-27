@@ -24,4 +24,4 @@ serde_json = { workspace = true }
 sp1-core-executor = { workspace = true }
 sp1-sdk = { workspace = true }
 stylus-compiler-program = { workspace = true }
-validation = { workspace = true, features = ["rkyv"] }
+validation = { workspace = true, features = ["rkyv", "std"] }
