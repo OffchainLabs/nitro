@@ -107,6 +107,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 // httpServer implements http.Handler and wraps calls to inner with a resource
 // limit check.
+// lint:require-exhaustive-initialization
 type httpServer struct {
 	inner http.Handler
 	c     LimitChecker
@@ -171,6 +172,7 @@ func (trivialLimitChecker) IsLimitExceeded() (bool, error) {
 
 func (trivialLimitChecker) String() string { return "trivial" }
 
+// lint:require-exhaustive-initialization
 type cgroupsMemoryFiles struct {
 	limitFile, usageFile, statsFile string
 	activeRe, inactiveRe            *regexp.Regexp
@@ -194,6 +196,7 @@ var cgroupsV2MemoryFiles = cgroupsMemoryFiles{
 	inactiveRe: regexp.MustCompile(`^inactive_file (\d+)`),
 }
 
+// lint:require-exhaustive-initialization
 type cgroupsMemoryLimitChecker struct {
 	files         cgroupsMemoryFiles
 	memLimitBytes int

@@ -149,6 +149,7 @@ func (ht *RoyalChallengeTree) findEssentialPaths(
 	allPaths := make([]EssentialPath, 0)
 	allTimers := make([]essentialLocalTimers, 0)
 
+	// lint:require-exhaustive-initialization
 	type visited struct {
 		essentialEdge protocol.ReadOnlyEdge
 		path          EssentialPath

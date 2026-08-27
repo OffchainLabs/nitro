@@ -843,6 +843,7 @@ func deployBridgeCreator(
 		DelayBufferableSequencerInbox: seqInboxBufferableTemplate,
 	}
 
+	// lint:require-exhaustive-initialization
 	type bridgeCreationResult struct {
 		bridgeCreatorAddr common.Address
 		bridgeCreator     *rollupgen.BridgeCreator
@@ -1037,6 +1038,7 @@ func deployRollupCreator(
 		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
 
+	// lint:require-exhaustive-initialization
 	type creatorResult struct {
 		rollupCreatorAddress common.Address
 		rollupCreator        *rollupgen.RollupCreator

@@ -15,6 +15,7 @@ import (
 // so any subsecond precision is lost.
 type RlpTime time.Time
 
+// lint:require-exhaustive-initialization
 type rlpTimeEncoding struct {
 	Seconds uint64
 	Nanos   uint64

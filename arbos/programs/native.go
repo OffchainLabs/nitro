@@ -55,6 +55,7 @@ type rustSlice = C.RustSlice
 // restored if the call hits a native stack overflow and needs to be retried
 // with cranelift (at the original or doubled stack size, depending on whether
 // this is the first overflow).
+// lint:require-exhaustive-initialization
 type savedState struct {
 	gas          uint64
 	usedMultiGas multigas.MultiGas

@@ -529,12 +529,14 @@ type batchIdentifier struct {
 	expiry time.Time
 }
 
+// lint:require-exhaustive-initialization
 type flatLayout struct {
 	root string
 
 	retention time.Duration
 }
 
+// lint:require-exhaustive-initialization
 type flatLayoutIterator struct {
 	files []string
 
@@ -610,6 +612,7 @@ type trieLayout struct {
 	writeMutex sync.Mutex
 }
 
+// lint:require-exhaustive-initialization
 type trieLayoutIterator struct {
 	levels  [][]string
 	filters []layerFilter

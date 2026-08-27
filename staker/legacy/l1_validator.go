@@ -203,12 +203,14 @@ func (v *L1Validator) isRequiredStakeElevated(ctx context.Context) (bool, error)
 	return requiredStake.Cmp(baseStake) > 0, nil
 }
 
+// lint:require-exhaustive-initialization
 type createNodeAction struct {
 	assertion         *Assertion
 	prevInboxMaxCount *big.Int
 	hash              common.Hash
 }
 
+// lint:require-exhaustive-initialization
 type existingNodeAction struct {
 	number uint64
 	hash   [32]byte

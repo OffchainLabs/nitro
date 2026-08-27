@@ -24,6 +24,7 @@ var Analyzer = &analysis.Analyzer{
 
 var validPrometheusName = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
 
+// lint:require-exhaustive-initialization
 type metricError struct {
 	Pos     token.Position
 	Message string

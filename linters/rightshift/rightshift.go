@@ -19,6 +19,7 @@ var Analyzer = &analysis.Analyzer{
 }
 
 // rightShiftError indicates the position of rightshift operation.
+// lint:require-exhaustive-initialization
 type rightShiftError struct {
 	Pos     token.Position
 	Message string

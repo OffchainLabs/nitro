@@ -24,6 +24,7 @@ import (
 
 var ValidatedBlockHashKey = []byte("LastValidatedBlockHashKey")
 
+// lint:require-exhaustive-initialization
 type syncDataEntry struct {
 	maxMessageCount arbutil.MessageIndex
 	timestamp       time.Time

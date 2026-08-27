@@ -56,6 +56,7 @@ func (h *preimageRecordingTrieHasher) Hash() common.Hash {
 
 // recordedLogsFetcher holds the logs of recorded receipt preimages. These preimages are
 // needed for MEL validation and is used in creation of the validation entries by the MEL validator
+// lint:require-exhaustive-initialization
 type recordedLogsFetcher struct {
 	parentChainBlockHash common.Hash
 	receipts             []*types.Receipt

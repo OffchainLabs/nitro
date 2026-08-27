@@ -40,6 +40,7 @@ type hashListPayload struct {
 	Hashes        []string `json:"hashes"`
 }
 
+// lint:require-exhaustive-initialization
 type parsedPayload struct {
 	Id     uuid.UUID
 	Salt   uuid.UUID

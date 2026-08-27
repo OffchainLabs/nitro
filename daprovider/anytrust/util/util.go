@@ -49,6 +49,7 @@ func NewReader(anyTrustReader Reader, keysetFetcher KeysetFetcher, validationMod
 	}
 }
 
+// lint:require-exhaustive-initialization
 type reader struct {
 	anyTrustReader Reader
 	keysetFetcher  KeysetFetcher
@@ -116,6 +117,7 @@ func NewWriter(anyTrustWriter Writer, maxMessageSize int) *writer {
 	}
 }
 
+// lint:require-exhaustive-initialization
 type writer struct {
 	anyTrustWriter Writer
 	maxMessageSize int

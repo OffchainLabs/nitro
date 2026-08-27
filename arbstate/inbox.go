@@ -47,6 +47,7 @@ type DapReaderSource interface {
 // blobReaderOverride wraps a DapReaderSource and overrides blob reads
 // with a custom reader. This is used for batch correctness checking where
 // we need to use a simulated blob reader for not-yet-posted blobs.
+// lint:require-exhaustive-initialization
 type blobReaderOverride struct {
 	base       DapReaderSource
 	blobReader daprovider.Reader

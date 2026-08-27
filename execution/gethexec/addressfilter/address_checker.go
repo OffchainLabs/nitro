@@ -35,6 +35,7 @@ type HashedAddressCheckerState struct {
 	pending           sync.WaitGroup
 }
 
+// lint:require-exhaustive-initialization
 type workItem struct {
 	addr  *filter.FilteredAddressWithReason
 	state *HashedAddressCheckerState

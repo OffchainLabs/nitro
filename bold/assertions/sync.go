@@ -135,6 +135,7 @@ func (m *Manager) syncAssertions(ctx context.Context) {
 	}
 }
 
+// lint:require-exhaustive-initialization
 type assertionAndParentCreationInfo struct {
 	assertion *protocol.AssertionCreatedInfo
 	parent    *protocol.AssertionCreatedInfo
@@ -318,6 +319,7 @@ func (m *Manager) findCanonicalAssertionBranch(
 	return nil
 }
 
+// lint:require-exhaustive-initialization
 type rivalPosterArgs struct {
 	canonicalParent  *protocol.AssertionCreatedInfo
 	invalidAssertion *protocol.AssertionCreatedInfo

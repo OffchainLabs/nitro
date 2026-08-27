@@ -345,6 +345,7 @@ func evmMemoryCost(size uint64) uint64 {
 	return linearCost + squareCost
 }
 
+// lint:require-exhaustive-initialization
 type fragmentReadCharger struct {
 	burner      burn.Burner
 	maxCodeSize uint64

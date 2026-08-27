@@ -21,6 +21,7 @@ var Analyzer = &analysis.Analyzer{
 }
 
 // pointerCmpError indicates the position of pointer comparison.
+// lint:require-exhaustive-initialization
 type pointerCmpError struct {
 	Pos     token.Position
 	Message string
