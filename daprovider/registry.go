@@ -8,6 +8,7 @@ import (
 )
 
 // registeredProvider associates a header byte with a reader and/or validator
+// lint:require-exhaustive-initialization
 type registeredProvider struct {
 	headerByte byte
 	reader     Reader
