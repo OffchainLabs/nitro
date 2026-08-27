@@ -359,11 +359,11 @@ func latestSnapshotKind(snapshotKind string, stateScheme string) (string, error)
 		return snapshotKind, nil
 	}
 	switch snapshotKind {
-	case "archive":
-		return "archive-path", nil
-	case "pruned":
-		return "full-path", nil
-	case "genesis":
+	case conf.SnapshotKindArchive:
+		return conf.SnapshotKindArchivePath, nil
+	case conf.SnapshotKindPruned:
+		return conf.SnapshotKindFullPath, nil
+	case conf.SnapshotKindGenesis:
 		return "", errors.New("genesis snapshots are not available for the path state scheme")
 	default:
 		return "", fmt.Errorf("snapshot kind %q is not supported for the path state scheme", snapshotKind)

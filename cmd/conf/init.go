@@ -25,6 +25,14 @@ const (
 	GenesisModeDirectory = "directory"
 )
 
+const (
+	SnapshotKindArchive     = "archive"
+	SnapshotKindPruned      = "pruned"
+	SnapshotKindGenesis     = "genesis"
+	SnapshotKindArchivePath = "archive-path"
+	SnapshotKindFullPath    = "full-path"
+)
+
 type InitConfig struct {
 	Force                    bool          `koanf:"force"`
 	Url                      string        `koanf:"url"`
@@ -205,6 +213,6 @@ func (c *InitConfig) IsReorgRequested() bool {
 }
 
 var (
-	acceptedSnapshotKinds    = []string{"archive", "pruned", "genesis"}
+	acceptedSnapshotKinds    = []string{SnapshotKindArchive, SnapshotKindPruned, SnapshotKindGenesis}
 	acceptedSnapshotKindsStr = "(accepted values: \"" + strings.Join(acceptedSnapshotKinds, "\" | \"") + "\")"
 )
