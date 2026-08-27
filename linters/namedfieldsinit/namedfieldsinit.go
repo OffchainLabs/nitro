@@ -22,6 +22,7 @@ var Analyzer = &analysis.Analyzer{
 	ResultType: reflect.TypeOf(Result{}),
 }
 
+// lint:require-exhaustive-initialization
 type namedFieldsInitError struct {
 	Pos     token.Pos
 	Message string
