@@ -112,9 +112,7 @@ fn compile_in_sp1(
     stdin.write(&compile_input);
 
     let mut executor = MinimalExecutor::<UserMode>::simple(compiler);
-    for input in &stdin.buffer {
-        executor.with_input(input);
-    }
+    replay_io::send::inject(stdin, &mut executor);
 
     if executor.execute_chunk().is_some() {
         bail!("stylus compilation in SP1 failed: executor returned a trace chunk unexpectedly");
