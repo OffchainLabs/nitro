@@ -112,12 +112,16 @@ build: $(BROTLI_LIB_DIR)/lib/libbrotlienc-static.a
 		--output-folder $(OUTPUT_DIR)
 	@cp $(CURDIR)/target/release/replay-runner $(OUTPUT_DIR)
 
+# Execution mode for the `run` target; override with MODE=<fast|normal|prove>.
+MODE ?= fast
+
 .PHONY: run
 run: # Validate $(BLOCK_INPUTS_DIR)/$(BLOCK).json with the SP1 replay runner (set BLOCK=<name>).
 	$(OUTPUT_DIR)/replay-runner \
 		--program $(OUTPUT_DIR)/dumped_replay_wasm.elf \
 		--stylus-compiler-program $(OUTPUT_DIR)/stylus-compiler-program.elf \
-		--block-file $(BLOCK_INPUTS_DIR)/$(BLOCK).json
+		--block-file $(BLOCK_INPUTS_DIR)/$(BLOCK).json \
+		--mode $(MODE)
 
 .PHONY: test
 test: # Run the sp1 workspace unit tests.
