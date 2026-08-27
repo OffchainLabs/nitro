@@ -198,6 +198,7 @@ func expectChallengeWinWithAllHonestEssentialEdgesConfirmed(
 	return nil
 }
 
+// lint:require-exhaustive-initialization
 type edgeState struct {
 	level  uint8
 	status uint8
