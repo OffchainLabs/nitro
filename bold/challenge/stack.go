@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
+// lint:require-exhaustive-initialization
 type stackParams struct {
 	mode                                types.Mode
 	name                                string
