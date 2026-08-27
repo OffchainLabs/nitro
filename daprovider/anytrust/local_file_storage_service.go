@@ -529,6 +529,7 @@ type batchIdentifier struct {
 	expiry time.Time
 }
 
+// lint:require-exhaustive-initialization
 type flatLayout struct {
 	root string
 
