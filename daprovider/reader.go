@@ -114,6 +114,7 @@ func NewReaderForBlobReader(blobReader BlobReader) *readerForBlobReader {
 	return &readerForBlobReader{blobReader: blobReader}
 }
 
+// lint:require-exhaustive-initialization
 type readerForBlobReader struct {
 	blobReader BlobReader
 }
