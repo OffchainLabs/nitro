@@ -75,11 +75,17 @@ fn build_payload(cli: &Cli) -> anyhow::Result<Vec<u8>> {
         .context("build validation input")?;
 
     if let Some(wasms) = request.user_wasms.get("wasm") {
+        let compiler = Arc::new(build_program(&cli.stylus_compiler_program)?);
         for (module_hash, wasm) in wasms.iter() {
             if input.module_asms.contains_key(module_hash.deref()) {
                 continue;
             }
-            let binary = compile_in_sp1(cli, wasm.as_ref())?;
+            let binary = compile_in_sp1(
+                compiler.clone(),
+                wasm.as_ref(),
+                cli.stylus_version,
+                request.debug_chain,
+            )?;
             input.module_asms.insert(**module_hash, binary);
         }
     }
@@ -90,18 +96,22 @@ fn build_payload(cli: &Cli) -> anyhow::Result<Vec<u8>> {
 }
 
 /// Compiles a Stylus wasm to a rv64 binary by running the stylus compiler inside SP1.
-fn compile_in_sp1(cli: &Cli, wasm: &[u8]) -> anyhow::Result<Vec<u8>> {
+fn compile_in_sp1(
+    compiler: Arc<Program>,
+    wasm: &[u8],
+    version: u16,
+    debug: bool,
+) -> anyhow::Result<Vec<u8>> {
     let compile_input = CompileInput {
-        version: cli.stylus_version,
-        debug: !cli.stylus_debug_off,
+        version,
+        debug,
         wasm: wasm.to_vec(),
     };
 
     let mut stdin = SP1Stdin::new();
     stdin.write(&compile_input);
 
-    let program = build_program(&cli.stylus_compiler_program)?;
-    let mut executor = MinimalExecutor::<UserMode>::simple(Arc::new(program));
+    let mut executor = MinimalExecutor::<UserMode>::simple(compiler);
     for input in &stdin.buffer {
         executor.with_input(input);
     }
