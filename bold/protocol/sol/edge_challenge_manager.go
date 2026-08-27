@@ -402,6 +402,7 @@ func (e *specEdge) TopLevelClaimHeight(ctx context.Context) (protocol.OriginHeig
 }
 
 // Wrapper around the challenge manager contract with developer-friendly methods.
+// lint:require-exhaustive-initialization
 type specChallengeManager struct {
 	addr                  common.Address
 	backend               protocol.ChainBackend
