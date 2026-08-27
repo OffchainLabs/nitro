@@ -100,6 +100,7 @@ type soughtHash struct {
 //
 // The prover maintains a map of treePositions where sibling nodes live
 // and fills them in as the historyCommitter calculates them.
+// lint:require-exhaustive-initialization
 type lastLeafProver struct {
 	positions map[treePosition]*soughtHash
 	proof     []common.Hash
