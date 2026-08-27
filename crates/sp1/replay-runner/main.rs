@@ -33,10 +33,6 @@ struct Cli {
     /// Stylus version, used by the Stylus compiler.
     #[arg(long, default_value_t = 2)]
     stylus_version: u16,
-
-    /// Turns the debug mode for Stylus compilation off.
-    #[arg(long)]
-    stylus_debug_off: bool,
 }
 
 fn main() -> anyhow::Result<()> {
