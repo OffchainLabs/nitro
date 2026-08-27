@@ -38,6 +38,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -73,6 +74,14 @@ var recursiveStackOverflowWat = []byte(`(module
 
 var singlepassOutputLimitWat = []byte(`(module
 	(memory (export "memory") 0 0)
+	(func (export "user_entrypoint") (param i32) (result i32)
+		i32.const 0)
+)`)
+
+var systemErrorWat = []byte(`(module
+	(import "vm_hooks" "pay_for_memory_grow" (func (param i32)))
+	(import "unsupported" "host" (func))
+	(memory (export "memory") 1)
 	(func (export "user_entrypoint") (param i32) (result i32)
 		i32.const 0)
 )`)
@@ -425,6 +434,52 @@ func testNativeStackSize() error {
 	return nil
 }
 
+func testStylusCallSystemError() error {
+	localTarget := rawdb.LocalTarget()
+	if err := SetTarget(localTarget, "", true); err != nil {
+		return fmt.Errorf("failed setting target: %w", err)
+	}
+	wasm, err := Wat2Wasm(systemErrorWat)
+	if err != nil {
+		return fmt.Errorf("failed compiling WAT: %w", err)
+	}
+	localAsm, err := compileNative(wasm, 1, false, localTarget, false, DefaultStylusTargetConfig.MaxSinglepassOutputSize, time.Minute)
+	if err != nil {
+		return fmt.Errorf("failed compiling native module: %w", err)
+	}
+
+	reqHandler := C.NativeRequestHandler{
+		handle_request_fptr: (*[0]byte)(C.handleReqWrap),
+		id:                  0,
+	}
+	initialGas := u64(1_000_000)
+	gas := initialGas
+	output := &rustBytes{}
+	status := userStatus(C.stylus_call(
+		goSlice(localAsm),
+		goSlice(nil),
+		(&ProgParams{Version: 1, MaxDepth: 1, InkPrice: 1}).encode(),
+		reqHandler,
+		(&EvmData{moduleHash: crypto.Keccak256Hash(localAsm)}).encode(),
+		cbool(false),
+		output,
+		&gas,
+		u32(0),
+	))
+	errData := rustBytesIntoBytes(output)
+
+	if status != userSystemError {
+		return fmt.Errorf("expected system error, got status %d: %s", status, errData)
+	}
+	if !strings.Contains(string(errData), "init failed") {
+		return fmt.Errorf("expected initialization error details, got %q", errData)
+	}
+	if gas != initialGas {
+		return fmt.Errorf("expected initialization error to preserve gas, got %d of %d", gas, initialGas)
+	}
+	return nil
+}
+
 // testNativeStackSizeMaxCap tests that a program which overflows at smaller
 // stack sizes runs successfully when the stack is set to MaxNativeStackSize
 // (100 MB), verifying the maximum cap is correctly applied.
@@ -525,7 +580,7 @@ func makeTestEVMScope(gas uint64) (*vm.EVM, *vm.ScopeContext, vm.StateDB) {
 	return evm, scope, statedb
 }
 
-// testHandleNativeStackOverflow tests that handleNativeStackOverflow:
+// testHandleNativeStackOverflow tests that handleSystemError:
 // 1. Does not retry when allowFallback is false.
 // 2. Does not retry for off-chain execution.
 // 3. Doubles stack and retries with cranelift on first on-chain overflow.
@@ -548,6 +603,14 @@ func testHandleNativeStackOverflow() error {
 	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, DefaultStylusTargetConfig.MaxSinglepassOutputSize, time.Minute)
 	if err != nil {
 		return fmt.Errorf("failed compiling cranelift: %w", err)
+	}
+	systemErrorWasm, err := Wat2Wasm(systemErrorWat)
+	if err != nil {
+		return fmt.Errorf("failed compiling system-error WAT: %w", err)
+	}
+	sentinelAsm, err := compileNative(systemErrorWasm, 1, true, localTarget, false, DefaultStylusTargetConfig.MaxSinglepassOutputSize, time.Minute)
+	if err != nil {
+		return fmt.Errorf("failed compiling singlepass cache sentinel: %w", err)
 	}
 
 	SetInitialNativeStackSize(32 * 1024)
@@ -579,11 +642,11 @@ func testHandleNativeStackOverflow() error {
 	runCtx := core.NewMessageCommitContext([]rawdb.WasmTarget{localTarget})
 
 	saved := &savedState{gas: vm.NewGasBudget(gas), snapshot: db.Snapshot()}
-	status, _ := handleNativeStackOverflow(
+	status, _ := handleSystemError(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, runCtx, saved, true,
-		db, nil, nil, Program{version: 1},
+		db, nil, nil, Program{version: 1}, userNativeStackOverflow, nil,
 	)
 	if status != userNativeStackOverflow {
 		return fmt.Errorf("allowFallback=false: expected NativeStackOverflow, got %d", status)
@@ -592,17 +655,31 @@ func testHandleNativeStackOverflow() error {
 		return fmt.Errorf("allowFallback=false: stack should not have been doubled")
 	}
 
+	systemError := []byte("init failed")
+	status, output := handleSystemError(
+		common.Address{}, moduleHash,
+		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
+		memModel, runCtx, saved, true,
+		db, nil, nil, Program{version: 1}, userSystemError, systemError,
+	)
+	if status != userSystemError {
+		return fmt.Errorf("allowFallback=false: expected SystemError, got %d", status)
+	}
+	if string(output) != string(systemError) {
+		return fmt.Errorf("allowFallback=false: expected %q, got %q", systemError, output)
+	}
+
 	// Sub-test 2: allowFallback=true but off-chain → no retry.
 	allowFallback.Store(true)
 	offChainCtx := core.NewMessageGasEstimationContext()
 	scope.Contract.Gas = vm.NewGasBudget(gas)
 
 	saved = &savedState{gas: vm.NewGasBudget(gas), snapshot: db.Snapshot()}
-	status, _ = handleNativeStackOverflow(
+	status, _ = handleSystemError(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, offChainCtx, saved, true,
-		db, nil, nil, Program{version: 1},
+		db, nil, nil, Program{version: 1}, userNativeStackOverflow, nil,
 	)
 	if status != userNativeStackOverflow {
 		return fmt.Errorf("off-chain: expected NativeStackOverflow, got %d", status)
@@ -611,16 +688,33 @@ func testHandleNativeStackOverflow() error {
 		return fmt.Errorf("off-chain: stack should not have been doubled")
 	}
 
-	// Sub-test 3: on-chain with allowFallback=true → doubles stack and retries
-	// with cranelift. The stack should go from 32KB to 64KB, and the cranelift
-	// retry at 64KB should succeed for the 500-recursion program.
 	scope.Contract.Gas = vm.NewGasBudget(gas)
 	saved = &savedState{gas: vm.NewGasBudget(gas), snapshot: db.Snapshot()}
-	status, _ = handleNativeStackOverflow(
+	stackSize := GetNativeStackSize()
+	status, _ = handleSystemError(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, runCtx, saved, true,
-		db, nil, nil, Program{version: 1},
+		db, nil, nil, Program{version: 1}, userSystemError, systemError,
+	)
+	if status != userSuccess {
+		return fmt.Errorf("system error retry: expected success, got %d", status)
+	}
+	if got := GetNativeStackSize(); got != stackSize {
+		return fmt.Errorf("system error retry doubled stack from %d to %d", stackSize, got)
+	}
+
+	// Sub-test 3: on-chain with allowFallback=true → doubles stack and retries
+	// with cranelift. The stack should go from 32KB to 64KB, and the cranelift
+	// retry at 64KB should succeed for the 500-recursion program.
+	C.stylus_cache_module(goSlice(sentinelAsm), hashToBytes32(moduleHash), u16(1), u32(0), cbool(true))
+	scope.Contract.Gas = vm.NewGasBudget(gas)
+	saved = &savedState{gas: vm.NewGasBudget(gas), snapshot: db.Snapshot()}
+	status, _ = handleSystemError(
+		common.Address{}, moduleHash,
+		scope, evm, nil, []byte{}, &EvmData{moduleHash: moduleHash}, stylusParams,
+		memModel, runCtx, saved, true,
+		db, nil, nil, Program{version: 1}, userNativeStackOverflow, nil,
 	)
 	if status != userSuccess {
 		return fmt.Errorf("on-chain: expected success after stack doubling + cranelift retry, got %d", status)
@@ -631,7 +725,7 @@ func testHandleNativeStackOverflow() error {
 
 	// Sub-test 4: no cranelift available → returns overflow immediately.
 	// Use a fresh DB with no cranelift ASM in the wasm store so
-	// getCraneliftAsm fails and handleNativeStackOverflow returns without
+	// getCraneliftAsm fails and handleSystemError returns without
 	// any retry or doubling attempt.
 	// Note: nativeStackBaseline is 0 here (consumed by sub-test 3's doubling),
 	// but that doesn't affect this test since it returns before reaching doubleNativeStackSize.
@@ -640,11 +734,11 @@ func testHandleNativeStackOverflow() error {
 	evm4, scope4, db4 := makeTestEVMScope(gas)
 	scope4.Contract.Gas = vm.NewGasBudget(gas)
 	saved = &savedState{gas: vm.NewGasBudget(gas), snapshot: db4.Snapshot()}
-	status, _ = handleNativeStackOverflow(
+	status, _ = handleSystemError(
 		common.Address{}, moduleHash,
 		scope4, evm4, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, runCtx, saved, true,
-		db4, nil, nil, Program{version: 1},
+		db4, nil, nil, Program{version: 1}, userNativeStackOverflow, nil,
 	)
 	if status != userNativeStackOverflow {
 		return fmt.Errorf("no cranelift available: expected NativeStackOverflow, got %d", status)
@@ -654,7 +748,7 @@ func testHandleNativeStackOverflow() error {
 	return nil
 }
 
-// testHandleNativeStackOverflowAtMax verifies that handleNativeStackOverflow
+// testHandleNativeStackOverflowAtMax verifies that handleSystemError
 // works correctly at MaxNativeStackSize with cranelift available. The program
 // (500 recursions) should succeed with cranelift at 100MB, and the stack size
 // must remain at MaxNativeStackSize (doubling is a no-op since the stack is
@@ -705,11 +799,11 @@ func testHandleNativeStackOverflowAtMax() error {
 	}
 
 	saved := &savedState{gas: vm.NewGasBudget(gas), snapshot: db.Snapshot()}
-	status, _ := handleNativeStackOverflow(
+	status, _ := handleSystemError(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, runCtx, saved, true,
-		db, nil, nil, Program{version: 1},
+		db, nil, nil, Program{version: 1}, userNativeStackOverflow, nil,
 	)
 	// Cranelift at 100MB should succeed (500 recursions is trivial at this stack size).
 	if status != userSuccess {
@@ -727,7 +821,7 @@ func testHandleNativeStackOverflowAtMax() error {
 	return nil
 }
 
-// testRetryRestoresStylusPages verifies that handleNativeStackOverflow correctly
+// testRetryRestoresStylusPages verifies that handleSystemError correctly
 // restores openWasmPages and everWasmPages before retrying. These fields are not
 // journaled, so RevertToSnapshot alone does not restore them — the retry path
 // must do it explicitly via savedState.
@@ -807,11 +901,11 @@ func testRetryRestoresStylusPages() error {
 		snapshot:     db.Snapshot(),
 	}
 
-	status, _ := handleNativeStackOverflow(
+	status, _ := handleSystemError(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
 		memModel, runCtx, saved, true,
-		db, nil, nil, Program{version: 1},
+		db, nil, nil, Program{version: 1}, userNativeStackOverflow, nil,
 	)
 
 	if status == userNativeStackOverflow {

@@ -31,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
@@ -604,12 +605,12 @@ func callProgram(
 	// First attempt with the locally-compiled ASM (singlepass or cranelift, depending on activation).
 	status, output := doStylusCall(localAsm, calldata, progParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx, stylusParams)
 
-	if status == userNativeStackOverflow {
-		status, output = handleNativeStackOverflow(
+	if status == userNativeStackOverflow || status == userSystemError {
+		status, output = handleSystemError(
 			address, moduleHash,
 			scope, evm, tracingInfo, calldata, evmData, progParams,
 			memoryModel, runCtx, &saved, debug, db,
-			code, stylusParams, program,
+			code, stylusParams, program, status, output,
 		)
 	}
 
@@ -622,6 +623,10 @@ func callProgram(
 	if status == userNativeStackOverflow {
 		panic(fmt.Sprintf("native stack overflow not resolved (program=%v, module=%v, depth=%d, allowFallback=%v, onChain=%v, stackSize=%d)",
 			address, moduleHash, depth, GetAllowFallback(), runCtx.IsExecutedOnChain(), GetNativeStackSize()))
+	}
+	if status == userSystemError {
+		panic(fmt.Sprintf("stylus system error not resolved (program=%v, module=%v, depth=%d, allowFallback=%v, onChain=%v, stackSize=%d): %s",
+			address, moduleHash, depth, GetAllowFallback(), runCtx.IsExecutedOnChain(), GetNativeStackSize(), arbutil.ToStringOrHex(output)))
 	}
 	data, msg, err := status.toResult(output, debug)
 
@@ -653,14 +658,13 @@ func callProgram(
 	return data, err
 }
 
-// handleNativeStackOverflow handles a native stack overflow by compiling
-// cranelift ASM and retrying. On the first overflow it also doubles the
-// process-wide Wasmer coroutine stack size (kept permanently); subsequent
-// overflows retry with cranelift at the already-doubled size.
+// handleSystemError handles a host side failure by compiling cranelift ASM and
+// retrying. Native stack overflows also double the process wide Wasmer
+// coroutine stack size on the first retry.
 //
-// Returns userNativeStackOverflow without retrying when fallback is disabled,
+// Returns the original status without retrying when fallback is disabled,
 // off-chain, or cranelift ASM is unavailable — the caller panics in that case.
-func handleNativeStackOverflow(
+func handleSystemError(
 	address common.Address,
 	moduleHash common.Hash,
 	scope *vm.ScopeContext,
@@ -677,35 +681,42 @@ func handleNativeStackOverflow(
 	code []byte,
 	params *StylusParams,
 	program Program,
+	systemStatus userStatus,
+	systemError []byte,
 ) (userStatus, []byte) {
 	if !GetAllowFallback() {
-		log.Warn("native stack overflow, fallback disabled",
-			"program", address, "module", moduleHash)
-		return userNativeStackOverflow, nil
+		log.Warn("stylus system failure, fallback disabled",
+			"program", address, "module", moduleHash, "err", arbutil.ToStringOrHex(systemError))
+		return systemStatus, systemError
 	}
 	if !runCtx.IsExecutedOnChain() {
-		log.Info("native stack overflow, no stack doubling for off-chain execution",
-			"program", address, "module", moduleHash)
-		return userNativeStackOverflow, nil
+		log.Info("stylus system failure, no retry for off-chain execution",
+			"program", address, "module", moduleHash, "err", arbutil.ToStringOrHex(systemError))
+		return systemStatus, systemError
 	}
 
 	craneliftAsm, err := getCraneliftAsm(moduleHash, address, db, code, params, program.version, debug)
 	if err != nil || len(craneliftAsm) == 0 {
-		log.Error("native stack overflow, cranelift ASM unavailable",
-			"program", address, "module", moduleHash, "err", err)
-		return userNativeStackOverflow, nil
+		log.Error("stylus system failure, cranelift ASM unavailable",
+			"program", address, "module", moduleHash, "err", err, "systemErr", arbutil.ToStringOrHex(systemError))
+		return systemStatus, systemError
 	}
 
-	// On the first overflow, double the process-wide Wasmer coroutine stack size.
-	// On subsequent overflows doubleNativeStackSize is a no-op (baseline already
-	// consumed via CAS) — we still retry with cranelift at the already-doubled size.
-	doubleNativeStackSize()
+	if systemStatus == userNativeStackOverflow {
+		// On the first overflow, double the process-wide Wasmer coroutine stack size.
+		// On subsequent overflows doubleNativeStackSize is a no-op (baseline already
+		// consumed via CAS) — we still retry with cranelift at the already-doubled size.
+		doubleNativeStackSize()
+	}
 
 	// Revert any partial state changes the previous attempt may have made via
-	// host I/O before the overflow, then retry with cranelift.
+	// host I/O before the system failure, then retry with cranelift.
 	saved.restore(scope, db)
 
-	return doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx, params)
+	retryEvmData := *evmData
+	retryEvmData.moduleHash = crypto.Keccak256Hash(craneliftAsm)
+	retryEvmData.cached = false
+	return doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, &retryEvmData, debug, runCtx, params)
 }
 
 // getCraneliftAsm returns cranelift-compiled ASM for the given module.
@@ -735,7 +746,7 @@ func getCraneliftAsm(
 		return nil, fmt.Errorf("cranelift ASM not cached and contract code/params unavailable for compilation")
 	}
 
-	log.Warn("native stack overflow, compiling with cranelift",
+	log.Warn("stylus system failure, compiling with cranelift",
 		"program", address, "module", moduleHash)
 
 	wasm, err := getWasmFromContractCode(db, code, params, nil)
@@ -756,7 +767,7 @@ func getCraneliftAsm(
 			err = batch.Write()
 		}
 		if err != nil {
-			log.Warn("failed to persist cranelift ASM to wasm store, will recompile on next overflow",
+			log.Warn("failed to persist cranelift ASM to wasm store, will recompile on next retry",
 				"program", address, "err", err)
 		}
 	}

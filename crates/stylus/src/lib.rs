@@ -35,7 +35,6 @@ pub mod run;
 mod cache;
 mod evm_api;
 mod target_cache;
-mod util;
 
 #[cfg(test)]
 mod test;
@@ -301,8 +300,8 @@ pub extern "C" fn stylus_wavm_format_version() -> u32 {
 /// Calls an activated user program.
 ///
 /// Returns `UserOutcomeKind::NativeStackOverflow` if the Wasmer coroutine
-/// stack overflows. The Go caller is responsible for retry logic (cranelift
-/// recompilation, stack doubling, etc.).
+/// stack overflows, or `UserOutcomeKind::SystemError` if initialization fails.
+/// The Go caller handles recovery.
 ///
 /// # Safety
 ///
@@ -339,7 +338,12 @@ pub unsafe extern "C" fn stylus_call(
         );
         let mut instance = match instance {
             Ok(instance) => instance,
-            Err(error) => util::panic_with_wasm(module, error.wrap_err("init failed")),
+            Err(error) => {
+                return write_outcome(
+                    output,
+                    UserOutcome::SystemError(error.wrap_err("init failed")),
+                );
+            }
         };
 
         let outcome = instance.run_main(&calldata, config, ink);

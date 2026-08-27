@@ -70,6 +70,25 @@ func TestNativeStackSize(t *testing.T) {
 	}
 }
 
+func TestStylusCallSystemError(t *testing.T) {
+	if err := testStylusCallSystemError(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSystemErrorToResultPanics(t *testing.T) {
+	defer func() {
+		value := recover()
+		if value == nil {
+			t.Fatal("expected unresolved system failure to panic")
+		}
+		if !strings.Contains(fmt.Sprint(value), "host failure") {
+			t.Fatalf("panic omitted system failure details: %v", value)
+		}
+	}()
+	userSystemError.toResult([]byte("host failure"), false)
+}
+
 func TestNativeStackSizeMaxCap(t *testing.T) {
 	defer SetInitialNativeStackSize(1024 * 1024)
 	err := testNativeStackSizeMaxCap()

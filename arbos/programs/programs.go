@@ -792,6 +792,7 @@ const (
 	userOutOfStack
 	userNativeStackOverflow
 	userStorageCacheLimitExceeded
+	userSystemError
 )
 
 func (status userStatus) toResult(data []byte, _debug bool) ([]byte, string, error) {
@@ -814,6 +815,8 @@ func (status userStatus) toResult(data []byte, _debug bool) ([]byte, string, err
 		return nil, "", ErrNativeStackOverflow
 	case userStorageCacheLimitExceeded:
 		return nil, ErrStorageCacheLimitExceeded.Error(), ErrStorageCacheLimitExceeded
+	case userSystemError:
+		panic(fmt.Sprintf("unresolved Stylus system failure (status=%d): %s", status, msg))
 	default:
 		log.Error("program errored with unknown status", "status", status, "data", msg)
 		return nil, msg, vm.ErrExecutionReverted
