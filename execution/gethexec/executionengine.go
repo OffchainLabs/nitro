@@ -631,7 +631,7 @@ func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newM
 	for i := range newMessages {
 		var msgForPrefetch *arbostypes.MessageWithMetadata
 		if i < len(newMessages)-1 {
-			msgForPrefetch = &newMessages[i].MessageWithMeta
+			msgForPrefetch = &newMessages[i+1].MessageWithMeta
 		}
 		nextMsgIdx := msgIdxOfFirstMsgToAdd + arbutil.MessageIndex(i)
 		msgResult, err := s.digestMessageWithBlockMutex(nextMsgIdx, &newMessages[i].MessageWithMeta, msgForPrefetch)
