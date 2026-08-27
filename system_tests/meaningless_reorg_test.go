@@ -70,8 +70,9 @@ func TestMeaninglessBatchReorgFlaky(t *testing.T) {
 
 	currHead, err := builder.L1.Client.BlockNumber(ctx)
 	Require(t, err)
-	parentBlock := builder.L1.L1Backend.BlockChain().GetBlockByNumber(batchReceipt.BlockNumber.Uint64() - 1)
-	err = builder.L1.L1Backend.BlockChain().ReorgToOldBlock(parentBlock)
+	parentBlock, err := builder.L1.Client.BlockByNumber(ctx, new(big.Int).Sub(batchReceipt.BlockNumber, big.NewInt(1)))
+	Require(t, err)
+	err = builder.L1.ReorgToOldBlock(parentBlock)
 	Require(t, err)
 	// Use the separately funded account to produce new L1 blocks after the reorg.
 	// #nosec G115

@@ -168,6 +168,7 @@ pub unsafe extern "C" fn stylus_compile(
     debug: bool,
     target: GoSliceData,
     cranelift: bool,
+    max_singlepass_output_size: u64,
     output: *mut RustBytes,
 ) -> UserOutcomeKind {
     unsafe {
@@ -182,7 +183,29 @@ pub unsafe extern "C" fn stylus_compile(
             Err(err) => return write_err(output, err),
         };
 
-        let asm = match native::compile(wasm, version, debug, target, cranelift) {
+        let max_singlepass_output_size = match max_singlepass_output_size {
+            0 => None,
+            limit => match usize::try_from(limit) {
+                Ok(limit) => Some(limit),
+                Err(_) => {
+                    return write_err(
+                        output,
+                        eyre::eyre!(
+                            "Singlepass output size limit {limit} does not fit this host's usize"
+                        ),
+                    );
+                }
+            },
+        };
+
+        let asm = match native::compile(
+            wasm,
+            version,
+            debug,
+            target,
+            cranelift,
+            max_singlepass_output_size,
+        ) {
             Ok(val) => val,
             Err(err) => return write_err(output, err),
         };
@@ -300,7 +323,7 @@ pub unsafe extern "C" fn stylus_call(
     unsafe {
         let module = module.slice();
         let calldata = calldata.slice().to_vec();
-        let evm_api = EvmApiRequestor::new(req_handler);
+        let evm_api = EvmApiRequestor::new(req_handler, evm_data.storage_cache_limit);
         let pricing = config.pricing;
         let output = &mut *output;
         let ink = pricing.gas_to_ink(Gas(*gas));

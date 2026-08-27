@@ -38,6 +38,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/programs"
@@ -1519,7 +1520,12 @@ func testUpdateTxIndex(executionDB ethdb.Database, chainConfig *params.ChainConf
 	}()
 }
 
-func InitReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inboxTracker *arbnode.InboxTracker) error {
+// InitReorg rewinds the node to the batch requested by --init.reorg-to-*. Under MEL the inbox
+// tracker is nil, so the rewind goes through the message extractor and the transaction streamer.
+func InitReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inboxTracker *arbnode.InboxTracker, txStreamer *arbnode.TransactionStreamer, msgExtractor mel.MELNative) error {
+	if inboxTracker == nil && msgExtractor == nil {
+		return errors.New("init reorg requested, but node has neither an inbox tracker nor a message extractor")
+	}
 	var batchCount uint64
 	if initConfig.ReorgToBatch >= 0 {
 		// #nosec G115
@@ -1544,7 +1550,11 @@ func InitReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inbo
 		// Reorg out the batch containing the next message
 		var found bool
 		var err error
-		batchCount, found, err = inboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
+		if msgExtractor != nil {
+			batchCount, found, err = msgExtractor.FindInboxBatchContainingMessage(messageIndex + 1)
+		} else {
+			batchCount, found, err = inboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
+		}
 		if err != nil {
 			return err
 		}
@@ -1553,5 +1563,28 @@ func InitReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inbo
 			return nil
 		}
 	}
+	if msgExtractor != nil {
+		return melReorgBatchesTo(batchCount, txStreamer, msgExtractor)
+	}
 	return inboxTracker.ReorgBatchesTo(batchCount)
+}
+
+// melReorgBatchesTo is the MEL counterpart of InboxTracker.ReorgBatchesTo: it rewinds the extractor
+// to the parent chain block holding the last batch kept and truncates the streamer at that batch's
+// message count. The extractor goes first, so the block validator is rewound (via the reorg
+// notifier the node drains) before the streamer starts handing out messages again.
+func melReorgBatchesTo(batchCount uint64, txStreamer *arbnode.TransactionStreamer, msgExtractor mel.MELNative) error {
+	if batchCount == 0 {
+		// MEL keeps no state before the one it was initialized with, so it cannot rewind past
+		// the first batch the way the inbox tracker can.
+		return errors.New("cannot reorg to zero batches when running with MEL")
+	}
+	prevBatchMeta, err := msgExtractor.GetBatchMetadata(batchCount - 1)
+	if err != nil {
+		return err
+	}
+	if err := msgExtractor.ReorgTo(prevBatchMeta.ParentChainBlock); err != nil {
+		return err
+	}
+	return txStreamer.ReorgAt(prevBatchMeta.MessageCount)
 }

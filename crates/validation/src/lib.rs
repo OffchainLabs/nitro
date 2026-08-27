@@ -8,6 +8,8 @@ extern crate alloc;
 
 #[cfg(not(feature = "std"))]
 use alloc::{collections::BTreeMap, vec::Vec};
+#[cfg(all(not(feature = "std"), feature = "rkyv"))]
+use alloc::{format, string::String};
 
 #[cfg(feature = "std")]
 use {
@@ -25,13 +27,6 @@ pub mod transfer;
 
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
 pub type Preimages = BTreeMap<u8, BTreeMap<[u8; 32], Vec<u8>>>;
-
-/// Magic payload the SP1 builder feeds as the program's third input during
-/// the bootloading step. The program recognizes this exact byte string,
-/// halts cleanly after the `beforeFirstIO` ELF dump, and skips parsing a
-/// `ValidationInput`. Any other payload, including a genuinely empty one,
-/// falls through to the normal parse path and may panic loudly.
-pub const SP1_BOOTLOAD_SENTINEL: &[u8] = b"SP1_BOOTLOAD_ONLY";
 
 /// The runtime data needed by any machine (JIT, SP1, Prover) to execute
 /// a single block validation. Extracted from a `ValidationRequest` by
@@ -116,14 +111,13 @@ impl ValidationInput {
             module_asms,
         })
     }
+}
 
-    #[cfg(feature = "rkyv")]
-    pub fn from_reader<R: io::Read>(mut reader: R) -> Result<Self, String> {
-        let mut s = Vec::new();
-        reader
-            .read_to_end(&mut s)
-            .map_err(|e| format!("IO Error: {e:?}"))?;
-        let archived = rkyv::access::<ArchivedValidationInput, rkyv::rancor::Error>(&s[..])
+#[cfg(feature = "rkyv")]
+impl ValidationInput {
+    /// Deserializes a rkyv-serialized `ValidationInput`.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        let archived = rkyv::access::<ArchivedValidationInput, rkyv::rancor::Error>(bytes)
             .map_err(|e| format!("rkyv access error: {e:?}"))?;
         rkyv::deserialize::<ValidationInput, rkyv::rancor::Error>(archived)
             .map_err(|e| format!("rkyv deserialize error: {e:?}"))
@@ -371,17 +365,6 @@ mod tests {
         let input = ValidationInput::from_request_allowing_missing_binaries(&req, "host").unwrap();
         assert_eq!(input.module_asms.len(), 1);
         assert_eq!(input.module_asms[&[0xBB; 32]], vec![0, 1, 2, 3]);
-    }
-
-    /// The SP1 program distinguishes the bootload sentinel from a real input
-    /// by exact byte equality before parsing, and any non-sentinel payload
-    /// must fail parsing loudly rather than validate garbage. Guarantee the
-    /// two cannot be confused: the sentinel itself is not a parseable input.
-    #[cfg(feature = "rkyv")]
-    #[test]
-    fn bootload_sentinel_is_not_a_valid_input() {
-        let err = ValidationInput::from_reader(io::Cursor::new(SP1_BOOTLOAD_SENTINEL)).unwrap_err();
-        assert!(err.contains("rkyv"), "unexpected error: {err}");
     }
 
     #[test]

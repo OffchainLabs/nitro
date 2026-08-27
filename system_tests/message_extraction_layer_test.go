@@ -410,7 +410,7 @@ func TestMessageExtractionLayer_DelayedMessageEquivalence_Simple(t *testing.T) {
 	reorgToBlockHash := reorgToState.ParentChainBlockHash
 	reorgToBlock, err := builder.L1.Client.BlockByHash(ctx, reorgToBlockHash)
 	Require(t, err)
-	Require(t, builder.L1.L1Backend.BlockChain().ReorgToOldBlock(reorgToBlock))
+	Require(t, builder.L1.ReorgToOldBlock(reorgToBlock))
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 6)
 
 	// Before checking if reorg handling works as intended, verify that starting a new message extractor will detect a reorg too and correctly transitions to Reorging step
@@ -592,7 +592,7 @@ func TestMessageExtractionLayer_TxStreamerHandleReorg(t *testing.T) {
 	// Reorg L1 and advance it so that MEl can pick up the reorg
 	currHead, err := builder.L1.Client.BlockNumber(ctx)
 	Require(t, err)
-	Require(t, builder.L1.L1Backend.BlockChain().ReorgToOldBlock(reorgToBlock))
+	Require(t, builder.L1.ReorgToOldBlock(reorgToBlock))
 	// #nosec G115
 	AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, int(currHead-reorgToBlock.NumberU64()+5)) // we need to advance L1 blocks up until the current head so that reorg is detected
 

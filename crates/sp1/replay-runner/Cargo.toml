@@ -1,6 +1,6 @@
 [package]
 name = "replay-runner"
-description = "Runner utility validating Arbitrum blocks in SP1 (mocked: executes the guest without inputs)"
+description = "Runner utility validating Arbitrum blocks in SP1 (validation itself mocked in the guest)"
 version = "0.1.0"
 authors.workspace = true
 edition.workspace = true
@@ -17,4 +17,8 @@ path = "main.rs"
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
+replay-io = { workspace = true }
+rkyv = { workspace = true }
+serde_json = { workspace = true }
 sp1-core-executor = { workspace = true }
+validation = { workspace = true, features = ["rkyv", "std"] }

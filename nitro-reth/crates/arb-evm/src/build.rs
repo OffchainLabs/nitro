@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use alloy_consensus::{Transaction, TransactionEnvelope, TxReceipt};
 use alloy_eips::eip2718::{Encodable2718, Typed2718};
 use alloy_evm::{
@@ -46,6 +48,17 @@ use crate::{
     state_overlay::StateOverlay,
 };
 
+/// The executor's block-gas-limit rejection.
+#[derive(thiserror::Error, Debug)]
+#[error("block gas limit reached")]
+pub struct BlockGasLimitReached;
+
+/// True if the error is the executor's block-gas-limit rejection.
+pub fn is_block_gas_limit_reached(err: &BlockExecutionError) -> bool {
+    err.as_internal()
+        .is_some_and(|internal| internal.is_other::<BlockGasLimitReached>())
+}
+
 /// Extension trait for transaction environments that support gas price mutation.
 ///
 /// Arbitrum needs to cap the gas price to the base fee when dropping tips,
@@ -68,26 +81,6 @@ impl ArbTransactionEnv for TxEnv {
     }
     fn set_value(&mut self, value: U256) {
         self.value = value;
-    }
-}
-
-/// Extension trait for draining scheduled transactions from the executor.
-///
-/// After executing a SubmitRetryable or a manual Redeem precompile call,
-/// auto-redeem retry transactions may be queued. The block producer must
-/// drain and re-inject them in the same block.
-pub trait ArbScheduledTxDrain {
-    /// Drain any scheduled transactions (e.g. auto-redeem retry txs) produced
-    /// by the most recently committed transaction.
-    fn drain_scheduled_txs(&mut self) -> Vec<Vec<u8>>;
-}
-
-impl<'a, Evm, Spec, R: ReceiptBuilder> ArbScheduledTxDrain for ArbBlockExecutor<'a, Evm, Spec, R> {
-    fn drain_scheduled_txs(&mut self) -> Vec<Vec<u8>> {
-        self.arb_hooks
-            .as_mut()
-            .map(|hooks| std::mem::take(&mut hooks.tx_proc.scheduled_txs))
-            .unwrap_or_default()
     }
 }
 
@@ -129,7 +122,7 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
     /// Create an executor with the concrete `ArbBlockExecutor` return type.
     ///
     /// Unlike the trait method which returns an opaque type, this provides
-    /// access to Arbitrum-specific methods like `drain_scheduled_txs`.
+    /// access to Arbitrum-specific methods like `next_scheduled_tx`.
     pub fn create_arb_executor<'a, DB, I>(
         &'a self,
         evm: EvmF::Evm<&'a mut State<DB>, I>,
@@ -167,6 +160,7 @@ impl<R, Spec, EvmF> ArbBlockExecutorFactory<R, Spec, EvmF> {
             gas_used_for_l1: Vec::new(),
             multi_gas_used: Vec::new(),
             balance_ledger: BalanceLedger::new(),
+            redeem_queue: VecDeque::new(),
             zombie_accounts: rustc_hash::FxHashSet::default(),
             finalise_deleted: rustc_hash::FxHashSet::default(),
             touched_accounts: rustc_hash::FxHashSet::default(),
@@ -283,6 +277,9 @@ pub struct ArbBlockExecutor<'a, Evm, Spec, R: ReceiptBuilder> {
     pub multi_gas_used: Vec<MultiGas>,
     /// Ledger of expected balance changes from deposits and L2→L1 withdrawals.
     balance_ledger: BalanceLedger,
+    /// Block-scoped FIFO of scheduled retry txs pending execution, fed from the per-tx
+    /// `scheduled_txs` staging on commit.
+    pub redeem_queue: VecDeque<Vec<u8>>,
     /// Zombie accounts: empty accounts preserved from EIP-161 deletion because
     /// they were touched by a zero-value transfer on pre-Stylus ArbOS.
     zombie_accounts: rustc_hash::FxHashSet<Address>,
@@ -351,14 +348,9 @@ impl<'a, Evm, Spec, R: ReceiptBuilder> ArbBlockExecutor<'a, Evm, Spec, R> {
         self.compute_budget.charge_failed_tx(is_user_tx);
     }
 
-    /// Drain any scheduled transactions (e.g. auto-redeem retry txs) produced
-    /// by the most recently committed transaction. The caller should decode and
-    /// re-inject these as new transactions in the same block.
-    pub fn drain_scheduled_txs(&mut self) -> Vec<Vec<u8>> {
-        self.arb_hooks
-            .as_mut()
-            .map(|hooks| std::mem::take(&mut hooks.tx_proc.scheduled_txs))
-            .unwrap_or_default()
+    /// Pops the next scheduled retry tx (e.g. an auto-redeem) pending execution, in FIFO order.
+    pub fn next_scheduled_tx(&mut self) -> Option<Vec<u8>> {
+        self.redeem_queue.pop_front()
     }
 }
 
@@ -1179,7 +1171,7 @@ where
         let is_user_tx =
             !is_arb_internal && !is_arb_deposit && !is_submit_retryable && !is_retry_tx;
         if is_user_tx && self.compute_budget.exhausted_for_user_tx() {
-            return Err(BlockExecutionError::msg("block gas limit reached"));
+            return Err(BlockExecutionError::other(BlockGasLimitReached));
         }
 
         // Reset per-tx processor state.
@@ -1781,7 +1773,7 @@ where
             poster_gas,
             is_user_tx,
         ) {
-            return Err(BlockExecutionError::msg("block gas limit reached"));
+            return Err(BlockExecutionError::other(BlockGasLimitReached));
         }
 
         // Add calldata units to L1 pricing state before EVM execution, and
@@ -2981,6 +2973,12 @@ where
             );
 
             let _ = is_retry; // suppress unused warning
+        }
+
+        // The committed tx's scheduled retries join the back of the block-scoped queue
+        if let Some(hooks) = self.arb_hooks.as_mut() {
+            self.redeem_queue
+                .extend(hooks.tx_proc.scheduled_txs.drain(..));
         }
 
         self.precompile_ctx.reset_tx();

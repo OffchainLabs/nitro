@@ -113,8 +113,10 @@ build: $(BROTLI_LIB_DIR)/lib/libbrotlienc-static.a
 	@cp $(CURDIR)/target/release/replay-runner $(OUTPUT_DIR)
 
 .PHONY: run
-run: # Validate a block with the SP1 replay runner.
-	$(OUTPUT_DIR)/replay-runner --program $(OUTPUT_DIR)/replay-program.elf
+run: # Validate $(BLOCK_INPUTS_DIR)/$(BLOCK).json with the SP1 replay runner (set BLOCK=<name>).
+	$(OUTPUT_DIR)/replay-runner \
+		--program $(OUTPUT_DIR)/dumped_replay_wasm.elf \
+		--block-file $(BLOCK_INPUTS_DIR)/$(BLOCK).json
 
 .PHONY: test
 test: # Run the sp1 workspace unit tests.

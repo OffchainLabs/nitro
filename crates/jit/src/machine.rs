@@ -192,6 +192,7 @@ fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Import
             "create_stylus_config" => func!(program::create_stylus_config),
             "create_evm_data" => func!(program::create_evm_data),
             "create_evm_data_v2" => func!(program::create_evm_data_v2),
+            "create_evm_data_v3" => func!(program::create_evm_data_v3),
             "activate" => func!(program::activate),
             "activate_v2" => func!(program::activate_v2),
         },

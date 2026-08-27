@@ -22,9 +22,11 @@ void handleReqWrap(usize api, u32 req_type, RustSlice *data, u64 *out_cost, GoSl
 import "C"
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/holiman/uint256"
@@ -69,6 +71,12 @@ var recursiveStackOverflowWat = []byte(`(module
 	)
 )`)
 
+var singlepassOutputLimitWat = []byte(`(module
+	(memory (export "memory") 0 0)
+	(func (export "user_entrypoint") (param i32) (result i32)
+		i32.const 0)
+)`)
+
 func Wat2Wasm(wat []byte) ([]byte, error) {
 	output := &rustBytes{}
 
@@ -79,6 +87,39 @@ func Wat2Wasm(wat []byte) ([]byte, error) {
 	}
 
 	return rustBytesIntoBytes(output), nil
+}
+
+func testSinglepassOutputLimit() error {
+	localTarget := rawdb.LocalTarget()
+	targetDescription := ""
+	switch localTarget {
+	case rawdb.TargetArm64:
+		targetDescription = DefaultTargetDescriptionArm
+	case rawdb.TargetAmd64:
+		targetDescription = DefaultTargetDescriptionX86
+	}
+	if err := SetTarget(localTarget, targetDescription, true); err != nil {
+		return err
+	}
+
+	wasm, err := Wat2Wasm(singlepassOutputLimitWat)
+	if err != nil {
+		return err
+	}
+	if _, err := compileNative(wasm, 0, false, localTarget, false, 0, time.Minute); err != nil {
+		return fmt.Errorf("zero should disable the Singlepass output limit: %w", err)
+	}
+	_, err = compileNative(wasm, 0, false, localTarget, false, 1, time.Minute)
+	if err == nil {
+		return errors.New("expected the 1-byte Singlepass output limit to fail")
+	}
+	if !errors.Is(err, ErrProgramActivation) {
+		return fmt.Errorf("expected ordinary program activation error, got: %w", err)
+	}
+	if !strings.Contains(err.Error(), "singlepass compiler output exceeds limit") {
+		return fmt.Errorf("expected Singlepass output limit callback error, got: %w", err)
+	}
+	return nil
 }
 
 func testCompileArch(store bool, cranelift bool) error {
@@ -135,12 +176,12 @@ func testCompileArch(store bool, cranelift bool) error {
 		}
 	}
 
-	_, err = compileNative(wasm, 2, true, "booga", false, timeout)
+	_, err = compileNative(wasm, 2, true, "booga", false, DefaultStylusTargetConfig.MaxSinglepassOutputSize, timeout)
 	if err == nil {
 		return fmt.Errorf("succeeded compiling non-existent arch: %w", err)
 	}
 
-	outBytes, err := compileNative(wasm, 1, true, localTarget, cranelift, timeout)
+	outBytes, err := compileNative(wasm, 1, true, localTarget, cranelift, DefaultStylusTargetConfig.MaxSinglepassOutputSize, timeout)
 
 	if err != nil {
 		return fmt.Errorf("failed compiling native: %w", err)
@@ -157,7 +198,7 @@ func testCompileArch(store bool, cranelift bool) error {
 		}
 	}
 
-	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetArm64, cranelift, timeout)
+	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetArm64, cranelift, DefaultStylusTargetConfig.MaxSinglepassOutputSize, timeout)
 
 	if err != nil {
 		return fmt.Errorf("failed compiling arm: %w", err)
@@ -174,7 +215,7 @@ func testCompileArch(store bool, cranelift bool) error {
 		}
 	}
 
-	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetAmd64, cranelift, timeout)
+	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetAmd64, cranelift, DefaultStylusTargetConfig.MaxSinglepassOutputSize, timeout)
 
 	if err != nil {
 		return fmt.Errorf("failed compiling amd: %w", err)
@@ -293,7 +334,7 @@ func testNativeStackSize() error {
 		return fmt.Errorf("failed compiling WAT: %w", err)
 	}
 
-	localAsm, err := compileNative(wasm, 1, true, localTarget, false, time.Minute)
+	localAsm, err := compileNative(wasm, 1, true, localTarget, false, DefaultStylusTargetConfig.MaxSinglepassOutputSize, time.Minute)
 	if err != nil {
 		return fmt.Errorf("failed compiling native: %w", err)
 	}
@@ -399,7 +440,7 @@ func testNativeStackSizeMaxCap() error {
 		return fmt.Errorf("failed compiling WAT: %w", err)
 	}
 
-	localAsm, err := compileNative(wasm, 1, true, localTarget, false, time.Minute)
+	localAsm, err := compileNative(wasm, 1, true, localTarget, false, DefaultStylusTargetConfig.MaxSinglepassOutputSize, time.Minute)
 	if err != nil {
 		return fmt.Errorf("failed compiling native: %w", err)
 	}
@@ -504,7 +545,7 @@ func testHandleNativeStackOverflow() error {
 	}
 
 	// Compile cranelift ASM and pre-populate the wasm store for sub-test 3.
-	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, time.Minute)
+	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, DefaultStylusTargetConfig.MaxSinglepassOutputSize, time.Minute)
 	if err != nil {
 		return fmt.Errorf("failed compiling cranelift: %w", err)
 	}
@@ -632,7 +673,7 @@ func testHandleNativeStackOverflowAtMax() error {
 		return fmt.Errorf("failed compiling WAT: %w", err)
 	}
 
-	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, time.Minute)
+	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, DefaultStylusTargetConfig.MaxSinglepassOutputSize, time.Minute)
 	if err != nil {
 		return fmt.Errorf("failed compiling cranelift: %w", err)
 	}
@@ -705,7 +746,7 @@ func testRetryRestoresStylusPages() error {
 	}
 
 	// Compile cranelift ASM for the retry.
-	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, time.Minute)
+	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, DefaultStylusTargetConfig.MaxSinglepassOutputSize, time.Minute)
 	if err != nil {
 		return fmt.Errorf("failed compiling cranelift: %w", err)
 	}
@@ -862,7 +903,7 @@ func testCraneliftCompilationAndCache() error {
 	}
 
 	// Manually compile cranelift ASM and persist it.
-	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, time.Minute)
+	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, DefaultStylusTargetConfig.MaxSinglepassOutputSize, time.Minute)
 	if err != nil {
 		return fmt.Errorf("cranelift compilation failed: %w", err)
 	}

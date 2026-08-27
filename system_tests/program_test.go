@@ -3592,3 +3592,51 @@ func testProgramMemoryFillOverflow(t *testing.T, builderOpts ...func(*NodeBuilde
 		t.Fatal("should get filtered, got: ", err)
 	}
 }
+
+func TestProgramSinglepassOutputSizeLimit(t *testing.T) {
+	const maxOutputSize = 64 * 1024
+
+	savedFallback := programs.GetAllowFallback()
+	t.Cleanup(func() { programs.SetAllowFallback(savedFallback) })
+
+	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+		b.DontParalellise()
+		b.execConfig.StylusTarget.AllowFallback = true
+		b.execConfig.StylusTarget.MaxSinglepassOutputSize = maxOutputSize
+	})
+	defer cleanup()
+
+	statedb, err := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().State()
+	Require(t, err)
+	nodeConfig := programs.GetStylusConfig(statedb)
+	if nodeConfig.MaxSinglepassOutputSize != maxOutputSize {
+		t.Fatalf("expected Singlepass output limit %d, got: %+v", maxOutputSize, nodeConfig)
+	}
+
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+
+	wasm, _ := readWasmFile(t, rustFile("multicall"))
+	program := deployContract(t, ctx, auth, l2client, wasm)
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
+
+	auth.Value = oneEth
+	auth.GasLimit = 32_000_000
+	tx, err := arbWasm.ActivateProgram(&auth, program)
+	Require(t, err)
+	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	if len(receipt.Logs) != 1 {
+		t.Fatalf("expected one activation log, got %d", len(receipt.Logs))
+	}
+	activationLog, err := arbWasm.ParseProgramActivated(*receipt.Logs[0])
+	Require(t, err)
+	craneliftTarget, err := rawdb.CraneliftTarget(rawdb.LocalTarget())
+	Require(t, err)
+	statedb, err = builder.L2.ExecNode.Backend.ArbInterface().BlockChain().State()
+	Require(t, err)
+	if asm := statedb.ActivatedAsm(craneliftTarget, activationLog.ModuleHash); len(asm) == 0 {
+		t.Fatalf("expected activation to store Cranelift output for target %s", craneliftTarget)
+	}
+}

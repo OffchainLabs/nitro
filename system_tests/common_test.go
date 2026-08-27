@@ -18,7 +18,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,8 +33,8 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
+	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
@@ -41,20 +43,16 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/eth"
-	"github.com/ethereum/go-ethereum/eth/catalyst"
-	"github.com/ethereum/go-ethereum/eth/ethconfig"
-	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethclient/gethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/ethdb/pebble"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/parent"
@@ -109,8 +107,6 @@ import (
 	valnoderedis "github.com/offchainlabs/nitro/validator/valnode/redis"
 )
 
-type info = *BlockchainTestInfo
-
 type SecondNodeParams struct {
 	nodeConfig             *arbnode.Config
 	execConfig             *gethexec.Config
@@ -127,7 +123,7 @@ type SecondNodeParams struct {
 type TestClient struct {
 	ctx                    context.Context
 	Client                 *ethclient.Client
-	L1Backend              *eth.Ethereum
+	GethClient             *gethclient.Client
 	L1BlobReader           containers.Option[daprovider.BlobReader]
 	Stack                  *node.Node
 	ConsensusNode          *arbnode.Node
@@ -135,17 +131,11 @@ type TestClient struct {
 	ClientWrapper          *ClientWrapper
 	ConsensusConfigFetcher ConfigFetcher[arbnode.Config]
 	ExecutionConfigFetcher ConfigFetcher[gethexec.Config]
+	ExternalL1Mining       *externalL1MiningClient
 
 	// having cleanup() field makes cleanup customizable from default cleanup methods after calling build
 	cleanup func()
 }
-
-var RollupOwner = "RollupOwner"
-var Sequencer = "Sequencer"
-var Validator = "Validator"
-var User = "User"
-
-var DefaultChainAccounts = []string{RollupOwner, Sequencer, Validator, User}
 
 func NewTestClient(ctx context.Context) *TestClient {
 	return &TestClient{ctx: ctx}
@@ -189,6 +179,23 @@ func (tc *TestClient) GetBaseFeeAt(t *testing.T, blockNum *big.Int) *big.Int {
 func (tc *TestClient) SendWaitTestTransactions(t *testing.T, txs []*types.Transaction) []*types.Receipt {
 	t.Helper()
 	return SendWaitTestTransactions(t, tc.ctx, tc.Client, txs)
+}
+
+func (tc *TestClient) AddTransactionsToSingleBlock(t *testing.T, txs []*types.Transaction) {
+	t.Helper()
+	if tc.ExternalL1Mining == nil {
+		t.Fatal("test client has no external L1 mining client")
+	}
+	Require(t, tc.ExternalL1Mining.CommitTransactions(tc.ctx, txs))
+}
+
+// AdvanceL1Time advances the external parent chain and seals a block with the
+// resulting timestamp.
+func (tc *TestClient) AdvanceL1Time(ctx context.Context, d time.Duration) error {
+	if tc.ExternalL1Mining == nil {
+		return errors.New("test client has no external L1 mining client")
+	}
+	return tc.ExternalL1Mining.AdvanceTime(ctx, d)
 }
 
 func (tc *TestClient) DeployBigMap(t *testing.T, auth bind.TransactOpts) (common.Address, *localgen.BigMap) {
@@ -242,6 +249,34 @@ func (tc *TestClient) RecalibrateNonce(t *testing.T, lInfo info) {
 	}
 }
 
+func (tc *TestClient) ReorgToOldBlock(block *types.Block) error {
+	// The external L1 serves the engine API over IPC. A forkchoice update to an
+	// old canonical block moves the head back without truncating the abandoned
+	// blocks, matching core.BlockChain.ReorgToOldBlock semantics.
+	var response engine.ForkChoiceResponse
+	err := tc.Client.Client().CallContext(
+		tc.ctx,
+		&response,
+		"engine_forkchoiceUpdatedV3",
+		engine.ForkchoiceStateV1{HeadBlockHash: block.Hash()},
+		nil,
+	)
+	if err != nil {
+		return err
+	}
+	if response.PayloadStatus.Status != engine.VALID {
+		return fmt.Errorf("forkchoice update to block %s returned status %s", block.Hash(), response.PayloadStatus.Status)
+	}
+	head, err := tc.Client.HeaderByNumber(tc.ctx, nil)
+	if err != nil {
+		return err
+	}
+	if head.Hash() != block.Hash() {
+		return fmt.Errorf("external L1 head is %s after forkchoice update to block %s", head.Hash(), block.Hash())
+	}
+	return nil
+}
+
 var DefaultTestForwarderConfig = gethexec.ForwarderConfig{
 	ConnectionTimeout:     2 * time.Second,
 	IdleConnectionTimeout: 2 * time.Second,
@@ -261,6 +296,7 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	Forwarder:                    DefaultTestForwarderConfig,
 	QueueSize:                    128,
 	QueueTimeout:                 time.Second * 5,
+	MaxBlockTxCandidates:         gethexec.DefaultSequencerConfig.MaxBlockTxCandidates,
 	NonceCacheSize:               4,
 	MaxTxDataSize:                95000,
 	NonceFailureCacheSize:        1024,
@@ -318,8 +354,6 @@ type NodeBuilder struct {
 	arbOSInit     *params.ArbOSInit
 	nodeConfig    *arbnode.Config
 	execConfig    *gethexec.Config
-	l1ChainConfig *params.ChainConfig
-	l1StackConfig *node.Config
 	l2StackConfig *node.Config
 	valnodeConfig *valnode.Config
 	l3Config      *NitroConfig
@@ -344,6 +378,7 @@ type NodeBuilder struct {
 	withL1ClientWrapper         bool
 	deployReferenceDAContracts  bool
 	withReferenceDAProvider     bool
+	externalL1GenesisOverrides  map[string]interface{}
 	TrieNoAsyncFlush            bool
 	NoHistoryIndexDelay         bool
 	// If true, calls prestate tracer check AutomatedPrestateTracerTest on L2 cleanup
@@ -429,7 +464,6 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	b.L1Info = NewL1TestInfo(t)
 	b.L2Info = NewArbTestInfo(t, b.chainConfig.ChainID)
 	b.dataDir = t.TempDir()
-	b.l1StackConfig = testhelpers.CreateStackConfigForTest(b.dataDir)
 	b.l2StackConfig = testhelpers.CreateStackConfigForTest(b.dataDir)
 	cp := valnode.TestValidationConfig
 	b.valnodeConfig = &cp
@@ -451,7 +485,6 @@ func (b *NodeBuilder) WithDatabase(database string) *NodeBuilder {
 		panic("unknown database engine: " + database)
 	}
 
-	b.l1StackConfig.DBEngine = database
 	b.l2StackConfig.DBEngine = database
 	b.l3Config.stackConfig.DBEngine = database
 	return b
@@ -615,10 +648,11 @@ func (b *NodeBuilder) WithL1ClientWrapper(t *testing.T) *NodeBuilder {
 	return b
 }
 
-// WithL1ChainConfig sets a custom chain config for the L1 node.
-// This overrides the default AllDevChainProtocolChanges-based config.
-func (b *NodeBuilder) WithL1ChainConfig(cfg *params.ChainConfig) *NodeBuilder {
-	b.l1ChainConfig = cfg
+// WithExternalL1GenesisOverrides changes the external geth genesis chain
+// config. A nil value deletes a key. A non-nil map makes the caller
+// authoritative for the fork schedule.
+func (b *NodeBuilder) WithExternalL1GenesisOverrides(overrides map[string]interface{}) *NodeBuilder {
+	b.externalL1GenesisOverrides = overrides
 	return b
 }
 
@@ -652,6 +686,13 @@ func (b *NodeBuilder) waitForMelToReadInitMsg(t *testing.T, tc *TestClient) {
 	}
 }
 
+// batchProgressSource reports how far a node has read the parent chain's posted batches. The
+// legacy InboxTracker and the MEL message extractor both satisfy it.
+type batchProgressSource interface {
+	GetBatchCount() (uint64, error)
+	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
+}
+
 // waitForNodeToCatchUpWithParentChain blocks until the node has executed every
 // message from the batches already posted to the parent chain. A node built on
 // a parent chain that already holds batches starts behind and catches up in the
@@ -660,7 +701,18 @@ func (b *NodeBuilder) waitForMelToReadInitMsg(t *testing.T, tc *TestClient) {
 func (b *NodeBuilder) waitForNodeToCatchUpWithParentChain(t *testing.T) {
 	t.Helper()
 	node := b.L2.ConsensusNode
-	if node == nil || node.InboxTracker == nil || b.L1 == nil || b.addresses == nil {
+	if node == nil || b.L1 == nil || b.addresses == nil {
+		return
+	}
+	// Under MEL the message extractor replaces the inbox tracker, so read whichever is wired.
+	// Keying only off InboxTracker silently skipped the wait for every MEL node.
+	var batches batchProgressSource
+	switch {
+	case node.InboxTracker != nil:
+		batches = node.InboxTracker
+	case node.MessageExtractor != nil:
+		batches = node.MessageExtractor
+	default:
 		return
 	}
 	// The target has to come from the parent chain; the node's own batch count
@@ -676,11 +728,11 @@ func (b *NodeBuilder) waitForNodeToCatchUpWithParentChain(t *testing.T) {
 
 	deadline := time.Now().Add(time.Minute)
 	for {
-		trackedBatches, err := node.InboxTracker.GetBatchCount()
+		trackedBatches, err := batches.GetBatchCount()
 		Require(t, err)
 		var targetMessage, executedMessage arbutil.MessageIndex
 		if trackedBatches >= targetBatch {
-			targetMessage, err = node.InboxTracker.GetBatchMessageCount(targetBatch - 1)
+			targetMessage, err = batches.GetBatchMessageCount(targetBatch - 1)
 			Require(t, err)
 			head, err := b.L2.ExecNode.ExecEngine.HeadMessageIndex()
 			Require(t, err)
@@ -856,6 +908,7 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 }
 
 func (b *NodeBuilder) BuildL1(t *testing.T) {
+	gethBinary := externalL1Binary(t)
 	if b.parallelise {
 		b.parallelise = false
 		t.Parallel()
@@ -865,7 +918,19 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.L1 = NewTestClient(b.ctx)
-	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack, b.L1.ClientWrapper, b.L1.L1BlobReader = createTestL1BlockChain(t, b.L1Info, b.withL1ClientWrapper, b.l1StackConfig, b.l1ChainConfig)
+	extL1 := CreateExternalL1(t, b.ctx, ExternalL1Params{
+		Info:              b.L1Info,
+		GethBinary:        gethBinary,
+		WithClientWrapper: b.withL1ClientWrapper,
+		GenesisOverrides:  b.externalL1GenesisOverrides,
+	})
+	b.L1Info = extL1.Info
+	b.L1.Client = extL1.Client
+	b.L1.GethClient = extL1.GethClient
+	b.L1.ClientWrapper = extL1.ClientWrapper
+	b.L1.ExternalL1Mining = extL1.MiningClient
+	b.L1.L1BlobReader = extL1.BlobReader
+	b.L1.cleanup = extL1.Close
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 	deployConfig := DeployConfig{
@@ -886,7 +951,19 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 		true,
 		deployConfig,
 	)
-	b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
+}
+
+func externalL1Binary(t *testing.T) string {
+	t.Helper()
+	gethBinary := os.Getenv("NITRO_TEST_L1_GETH")
+	if gethBinary == "" {
+		_, filename, _, ok := runtime.Caller(0)
+		if !ok {
+			t.Fatal("could not locate the repository root for the default external geth; run make build-upstream-geth and set NITRO_TEST_L1_GETH")
+		}
+		gethBinary = filepath.Join(filepath.Dir(filepath.Dir(filename)), "target", "bin", "geth")
+	}
+	return gethBinary
 }
 
 func clientForStackUseHTTP(stackConfig *node.Config) bool {
@@ -1353,7 +1430,7 @@ func build2ndNode(
 	var cleanup func()
 	testClient := NewTestClient(ctx)
 	testClient.Client, testClient.ConsensusNode, testClient.ExecNode, cleanup, testClient.ConsensusConfigFetcher, testClient.ExecutionConfigFetcher =
-		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, firstNodeTestClient.ExecNode, parentChainTestClient.Stack, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, parentChainTestClient.L1BlobReader, firstNodeTestClient.ConsensusNode.ParentChain, noHistoryIndexDelay, params.fatalErrChan)
+		Create2ndNodeWithConfig(t, ctx, firstNodeTestClient.ConsensusNode, firstNodeTestClient.ExecNode, parentChainTestClient.Client, parentChainInfo, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, valnodeConfig, params.addresses, initMessage, params.useExecutionClientOnly, parentChainTestClient.L1BlobReader, firstNodeTestClient.ConsensusNode.ParentChain, noHistoryIndexDelay, params.fatalErrChan)
 	testClient.cleanup = cleanup
 
 	testClient.L1BlobReader = parentChainTestClient.L1BlobReader
@@ -1425,20 +1502,6 @@ func (b *NodeBuilder) Build2ndNodeOnL3(t *testing.T, params *SecondNodeParams) (
 
 func (b *NodeBuilder) BridgeBalance(t *testing.T, account string, amount *big.Int) (*types.Transaction, *types.Receipt) {
 	return BridgeBalance(t, account, amount, b.L1Info, b.L2Info, b.L1.Client, b.L2.Client, b.ctx)
-}
-
-func SendWaitTestTransactions(t *testing.T, ctx context.Context, client *ethclient.Client, txs []*types.Transaction) []*types.Receipt {
-	t.Helper()
-	receipts := make([]*types.Receipt, len(txs))
-	for _, tx := range txs {
-		Require(t, client.SendTransaction(ctx, tx))
-	}
-	for i, tx := range txs {
-		var err error
-		receipts[i], err = EnsureTxSucceeded(ctx, client, tx)
-		Require(t, err)
-	}
-	return receipts
 }
 
 // checkBatchPosting sends a transaction and verifies it gets posted to L1 and syncs to followers. Returns the L2 block
@@ -1703,25 +1766,6 @@ func GetBaseFeeAt(t *testing.T, client *ethclient.Client, ctx context.Context, b
 	return header.BaseFee
 }
 
-type lifecycle struct {
-	start func() error
-	stop  func() error
-}
-
-func (l *lifecycle) Start() error {
-	if l.start != nil {
-		return l.start()
-	}
-	return nil
-}
-
-func (l *lifecycle) Stop() error {
-	if l.start != nil {
-		return l.stop()
-	}
-	return nil
-}
-
 type ConfigFetcher[T any] interface {
 	Set(*T)
 	Get() *T
@@ -1899,96 +1943,6 @@ func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, u
 	_, valStack := createTestValidationNode(t, ctx, &conf)
 	configByValidationNode(nodeConfig, valStack)
 	return valStack
-}
-
-func createTestL1BlockChain(t *testing.T, l1info info, withClientWrapper bool, stackConfig *node.Config, l1ChainConfig *params.ChainConfig) (info, *ethclient.Client, *eth.Ethereum, *node.Node, *ClientWrapper, containers.Option[daprovider.BlobReader]) {
-	if l1info == nil {
-		l1info = NewL1TestInfo(t)
-	}
-	l1info.GenerateAccount("Faucet")
-	for _, acct := range DefaultChainAccounts {
-		l1info.GenerateAccount(acct)
-	}
-
-	var chainConfig *params.ChainConfig
-	if l1ChainConfig != nil {
-		chainConfig = l1ChainConfig
-	} else {
-		chainConfig = chaininfo.ArbitrumDevTestChainConfig()
-		chainConfig.ArbitrumChainParams = params.ArbitrumChainParams{}
-	}
-
-	stackConfig.DataDir = ""
-	stack, err := node.New(stackConfig)
-	Require(t, err)
-
-	nodeConf := ethconfig.Defaults
-	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
-	faucetAddr := l1info.GetAddress("Faucet")
-	l1Genesis := core.DeveloperGenesisBlock(15_000_000, &faucetAddr)
-	if l1ChainConfig != nil {
-		// Config is deprecated for Arbitrum L2 chains (use SerializedChainConfig),
-		// but for L1 chains it's required by geth's SetupGenesisBlock.
-		l1Genesis.Config = chainConfig
-	}
-
-	// Pre-fund with large values some common accounts
-	infoGenesis := l1info.GetGenesisAlloc()
-	bigBalance := big.NewInt(0).SetUint64(9223372036854775807)
-	for _, acct := range DefaultChainAccounts {
-		addr := l1info.GetAddress(acct)
-		if l1Genesis.Alloc[addr].Balance == nil {
-			l1Genesis.Alloc[addr] = types.Account{Balance: bigBalance}
-		} else {
-			l1Genesis.Alloc[addr].Balance.Add(l1Genesis.Alloc[addr].Balance, bigBalance)
-		}
-	}
-	for acct, info := range infoGenesis {
-		l1Genesis.Alloc[acct] = info
-	}
-	l1Genesis.BaseFee = big.NewInt(50 * params.GWei)
-	nodeConf.Genesis = l1Genesis
-	nodeConf.Miner.Etherbase = l1info.GetAddress("Faucet")
-	nodeConf.Miner.PendingFeeRecipient = l1info.GetAddress("Faucet")
-	nodeConf.SyncMode = ethconfig.FullSync
-
-	l1backend, err := eth.New(stack, &nodeConf)
-	Require(t, err)
-
-	simBeacon, err := catalyst.NewSimulatedBeacon(0, common.Address{}, l1backend)
-	Require(t, err)
-	Require(t, simBeacon.Initialize(context.Background()))
-	catalyst.RegisterSimulatedBeaconAPIs(stack, simBeacon)
-	stack.RegisterLifecycle(simBeacon)
-
-	tempKeyStore := keystore.NewKeyStore(t.TempDir(), keystore.LightScryptN, keystore.LightScryptP)
-	faucetAccount, err := tempKeyStore.ImportECDSA(l1info.Accounts["Faucet"].PrivateKey, "passphrase")
-	Require(t, err)
-	Require(t, tempKeyStore.Unlock(faucetAccount, "passphrase"))
-	l1backend.AccountManager().AddBackend(tempKeyStore)
-
-	stack.RegisterLifecycle(&lifecycle{stop: func() error {
-		return l1backend.Stop()
-	}})
-
-	stack.RegisterAPIs([]rpc.API{{
-		Namespace: "eth",
-		Service:   filters.NewFilterAPI(filters.NewFilterSystem(l1backend.APIBackend, filters.Config{})),
-	}})
-	stack.RegisterAPIs(tracers.APIs(l1backend.APIBackend))
-
-	Require(t, stack.Start())
-
-	var rpcClient rpc.ClientInterface = stack.Attach()
-	var clientWrapper *ClientWrapper
-	if withClientWrapper {
-		clientWrapper = NewClientWrapper(rpcClient, l1info)
-		rpcClient = clientWrapper
-	}
-
-	l1Client := ethclient.NewClient(rpcClient)
-
-	return l1info, l1Client, l1backend, stack, clientWrapper, containers.Some[daprovider.BlobReader](simBeacon)
 }
 
 var (
@@ -2325,26 +2279,6 @@ func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error
 // The effective timeout is capped by the context's deadline if one is set.
 // On timeout or context cancellation it calls t.Fatalf, so it must be called from the test goroutine.
 // The check function should handle errors by logging and returning false, not by calling Fatal/Require.
-// testTimeoutScale reads NITRO_TEST_TIMEOUT_SCALE once and returns a multiplier
-// applied to pollUntil/retryUntilFound timeouts. CI sets this to >1.0 so tests
-// designed for a quiet machine can breathe on loaded shared runners. Defaults to 1.0.
-var (
-	testTimeoutScale     float64
-	testTimeoutScaleOnce sync.Once
-)
-
-func getTestTimeoutScale() float64 {
-	testTimeoutScaleOnce.Do(func() {
-		testTimeoutScale = 1.0
-		if v := os.Getenv("NITRO_TEST_TIMEOUT_SCALE"); v != "" {
-			if parsed, err := strconv.ParseFloat(v, 64); err == nil && parsed > 0 {
-				testTimeoutScale = parsed
-			}
-		}
-	})
-	return testTimeoutScale
-}
-
 func pollUntil(t *testing.T, ctx context.Context, timeout time.Duration, interval time.Duration, desc string, check func() bool) {
 	t.Helper()
 	timeout = time.Duration(float64(timeout) * getTestTimeoutScale())
@@ -2424,16 +2358,6 @@ func goroutineErrorf(t *testing.T, ctx context.Context, cancel context.CancelFun
 	return true
 }
 
-func Require(t *testing.T, err error, text ...interface{}) {
-	t.Helper()
-	testhelpers.RequireImpl(t, err, text...)
-}
-
-func Fatal(t *testing.T, printables ...interface{}) {
-	t.Helper()
-	testhelpers.FailImpl(t, printables...)
-}
-
 // waitForFindInboxBatch polls FindInboxBatchContainingMessage until the batch
 // containing msgIdx is found, returning the batch number. Any error is treated
 // as immediately fatal. Calls t.Fatalf on timeout. The caller-supplied timeout
@@ -2499,7 +2423,7 @@ func Create2ndNodeWithConfig(
 	ctx context.Context,
 	first *arbnode.Node,
 	firstExec *gethexec.ExecutionNode,
-	parentChainStack *node.Node,
+	parentChainClient *ethclient.Client,
 	parentChainInfo *BlockchainTestInfo,
 	chainInitData *statetransfer.ArbosInitializationInfo,
 	nodeConfig *arbnode.Config,
@@ -2526,9 +2450,6 @@ func Create2ndNodeWithConfig(
 	if feedErrChan == nil {
 		feedErrChan = make(chan error, 10)
 	}
-	parentChainRpcClient := parentChainStack.Attach()
-	parentChainClient := ethclient.NewClient(parentChainRpcClient)
-
 	if stackConfig == nil {
 		stackConfig = testhelpers.CreateStackConfigForTest(t.TempDir())
 	}
@@ -2624,11 +2545,6 @@ func GetBalance(t *testing.T, ctx context.Context, client *ethclient.Client, acc
 	balance, err := client.BalanceAt(ctx, account, nil)
 	Require(t, err, "could not get balance")
 	return balance
-}
-
-func requireClose(t *testing.T, s *node.Node, text ...interface{}) {
-	t.Helper()
-	Require(t, s.Close(), text...)
 }
 
 func authorizeAnyTrustKeyset(

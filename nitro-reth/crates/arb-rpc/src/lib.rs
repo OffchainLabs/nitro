@@ -30,7 +30,7 @@ pub mod types;
 use alloy_primitives::{B256, U256};
 pub use api::ArbEthApi;
 pub use arb_api::{ArbApiHandler, ArbApiServer};
-pub use block_producer::{BlockProducer, BlockProducerError, BlockProductionInput, ProducedBlock};
+pub use block_producer::{BlockProducer, BlockProducerError, ProducedBlock};
 pub use builder::{ArbEthApiBuilder, ArbRpcConvert};
 pub use error::{RpcError, RpcResult};
 pub use header::ArbHeaderConverter;

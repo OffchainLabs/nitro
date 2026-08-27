@@ -429,7 +429,7 @@ func TestBidValidatorAPI_SubmitBid_ProduceFailureRollsBackRateLimit(t *testing.T
 	cancelledCtx, cancelFn := context.WithCancel(context.Background())
 	cancelFn()
 
-	api := &BidValidatorAPI{bidValidator: bv}
+	api := &BidValidatorAPI{BidValidator: bv}
 	err = api.SubmitBid(cancelledCtx, bid.ToJson())
 	require.Error(t, err, "Produce should fail with cancelled context")
 
