@@ -253,7 +253,7 @@ pub fn decompress(input: &[u8], dictionary: Dictionary) -> Result<Vec<u8>, Brotl
 
 /// Brotli decompresses a slice into
 pub fn decompress_fixed<'a>(
-    input: &'a [u8],
+    input: &[u8],
     output: &'a mut [MaybeUninit<u8>],
     dictionary: Dictionary,
 ) -> Result<&'a [u8], BrotliStatus> {

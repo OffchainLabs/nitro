@@ -69,7 +69,7 @@ pub fn compress(
 
 /// Brotli decompresses a slice into a buffer of limited capacity, through the host.
 pub fn decompress_fixed<'a>(
-    input: &'a [u8],
+    input: &[u8],
     output: &'a mut [MaybeUninit<u8>],
     dictionary: Dictionary,
 ) -> Result<&'a [u8], BrotliStatus> {
