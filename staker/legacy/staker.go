@@ -271,6 +271,7 @@ type LatestConfirmedNotifier interface {
 	UpdateLatestConfirmed(count arbutil.MessageIndex, globalState validator.GoGlobalState)
 }
 
+// lint:require-exhaustive-initialization
 type validatedNode struct {
 	number uint64
 	hash   common.Hash
