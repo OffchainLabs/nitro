@@ -56,6 +56,7 @@ type EdgeManager interface {
 // created onchain, the challenge watcher service will add it to its respective
 // "trackedChallenge" namespaced under the top-level assertion hash the edge
 // belongs to.
+// lint:require-exhaustive-initialization
 type trackedChallenge struct {
 	honestEdgeTree                 *tree.RoyalChallengeTree
 	confirmedLevelZeroEdgeClaimIds *threadsafe.Map[protocol.ClaimId, protocol.EdgeId]
