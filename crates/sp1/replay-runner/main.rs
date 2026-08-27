@@ -38,7 +38,7 @@ struct Cli {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    let program = build_program(&cli.program)?;
+    let program = load_program(&cli.program)?;
     let mut executor = MinimalExecutor::<UserMode>::simple(Arc::new(program));
 
     let payload = build_payload(&cli)?;
@@ -55,7 +55,7 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn build_program(program_file: &Path) -> anyhow::Result<Program> {
+fn load_program(program_file: &Path) -> anyhow::Result<Program> {
     let elf = fs::read(program_file)
         .with_context(|| format!("read program ELF from {}", program_file.display()))?;
     Program::from(&elf).map_err(|e| anyhow::anyhow!("parse program ELF: {e:#}"))
@@ -75,7 +75,7 @@ fn build_payload(cli: &Cli) -> anyhow::Result<Vec<u8>> {
         .context("build validation input")?;
 
     if let Some(wasms) = request.user_wasms.get("wasm") {
-        let compiler = Arc::new(build_program(&cli.stylus_compiler_program)?);
+        let compiler = Arc::new(load_program(&cli.stylus_compiler_program)?);
         for (module_hash, wasm) in wasms.iter() {
             if input.module_asms.contains_key(module_hash.deref()) {
                 continue;
