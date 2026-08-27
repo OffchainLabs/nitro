@@ -210,6 +210,7 @@ type createNodeAction struct {
 	hash              common.Hash
 }
 
+// lint:require-exhaustive-initialization
 type existingNodeAction struct {
 	number uint64
 	hash   [32]byte
