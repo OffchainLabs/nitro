@@ -28,6 +28,7 @@ var Analyzer = &analysis.Analyzer{
 }
 
 // koanfError indicates the position of an error in configuration.
+// lint:require-exhaustive-initialization
 type koanfError struct {
 	Pos     token.Pos
 	Message string
