@@ -26,6 +26,7 @@ type storageCacheStores struct {
 
 // storageCache mirrors the stylus storage cache on arbos when tracing a call.
 // This is useful for correctly reporting the SLOAD and SSTORE opcodes.
+// lint:require-exhaustive-initialization
 type storageCache struct {
 	cache map[common.Hash]storageCacheEntry
 }
