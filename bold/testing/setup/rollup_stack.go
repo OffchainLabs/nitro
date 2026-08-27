@@ -843,6 +843,7 @@ func deployBridgeCreator(
 		DelayBufferableSequencerInbox: seqInboxBufferableTemplate,
 	}
 
+	// lint:require-exhaustive-initialization
 	type bridgeCreationResult struct {
 		bridgeCreatorAddr common.Address
 		bridgeCreator     *rollupgen.BridgeCreator
