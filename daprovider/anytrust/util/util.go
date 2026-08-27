@@ -117,6 +117,7 @@ func NewWriter(anyTrustWriter Writer, maxMessageSize int) *writer {
 	}
 }
 
+// lint:require-exhaustive-initialization
 type writer struct {
 	anyTrustWriter Writer
 	maxMessageSize int
