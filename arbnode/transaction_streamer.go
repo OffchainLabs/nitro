@@ -162,6 +162,7 @@ func NewTransactionStreamer(
 
 // Represents a block's hash in the database.
 // Necessary because RLP decoder doesn't produce nil values by default.
+// lint:require-exhaustive-initialization
 type blockHashDBValue struct {
 	BlockHash *common.Hash `rlp:"nil"`
 }
