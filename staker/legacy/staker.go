@@ -257,6 +257,7 @@ func DangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".without-block-validator", DefaultL1ValidatorConfig.Dangerous.WithoutBlockValidator, "DANGEROUS! allows running an L1 validator without a block validator")
 }
 
+// lint:require-exhaustive-initialization
 type nodeAndHash struct {
 	id   uint64
 	hash common.Hash
