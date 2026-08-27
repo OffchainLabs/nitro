@@ -196,6 +196,7 @@ var cgroupsV2MemoryFiles = cgroupsMemoryFiles{
 	inactiveRe: regexp.MustCompile(`^inactive_file (\d+)`),
 }
 
+// lint:require-exhaustive-initialization
 type cgroupsMemoryLimitChecker struct {
 	files         cgroupsMemoryFiles
 	memLimitBytes int
