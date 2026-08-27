@@ -44,6 +44,7 @@ func (t *QueuedTransaction) CumulativeWeight() uint64 {
 	return t.FullTx.Nonce()
 }
 
+// lint:require-exhaustive-initialization
 type queuedTransactionForEncoding struct {
 	FullTx                 *types.Transaction
 	Data                   types.DynamicFeeTx
