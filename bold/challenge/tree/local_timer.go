@@ -95,6 +95,7 @@ func (ht *RoyalChallengeTree) UnrivaledAtBlockNum(e protocol.ReadOnlyEdge, block
 }
 
 // Contains a rival edge's id and its creation block number.
+// lint:require-exhaustive-initialization
 type rival struct {
 	id             protocol.EdgeId
 	createdAtBlock creationTime
