@@ -750,12 +750,21 @@ func (n *ExecutionNode) closeRecorder() {
 }
 
 func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
+	if n.Sequencer != nil {
+		return containers.NewReadyPromise(n.Sequencer.DigestMessage(num, msg, msgForPrefetch))
+	}
 	return containers.NewReadyPromise(n.ExecEngine.DigestMessage(num, msg, msgForPrefetch))
 }
 func (n *ExecutionNode) Reorg(newHeadMsgIdx arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) containers.PromiseInterface[[]*execution.MessageResult] {
+	if n.Sequencer != nil {
+		return containers.NewReadyPromise(n.Sequencer.Reorg(newHeadMsgIdx, newMessages))
+	}
 	return containers.NewReadyPromise(n.ExecEngine.Reorg(newHeadMsgIdx, newMessages))
 }
 func (n *ExecutionNode) ResequenceReorgedMessage(msg *arbostypes.MessageWithMetadata) (*execution.SequencedMsg, error) {
+	if n.Sequencer != nil {
+		return n.Sequencer.ResequenceReorgedMessage(msg)
+	}
 	return n.ExecEngine.ResequenceReorgedMessage(msg)
 }
 func (n *ExecutionNode) StartSequencing(ctx context.Context) (*execution.SequencedMsg, time.Duration) {
@@ -783,6 +792,9 @@ func (n *ExecutionNode) EnqueueDelayedMessages(msgs []*arbostypes.L1IncomingMess
 	n.ExecEngine.EnqueueDelayedMessages(msgs, firstMsgIdx)
 }
 func (n *ExecutionNode) AppendLastSequencedBlock() error {
+	if n.Sequencer != nil {
+		return n.Sequencer.AppendLastSequencedBlock()
+	}
 	return n.ExecEngine.AppendLastSequencedBlock()
 }
 func (n *ExecutionNode) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {

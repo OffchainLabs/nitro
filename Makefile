@@ -59,6 +59,8 @@ endif
 export GOTOOLCHAIN := go1.25.12
 GOLANGCI_LINT_VERSION := v2.5.0
 golangci_lint := target/bin/golangci-lint
+upstream_geth_version ?= glamsterdam-devnet-8
+upstream_geth_toolchain ?= auto
 
 UNAME_S := $(shell uname -s)
 
@@ -242,6 +244,11 @@ test-go-deps: \
 	$(arbitrator_stylus_lib) \
 	$(arbitrator_generated_header) \
 	$(patsubst %,$(arbitrator_cases)/%.wasm, global-state read-inboxmsg-10 global-state-wrapper const)
+
+.PHONY: build-upstream-geth ## Install the configured upstream geth used to run external L1
+build-upstream-geth:
+	GOTOOLCHAIN=$(upstream_geth_toolchain) GOBIN=$(abspath target/bin) \
+		go install github.com/ethereum/go-ethereum/cmd/geth@$(upstream_geth_version)
 
 .PHONY: build-prover-header ## Build the prover generated header.
 build-prover-header: $(arbitrator_generated_header)

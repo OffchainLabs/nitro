@@ -12,11 +12,11 @@ import (
 // fee func.
 func newMockEntry(id int, priority uint64) mockTx {
 	tx := mockTx{
-		Priority:        &Priority{},
+		PGAState:        &PGAState{},
 		id:              id,
 		firstAppearance: defaultArrival,
 	}
-	tx.SetPriority(priority)
+	tx.SetTip(priority)
 	return tx
 }
 
@@ -56,14 +56,14 @@ func TestTxHeapPopConcreteBreaksTiesByArrival(t *testing.T) {
 	}
 }
 
-func TestTxHeapAddBoost(t *testing.T) {
+func TestTxHeapApplyRoundBoundary(t *testing.T) {
 	var h txHeap[mockTx]
-	// Three entries with distinct priorities; addBoost lifts every key by the same delta and leaves the order intact.
+	// Three entries with distinct priorities; the boundary lifts every key by the same delta and leaves the order intact.
 	h.pushConcrete(newMockEntry(1, 30))
 	h.pushConcrete(newMockEntry(2, 10))
 	h.pushConcrete(newMockEntry(3, 20))
 
-	h.addBoost(5)
+	h.applyRoundBoundary(5)
 
 	// Order is preserved (1 > 3 > 2) and every key rose by 5.
 	for _, want := range []struct {

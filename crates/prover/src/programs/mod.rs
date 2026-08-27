@@ -39,6 +39,7 @@ pub mod start;
 
 pub const STYLUS_ENTRY_POINT: &str = "user_entrypoint";
 pub const STYLUS_VERSION_DISABLE_MULTIVALUE: u16 = 3;
+pub const DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT: usize = 10 * 1024 * 1024;
 
 pub trait ModuleMod {
     fn add_global(&mut self, name: &str, ty: Type, init: GlobalInit) -> Result<GlobalIndex>;

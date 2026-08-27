@@ -1076,6 +1076,8 @@ dependencies = [
  "alloy-rlp",
  "arb-mel-types",
  "arbos-types",
+ "reth-libmdbx",
+ "tempfile",
  "thiserror 2.0.18",
 ]
 
@@ -1241,6 +1243,29 @@ dependencies = [
  "arb-mel-types",
  "arbos-types",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "arb-mel-node"
+version = "0.1.5"
+dependencies = [
+ "alloy-eips",
+ "alloy-primitives",
+ "alloy-provider",
+ "arb-consensus-db",
+ "arb-da-provider",
+ "arb-mel-db",
+ "arb-mel-runner",
+ "arb-mel-types",
+ "arb-parent-chain-client",
+ "arbos-types",
+ "async-trait",
+ "clap",
+ "eyre",
+ "humantime",
+ "tokio",
+ "tracing",
+ "tracing-subscriber 0.3.23",
 ]
 
 [[package]]
@@ -1682,12 +1707,12 @@ version = "0.1.0"
 dependencies = [
  "digest 0.10.7",
  "eyre",
- "fnv",
  "hex",
  "num-traits",
  "num_enum",
  "ruint2",
  "serde",
+ "thiserror 1.0.69",
  "tiny-keccak",
  "wasmparser 0.245.1",
 ]

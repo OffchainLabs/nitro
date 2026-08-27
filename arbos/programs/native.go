@@ -288,6 +288,7 @@ func compileNative(
 	debug bool,
 	target rawdb.WasmTarget,
 	cranelift bool,
+	maxSinglepassOutputSize uint64,
 	timeout time.Duration,
 ) ([]byte, error) {
 	result := containers.NewPromise[[]byte](func() {})
@@ -299,6 +300,7 @@ func compileNative(
 			cbool(debug),
 			goSlice([]byte(target)),
 			cbool(cranelift),
+			u64(maxSinglepassOutputSize),
 			output,
 		)
 		asm := rustBytesIntoBytes(output)
@@ -372,7 +374,7 @@ func activateProgramInternal(
 			} else {
 				cranelift := rawdb.IsCraneliftTarget(target)
 				timeout := time.Second * 15
-				asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, timeout)
+				asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, nodeConfig.MaxSinglepassOutputSize, timeout)
 				if err != nil {
 					var fallbackTarget rawdb.WasmTarget
 					var fallbackErr error
@@ -383,7 +385,7 @@ func activateProgramInternal(
 					}
 					if useFallback && fallbackErr == nil {
 						log.Warn("stylus compilation failed, falling back to alternative compiler", "address", addressForLogging, "target", target, "fallbackTarget", fallbackTarget, "timeout", timeout, "err", err)
-						asm, err = compileNative(wasm, stylusVersion, debug, fallbackTarget, !cranelift, timeout)
+						asm, err = compileNative(wasm, stylusVersion, debug, fallbackTarget, !cranelift, nodeConfig.MaxSinglepassOutputSize, timeout)
 						results <- result{target: fallbackTarget, asm: asm, err: err}
 						return
 					} else if !useFallback {
@@ -636,6 +638,12 @@ func callProgram(
 		}
 	}
 
+	if status == userStorageCacheLimitExceeded {
+		log.Info("stylus storage cache limit exceeded", "program", address,
+			"limit", evmData.storageCacheLimit, "runMode", runCtx.RunModeMetricName())
+		evm.StateDB.FilterTx()
+	}
+
 	if status == userFailure && debug {
 		log.Warn("program failure", "err", err, "msg", msg, "program", address, "depth", depth)
 	}
@@ -734,7 +742,7 @@ func getCraneliftAsm(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get wasm for cranelift compilation: %w", err)
 	}
-	asm, err := compileNative(wasm, version, debug, craneliftTarget, true, 15*time.Second)
+	asm, err := compileNative(wasm, version, debug, craneliftTarget, true, 0, 15*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("cranelift compilation failed: %w", err)
 	}
@@ -958,22 +966,23 @@ func (params *ProgParams) encode() C.StylusConfig {
 
 func (data *EvmData) encode() C.EvmData {
 	return C.EvmData{
-		arbos_version:    u64(data.arbosVersion),
-		block_basefee:    hashToBytes32(data.blockBasefee),
-		chainid:          u64(data.chainId),
-		block_coinbase:   addressToBytes20(data.blockCoinbase),
-		block_gas_limit:  u64(data.blockGasLimit),
-		block_number:     u64(data.blockNumber),
-		block_timestamp:  u64(data.blockTimestamp),
-		contract_address: addressToBytes20(data.contractAddress),
-		module_hash:      hashToBytes32(data.moduleHash),
-		msg_sender:       addressToBytes20(data.msgSender),
-		msg_value:        hashToBytes32(data.msgValue),
-		tx_gas_price:     hashToBytes32(data.txGasPrice),
-		tx_origin:        addressToBytes20(data.txOrigin),
-		reentrant:        u32(data.reentrant),
-		return_data_len:  0,
-		cached:           cbool(data.cached),
-		tracing:          cbool(data.tracing),
+		arbos_version:       u64(data.arbosVersion),
+		block_basefee:       hashToBytes32(data.blockBasefee),
+		chainid:             u64(data.chainId),
+		block_coinbase:      addressToBytes20(data.blockCoinbase),
+		block_gas_limit:     u64(data.blockGasLimit),
+		block_number:        u64(data.blockNumber),
+		block_timestamp:     u64(data.blockTimestamp),
+		contract_address:    addressToBytes20(data.contractAddress),
+		module_hash:         hashToBytes32(data.moduleHash),
+		msg_sender:          addressToBytes20(data.msgSender),
+		msg_value:           hashToBytes32(data.msgValue),
+		tx_gas_price:        hashToBytes32(data.txGasPrice),
+		tx_origin:           addressToBytes20(data.txOrigin),
+		reentrant:           u32(data.reentrant),
+		return_data_len:     0,
+		storage_cache_limit: u32(data.storageCacheLimit),
+		cached:              cbool(data.cached),
+		tracing:             cbool(data.tracing),
 	}
 }

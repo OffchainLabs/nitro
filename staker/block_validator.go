@@ -397,9 +397,8 @@ func NewBlockValidator(
 		}
 	}
 	ret.streamer = streamer
-	ret.inboxTracker = inbox
 	streamer.SetBlockValidator(ret)
-	inbox.SetBlockValidator(ret)
+	ret.inboxTracker = inbox
 	if config().MemoryFreeLimit != "" {
 		limitchecker, err := resourcemanager.NewCgroupsMemoryLimitCheckerIfSupported(config().memoryFreeLimit)
 		if err != nil {

@@ -18,8 +18,10 @@ path = "src/main.rs"
 anyhow = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
+replay-io = { workspace = true }
 serde_json = { workspace = true }
-sp1-sdk = { workspace = true }
+sp1-core-executor = { workspace = true }
+sp1-sdk = { workspace = true, features = ["mprotect"] }
 wasmer = { workspace = true, features = ["llvm", "sp1"] }
 wasmparser = { workspace = true }
 

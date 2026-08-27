@@ -6,6 +6,7 @@ package gethexec
 import (
 	"context"
 	"errors"
+	"math"
 	"math/big"
 	"sync/atomic"
 	"testing"
@@ -18,7 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
-func TestSequencerConfigValidatePGA(t *testing.T) {
+func TestSequencerConfigValidate(t *testing.T) {
 	tests := []struct {
 		name    string
 		modify  func(*SequencerConfig)
@@ -49,6 +50,16 @@ func TestSequencerConfigValidatePGA(t *testing.T) {
 			c.MaxBlockSpeed = 250 * time.Millisecond
 			c.PGA.RoundsPerBlock = 6
 		}, false},
+		{"round length below 5ms", func(c *SequencerConfig) {
+			c.MaxBlockSpeed = 10 * time.Millisecond
+			c.PGA.RoundsPerBlock = 6
+		}, true},
+		{"zero max block tx candidates", func(c *SequencerConfig) {
+			c.MaxBlockTxCandidates = 0
+		}, true},
+		{"negative max block tx candidates", func(c *SequencerConfig) {
+			c.MaxBlockTxCandidates = -1
+		}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -66,10 +77,7 @@ func TestSequencerConfigValidatePGA(t *testing.T) {
 }
 
 func TestPGARoundLength(t *testing.T) {
-	c := DefaultSequencerConfig
-	c.MaxBlockSpeed = 250 * time.Millisecond
-	c.PGA.RoundsPerBlock = 2
-	if got := c.PGARoundLength(); got != 125*time.Millisecond {
+	if got := pgaRoundLength(250*time.Millisecond, 2); got != 125*time.Millisecond {
 		t.Errorf("expected round length 125ms, got %v", got)
 	}
 }
@@ -271,9 +279,19 @@ func TestCreateBlockRequeuesNeverAttemptedTxs(t *testing.T) {
 	}
 
 	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
-	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}}, DefaultSequencerConfig.PollInterval, DefaultSequencerConfig.MaxBlockSpeed, big.NewInt(testBaseFee))
+	ordererConfig := txOrdererConfig{
+		latestHeader:         engine.bc.CurrentBlock(),
+		baseFee:              big.NewInt(testBaseFee),
+		maxBlockTxCandidates: math.MaxInt,
+		maxBlockSpeed:        DefaultSequencerConfig.MaxBlockSpeed,
+	}
+	orderer := newFIFOTxOrderer(newStubOrdererSequencer(item), ordererConfig, DefaultSequencerConfig.PollInterval)
 
-	sequencedMsg, _ := seq.createBlockWithTxOrderer(context.Background(), orderer)
+	statedb, err := engine.bc.StateAt(ordererConfig.latestHeader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sequencedMsg, _ := seq.createBlockWithTxOrderer(context.Background(), orderer, statedb)
 
 	if sequencedMsg != nil {
 		t.Fatal("expected no block to be sequenced")
@@ -308,9 +326,19 @@ func TestCreateBlockPanicFailsTxsInsteadOfRequeueing(t *testing.T) {
 	}
 
 	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
-	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}}, DefaultSequencerConfig.PollInterval, DefaultSequencerConfig.MaxBlockSpeed, big.NewInt(testBaseFee))
+	ordererConfig := txOrdererConfig{
+		latestHeader:         engine.bc.CurrentBlock(),
+		baseFee:              big.NewInt(testBaseFee),
+		maxBlockTxCandidates: math.MaxInt,
+		maxBlockSpeed:        DefaultSequencerConfig.MaxBlockSpeed,
+	}
+	orderer := newFIFOTxOrderer(newStubOrdererSequencer(item), ordererConfig, DefaultSequencerConfig.PollInterval)
 
-	sequencedMsg, throttle := seq.createBlockWithTxOrderer(context.Background(), panicAfterArmOrderer{orderer})
+	statedb, err := engine.bc.StateAt(ordererConfig.latestHeader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sequencedMsg, throttle := seq.createBlockWithTxOrderer(context.Background(), panicAfterArmOrderer{orderer}, statedb)
 
 	if sequencedMsg != nil {
 		t.Fatal("expected no block to be sequenced")

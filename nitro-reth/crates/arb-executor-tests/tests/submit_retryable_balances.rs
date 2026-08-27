@@ -129,9 +129,14 @@ fn auto_redeem_redeemer_is_coinbase_changeset_baseline() {
         .commit_transaction(submit_res)
         .expect("submit commit");
 
-    let scheduled = executor.drain_scheduled_txs();
-    assert_eq!(scheduled.len(), 1, "submit should schedule one auto-redeem");
-    let redeem = ArbTransactionSigned::decode_2718(&mut &scheduled[0][..]).expect("decode redeem");
+    let scheduled = executor
+        .next_scheduled_tx()
+        .expect("submit should schedule an auto-redeem");
+    assert!(
+        executor.next_scheduled_tx().is_none(),
+        "submit should schedule exactly one auto-redeem"
+    );
+    let redeem = ArbTransactionSigned::decode_2718(&mut &scheduled[..]).expect("decode redeem");
     let redeem_res = executor
         .execute_transaction_without_commit(redeem.try_into_recovered().expect("recover"))
         .expect("redeem exec");

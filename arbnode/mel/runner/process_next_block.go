@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/mel"
-	melextraction "github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	melextraction "github.com/offchainlabs/nitro/arbnode/mel/runner/extraction"
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 )
 
@@ -79,9 +79,6 @@ func (m *MessageExtractor) processNextBlock(ctx context.Context, current *fsm.Cu
 			case <-ctx.Done():
 				return m.config.RetryInterval, ctx.Err()
 			}
-		}
-		if m.blockValidator != nil {
-			m.blockValidator.ReorgToBatchCount(preState.BatchCount)
 		}
 	}
 	// Conditionally prefetch headers and logs for upcoming block/s

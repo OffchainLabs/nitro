@@ -45,6 +45,7 @@ func TestSpecWeightDerivation(t *testing.T) {
 		{"L2-only", TopologyL2Only, weightLight},
 		{"L1L2", TopologyL1L2, weightMedium},
 		{"multi-node", TopologyMultiNode, weightHeavy},
+		{"staking-validation", TopologyStakingValidation, weightMax},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -229,17 +230,26 @@ func TestTopologyConflictPanics(t *testing.T) {
 }
 
 func TestExpandMatrixCarriesTopology(t *testing.T) {
-	b := newBuilder()
-	b.name = "X"
-	WithL1()(b)
-	MatrixArbOS(params.ArbosVersion_30, params.ArbosVersion_40)(b)
-	out := expandMatrix(b, scheduleParams{})
-	if len(out) != 2 {
-		t.Fatalf("got %d cells, want 2", len(out))
-	}
-	for _, e := range out {
-		if e.Spec.Topology != TopologyL1L2 {
-			t.Fatalf("cell %q topology = %v, want TopologyL1L2", e.Spec.Name, e.Spec.Topology)
+	for _, tc := range []struct {
+		opt  TestOption
+		want Topology
+	}{
+		{WithL1(), TopologyL1L2},
+		{WithMultiNode(), TopologyMultiNode},
+		{WithStakingValidation(), TopologyStakingValidation},
+	} {
+		b := newBuilder()
+		b.name = "X"
+		tc.opt(b)
+		MatrixArbOS(params.ArbosVersion_30, params.ArbosVersion_40)(b)
+		out := expandMatrix(b, scheduleParams{})
+		if len(out) != 2 {
+			t.Fatalf("got %d cells, want 2", len(out))
+		}
+		for _, e := range out {
+			if e.Spec.Topology != tc.want {
+				t.Fatalf("cell %q topology = %v, want %v", e.Spec.Name, e.Spec.Topology, tc.want)
+			}
 		}
 	}
 }

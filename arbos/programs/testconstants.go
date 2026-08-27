@@ -96,5 +96,36 @@ func testConstants() error {
 	if err := assertEq(WriteProtection, C.EvmApiStatus_WriteProtection); err != nil {
 		return err
 	}
+
+	index = 0
+	assertUserOutcomeEq := func(a userStatus, b uint32) error {
+		if uint32(a) != b {
+			return fmt.Errorf("user outcome constant test %d failed! %d != %d", index, a, b)
+		}
+		index += 1
+		return nil
+	}
+
+	if err := assertUserOutcomeEq(userSuccess, C.UserOutcomeKind_Success); err != nil {
+		return err
+	}
+	if err := assertUserOutcomeEq(userRevert, C.UserOutcomeKind_Revert); err != nil {
+		return err
+	}
+	if err := assertUserOutcomeEq(userFailure, C.UserOutcomeKind_Failure); err != nil {
+		return err
+	}
+	if err := assertUserOutcomeEq(userOutOfInk, C.UserOutcomeKind_OutOfInk); err != nil {
+		return err
+	}
+	if err := assertUserOutcomeEq(userOutOfStack, C.UserOutcomeKind_OutOfStack); err != nil {
+		return err
+	}
+	if err := assertUserOutcomeEq(userNativeStackOverflow, C.UserOutcomeKind_NativeStackOverflow); err != nil {
+		return err
+	}
+	if err := assertUserOutcomeEq(userStorageCacheLimitExceeded, C.UserOutcomeKind_StorageCacheLimitExceeded); err != nil {
+		return err
+	}
 	return nil
 }
