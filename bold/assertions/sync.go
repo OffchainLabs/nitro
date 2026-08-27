@@ -135,6 +135,7 @@ func (m *Manager) syncAssertions(ctx context.Context) {
 	}
 }
 
+// lint:require-exhaustive-initialization
 type assertionAndParentCreationInfo struct {
 	assertion *protocol.AssertionCreatedInfo
 	parent    *protocol.AssertionCreatedInfo
