@@ -711,6 +711,7 @@ func handleSystemError(
 	// Revert any partial state changes the previous attempt may have made via
 	// host I/O before the system failure, then retry with cranelift.
 	saved.restore(scope, db)
+	C.stylus_replace_module(goSlice(craneliftAsm), hashToBytes32(moduleHash), u16(program.version), cbool(debug))
 
 	return doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx, params)
 }

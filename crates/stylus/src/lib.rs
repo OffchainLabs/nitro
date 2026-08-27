@@ -408,6 +408,21 @@ pub extern "C" fn stylus_evict_module(
     InitCache::evict(module_hash, version, arbos_tag, debug);
 }
 
+/// Replaces an activated user program in the init cache.
+///
+/// # Safety
+///
+/// `module` must represent a valid serialized native module.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stylus_replace_module(
+    module: GoSliceData,
+    module_hash: Bytes32,
+    version: u16,
+    debug: bool,
+) {
+    InitCache::replace(module_hash, module.slice(), version, debug);
+}
+
 /// Reorgs the init cache. This will likely never happen.
 #[unsafe(no_mangle)]
 pub extern "C" fn stylus_reorg_vm(_block: u64, arbos_tag: u32) {

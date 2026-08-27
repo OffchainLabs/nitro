@@ -738,6 +738,88 @@ func testHandleNativeStackOverflow() error {
 	return nil
 }
 
+func testCraneliftRetryReplacesCachedSinglepass() error {
+	savedFallback := GetAllowFallback()
+	defer SetAllowFallback(savedFallback)
+	defer SetInitialNativeStackSize(1024 * 1024)
+	C.stylus_clear_long_term_cache()
+	C.stylus_clear_lru_cache()
+	defer func() {
+		C.stylus_clear_long_term_cache()
+		C.stylus_clear_lru_cache()
+	}()
+
+	localTarget := rawdb.LocalTarget()
+	if err := SetTarget(localTarget, "", true); err != nil {
+		return fmt.Errorf("failed setting target: %w", err)
+	}
+	retryWat := []byte(strings.Replace(string(recursiveStackOverflowWat), "i32.const 500", "i32.const 1000", 1))
+	wasm, err := Wat2Wasm(retryWat)
+	if err != nil {
+		return fmt.Errorf("failed compiling WAT: %w", err)
+	}
+	singlepassAsm, err := compileNative(wasm, 1, true, localTarget, false, DefaultStylusTargetConfig.MaxSinglepassOutputSize, time.Minute)
+	if err != nil {
+		return fmt.Errorf("failed compiling singlepass: %w", err)
+	}
+	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, DefaultStylusTargetConfig.MaxSinglepassOutputSize, time.Minute)
+	if err != nil {
+		return fmt.Errorf("failed compiling cranelift: %w", err)
+	}
+
+	progParams := &ProgParams{Version: 1, MaxDepth: 1000000, InkPrice: 1, DebugMode: true}
+	memoryModel := NewMemoryModel(0, 0)
+	runCtx := core.NewMessageCommitContext([]rawdb.WasmTarget{localTarget})
+	craneliftTarget, err := rawdb.CraneliftTarget(localTarget)
+	if err != nil {
+		return fmt.Errorf("failed getting cranelift target: %w", err)
+	}
+	allowFallback.Store(true)
+
+	for _, cached := range []bool{false, true} {
+		cacheTier := "LRU"
+		if cached {
+			cacheTier = "long-term"
+		}
+		C.stylus_clear_long_term_cache()
+		C.stylus_clear_lru_cache()
+
+		moduleHash := common.HexToHash("0xcac4e5")
+		gas := uint64(0xfffffffffffffff)
+		evm, scope, db := makeTestEVMScope(gas)
+		evmData := &EvmData{moduleHash: moduleHash, cached: cached}
+		batch := db.Database().CodeDB().WasmStore().NewBatch()
+		if err := rawdb.WriteActivatedAsm(batch, craneliftTarget, moduleHash, craneliftAsm); err != nil {
+			return fmt.Errorf("%s: failed writing cranelift ASM: %w", cacheTier, err)
+		}
+		if err := batch.Write(); err != nil {
+			return fmt.Errorf("%s: failed persisting cranelift ASM: %w", cacheTier, err)
+		}
+
+		SetInitialNativeStackSize(32 * 1024)
+		DrainStackPool()
+		saved := saveState(scope, db)
+		status, _ := doStylusCall(singlepassAsm, nil, progParams, evm, nil, scope, memoryModel, evmData, true, runCtx, nil)
+		if status != userNativeStackOverflow {
+			return fmt.Errorf("%s: expected initial singlepass overflow, got %d", cacheTier, status)
+		}
+
+		status, output := handleSystemError(
+			common.Address{}, moduleHash,
+			scope, evm, nil, nil, evmData, progParams,
+			memoryModel, runCtx, &saved, true,
+			db, nil, nil, Program{version: 1}, userNativeStackOverflow, nil,
+		)
+		if status != userSuccess {
+			return fmt.Errorf("%s: expected cranelift retry to replace cached singlepass, got %d", cacheTier, status)
+		}
+		if len(output) != 0 {
+			return fmt.Errorf("%s: expected empty retry output, got %x", cacheTier, output)
+		}
+	}
+	return nil
+}
+
 // testHandleNativeStackOverflowAtMax verifies that handleSystemError
 // works correctly at MaxNativeStackSize with cranelift available. The program
 // (500 recursions) should succeed with cranelift at 100MB, and the stack size

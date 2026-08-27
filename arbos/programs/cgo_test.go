@@ -105,6 +105,12 @@ func TestHandleNativeStackOverflow(t *testing.T) {
 	}
 }
 
+func TestCraneliftRetryReplacesCachedSinglepass(t *testing.T) {
+	if err := testCraneliftRetryReplacesCachedSinglepass(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRetryRestoresStylusPages(t *testing.T) {
 	defer SetInitialNativeStackSize(1024 * 1024)
 	err := testRetryRestoresStylusPages()
