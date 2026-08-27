@@ -338,6 +338,7 @@ type addressAndNonce struct {
 	nonce   uint64
 }
 
+// lint:require-exhaustive-initialization
 type nonceFailure struct {
 	queueItem txQueueItem
 	nonceErr  error
