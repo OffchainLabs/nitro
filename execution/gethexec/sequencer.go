@@ -253,6 +253,7 @@ func (i *txQueueItem) returnResult(err error) {
 	i.returnResultMaybeLog(err, false)
 }
 
+// lint:require-exhaustive-initialization
 type nonceCache struct {
 	cache *containers.LruCache[common.Address, uint64]
 	block common.Hash
