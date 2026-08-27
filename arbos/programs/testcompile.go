@@ -604,15 +604,6 @@ func testHandleNativeStackOverflow() error {
 	if err != nil {
 		return fmt.Errorf("failed compiling cranelift: %w", err)
 	}
-	systemErrorWasm, err := Wat2Wasm(systemErrorWat)
-	if err != nil {
-		return fmt.Errorf("failed compiling system-error WAT: %w", err)
-	}
-	sentinelAsm, err := compileNative(systemErrorWasm, 1, true, localTarget, false, DefaultStylusTargetConfig.MaxSinglepassOutputSize, time.Minute)
-	if err != nil {
-		return fmt.Errorf("failed compiling singlepass cache sentinel: %w", err)
-	}
-
 	SetInitialNativeStackSize(32 * 1024)
 	DrainStackPool()
 
@@ -707,7 +698,6 @@ func testHandleNativeStackOverflow() error {
 	// Sub-test 3: on-chain with allowFallback=true → doubles stack and retries
 	// with cranelift. The stack should go from 32KB to 64KB, and the cranelift
 	// retry at 64KB should succeed for the 500-recursion program.
-	C.stylus_cache_module(goSlice(sentinelAsm), hashToBytes32(moduleHash), u16(1), u32(0), cbool(true))
 	scope.Contract.Gas = vm.NewGasBudget(gas)
 	saved = &savedState{gas: vm.NewGasBudget(gas), snapshot: db.Snapshot()}
 	status, _ = handleSystemError(

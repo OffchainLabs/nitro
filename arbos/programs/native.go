@@ -31,7 +31,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
@@ -713,10 +712,7 @@ func handleSystemError(
 	// host I/O before the system failure, then retry with cranelift.
 	saved.restore(scope, db)
 
-	retryEvmData := *evmData
-	retryEvmData.moduleHash = crypto.Keccak256Hash(craneliftAsm)
-	retryEvmData.cached = false
-	return doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, &retryEvmData, debug, runCtx, params)
+	return doStylusCall(craneliftAsm, calldata, stylusParams, evm, tracingInfo, scope, memoryModel, evmData, debug, runCtx, params)
 }
 
 // getCraneliftAsm returns cranelift-compiled ASM for the given module.
