@@ -53,6 +53,7 @@ var (
 	selfChallengeBailoutCounter = metrics.NewRegisteredCounter("arb/validator/scanner/self_challenge_bailout", nil)
 )
 
+// lint:require-exhaustive-initialization
 type timings struct {
 	pollInterval   time.Duration
 	confInterval   time.Duration
