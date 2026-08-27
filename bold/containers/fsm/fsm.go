@@ -173,6 +173,7 @@ func (f *Fsm[E, T]) MarkError(e error) {
 }
 
 // An internal key the fsm uses to store data in maps.
+// lint:require-exhaustive-initialization
 type internalKey struct {
 	eventType string
 	src       string
