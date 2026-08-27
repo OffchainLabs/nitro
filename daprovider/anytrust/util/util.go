@@ -49,6 +49,7 @@ func NewReader(anyTrustReader Reader, keysetFetcher KeysetFetcher, validationMod
 	}
 }
 
+// lint:require-exhaustive-initialization
 type reader struct {
 	anyTrustReader Reader
 	keysetFetcher  KeysetFetcher
