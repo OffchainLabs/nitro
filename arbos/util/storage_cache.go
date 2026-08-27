@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+// lint:require-exhaustive-initialization
 type storageCacheEntry struct {
 	Value common.Hash
 	Known *common.Hash
