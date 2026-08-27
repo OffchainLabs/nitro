@@ -7,55 +7,8 @@
 use std::sync::Arc;
 
 use alloy_primitives::B256;
-
-/// Result of producing a block.
-#[derive(Debug, Clone)]
-pub struct ProducedBlock {
-    /// Hash of the produced block.
-    pub block_hash: B256,
-    /// Send root from the block's extra_data.
-    pub send_root: B256,
-}
-
-/// Error type for block production.
-#[derive(Debug, thiserror::Error)]
-pub enum BlockProducerError {
-    #[error("state access: {0}")]
-    StateAccess(String),
-    #[error("execution: {0}")]
-    Execution(String),
-    #[error("storage: {0}")]
-    Storage(String),
-    #[error("parse: {0}")]
-    Parse(String),
-    #[error("unexpected: {0}")]
-    Unexpected(String),
-}
-
-/// Input for block production from an L1 incoming message.
-#[derive(Debug, Clone)]
-pub struct BlockProductionInput {
-    /// Message kind (L1MessageType_*).
-    pub kind: u8,
-    /// Message sender (poster address).
-    pub sender: alloy_primitives::Address,
-    /// L1 block number.
-    pub l1_block_number: u64,
-    /// L1 timestamp.
-    pub l1_timestamp: u64,
-    /// L1 request ID (for delayed messages).
-    pub request_id: Option<B256>,
-    /// L1 base fee.
-    pub l1_base_fee: Option<alloy_primitives::U256>,
-    /// L2 message payload (base64-decoded).
-    pub l2_msg: Vec<u8>,
-    /// Delayed messages read count.
-    pub delayed_messages_read: u64,
-    /// Legacy batch gas cost.
-    pub batch_gas_cost: Option<u64>,
-    /// Batch data stats (for newer batch posting reports).
-    pub batch_data_stats: Option<(u64, u64)>,
-}
+pub use arb_evm::block_producer::{BlockProducerError, ProducedBlock};
+use arbos::types::MessageWithMetadata;
 
 /// Trait for producing blocks from L1 messages.
 ///
@@ -82,7 +35,7 @@ pub trait BlockProducer: Send + Sync + 'static {
     async fn produce_block(
         &self,
         msg_idx: u64,
-        input: BlockProductionInput,
+        input: MessageWithMetadata,
     ) -> Result<ProducedBlock, BlockProducerError>;
 
     /// Reset the canonical chain head to the given block number.

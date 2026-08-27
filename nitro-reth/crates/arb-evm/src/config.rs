@@ -455,3 +455,27 @@ pub fn l1_block_number_from_mix_hash(mix_hash: &B256) -> u64 {
     buf.copy_from_slice(&mix_hash.0[8..16]);
     u64::from_be_bytes(buf)
 }
+
+/// L1 block number for the `NUMBER` opcode: monotonic, so a reported value
+/// below the parent's (recovered from its mix_hash) is clamped up to it.
+pub fn monotonic_l1_block_number(reported: u64, parent_mix_hash: &B256) -> u64 {
+    reported.max(l1_block_number_from_mix_hash(parent_mix_hash))
+}
+
+#[cfg(test)]
+mod tests {
+    use arbos::header::compute_arbos_mixhash;
+
+    use super::*;
+
+    #[test]
+    fn l1_block_number_clamps_to_parent() {
+        let parent = compute_arbos_mixhash(0, 10_538_022, 51, false);
+        // A lower sequencer-reported value is clamped up to the parent's.
+        assert_eq!(monotonic_l1_block_number(10_537_967, &parent), 10_538_022);
+        // A higher value advances normally.
+        assert_eq!(monotonic_l1_block_number(10_538_099, &parent), 10_538_099);
+        // Equal stays put.
+        assert_eq!(monotonic_l1_block_number(10_538_022, &parent), 10_538_022);
+    }
+}

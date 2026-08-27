@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	_ "github.com/offchainlabs/nitro/system_tests/v2/blocks"
 	_ "github.com/offchainlabs/nitro/system_tests/v2/smoketest"
 	"github.com/offchainlabs/nitro/system_tests/v2/systest"
 )
