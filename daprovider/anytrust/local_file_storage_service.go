@@ -536,6 +536,7 @@ type flatLayout struct {
 	retention time.Duration
 }
 
+// lint:require-exhaustive-initialization
 type flatLayoutIterator struct {
 	files []string
 
