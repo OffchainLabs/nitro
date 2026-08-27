@@ -51,6 +51,7 @@ type ChallengeBackend interface {
 // Assert that ExecutionChallengeBackend implements ChallengeBackend
 var _ ChallengeBackend = (*staker.ExecutionChallengeBackend)(nil)
 
+// lint:require-exhaustive-initialization
 type challengeCore struct {
 	con                  *challenge_legacy_gen.ChallengeManager
 	challengeManagerAddr common.Address
