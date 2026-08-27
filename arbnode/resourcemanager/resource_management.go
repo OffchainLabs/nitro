@@ -107,6 +107,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 // httpServer implements http.Handler and wraps calls to inner with a resource
 // limit check.
+// lint:require-exhaustive-initialization
 type httpServer struct {
 	inner http.Handler
 	c     LimitChecker
