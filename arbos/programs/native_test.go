@@ -17,3 +17,12 @@ func TestStorageCacheLimitResult(t *testing.T) {
 	require.Equal(t, ErrStorageCacheLimitExceeded.Error(), msg)
 	require.ErrorIs(t, err, ErrStorageCacheLimitExceeded)
 }
+
+func TestStylusSystemResults(t *testing.T) {
+	for _, status := range []userStatus{userNativeStackOverflow, userSystemError} {
+		data, msg, err := status.toResult([]byte("host failure"), false)
+		require.Nil(t, data)
+		require.Equal(t, "host failure", msg)
+		require.ErrorIs(t, err, ErrStylusSystem)
+	}
+}
