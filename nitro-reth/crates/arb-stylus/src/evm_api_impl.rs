@@ -3,11 +3,12 @@ use std::collections::HashMap;
 use alloy_primitives::{Address, B256, Log, U256};
 use arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_LAST_CODE_CACHE_FIX;
 use arb_primitives::multigas::MultiGas;
+use nitro_arbutil::evm::user::UserOutcomeKind;
 use revm::Database;
 
 use crate::{
     Gas,
-    evm_api::{CreateResponse, EvmApi, UserOutcomeKind},
+    evm_api::{CreateResponse, EvmApi},
     multi_gas,
 };
 

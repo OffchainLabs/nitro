@@ -14,9 +14,10 @@ use arb_stylus::{
     Gas, Ink,
     config::{CompileConfig, StylusConfig},
     env::{WasmEnv, page_limit_exceeded},
-    evm_api::{CreateResponse, EvmApi, UserOutcomeKind},
+    evm_api::{CreateResponse, EvmApi},
 };
 use arbos::programs::{memory::MemoryModel, types::EvmData};
+use nitro_arbutil::evm::user::UserOutcomeKind;
 
 const ARBOS_59: u64 = 59;
 const ARBOS_58: u64 = 58;

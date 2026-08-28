@@ -15,9 +15,10 @@ use arb_stylus::{
     Gas, Ink,
     config::{CompileConfig, StylusConfig},
     env::WasmEnv,
-    evm_api::{CreateResponse, EvmApi, UserOutcomeKind},
+    evm_api::{CreateResponse, EvmApi},
 };
 use arbos::programs::{memory::MemoryModel, types::EvmData};
+use nitro_arbutil::evm::user::UserOutcomeKind;
 
 // ── MemoryModel: shared between WasmEnv and the precompile path ─────
 

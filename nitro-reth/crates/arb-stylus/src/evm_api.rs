@@ -1,17 +1,7 @@
 use alloy_primitives::{Address, B256, U256};
+use nitro_arbutil::evm::user::UserOutcomeKind;
 
 use crate::{Gas, Ink};
-
-/// Outcome kind from a user program or call.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-pub enum UserOutcomeKind {
-    Success = 0,
-    Revert = 1,
-    Failure = 2,
-    OutOfInk = 3,
-    OutOfStack = 4,
-}
 
 /// Response from a CREATE operation.
 pub enum CreateResponse {

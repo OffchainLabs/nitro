@@ -1,13 +1,13 @@
 use alloy_primitives::{Address, B256, U256};
 use arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_CHARGING_FIXES;
-use nitro_arbutil::evm::{self as evm_gas, storage::StorageCache};
+use nitro_arbutil::evm::{self as evm_gas, storage::StorageCache, user::UserOutcomeKind};
 use wasmer::FunctionEnvMut;
 
 use crate::{
     Gas,
     env::WasmEnv,
     error::{MaybeEscape, StylusError},
-    evm_api::{EvmApi, UserOutcomeKind},
+    evm_api::EvmApi,
     meter::{GasMeteredMachine, MeteredMachine},
     pricing::hostio as hio,
 };

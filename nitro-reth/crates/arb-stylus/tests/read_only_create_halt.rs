@@ -24,11 +24,12 @@ use alloy_primitives::{Address, B256, U256, address};
 use arb_stylus::{
     Gas, Ink,
     config::{CompileConfig, StylusConfig},
-    evm_api::{CreateResponse, EvmApi, UserOutcomeKind},
+    evm_api::{CreateResponse, EvmApi},
     meter::{MachineMeter, MeteredMachine, STYLUS_INK_LEFT, STYLUS_INK_STATUS, STYLUS_STACK_LEFT},
     native::NativeInstance,
 };
 use arbos::programs::types::EvmData;
+use nitro_arbutil::evm::user::UserOutcomeKind;
 use wasmer::{TypedFunction, Value};
 
 const ARBOS_60: u64 = 60;
