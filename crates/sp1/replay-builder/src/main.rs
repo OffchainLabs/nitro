@@ -24,6 +24,8 @@ use wasmer::{
 
 /// The ELF of the replay guest program.
 const REPLAY_ELF: Elf = include_elf!("replay-program");
+/// The ELF of the SP1 stylus compiler, used by the runner to compile Stylus programs.
+const STYLUS_COMPILER_ELF: Elf = include_elf!("stylus-compiler-program");
 /// The SP1 executor reads the dump destination from this env var.
 const SP1_DUMP_TARGET_ENV: &str = "DUMP_ELF_OUTPUT";
 
@@ -77,6 +79,7 @@ impl Artifacts {
         for (name, contents) in [
             ("function_names.json", self.function_names_json.as_bytes()),
             ("replay.wasmu", self.wasmu.as_ref()),
+            ("stylus-compiler-program.elf", STYLUS_COMPILER_ELF.as_ref()),
         ] {
             let output = output_folder.join(name);
             fs::write(&output, contents).with_context(|| format!("write {name}"))?;
