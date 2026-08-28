@@ -35,6 +35,7 @@ func (r *recordingT) Context() context.Context {
 func (r *recordingT) Helper()              {}
 func (r *recordingT) Name() string         { return "recordingT" }
 func (r *recordingT) FailNow()             { runtime.Goexit() }
+func (r *recordingT) Failed() bool         { r.mu.Lock(); defer r.mu.Unlock(); return len(r.errors) > 0 }
 func (r *recordingT) Skip(...any)          { r.mu.Lock(); r.skipped = true; r.mu.Unlock() }
 func (r *recordingT) Skipf(string, ...any) { r.mu.Lock(); r.skipped = true; r.mu.Unlock() }
 

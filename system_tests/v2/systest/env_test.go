@@ -150,11 +150,14 @@ func TestEnvGoSuppressesCtxErrorsOnlyAtShutdown(t *testing.T) {
 
 func TestEnvGoReportsRealError(t *testing.T) {
 	tb := &recordingT{}
-	e := &Env{t: tb}
+	e := newEnv(tb, context.Background(), Spec{})
 	e.Go(func() error { return errors.New("real failure") })
 	e.wait(context.Background())
 	if tb.errCount() != 1 {
 		t.Fatalf("real env.Go error should report exactly 1 error, got %d", tb.errCount())
+	}
+	if !errors.Is(e.Ctx.Err(), context.Canceled) {
+		t.Fatalf("real env.Go error must cancel env.Ctx, got %v", e.Ctx.Err())
 	}
 }
 

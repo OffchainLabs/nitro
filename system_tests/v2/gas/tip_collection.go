@@ -42,13 +42,12 @@ func testRunTipCollectionDefault(env *systest.Env) {
 
 // testRunTipCollectionEnabled verifies that enabling tip collection collects tips of any size.
 func testRunTipCollectionEnabled(env *systest.Env) {
-	baseFee := chainBaseFee(env)
-
 	setCollectTips(env, true)
 	env.True(collectTipsEnabled(env), "expected collect tips to be true")
 
 	// zero tip collects nothing; for tip 0 collected == dropped
 	for _, tip := range []int64{0, 2, 5, 10} {
+		baseFee := chainBaseFee(env)
 		assertTipCollected(env, baseFee, big.NewInt(tip), "tip "+big.NewInt(tip).String())
 	}
 }

@@ -5,6 +5,7 @@ package systest
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -39,10 +40,8 @@ func buildMultiNodeStack(t *testing.T, ctx context.Context, spec Spec, overrides
 func buildFollowerNode(t *testing.T, ctx context.Context, spec Spec, overrides overrides, env *Env) (*L2Handle, func()) {
 	t.Helper()
 
+	overrides.Exec = slices.Concat(overrides.Exec, overrides.FollowerExec)
 	nodeConfig, chainConfig, execCfg, stackCfg := seedConfigs(t, spec, overrides, arbnode.ConfigDefaultL1NonSequencerTest())
-	for _, f := range overrides.FollowerExec {
-		f(execCfg)
-	}
 	// The follower must not sequence its own txs; with ForwardingTarget "null"
 	// sends to it fail loudly instead of silently forking the chain.
 	execCfg.Sequencer.Enable = false
