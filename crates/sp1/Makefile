@@ -112,7 +112,7 @@ build: $(BROTLI_LIB_DIR)/lib/libbrotlienc-static.a
 		--output-folder $(OUTPUT_DIR)
 	@cp $(CURDIR)/target/release/replay-runner $(OUTPUT_DIR)
 
-# Execution mode for the `run` target; override with MODE=<fast|normal|prove>.
+# Execution mode for the `run` target; override with MODE=<fast|simulate|prove>.
 MODE ?= fast
 
 .PHONY: run
