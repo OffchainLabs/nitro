@@ -271,16 +271,46 @@ func TestDownloadInitInPartsWithChecksum(t *testing.T) {
 	}
 }
 
+func TestLatestSnapshotKind(t *testing.T) {
+	testCases := []struct {
+		kind        string
+		stateScheme string
+		want        string
+		wantErr     bool
+	}{
+		{kind: conf.SnapshotKindArchive, stateScheme: rawdb.HashScheme, want: conf.SnapshotKindArchive},
+		{kind: conf.SnapshotKindPruned, stateScheme: rawdb.HashScheme, want: conf.SnapshotKindPruned},
+		{kind: conf.SnapshotKindGenesis, stateScheme: rawdb.HashScheme, want: conf.SnapshotKindGenesis},
+		{kind: conf.SnapshotKindArchive, stateScheme: rawdb.PathScheme, want: "archive-path"},
+		{kind: conf.SnapshotKindPruned, stateScheme: rawdb.PathScheme, want: "full-path"},
+		{kind: conf.SnapshotKindGenesis, stateScheme: rawdb.PathScheme, wantErr: true},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.stateScheme+" "+testCase.kind, func(t *testing.T) {
+			got, err := latestSnapshotKind(testCase.kind, testCase.stateScheme)
+			if testCase.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, testCase.want, got)
+		})
+	}
+}
+
 func TestSetLatestSnapshotUrl(t *testing.T) {
 	const (
-		chain        = "arb1"
-		snapshotKind = "archive"
-		latestFile   = "latest-" + snapshotKind + ".txt"
+		chain             = "arb1"
+		snapshotKind      = conf.SnapshotKindArchive
+		defaultLatestFile = "latest-" + snapshotKind + ".txt"
 	)
 
 	testCases := []struct {
 		name           string
 		chain          string
+		stateScheme    string
+		latestFile     string
 		latestContents string
 		wantUrl        func(string) string
 	}{
@@ -305,6 +335,13 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 			wantUrl:        func(serverAddr string) string { return "https://some.domain.com/arb1/2024/21/archive.tar.gz" },
 		},
 		{
+			name:           "path state scheme",
+			stateScheme:    rawdb.PathScheme,
+			latestFile:     "latest-archive-path.txt",
+			latestContents: "/arb1/2024/21/archive-path.tar.gz",
+			wantUrl:        func(serverAddr string) string { return serverAddr + "/arb1/2024/21/archive-path.tar.gz" },
+		},
+		{
 			name:           "chain and contents with upper case",
 			chain:          "ARB1",
 			latestContents: "ARB1/2024/21/ARCHIVE.TAR.GZ",
@@ -321,6 +358,10 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 
 			err := os.Mkdir(filepath.Join(serverDir, chain), dirPerm)
 			Require(t, err)
+			latestFile := testCase.latestFile
+			if latestFile == "" {
+				latestFile = defaultLatestFile
+			}
 			err = os.WriteFile(filepath.Join(serverDir, chain, latestFile), []byte(testCase.latestContents), filePerm)
 			Require(t, err)
 
@@ -339,7 +380,11 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 			if configChain == "" {
 				configChain = chain
 			}
-			err = setLatestSnapshotUrl(ctx, &initConfig, configChain)
+			stateScheme := testCase.stateScheme
+			if stateScheme == "" {
+				stateScheme = rawdb.HashScheme
+			}
+			err = setLatestSnapshotUrl(ctx, &initConfig, configChain, stateScheme)
 			Require(t, err)
 
 			// Check url
