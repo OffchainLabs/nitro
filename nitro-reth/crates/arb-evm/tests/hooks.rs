@@ -78,12 +78,6 @@ fn noop_default_accessors() {
 }
 
 #[test]
-fn noop_scheduled_txs_empty() {
-    let mut h = NoopArbOsHooks;
-    assert!(h.scheduled_txs().is_empty());
-}
-
-#[test]
 fn noop_gas_price_op_returns_input_unchanged() {
     let h = NoopArbOsHooks;
     let gp = U256::from(123u64);

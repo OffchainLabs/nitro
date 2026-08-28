@@ -31,7 +31,9 @@ members = [
     "crates/arb-bench",
     "crates/arbos",
     "crates/arbos-types",
+    "bin/arb-mel-node",
     "bin/arb-reth",
+    "bin/arb-replay",
     "bin/arb-test",
 ]
 resolver = "3"
@@ -85,6 +87,7 @@ reth-evm = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-execution-errors = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-execution-types = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
+reth-libmdbx = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-network = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-node-api = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
 reth-node-builder = { git = "https://github.com/paradigmxyz/reth.git", tag = "v2.0.0" }
@@ -217,6 +220,7 @@ axum = { version = "0.7", default-features = false }
 chrono = { version = "0.4", default-features = false }
 csv = { version = "1" }
 futures-util = { version = "0.3" }
+humantime = { version = "2" }
 k256 = { version = "0.13", default-features = false }
 libc = { version = "0.2" }
 rand = { version = "0.8", default-features = false }
@@ -232,8 +236,9 @@ wiremock = { version = "0.6" }
 
 # Nitro repo dependencies
 nitro-arbutil = { package = "arbutil", path = "../crates/arbutil" }
-nitro-brotli = { package = "brotli", path = "../crates/brotli" }
-nitro-prover = { package = "prover", path = "../crates/prover", default-features = false, features = ["cc_brotli"] }
+nitro-brotli = { package = "brotli", path = "../crates/brotli", default-features = false }
+nitro-prover = { package = "prover", path = "../crates/prover", default-features = false }
+caller-env = { path = "../crates/caller-env", default-features = false }
 wasmer = { path = "../crates/tools/wasmer/lib/api", default-features = false }
 wasmer-compiler = { path = "../crates/tools/wasmer/lib/compiler" }
 wasmer-types = { path = "../crates/tools/wasmer/lib/types" }

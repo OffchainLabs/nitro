@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/triedb"
 
-	"github.com/offchainlabs/nitro/arbnode/mel/extraction"
+	"github.com/offchainlabs/nitro/arbnode/mel/runner/extraction"
 )
 
 type receiptFetcherForBlock struct {

@@ -22,9 +22,11 @@ void handleReqWrap(usize api, u32 req_type, RustSlice *data, u64 *out_cost, GoSl
 import "C"
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/holiman/uint256"
@@ -69,6 +71,12 @@ var recursiveStackOverflowWat = []byte(`(module
 	)
 )`)
 
+var singlepassOutputLimitWat = []byte(`(module
+	(memory (export "memory") 0 0)
+	(func (export "user_entrypoint") (param i32) (result i32)
+		i32.const 0)
+)`)
+
 func Wat2Wasm(wat []byte) ([]byte, error) {
 	output := &rustBytes{}
 
@@ -79,6 +87,39 @@ func Wat2Wasm(wat []byte) ([]byte, error) {
 	}
 
 	return rustBytesIntoBytes(output), nil
+}
+
+func testSinglepassOutputLimit() error {
+	localTarget := rawdb.LocalTarget()
+	targetDescription := ""
+	switch localTarget {
+	case rawdb.TargetArm64:
+		targetDescription = DefaultTargetDescriptionArm
+	case rawdb.TargetAmd64:
+		targetDescription = DefaultTargetDescriptionX86
+	}
+	if err := SetTarget(localTarget, targetDescription, true); err != nil {
+		return err
+	}
+
+	wasm, err := Wat2Wasm(singlepassOutputLimitWat)
+	if err != nil {
+		return err
+	}
+	if _, err := compileNative(wasm, 0, false, localTarget, false, 0, time.Minute); err != nil {
+		return fmt.Errorf("zero should disable the Singlepass output limit: %w", err)
+	}
+	_, err = compileNative(wasm, 0, false, localTarget, false, 1, time.Minute)
+	if err == nil {
+		return errors.New("expected the 1-byte Singlepass output limit to fail")
+	}
+	if !errors.Is(err, ErrProgramActivation) {
+		return fmt.Errorf("expected ordinary program activation error, got: %w", err)
+	}
+	if !strings.Contains(err.Error(), "singlepass compiler output exceeds limit") {
+		return fmt.Errorf("expected Singlepass output limit callback error, got: %w", err)
+	}
+	return nil
 }
 
 func testCompileArch(store bool, cranelift bool) error {
@@ -135,12 +176,12 @@ func testCompileArch(store bool, cranelift bool) error {
 		}
 	}
 
-	_, err = compileNative(wasm, 2, true, "booga", false, timeout)
+	_, err = compileNative(wasm, 2, true, "booga", false, DefaultStylusTargetConfig.MaxSinglepassOutputSize, timeout)
 	if err == nil {
 		return fmt.Errorf("succeeded compiling non-existent arch: %w", err)
 	}
 
-	outBytes, err := compileNative(wasm, 1, true, localTarget, cranelift, timeout)
+	outBytes, err := compileNative(wasm, 1, true, localTarget, cranelift, DefaultStylusTargetConfig.MaxSinglepassOutputSize, timeout)
 
 	if err != nil {
 		return fmt.Errorf("failed compiling native: %w", err)
@@ -157,7 +198,7 @@ func testCompileArch(store bool, cranelift bool) error {
 		}
 	}
 
-	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetArm64, cranelift, timeout)
+	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetArm64, cranelift, DefaultStylusTargetConfig.MaxSinglepassOutputSize, timeout)
 
 	if err != nil {
 		return fmt.Errorf("failed compiling arm: %w", err)
@@ -174,7 +215,7 @@ func testCompileArch(store bool, cranelift bool) error {
 		}
 	}
 
-	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetAmd64, cranelift, timeout)
+	outBytes, err = compileNative(wasm, 1, true, rawdb.TargetAmd64, cranelift, DefaultStylusTargetConfig.MaxSinglepassOutputSize, timeout)
 
 	if err != nil {
 		return fmt.Errorf("failed compiling amd: %w", err)
@@ -293,7 +334,7 @@ func testNativeStackSize() error {
 		return fmt.Errorf("failed compiling WAT: %w", err)
 	}
 
-	localAsm, err := compileNative(wasm, 1, true, localTarget, false, time.Minute)
+	localAsm, err := compileNative(wasm, 1, true, localTarget, false, DefaultStylusTargetConfig.MaxSinglepassOutputSize, time.Minute)
 	if err != nil {
 		return fmt.Errorf("failed compiling native: %w", err)
 	}
@@ -399,7 +440,7 @@ func testNativeStackSizeMaxCap() error {
 		return fmt.Errorf("failed compiling WAT: %w", err)
 	}
 
-	localAsm, err := compileNative(wasm, 1, true, localTarget, false, time.Minute)
+	localAsm, err := compileNative(wasm, 1, true, localTarget, false, DefaultStylusTargetConfig.MaxSinglepassOutputSize, time.Minute)
 	if err != nil {
 		return fmt.Errorf("failed compiling native: %w", err)
 	}
@@ -479,7 +520,7 @@ func testCompileLoad() error {
 func makeTestEVMScope(gas uint64) (*vm.EVM, *vm.ScopeContext, vm.StateDB) {
 	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
 	evm := vm.NewEVM(vm.BlockContext{}, statedb, params.TestChainConfig, vm.Config{})
-	contract := vm.NewContract(common.Address{}, common.Address{1}, new(uint256.Int), vm.NewGasBudget(gas), nil)
+	contract := vm.NewContract(common.Address{}, common.Address{1}, new(uint256.Int), vm.NewGasBudget(gas, 0), nil)
 	scope := &vm.ScopeContext{Contract: contract}
 	return evm, scope, statedb
 }
@@ -504,7 +545,7 @@ func testHandleNativeStackOverflow() error {
 	}
 
 	// Compile cranelift ASM and pre-populate the wasm store for sub-test 3.
-	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, time.Minute)
+	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, DefaultStylusTargetConfig.MaxSinglepassOutputSize, time.Minute)
 	if err != nil {
 		return fmt.Errorf("failed compiling cranelift: %w", err)
 	}
@@ -518,7 +559,7 @@ func testHandleNativeStackOverflow() error {
 
 	gas := uint64(0xfffffffffffffff)
 	evm, scope, db := makeTestEVMScope(gas)
-	scope.Contract.Gas = vm.NewGasBudget(gas)
+	scope.Contract.Gas = vm.NewGasBudget(gas, 0)
 
 	// Pre-populate cranelift ASM in the wasm store so getCraneliftAsm finds it.
 	craneliftTarget, err := rawdb.CraneliftTarget(localTarget)
@@ -537,7 +578,7 @@ func testHandleNativeStackOverflow() error {
 	allowFallback.Store(false)
 	runCtx := core.NewMessageCommitContext([]rawdb.WasmTarget{localTarget})
 
-	saved := &savedState{gas: vm.NewGasBudget(gas), snapshot: db.Snapshot()}
+	saved := &savedState{gas: vm.NewGasBudget(gas, 0), snapshot: db.Snapshot()}
 	status, _ := handleNativeStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
@@ -554,9 +595,9 @@ func testHandleNativeStackOverflow() error {
 	// Sub-test 2: allowFallback=true but off-chain → no retry.
 	allowFallback.Store(true)
 	offChainCtx := core.NewMessageGasEstimationContext()
-	scope.Contract.Gas = vm.NewGasBudget(gas)
+	scope.Contract.Gas = vm.NewGasBudget(gas, 0)
 
-	saved = &savedState{gas: vm.NewGasBudget(gas), snapshot: db.Snapshot()}
+	saved = &savedState{gas: vm.NewGasBudget(gas, 0), snapshot: db.Snapshot()}
 	status, _ = handleNativeStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
@@ -573,8 +614,8 @@ func testHandleNativeStackOverflow() error {
 	// Sub-test 3: on-chain with allowFallback=true → doubles stack and retries
 	// with cranelift. The stack should go from 32KB to 64KB, and the cranelift
 	// retry at 64KB should succeed for the 500-recursion program.
-	scope.Contract.Gas = vm.NewGasBudget(gas)
-	saved = &savedState{gas: vm.NewGasBudget(gas), snapshot: db.Snapshot()}
+	scope.Contract.Gas = vm.NewGasBudget(gas, 0)
+	saved = &savedState{gas: vm.NewGasBudget(gas, 0), snapshot: db.Snapshot()}
 	status, _ = handleNativeStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
@@ -597,8 +638,8 @@ func testHandleNativeStackOverflow() error {
 	SetNativeStackSize(32 * 1024)
 	DrainStackPool()
 	evm4, scope4, db4 := makeTestEVMScope(gas)
-	scope4.Contract.Gas = vm.NewGasBudget(gas)
-	saved = &savedState{gas: vm.NewGasBudget(gas), snapshot: db4.Snapshot()}
+	scope4.Contract.Gas = vm.NewGasBudget(gas, 0)
+	saved = &savedState{gas: vm.NewGasBudget(gas, 0), snapshot: db4.Snapshot()}
 	status, _ = handleNativeStackOverflow(
 		common.Address{}, moduleHash,
 		scope4, evm4, nil, []byte{}, &EvmData{}, stylusParams,
@@ -632,7 +673,7 @@ func testHandleNativeStackOverflowAtMax() error {
 		return fmt.Errorf("failed compiling WAT: %w", err)
 	}
 
-	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, time.Minute)
+	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, DefaultStylusTargetConfig.MaxSinglepassOutputSize, time.Minute)
 	if err != nil {
 		return fmt.Errorf("failed compiling cranelift: %w", err)
 	}
@@ -646,7 +687,7 @@ func testHandleNativeStackOverflowAtMax() error {
 	memModel := NewMemoryModel(0, 0)
 	gas := uint64(0xfffffffffffffff)
 	evm, scope, db := makeTestEVMScope(gas)
-	scope.Contract.Gas = vm.NewGasBudget(gas)
+	scope.Contract.Gas = vm.NewGasBudget(gas, 0)
 	runCtx := core.NewMessageCommitContext([]rawdb.WasmTarget{localTarget})
 
 	// Pre-populate cranelift ASM in the wasm store.
@@ -663,7 +704,7 @@ func testHandleNativeStackOverflowAtMax() error {
 		return fmt.Errorf("failed to persist cranelift ASM: %w", err)
 	}
 
-	saved := &savedState{gas: vm.NewGasBudget(gas), snapshot: db.Snapshot()}
+	saved := &savedState{gas: vm.NewGasBudget(gas, 0), snapshot: db.Snapshot()}
 	status, _ := handleNativeStackOverflow(
 		common.Address{}, moduleHash,
 		scope, evm, nil, []byte{}, &EvmData{}, stylusParams,
@@ -705,7 +746,7 @@ func testRetryRestoresStylusPages() error {
 	}
 
 	// Compile cranelift ASM for the retry.
-	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, time.Minute)
+	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, DefaultStylusTargetConfig.MaxSinglepassOutputSize, time.Minute)
 	if err != nil {
 		return fmt.Errorf("failed compiling cranelift: %w", err)
 	}
@@ -716,7 +757,7 @@ func testRetryRestoresStylusPages() error {
 
 	gas := uint64(0xfffffffffffffff)
 	evm, scope, db := makeTestEVMScope(gas)
-	scope.Contract.Gas = vm.NewGasBudget(gas)
+	scope.Contract.Gas = vm.NewGasBudget(gas, 0)
 
 	// Pre-populate cranelift ASM in the wasm store.
 	moduleHash := common.HexToHash("0x1234567890abcdef")
@@ -759,7 +800,7 @@ func testRetryRestoresStylusPages() error {
 	allowFallback.Store(true)
 
 	saved := &savedState{
-		gas:          vm.NewGasBudget(gas),
+		gas:          vm.NewGasBudget(gas, 0),
 		usedMultiGas: initialMultiGas,
 		openPages:    initialOpen,
 		everPages:    initialEver,
@@ -862,7 +903,7 @@ func testCraneliftCompilationAndCache() error {
 	}
 
 	// Manually compile cranelift ASM and persist it.
-	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, time.Minute)
+	craneliftAsm, err := compileNative(wasm, 1, true, localTarget, true, DefaultStylusTargetConfig.MaxSinglepassOutputSize, time.Minute)
 	if err != nil {
 		return fmt.Errorf("cranelift compilation failed: %w", err)
 	}

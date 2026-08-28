@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	_ "github.com/offchainlabs/nitro/system_tests/v2/arbos"
+	_ "github.com/offchainlabs/nitro/system_tests/v2/blocks"
 	_ "github.com/offchainlabs/nitro/system_tests/v2/gas"
 	_ "github.com/offchainlabs/nitro/system_tests/v2/messaging"
 	_ "github.com/offchainlabs/nitro/system_tests/v2/rpc"

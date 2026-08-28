@@ -127,7 +127,7 @@ func NewExpressLaneProxy(
 	elAPIs := []rpc.API{{
 		Namespace: "eth",
 		Version:   "1.0",
-		Service:   elProxy,
+		Service:   &ExpressLaneProxyAPI{proxy: elProxy},
 		Public:    true,
 	}}
 

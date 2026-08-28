@@ -1,16 +1,18 @@
 use std::sync::Arc;
 
-use alloy_consensus::transaction::Recovered;
+use alloy_consensus::transaction::{Recovered, SignerRecoverable};
+use alloy_eips::eip2718::Decodable2718;
 use alloy_evm::{
     EvmFactory,
     block::{BlockExecutor, BlockExecutorFactory},
     eth::EthBlockExecutionCtx,
 };
-use alloy_primitives::{Address, B256, Bytes, Signature, U256, address};
+use alloy_primitives::{Address, B256, Bytes, Signature, TxKind, U256, address, keccak256};
 use arb_alloy_consensus::tx::ArbRetryTx;
 use arb_evm::config::ArbEvmConfig;
 use arb_executor_tests::helpers::{
-    ExecutorScaffold, ONE_ETH, ONE_GWEI, alice, balance_of, fund_account,
+    ExecutorScaffold, ONE_ETH, ONE_GWEI, RECIPIENT, alice, alice_key, balance_of, fund_account,
+    recover, sign_legacy,
 };
 use arb_primitives::{ArbTransactionSigned, signed_tx::ArbTypedTransaction};
 use arb_test_utils::ArbosHarness;
@@ -211,5 +213,126 @@ fn retry_tx_failure_keeps_retryable_alive() {
             .unwrap()
             .is_some(),
         "failed retry must keep the retryable in state"
+    );
+}
+
+/// ArbRetryableTx precompile address (0x6e).
+const ARB_RETRYABLE_TX: Address = address!("000000000000000000000000000000000000006e");
+
+fn redeem_calldata(ticket: B256) -> Bytes {
+    let mut data = keccak256(b"redeem(bytes32)")[..4].to_vec();
+    data.extend_from_slice(ticket.as_slice());
+    data.into()
+}
+
+#[test]
+fn scheduled_redeems_execute_in_fifo_order_across_generations() {
+    // The block-recipe rule under test: retries scheduled by a committed tx join the BACK of the
+    // block-scoped queue, so a retry scheduled by another retry runs after the already-queued
+    // siblings.
+    let mut s = ExecutorScaffold::new().with_funded(&[(alice(), U256::from(10u128 * ONE_ETH))]);
+    let chain_id = s.chain_id;
+    let sender = alice();
+    let refund_to = address!("0000000000000000000000000000000000000B0B");
+    let timeout = s.timestamp + 604_800;
+
+    let t1 = B256::repeat_byte(0x01);
+    let t2 = B256::repeat_byte(0x02);
+    let t3 = B256::repeat_byte(0x03);
+
+    {
+        let state_ptr = s.harness.state_ptr();
+        let rs = s.harness.retryable_state();
+        // t1's retry redeems t3 from within its own execution (a retry scheduling a retry);
+        // t2 and t3 are zero-value no-ops.
+        rs.create_retryable(
+            unsafe { &mut *state_ptr },
+            t1,
+            timeout,
+            sender,
+            Some(ARB_RETRYABLE_TX),
+            U256::ZERO,
+            refund_to,
+            &redeem_calldata(t3),
+        )
+        .unwrap();
+        for ticket in [t2, t3] {
+            rs.create_retryable(
+                unsafe { &mut *state_ptr },
+                ticket,
+                timeout,
+                sender,
+                Some(RECIPIENT),
+                U256::ZERO,
+                refund_to,
+                &[],
+            )
+            .unwrap();
+        }
+    }
+
+    let cfg = s.evm_config();
+    let env = s.evm_env();
+    let evm = cfg
+        .block_executor_factory()
+        .evm_factory()
+        .create_evm(s.harness.state(), env);
+    let exec_ctx = EthBlockExecutionCtx {
+        tx_count_hint: Some(5),
+        parent_hash: B256::ZERO,
+        parent_beacon_block_root: None,
+        ommers: &[],
+        withdrawals: None,
+        extra_data: vec![0u8; 32].into(),
+    };
+    let mut executor = cfg
+        .block_executor_factory()
+        .create_arb_executor(evm, exec_ctx, chain_id);
+    executor.arb_ctx.block_timestamp = s.timestamp;
+    executor.arb_ctx.basefee = U256::from(s.base_fee);
+    executor.arb_ctx.l2_block_number = s.block_number;
+    executor.apply_pre_execution_changes().expect("pre-exec");
+
+    // Two user txs redeem t1 and t2 through the precompile: the queue becomes [r1, r2].
+    for (nonce, ticket) in [(0u64, t1), (1, t2)] {
+        let tx = sign_legacy(
+            chain_id,
+            nonce,
+            ONE_GWEI,
+            2_000_000,
+            TxKind::Call(ARB_RETRYABLE_TX),
+            U256::ZERO,
+            redeem_calldata(ticket),
+            alice_key(),
+        );
+        let res = executor
+            .execute_transaction_without_commit(recover(tx))
+            .expect("redeem exec");
+        assert!(res.result.result.is_success(), "manual redeem must succeed");
+        executor.commit_transaction(res).expect("redeem commit");
+    }
+
+    // Drain like the producer: pop one, execute, commit; retries scheduled along the way
+    // (r1 redeems t3, scheduling r3) join the back.
+    let mut executed = Vec::new();
+    while let Some(encoded) = executor.next_scheduled_tx() {
+        let retry = ArbTransactionSigned::decode_2718(&mut &encoded[..]).expect("decode retry");
+        let ArbTypedTransaction::Retry(inner) = retry.inner() else {
+            panic!("scheduled tx is not a retry");
+        };
+        executed.push(inner.ticket_id);
+
+        let res = executor
+            .execute_transaction_without_commit(retry.try_into_recovered().expect("recover"))
+            .expect("retry exec");
+        assert!(res.result.result.is_success(), "retry must succeed");
+        executor.commit_transaction(res).expect("retry commit");
+    }
+    let _ = executor.finish().expect("finish");
+
+    assert_eq!(
+        executed,
+        vec![t1, t2, t3],
+        "retries must execute in FIFO order across generations (r3 behind r2)"
     );
 }

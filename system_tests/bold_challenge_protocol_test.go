@@ -125,20 +125,18 @@ func testChallengeProtocolBOLD(t *gotesting.T, recorderCase blockRecorderTestCas
 		MinimumAssertionPeriod: 0,
 	}
 
-	_, l2nodeA, l2execNodeA, _, l2StackA, l1info, _, l1client, l1stack, assertionChain, stakeTokenAddr, asserterOpts, _, _ := createCompleteTestNodeOnL1(
+	_, l2nodeA, l2execNodeA, _, l2StackA, l1info, l1client, assertionChain, stakeTokenAddr, asserterOpts, _, _ := createCompleteTestNodeOnL1(
 		t,
 		ctx,
 		true,
 		nil,
 		l2chainConfig,
-		nil,
 		sconf,
 		l2info,
 		useExternalSigner,
 		false,
 		withBlockRecorderTestCase(recorderCase),
 	)
-	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
 
 	// Make sure we shut down test functionality before the rest of the node
@@ -152,7 +150,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, recorderCase blockRecorderTestCas
 		t,
 		ctx,
 		l2nodeA,
-		l1stack,
+		l1client,
 		l1info,
 		&l2info.ArbInitData,
 		l2nodeConfig,
@@ -538,7 +536,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	t *gotesting.T,
 	ctx context.Context,
 	first *arbnode.Node,
-	l1stack *node.Node,
+	l1client *ethclient.Client,
 	l1info *BlockchainTestInfo,
 	l2InitData *statetransfer.ArbosInitializationInfo,
 	nodeConfig *arbnode.Config,
@@ -550,8 +548,6 @@ func create2ndNodeWithConfigForBoldProtocol(
 	execConfigOpts ...func(*gethexec.Config),
 ) (*node.Node, *ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, *sol.AssertionChain) {
 	fatalErrChan := make(chan error, 10)
-	l1rpcClient := l1stack.Attach()
-	l1client := ethclient.NewClient(l1rpcClient)
 	firstExec, ok := first.ExecutionClient.(*gethexec.ExecutionNode)
 	if !ok {
 		Fatal(t, "not geth execution node")

@@ -78,10 +78,6 @@ func (p DB) Close() error {
 	return nil
 }
 
-func (d *DB) HasAncient(kind string, number uint64) (bool, error) {
-	return false, errors.New("unimplemented")
-}
-
 func (d *DB) Ancient(kind string, number uint64) ([]byte, error) {
 	return nil, errors.New("unimplemented")
 }
@@ -98,7 +94,7 @@ func (d *DB) Ancients() (uint64, error) {
 	return 0, errors.New("unimplemented")
 }
 
-func (d *DB) Tail() (uint64, error) {
+func (d *DB) Tail(group string) (uint64, error) {
 	return 0, errors.New("unimplemented")
 }
 
@@ -118,16 +114,8 @@ func (d *DB) TruncateHead(n uint64) (uint64, error) {
 	return 0, errors.New("unimplemented")
 }
 
-func (d *DB) TruncateTail(n uint64) (uint64, error) {
+func (d *DB) TruncateTail(group string, n uint64) (uint64, error) {
 	return 0, errors.New("unimplemented")
-}
-
-func (d *DB) Sync() error {
-	return errors.New("unimplemented")
-}
-
-func (d *DB) MigrateTable(s string, f func([]byte) ([]byte, error)) error {
-	return errors.New("unimplemented")
 }
 
 func (d *DB) AncientDatadir() (string, error) {

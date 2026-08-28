@@ -288,6 +288,7 @@ func compileNative(
 	debug bool,
 	target rawdb.WasmTarget,
 	cranelift bool,
+	maxSinglepassOutputSize uint64,
 	timeout time.Duration,
 ) ([]byte, error) {
 	result := containers.NewPromise[[]byte](func() {})
@@ -299,6 +300,7 @@ func compileNative(
 			cbool(debug),
 			goSlice([]byte(target)),
 			cbool(cranelift),
+			u64(maxSinglepassOutputSize),
 			output,
 		)
 		asm := rustBytesIntoBytes(output)
@@ -372,7 +374,7 @@ func activateProgramInternal(
 			} else {
 				cranelift := rawdb.IsCraneliftTarget(target)
 				timeout := time.Second * 15
-				asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, timeout)
+				asm, err := compileNative(wasm, stylusVersion, debug, target, cranelift, nodeConfig.MaxSinglepassOutputSize, timeout)
 				if err != nil {
 					var fallbackTarget rawdb.WasmTarget
 					var fallbackErr error
@@ -383,7 +385,7 @@ func activateProgramInternal(
 					}
 					if useFallback && fallbackErr == nil {
 						log.Warn("stylus compilation failed, falling back to alternative compiler", "address", addressForLogging, "target", target, "fallbackTarget", fallbackTarget, "timeout", timeout, "err", err)
-						asm, err = compileNative(wasm, stylusVersion, debug, fallbackTarget, !cranelift, timeout)
+						asm, err = compileNative(wasm, stylusVersion, debug, fallbackTarget, !cranelift, nodeConfig.MaxSinglepassOutputSize, timeout)
 						results <- result{target: fallbackTarget, asm: asm, err: err}
 						return
 					} else if !useFallback {
@@ -740,7 +742,7 @@ func getCraneliftAsm(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get wasm for cranelift compilation: %w", err)
 	}
-	asm, err := compileNative(wasm, version, debug, craneliftTarget, true, 15*time.Second)
+	asm, err := compileNative(wasm, version, debug, craneliftTarget, true, 0, 15*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("cranelift compilation failed: %w", err)
 	}

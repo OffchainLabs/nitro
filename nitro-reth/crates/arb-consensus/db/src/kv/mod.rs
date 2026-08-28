@@ -3,8 +3,12 @@
 //! [`KvStore`] is the backend seam under [`crate::ConsensusDb`]: any engine that can
 //! get/put/delete byte keys and iterate a prefix can back the consensus DB.
 
+#[cfg(not(target_family = "wasm"))]
+mod libmdbx;
 mod memory;
 
+#[cfg(not(target_family = "wasm"))]
+pub use libmdbx::LibmdbxKvStore;
 pub use memory::MemoryKvStore;
 
 /// A borrowed key: a byte slice.
@@ -40,7 +44,7 @@ pub trait KvStore {
         &self,
         prefix: Key,
         start: impl AsRef<[u8]>,
-    ) -> impl Iterator<Item = Result<(KeyBuf, Value), Self::Error>>;
+    ) -> Result<Vec<(KeyBuf, Value)>, Self::Error>;
 
     /// Delete every key in the range `[start, end)`.
     fn delete_range(&mut self, start: Key, end: Key) -> Result<(), Self::Error>;

@@ -97,7 +97,7 @@ func chainTipRecordingFromPersisted(persisted *persistedChainTipRecording) *chai
 }
 
 func (s *blockRecordsFreezer) freezerBounds() (uint64, uint64, error) {
-	tail, err := s.freezer.Tail()
+	tail, err := s.freezer.Tail(rawdb.ChainTipBlockRecordsGroup)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to read chain-tip block records freezer tail: %w", err)
 	}
@@ -151,7 +151,7 @@ func (s *blockRecordsFreezer) writeRecording(recording *chainTipRecording) error
 		}
 	case pos > head && head == tail:
 		// The freezer is empty and behind pos advance the empty window so the next append lands at pos.
-		if _, err := s.freezer.TruncateTail(pos); err != nil {
+		if _, err := s.freezer.TruncateTail(rawdb.ChainTipBlockRecordsGroup, pos); err != nil {
 			return fmt.Errorf("failed to advance chain-tip block records freezer to message index %d: %w", pos, err)
 		}
 		if head > 0 || pos > 1 {
@@ -173,7 +173,7 @@ func (s *blockRecordsFreezer) writeRecording(recording *chainTipRecording) error
 			return fmt.Errorf("failed to reset chain-tip block records freezer: %w", err)
 		}
 		if pos > 0 {
-			if _, err := s.freezer.TruncateTail(pos); err != nil {
+			if _, err := s.freezer.TruncateTail(rawdb.ChainTipBlockRecordsGroup, pos); err != nil {
 				return fmt.Errorf("failed to advance chain-tip block records freezer to message index %d: %w", pos, err)
 			}
 		}
@@ -229,7 +229,7 @@ func (s *blockRecordsFreezer) pruneRecordingsBefore(pos arbutil.MessageIndex) er
 	if err != nil {
 		return err
 	}
-	if _, err := s.freezer.TruncateTail(min(uint64(pos), head)); err != nil {
+	if _, err := s.freezer.TruncateTail(rawdb.ChainTipBlockRecordsGroup, min(uint64(pos), head)); err != nil {
 		return fmt.Errorf("failed to prune chain-tip block records freezer: %w", err)
 	}
 	return nil

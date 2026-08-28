@@ -21,7 +21,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
@@ -46,7 +45,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
-// TestBoldSelfChallengeRepro is the system-level regression gate for the
+// TestChallengeProtocolBOLDSelfChallengeRepro is the system-level regression gate for the
 // same-hash short-circuit in maybePostRivalAssertionAndChallenge. It posts
 // one canonical child Y on-chain, then runs a full challenge.Stack with a
 // flaky ExecutionProvider that returns a wrong EndHistoryRoot on the first
@@ -61,12 +60,11 @@ import (
 // Note: this test does not exercise the cursor-downgrade path in
 // applyRecordAgreedAssertion — see TestRecordAgreedAssertionDoesNotDowngradeLatestAgreedAssertion
 // for that side.
-func TestBoldSelfChallengeRepro(t *testing.T) {
+func TestChallengeProtocolBOLDSelfChallengeRepro(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	repro := setupBoldSelfChallengeRepro(t, ctx)
-	defer requireClose(t, repro.l1stack)
 	defer repro.l2node.StopAndWait()
 
 	// Grant sequencer batch-poster rights and post two batches.
@@ -270,7 +268,6 @@ var _ state.ExecutionProvider = (*flakySystemExecutionProvider)(nil)
 
 // reproRig bundles what the test needs from the L1+L2 setup.
 type reproRig struct {
-	l1stack                  *node.Node
 	l1client                 *ethclient.Client
 	l1info                   info
 	l2node                   *arbnode.Node
@@ -301,8 +298,8 @@ func setupBoldSelfChallengeRepro(t *testing.T, ctx context.Context) *reproRig {
 		MinimumAssertionPeriod: 0,
 	}
 
-	l2info, l2node, l2execNode, _, l2stack, l1info, _, l1client, l1stack, assertionChain, _, _, _, _ := createCompleteTestNodeOnL1(
-		t, ctx, false, nil, l2chainConfig, nil, sconf, l2info, false, false,
+	l2info, l2node, l2execNode, _, l2stack, l1info, l1client, assertionChain, _, _, _, _ := createCompleteTestNodeOnL1(
+		t, ctx, false, nil, l2chainConfig, sconf, l2info, false, false,
 	)
 
 	valnode.TestValidationConfig.UseJit = false
@@ -343,7 +340,6 @@ func setupBoldSelfChallengeRepro(t *testing.T, ctx context.Context) *reproRig {
 	Require(t, err)
 
 	return &reproRig{
-		l1stack:                  l1stack,
 		l1client:                 l1client,
 		l1info:                   l1info,
 		l2node:                   l2node,

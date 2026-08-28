@@ -41,8 +41,8 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
-func TestOverflowAssertions(t *testing.T) {
-	// Get a simulated geth backend running.
+func TestChallengeProtocolBOLDOverflowAssertions(t *testing.T) {
+	// Start the external geth parent chain.
 	//
 	// Create enough messages in batches to overflow the block level challenge
 	// height. (height == 32, messages = 45)
@@ -76,11 +76,7 @@ func TestOverflowAssertions(t *testing.T) {
 		UseBlobs:               true,
 	}
 
-	_, l2node, l2execNode, _, l2stack, l1info, _, l1client, l1stack, assertionChain, _, _, _, _ := createCompleteTestNodeOnL1(t, ctx, true, nil, l2chainConfig, nil, sconf, l2info, false, false)
-	_, err = execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, l2stack, l2execNode, l2node)
-	Require(t, err)
-	defer requireClose(t, l1stack)
-	defer l2node.StopAndWait()
+	_, l2node, l2execNode, _, l2stack, l1info, l1client, assertionChain, _, _, _, _ := createCompleteTestNodeOnL1(t, ctx, true, nil, l2chainConfig, sconf, l2info, false, false)
 
 	// Make sure we shut down test functionality before the rest of the node
 	ctx, cancelCtx = context.WithCancel(ctx)
@@ -126,6 +122,12 @@ func TestOverflowAssertions(t *testing.T) {
 	Require(t, blockValidator.Initialize(ctx))
 	Require(t, blockValidator.Start(ctx))
 
+	// The block validator must be wired into the (not yet started) streamer
+	// before the consensus node starts, so start the nodes only now.
+	_, err = execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, l2stack, l2execNode, l2node)
+	Require(t, err)
+	defer l2node.StopAndWait()
+
 	stateManager, err := bold.NewBOLDStateProvider(
 		blockValidator,
 		stateless,
@@ -142,8 +144,6 @@ func TestOverflowAssertions(t *testing.T) {
 		nil,
 	)
 	Require(t, err)
-
-	Require(t, l2node.Start(ctx))
 
 	l2info.GenerateAccount("Destination")
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)

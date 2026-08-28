@@ -6,9 +6,8 @@
 use std::sync::Arc;
 
 use alloy_primitives::{Address, B256};
-use arb_rpc::block_producer::{
-    BlockProducer, BlockProducerError, BlockProductionInput, ProducedBlock,
-};
+use arb_rpc::block_producer::{BlockProducer, BlockProducerError, ProducedBlock};
+use arbos::types::{L1IncomingMessage, L1IncomingMessageHeader, MessageWithMetadata};
 
 #[derive(Default, Debug)]
 struct RecordingProducer {
@@ -26,7 +25,7 @@ impl BlockProducer for RecordingProducer {
     async fn produce_block(
         &self,
         msg_idx: u64,
-        _input: BlockProductionInput,
+        _input: MessageWithMetadata,
     ) -> Result<ProducedBlock, BlockProducerError> {
         self.produces.lock().push(msg_idx);
         Ok(ProducedBlock {
@@ -63,7 +62,7 @@ fn default_set_finality_is_noop_ok() {
         async fn produce_block(
             &self,
             _: u64,
-            _: BlockProductionInput,
+            _: MessageWithMetadata,
         ) -> Result<ProducedBlock, BlockProducerError> {
             unimplemented!()
         }
@@ -84,7 +83,7 @@ fn default_reset_to_block_returns_unsupported_error() {
         async fn produce_block(
             &self,
             _: u64,
-            _: BlockProductionInput,
+            _: MessageWithMetadata,
         ) -> Result<ProducedBlock, BlockProducerError> {
             unimplemented!()
         }
@@ -136,17 +135,21 @@ fn recording_producer_records_finality_triple() {
 #[test]
 fn block_production_input_fields_preserved() {
     let rec = Arc::new(RecordingProducer::default());
-    let input = BlockProductionInput {
-        kind: 3,
-        sender: Address::repeat_byte(0xAB),
-        l1_block_number: 100,
-        l1_timestamp: 1_700_000_000,
-        request_id: Some(B256::repeat_byte(0x42)),
-        l1_base_fee: None,
-        l2_msg: vec![1, 2, 3],
+    let input = MessageWithMetadata {
+        message: L1IncomingMessage {
+            header: L1IncomingMessageHeader {
+                kind: 3,
+                poster: Address::repeat_byte(0xAB),
+                block_number: 100,
+                timestamp: 1_700_000_000,
+                request_id: Some(B256::repeat_byte(0x42)),
+                l1_base_fee: None,
+            },
+            l2_msg: vec![1, 2, 3].into(),
+            legacy_batch_gas_cost: None,
+            batch_data_stats: None,
+        },
         delayed_messages_read: 5,
-        batch_gas_cost: None,
-        batch_data_stats: None,
     };
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()

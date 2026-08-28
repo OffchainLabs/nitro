@@ -517,11 +517,11 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.L1Reader.Client(), func() uint64 { return 0 })
-	Require(t, err)
 	valConfigB := legacystaker.TestL1ValidatorConfig
 	valConfigB.EnableFastConfirmation = true
 	valConfigB.Strategy = "watchtower"
+	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.L1Reader.Client(), func() uint64 { return valConfigB.ExtraGas })
+	Require(t, err)
 	pcdsB := l2nodeB.GetParentChainDataSource()
 	statelessB, err := staker.NewStatelessBlockValidator(
 		pcdsB,

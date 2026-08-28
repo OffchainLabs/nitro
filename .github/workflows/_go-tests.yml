@@ -142,6 +142,9 @@ jobs:
         timeout-minutes: 20
         run: make -j "${BUILD_JOBS:-$(nproc)}" build-node-deps
 
+      - name: Build external L1 geth
+        run: make -j8 build-upstream-geth
+
       # --------------------- PATHDB MODE ---------------------
 
       - name: run tests without race detection and path state scheme (A-batch)
@@ -179,14 +182,14 @@ jobs:
         if: inputs.run-consensus-execution-rpc-a
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --cover --test_state_scheme hash --consensus_execution_in_same_process_use_rpc
+          --tags cionly --timeout 60m $COVER --test_state_scheme hash --consensus_execution_in_same_process_use_rpc
           --junitfile test-results/junit-consensus-execution-rpc-a.xml --run '^Test[A-L]'
 
       - name: run tests with consensus and execution nodes connected over json rpc (B-batch)
         if: inputs.run-consensus-execution-rpc-b
         run: >-
           ${{ github.workspace }}/.github/workflows/gotestsum.sh
-          --tags cionly --timeout 60m --cover --test_state_scheme hash --consensus_execution_in_same_process_use_rpc
+          --tags cionly --timeout 60m $COVER --test_state_scheme hash --consensus_execution_in_same_process_use_rpc
           --junitfile test-results/junit-consensus-execution-rpc-b.xml --skip '^Test[A-L]'
 
       # --------------------- PATHDB MEL MODE ---------------------

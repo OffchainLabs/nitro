@@ -280,13 +280,18 @@ func TestCreateBlockRequeuesNeverAttemptedTxs(t *testing.T) {
 
 	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
 	ordererConfig := txOrdererConfig{
+		latestHeader:         engine.bc.CurrentBlock(),
 		baseFee:              big.NewInt(testBaseFee),
 		maxBlockTxCandidates: math.MaxInt,
 		maxBlockSpeed:        DefaultSequencerConfig.MaxBlockSpeed,
 	}
 	orderer := newFIFOTxOrderer(newStubOrdererSequencer(item), ordererConfig, DefaultSequencerConfig.PollInterval)
 
-	sequencedMsg, _ := seq.createBlockWithTxOrderer(context.Background(), orderer)
+	statedb, err := engine.bc.StateAt(ordererConfig.latestHeader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sequencedMsg, _ := seq.createBlockWithTxOrderer(context.Background(), orderer, statedb)
 
 	if sequencedMsg != nil {
 		t.Fatal("expected no block to be sequenced")
@@ -322,13 +327,18 @@ func TestCreateBlockPanicFailsTxsInsteadOfRequeueing(t *testing.T) {
 
 	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
 	ordererConfig := txOrdererConfig{
+		latestHeader:         engine.bc.CurrentBlock(),
 		baseFee:              big.NewInt(testBaseFee),
 		maxBlockTxCandidates: math.MaxInt,
 		maxBlockSpeed:        DefaultSequencerConfig.MaxBlockSpeed,
 	}
 	orderer := newFIFOTxOrderer(newStubOrdererSequencer(item), ordererConfig, DefaultSequencerConfig.PollInterval)
 
-	sequencedMsg, throttle := seq.createBlockWithTxOrderer(context.Background(), panicAfterArmOrderer{orderer})
+	statedb, err := engine.bc.StateAt(ordererConfig.latestHeader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sequencedMsg, throttle := seq.createBlockWithTxOrderer(context.Background(), panicAfterArmOrderer{orderer}, statedb)
 
 	if sequencedMsg != nil {
 		t.Fatal("expected no block to be sequenced")

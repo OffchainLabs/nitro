@@ -13,11 +13,65 @@ import (
 	"testing"
 	"time"
 
+	"github.com/holiman/uint256"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 )
+
+func TestSequencerSelfSponsoredSetCodeNonce(t *testing.T) {
+	builder := NewNodeBuilder(t.Context()).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("User")
+	builder.L2.TransferBalance(t, "Owner", "User", big.NewInt(1e18), builder.L2Info)
+
+	user := builder.L2Info.GetInfoWithPrivKey("User")
+	chainID := uint256.MustFromBig(builder.chainConfig.ChainID)
+
+	// A self-sponsored authorization advances the sender's nonce a second time,
+	// after the transaction itself already advanced it, so the authorization
+	// nonce is the transaction nonce plus one and the account nonce advances by
+	// two in total.
+	txNonce := user.Nonce.Add(2) - 2
+	codeAuth, err := types.SignSetCode(user.PrivateKey, types.SetCodeAuthorization{
+		ChainID: *chainID,
+		Address: builder.L2Info.GetAddress("Owner"),
+		Nonce:   txNonce + 1,
+	})
+	Require(t, err)
+
+	setCodeTx := builder.L2Info.SignTxAs("User", &types.SetCodeTx{
+		ChainID:   chainID,
+		Nonce:     txNonce,
+		GasTipCap: uint256.MustFromBig(builder.L2Info.GasPrice),
+		GasFeeCap: uint256.MustFromBig(builder.L2Info.GasPrice),
+		Gas:       builder.L2Info.TransferGas + 100_000,
+		To:        builder.L2Info.GetAddress("Owner"),
+		Value:     uint256.NewInt(0),
+		AuthList:  []types.SetCodeAuthorization{codeAuth},
+	})
+
+	transferTx := builder.L2Info.PrepareTx("User", "Owner", builder.L2Info.TransferGas, common.Big1, nil)
+
+	_, txResults := sequenceTransactionsInTheSameBlock(t, builder, types.Transactions{setCodeTx, transferTx})
+	for _, res := range txResults {
+		Require(t, res.Err)
+	}
+	_, err = builder.L2.EnsureTxSucceeded(setCodeTx)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(transferTx)
+	Require(t, err)
+
+	nonce, err := builder.L2.Client.NonceAt(builder.ctx, user.Address, nil)
+	Require(t, err)
+	if nonce != txNonce+3 {
+		Fatal(t, "Unexpected user nonce; have", nonce, "want", txNonce+3)
+	}
+}
 
 func TestSequencerNonceTooHigh(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

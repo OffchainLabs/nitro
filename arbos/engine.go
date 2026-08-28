@@ -4,17 +4,15 @@
 package arbos
 
 import (
-	"context"
 	"errors"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/ethereum/go-ethereum/trie"
 )
 
 type Engine struct {
@@ -50,16 +48,10 @@ func (e Engine) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 	return nil
 }
 
-func (e Engine) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body) {
+// The block access list parameters are ignored: nitro does not produce
+// EIP-7928 block access lists below ArbOS params.ArbosVersion_Amsterdam.
+func (e Engine) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body, blockAccessIndex uint32, blockAccessList *bal.ConstructionBlockAccessList) {
 	FinalizeBlock(header, state, chain.Config())
-}
-
-func (e Engine) FinalizeAndAssemble(_ context.Context, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt) (*types.Block, error) {
-
-	e.Finalize(chain, header, state, body)
-
-	block := types.NewBlock(header, &types.Body{Transactions: body.Transactions}, receipts, trie.NewStackTrie(nil))
-	return block, nil
 }
 
 func (e Engine) Seal(chain consensus.ChainHeaderReader, block *types.Block, results chan<- *types.Block, stop <-chan struct{}) error {
