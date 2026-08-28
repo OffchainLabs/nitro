@@ -30,7 +30,7 @@ pub mod send {
     }
 
     /// Injects the stdin into a direct executor.
-    pub fn inject(stdin: SP1Stdin, executor: &mut MinimalExecutor<impl ExecutionMode>) {
+    pub fn inject(stdin: &SP1Stdin, executor: &mut MinimalExecutor<impl ExecutionMode>) {
         for input in &stdin.buffer {
             executor.with_input(input);
         }

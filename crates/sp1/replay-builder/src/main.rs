@@ -115,7 +115,7 @@ fn bootload(artifacts: &Artifacts, dump_target: &Path) -> Result<()> {
     let program = Program::from(&REPLAY_ELF).map_err(|e| anyhow!("parse replay ELF: {e:#}"))?;
     let mut executor = MinimalExecutor::<UserMode>::simple(Arc::new(program));
     let stdin = replay_io::send::bootload_stdin(&artifacts.wasmu, &artifacts.function_names_json);
-    replay_io::send::inject(stdin, &mut executor);
+    replay_io::send::inject(&stdin, &mut executor);
 
     let _ = executor.execute_chunk();
     let exit_code = executor.exit_code();

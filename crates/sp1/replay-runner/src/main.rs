@@ -92,7 +92,7 @@ fn run_prove(elf: Elf, stdin: SP1Stdin) -> Result<()> {
 /// Runs a program in the minimal executor; fails unless it completes with a zero exit code.
 fn execute_minimal(program: Arc<Program>, stdin: SP1Stdin) -> Result<Vec<u8>> {
     let mut executor = MinimalExecutor::<UserMode>::simple(program);
-    replay_io::send::inject(stdin, &mut executor); // todo &
+    replay_io::send::inject(&stdin, &mut executor);
 
     if executor.execute_chunk().is_some() {
         bail!("execution failed: executor returned a trace chunk unexpectedly");
