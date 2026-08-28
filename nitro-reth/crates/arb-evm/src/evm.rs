@@ -6,8 +6,7 @@ use alloy_evm::{
 use alloy_primitives::{Address, B256, Bytes, U256};
 use arb_precompiles::register_arb_precompiles;
 use arb_stylus::{
-    StylusEvmApi, config::StylusConfig, ink::Gas as StylusGas, meter::MeteredMachine,
-    run::RunProgram,
+    Gas as StylusGas, StylusEvmApi, config::StylusConfig, meter::MeteredMachine, run::RunProgram,
 };
 use arbos::programs::types::EvmData;
 use revm::{

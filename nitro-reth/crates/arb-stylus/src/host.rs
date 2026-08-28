@@ -1,14 +1,15 @@
 use alloy_primitives::{Address, B256, U256};
 use arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_CHARGING_FIXES;
+use nitro_arbutil::evm::{self as evm_gas, storage::StorageCache};
 use wasmer::FunctionEnvMut;
 
 use crate::{
+    Gas,
     env::WasmEnv,
     error::{MaybeEscape, StylusError},
     evm_api::{EvmApi, UserOutcomeKind},
-    ink::Gas,
     meter::{GasMeteredMachine, MeteredMachine},
-    pricing::{evm_gas, hostio as hio},
+    pricing::hostio as hio,
 };
 
 macro_rules! hostio {
@@ -101,16 +102,14 @@ pub fn storage_load_bytes32<E: EvmApi>(
     } else {
         info.pricing().ink_to_gas(crate::pricing::EVM_API_INK)
     };
-    info.require_gas(
-        evm_gas::COLD_SLOAD_GAS + evm_gas::STORAGE_CACHE_REQUIRED_ACCESS_GAS + evm_api_gas.0,
-    )?;
+    info.require_gas(evm_gas::COLD_SLOAD_GAS + StorageCache::REQUIRED_ACCESS_GAS + evm_api_gas)?;
     let key = B256::from(info.read_fixed::<32>(key_ptr)?);
     let (value, gas_cost) = info
         .env
         .evm_api
         .get_bytes32(key, evm_api_gas)
         .map_err(|e| StylusError::Internal(e.to_string()))?;
-    info.buy_gas(gas_cost.0)?;
+    info.buy_gas(gas_cost)?;
     info.write_slice(dest_ptr, value.as_slice())?;
     if trace_on {
         let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
@@ -136,7 +135,7 @@ pub fn storage_cache_bytes32<E: EvmApi>(
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::STORAGE_CACHE_BASE_INK)?;
-    info.require_gas(evm_gas::SSTORE_SENTRY_GAS + evm_gas::STORAGE_CACHE_REQUIRED_ACCESS_GAS)?;
+    info.require_gas(evm_gas::SSTORE_SENTRY_GAS + StorageCache::REQUIRED_ACCESS_GAS)?;
     let key = B256::from(info.read_fixed::<32>(key_ptr)?);
     let value = B256::from(info.read_fixed::<32>(value_ptr)?);
     let gas_cost = info
@@ -144,7 +143,7 @@ pub fn storage_cache_bytes32<E: EvmApi>(
         .evm_api
         .cache_bytes32(key, value)
         .map_err(|e| StylusError::Internal(e.to_string()))?;
-    info.buy_gas(gas_cost.0)?;
+    info.buy_gas(gas_cost)?;
     if trace_on {
         let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
         let mut args = Vec::with_capacity(64);
@@ -189,14 +188,14 @@ pub fn storage_flush_cache<E: EvmApi>(
     match status {
         UserOutcomeKind::Success => {
             if info.env.evm_data.arbos_version >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
-                info.buy_gas(gas_cost.0)?;
+                info.buy_gas(gas_cost)?;
             }
             Ok(())
         }
         UserOutcomeKind::Failure => StylusError::logical("storage flush failed"),
         _ => {
             if info.env.evm_data.arbos_version >= ARBOS_VERSION_STYLUS_CHARGING_FIXES {
-                info.buy_gas(gas_cost.0)?;
+                info.buy_gas(gas_cost)?;
             }
             StylusError::logical("storage flush failed")
         }
@@ -311,7 +310,7 @@ pub fn call_contract<E: EvmApi>(
         result.map_err(|e| StylusError::Internal(e.to_string()))?;
     info.env.pages_open = pages_out.0;
     info.env.pages_ever = pages_out.1;
-    info.buy_gas(gas_cost.0)?;
+    info.buy_gas(gas_cost)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
     if trace_on {
@@ -370,7 +369,7 @@ pub fn delegate_call_contract<E: EvmApi>(
         result.map_err(|e| StylusError::Internal(e.to_string()))?;
     info.env.pages_open = pages_out.0;
     info.env.pages_ever = pages_out.1;
-    info.buy_gas(gas_cost.0)?;
+    info.buy_gas(gas_cost)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
     if trace_on {
@@ -428,7 +427,7 @@ pub fn static_call_contract<E: EvmApi>(
         result.map_err(|e| StylusError::Internal(e.to_string()))?;
     info.env.pages_open = pages_out.0;
     info.env.pages_ever = pages_out.1;
-    info.buy_gas(gas_cost.0)?;
+    info.buy_gas(gas_cost)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
     if trace_on {
@@ -489,7 +488,7 @@ pub fn create1<E: EvmApi>(
         crate::evm_api::CreateResponse::Success(addr) => addr,
         crate::evm_api::CreateResponse::Fail(reason) => return Err(StylusError::Internal(reason)),
     };
-    info.buy_gas(gas_cost.0)?;
+    info.buy_gas(gas_cost)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
     info.write_slice(contract_ptr, address.as_slice())?;
@@ -552,7 +551,7 @@ pub fn create2<E: EvmApi>(
         crate::evm_api::CreateResponse::Success(addr) => addr,
         crate::evm_api::CreateResponse::Fail(reason) => return Err(StylusError::Internal(reason)),
     };
-    info.buy_gas(gas_cost.0)?;
+    info.buy_gas(gas_cost)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
     info.write_slice(contract_ptr, address.as_slice())?;
@@ -712,7 +711,7 @@ pub fn account_balance<E: EvmApi>(
         .evm_api
         .account_balance(address)
         .map_err(|e| StylusError::Internal(e.to_string()))?;
-    info.buy_gas(gas_cost.0)?;
+    info.buy_gas(gas_cost)?;
     info.write_slice(dest_ptr, &balance.to_be_bytes::<32>())?;
     if trace_on {
         let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
@@ -749,7 +748,7 @@ pub fn account_code<E: EvmApi>(
         .evm_api
         .account_code(arbos_version, address, gas_left)
         .map_err(|e| StylusError::Internal(e.to_string()))?;
-    info.buy_gas(gas_cost.0)?;
+    info.buy_gas(gas_cost)?;
     info.pay_for_write(code.len() as u32)?;
     let offset_usize = offset as usize;
     let size_usize = size as usize;
@@ -794,7 +793,7 @@ pub fn account_code_size<E: EvmApi>(
         .evm_api
         .account_code(arbos_version, address, gas_left)
         .map_err(|e| StylusError::Internal(e.to_string()))?;
-    info.buy_gas(gas_cost.0)?;
+    info.buy_gas(gas_cost)?;
     let len = code.len() as u32;
     if trace_on {
         let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
@@ -827,7 +826,7 @@ pub fn account_codehash<E: EvmApi>(
         .evm_api
         .account_codehash(address)
         .map_err(|e| StylusError::Internal(e.to_string()))?;
-    info.buy_gas(gas_cost.0)?;
+    info.buy_gas(gas_cost)?;
     info.write_slice(dest_ptr, hash.as_slice())?;
     if trace_on {
         let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
@@ -1123,7 +1122,7 @@ pub fn math_pow<E: EvmApi>(
     info.buy_ink(hio::MATH_POW_BASE_INK)?;
     let base = U256::from_be_bytes(info.read_fixed::<32>(base_ptr)?);
     let exp_bytes = info.read_fixed::<32>(exp_ptr)?;
-    info.buy_ink(crate::pricing::pow_price(&exp_bytes))?;
+    info.buy_ink(crate::pricing::pow_price(&exp_bytes.into()))?;
     let exp = U256::from_be_bytes(exp_bytes);
     let result = base.pow(exp);
     info.write_slice(base_ptr, &result.to_be_bytes::<32>())?;
@@ -1366,7 +1365,7 @@ pub fn pay_for_memory_grow<E: EvmApi>(
     );
     let mut info = hostio!(&mut env);
     if crate::env::pay_for_memory_grow_overflows(info.env.evm_data.arbos_version, pages) {
-        info.buy_gas(u64::MAX)?;
+        info.buy_gas(Gas(u64::MAX))?;
     }
     let pages = pages as u16;
     if pages == 0 {
@@ -1374,7 +1373,7 @@ pub fn pay_for_memory_grow<E: EvmApi>(
         return Ok(());
     }
     let gas_cost = info.env.add_pages_charge(pages);
-    info.buy_gas(gas_cost)?;
+    info.buy_gas(Gas(gas_cost))?;
     Ok(())
 }
 

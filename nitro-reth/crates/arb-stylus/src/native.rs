@@ -6,13 +6,13 @@ use wasmer::{
 };
 
 use crate::{
+    Ink,
     cache::InitCache,
     config::{CompileConfig, PricingParams, StylusConfig},
     env::{MeterData, WasmEnv},
     error::StylusError,
     evm_api::EvmApi,
     host,
-    ink::Ink,
     meter::{
         DepthCheckedMachine, GasMeteredMachine, MachineMeter, MeteredMachine, STYLUS_INK_LEFT,
         STYLUS_INK_STATUS, STYLUS_STACK_LEFT,

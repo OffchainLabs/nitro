@@ -1,16 +1,6 @@
 use alloy_primitives::{Address, B256, U256};
 
-use crate::ink::{Gas, Ink};
-
-/// Status codes returned by EVM API operations.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-pub enum EvmApiStatus {
-    Success = 0,
-    Failure = 1,
-    OutOfGas = 2,
-    WriteProtection = 3,
-}
+use crate::{Gas, Ink};
 
 /// Outcome kind from a user program or call.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
