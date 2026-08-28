@@ -16,6 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+arbutil = { workspace = true }
 bincode = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 replay-io = { workspace = true }
