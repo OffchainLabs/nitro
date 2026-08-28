@@ -70,6 +70,12 @@ func TestNativeStackSize(t *testing.T) {
 	}
 }
 
+func TestStylusCallSystemError(t *testing.T) {
+	if err := testStylusCallSystemError(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNativeStackSizeMaxCap(t *testing.T) {
 	defer SetInitialNativeStackSize(1024 * 1024)
 	err := testNativeStackSizeMaxCap()
@@ -82,6 +88,12 @@ func TestHandleNativeStackOverflow(t *testing.T) {
 	defer SetInitialNativeStackSize(1024 * 1024)
 	err := testHandleNativeStackOverflow()
 	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCraneliftRetryReplacesCachedSinglepass(t *testing.T) {
+	if err := testCraneliftRetryReplacesCachedSinglepass(); err != nil {
 		t.Fatal(err)
 	}
 }

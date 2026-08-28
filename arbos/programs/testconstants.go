@@ -127,5 +127,8 @@ func testConstants() error {
 	if err := assertUserOutcomeEq(userStorageCacheLimitExceeded, C.UserOutcomeKind_StorageCacheLimitExceeded); err != nil {
 		return err
 	}
+	if err := assertUserOutcomeEq(userSystemError, C.UserOutcomeKind_SystemError); err != nil {
+		return err
+	}
 	return nil
 }

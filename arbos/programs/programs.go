@@ -60,6 +60,7 @@ var activationGasKey = []byte{5}
 
 var ErrProgramActivation = errors.New("program activation failed")
 var ErrNativeStackOverflow = errors.New("native stack overflow")
+var ErrStylusSystem = errors.New("stylus system error")
 var ErrStorageCacheLimitExceeded = errors.New("storage cache limit exceeded")
 
 var ProgramNotWasmError func() error
@@ -797,6 +798,7 @@ const (
 	userOutOfStack
 	userNativeStackOverflow
 	userStorageCacheLimitExceeded
+	userSystemError
 )
 
 func (status userStatus) toResult(data []byte, _debug bool) ([]byte, string, error) {
@@ -817,6 +819,9 @@ func (status userStatus) toResult(data []byte, _debug bool) ([]byte, string, err
 		// before calling toResult when status is userNativeStackOverflow.
 		log.Error("unexpected userNativeStackOverflow in toResult", "data", msg)
 		return nil, "", ErrNativeStackOverflow
+	case userSystemError:
+		log.Error("unexpected userSystemError in toResult", "data", msg)
+		return nil, msg, ErrStylusSystem
 	case userStorageCacheLimitExceeded:
 		return nil, ErrStorageCacheLimitExceeded.Error(), ErrStorageCacheLimitExceeded
 	default:
