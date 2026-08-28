@@ -419,22 +419,28 @@ func BuildGlobalState(res execution.MessageResult, pos GlobalStatePosition) vali
 	}
 }
 
-// return the globalState position before and after processing message at the specified count
-func (v *StatelessBlockValidator) GlobalStatePositionsAtCount(count arbutil.MessageIndex) (GlobalStatePosition, GlobalStatePosition, error) {
+// GlobalStatePositionsAtMessageCount returns the global state position before and after
+// processing the message at the specified count.
+func GlobalStatePositionsAtMessageCount(tracker InboxTrackerInterface, count arbutil.MessageIndex) (GlobalStatePosition, GlobalStatePosition, error) {
 	if count == 0 {
 		return GlobalStatePosition{}, GlobalStatePosition{}, errors.New("no initial state for count==0")
 	}
 	if count == 1 {
 		return GlobalStatePosition{}, GlobalStatePosition{1, 0}, nil
 	}
-	batch, found, err := v.inboxTracker.FindInboxBatchContainingMessage(count - 1)
+	batch, found, err := tracker.FindInboxBatchContainingMessage(count - 1)
 	if err != nil {
 		return GlobalStatePosition{}, GlobalStatePosition{}, err
 	}
 	if !found {
 		return GlobalStatePosition{}, GlobalStatePosition{}, errors.New("batch not found on L1 yet")
 	}
-	return GlobalStatePositionsAtCount(v.inboxTracker, count, batch)
+	return GlobalStatePositionsAtCount(tracker, count, batch)
+}
+
+// return the globalState position before and after processing message at the specified count
+func (v *StatelessBlockValidator) GlobalStatePositionsAtCount(count arbutil.MessageIndex) (GlobalStatePosition, GlobalStatePosition, error) {
+	return GlobalStatePositionsAtMessageCount(v.inboxTracker, count)
 }
 
 func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context, pos arbutil.MessageIndex, wasmTargets ...rawdb.WasmTarget) (*validationEntry, error) {

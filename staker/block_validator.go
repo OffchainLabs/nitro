@@ -736,7 +736,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 
 func (v *BlockValidator) iterativeValidationEntryCreator(ctx context.Context, ignored struct{}) time.Duration {
 	moreWork, err := v.createNextValidationEntry(ctx)
-	if err != nil {
+	if err != nil && ctx.Err() == nil {
 		processed, processedErr := v.streamer.GetProcessedMessageCount(ctx)
 		log.Error("error trying to create validation node", "err", err, "created", v.created()+1, "processed", processed, "processedErr", processedErr)
 	}
@@ -1540,6 +1540,9 @@ func (v *BlockValidator) checkValidatedGSCaughtUp(ctx context.Context) (bool, er
 		}
 		processedMsgCount, err := v.streamer.GetProcessedMessageCount(ctx)
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return false, ctxErr
+			}
 			log.Error("failed reading processedMsgCount", "err", err)
 			processedMsgCount = 0
 		}
@@ -1566,11 +1569,11 @@ func (v *BlockValidator) checkValidatedGSCaughtUp(ctx context.Context) (bool, er
 func (v *BlockValidator) LaunchWorkthreadsWhenCaughtUp(ctx context.Context) {
 	for {
 		err := v.checkLegacyValid(ctx)
-		if err != nil {
+		if err != nil && ctx.Err() == nil {
 			log.Error("validator got error updating legacy validated info. Consider restarting with dangerous.reset-block-validation", "err", err)
 		}
 		caughtUp, err := v.checkValidatedGSCaughtUp(ctx)
-		if err != nil {
+		if err != nil && ctx.Err() == nil {
 			log.Error("validator got error waiting for chain to catch up. Consider restarting with dangerous.reset-block-validation", "err", err)
 		}
 		if caughtUp {
