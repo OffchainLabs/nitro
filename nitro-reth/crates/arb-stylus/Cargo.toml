@@ -16,7 +16,7 @@ eyre = { workspace = true }
 lazy_static = { workspace = true }
 nitro-arbutil = { workspace = true }
 nitro-brotli = { workspace = true, features = ["cc_brotli"] }
-nitro-prover = { workspace = true }
+nitro-prover = { workspace = true, features = ["cc_brotli"] }
 parking_lot = { workspace = true }
 revm = { workspace = true }
 thiserror = { workspace = true }

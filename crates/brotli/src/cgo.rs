@@ -46,7 +46,7 @@ pub extern "C" fn brotli_compress(
 ) -> BrotliStatus {
     let window = DEFAULT_WINDOW_SIZE;
     let buffer = output.as_uninit();
-    match crate::compress_fixed(input.as_slice(), buffer, level, window, dictionary) {
+    match crate::native::compress_fixed(input.as_slice(), buffer, level, window, dictionary) {
         Ok(slice) => unsafe { *output.len = slice.len() },
         Err(status) => return status,
     }
@@ -60,7 +60,7 @@ pub extern "C" fn brotli_decompress(
     mut output: BrotliBuffer,
     dictionary: Dictionary,
 ) -> BrotliStatus {
-    match crate::decompress_fixed(input.as_slice(), output.as_uninit(), dictionary) {
+    match crate::native::decompress_fixed(input.as_slice(), output.as_uninit(), dictionary) {
         Ok(slice) => unsafe { *output.len = slice.len() },
         Err(status) => return status,
     }
