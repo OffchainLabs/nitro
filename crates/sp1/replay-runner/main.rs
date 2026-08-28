@@ -123,7 +123,7 @@ fn read_elf(program_file: &Path) -> anyhow::Result<Elf> {
     Ok(Elf::from(elf))
 }
 
-fn build_program(program_file: &Path) -> anyhow::Result<Program> {
+fn load_program(program_file: &Path) -> anyhow::Result<Program> {
     let elf = read_elf(program_file)?;
     Program::from(&elf).map_err(|e| anyhow::anyhow!("parse program ELF: {e:#}"))
 }
@@ -160,7 +160,7 @@ fn build_payload(cli: &Cli) -> anyhow::Result<Vec<u8>> {
         .context("build validation input")?;
 
     if let Some(wasms) = request.user_wasms.get("wasm") {
-        let compiler = Arc::new(build_program(&cli.stylus_compiler_program)?);
+        let compiler = Arc::new(load_program(&cli.stylus_compiler_program)?);
         for (module_hash, wasm) in wasms.iter() {
             if input.module_asms.contains_key(module_hash.deref()) {
                 continue;
