@@ -18,11 +18,16 @@ func TestStorageCacheLimitResult(t *testing.T) {
 	require.ErrorIs(t, err, ErrStorageCacheLimitExceeded)
 }
 
-func TestStylusSystemResults(t *testing.T) {
-	for _, status := range []userStatus{userNativeStackOverflow, userSystemError} {
-		data, msg, err := status.toResult([]byte("host failure"), false)
-		require.Nil(t, data)
-		require.Equal(t, "host failure", msg)
-		require.ErrorIs(t, err, ErrStylusSystem)
-	}
+func TestNativeStackOverflowResult(t *testing.T) {
+	data, msg, err := userNativeStackOverflow.toResult([]byte("host failure"), false)
+	require.Nil(t, data)
+	require.Empty(t, msg)
+	require.ErrorIs(t, err, ErrNativeStackOverflow)
+}
+
+func TestStylusSystemResult(t *testing.T) {
+	data, msg, err := userSystemError.toResult([]byte("host failure"), false)
+	require.Nil(t, data)
+	require.Equal(t, "host failure", msg)
+	require.ErrorIs(t, err, ErrStylusSystem)
 }

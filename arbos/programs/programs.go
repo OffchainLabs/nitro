@@ -59,6 +59,7 @@ var cacheManagersKey = []byte{4}
 var activationGasKey = []byte{5}
 
 var ErrProgramActivation = errors.New("program activation failed")
+var ErrNativeStackOverflow = errors.New("native stack overflow")
 var ErrStylusSystem = errors.New("stylus system error")
 var ErrStorageCacheLimitExceeded = errors.New("storage cache limit exceeded")
 
@@ -808,8 +809,13 @@ func (status userStatus) toResult(data []byte, _debug bool) ([]byte, string, err
 		return nil, "", vm.ErrOutOfGas
 	case userOutOfStack:
 		return nil, "", vm.ErrDepth
-	case userNativeStackOverflow, userSystemError:
-		log.Error("unexpected Stylus system status in toResult", "status", status, "data", msg)
+	case userNativeStackOverflow:
+		// This should never be reached — callProgram panics
+		// before calling toResult when status is userNativeStackOverflow.
+		log.Error("unexpected userNativeStackOverflow in toResult", "data", msg)
+		return nil, "", ErrNativeStackOverflow
+	case userSystemError:
+		log.Error("unexpected userSystemError in toResult", "data", msg)
 		return nil, msg, ErrStylusSystem
 	case userStorageCacheLimitExceeded:
 		return nil, ErrStorageCacheLimitExceeded.Error(), ErrStorageCacheLimitExceeded
