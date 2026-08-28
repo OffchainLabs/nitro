@@ -1,4 +1,4 @@
-use crate::{config::PricingParams, error::StylusError, ink::Ink};
+use crate::{Ink, config::PricingParams, error::StylusError};
 
 /// Names of the WASM globals used for ink metering.
 pub const STYLUS_INK_LEFT: &str = "stylus_ink_left";
@@ -88,12 +88,12 @@ pub trait GasMeteredMachine: MeteredMachine {
     fn pricing(&self) -> PricingParams;
 
     fn buy_gas(&mut self, gas: u64) -> Result<(), StylusError> {
-        let ink = self.pricing().gas_to_ink(crate::ink::Gas(gas));
+        let ink = self.pricing().gas_to_ink(crate::Gas(gas));
         self.buy_ink(ink)
     }
 
     fn require_gas(&mut self, gas: u64) -> Result<(), StylusError> {
-        let ink = self.pricing().gas_to_ink(crate::ink::Gas(gas));
+        let ink = self.pricing().gas_to_ink(crate::Gas(gas));
         self.require_ink(ink)
     }
 

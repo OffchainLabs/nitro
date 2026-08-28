@@ -22,9 +22,9 @@ pub unsafe extern "C" fn __rust_probestack() {}
 
 use alloy_primitives::{Address, B256, U256, address};
 use arb_stylus::{
+    Gas, Ink,
     config::{CompileConfig, StylusConfig},
     evm_api::{CreateResponse, EvmApi, UserOutcomeKind},
-    ink::{Gas, Ink},
     meter::{MachineMeter, MeteredMachine, STYLUS_INK_LEFT, STYLUS_INK_STATUS, STYLUS_STACK_LEFT},
     native::NativeInstance,
 };

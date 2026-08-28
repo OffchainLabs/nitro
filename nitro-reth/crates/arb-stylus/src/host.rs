@@ -3,10 +3,10 @@ use arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_CHARGING_FIXES;
 use wasmer::FunctionEnvMut;
 
 use crate::{
+    Gas,
     env::WasmEnv,
     error::{MaybeEscape, StylusError},
     evm_api::{EvmApi, UserOutcomeKind},
-    ink::Gas,
     meter::{GasMeteredMachine, MeteredMachine},
     pricing::{evm_gas, hostio as hio},
 };

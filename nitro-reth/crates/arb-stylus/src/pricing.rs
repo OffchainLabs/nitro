@@ -1,4 +1,4 @@
-use crate::ink::Ink;
+use crate::Ink;
 
 /// Base cost for hostios that may return something.
 pub const HOSTIO_INK: Ink = Ink(8400);
