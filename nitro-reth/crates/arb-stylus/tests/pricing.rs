@@ -43,7 +43,7 @@ fn keccak_price_grows_per_word_above_two_words() {
 #[allow(clippy::identity_op)]
 fn pow_price_for_zero_exponent() {
     let exp = [0u8; 32];
-    assert_eq!(pow_price(&exp).0, 3000 + 1 * 17500);
+    assert_eq!(pow_price(&exp.into()).0, 3000 + 1 * 17500);
 }
 
 #[test]
@@ -51,13 +51,13 @@ fn pow_price_for_one_byte_exponent() {
     let mut exp = [0u8; 32];
     exp[31] = 1;
     // 31 leading zero bytes -> exp counter = 33 - 31 = 2.
-    assert_eq!(pow_price(&exp).0, 3000 + 2 * 17500);
+    assert_eq!(pow_price(&exp.into()).0, 3000 + 2 * 17500);
 }
 
 #[test]
 fn pow_price_for_full_byte_exponent() {
     let exp = [0xFFu8; 32];
-    assert_eq!(pow_price(&exp).0, 3000 + 33 * 17500);
+    assert_eq!(pow_price(&exp.into()).0, 3000 + 33 * 17500);
 }
 
 proptest! {

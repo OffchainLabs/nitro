@@ -1123,7 +1123,7 @@ pub fn math_pow<E: EvmApi>(
     info.buy_ink(hio::MATH_POW_BASE_INK)?;
     let base = U256::from_be_bytes(info.read_fixed::<32>(base_ptr)?);
     let exp_bytes = info.read_fixed::<32>(exp_ptr)?;
-    info.buy_ink(crate::pricing::pow_price(&exp_bytes))?;
+    info.buy_ink(crate::pricing::pow_price(&exp_bytes.into()))?;
     let exp = U256::from_be_bytes(exp_bytes);
     let result = base.pow(exp);
     info.write_slice(base_ptr, &result.to_be_bytes::<32>())?;
