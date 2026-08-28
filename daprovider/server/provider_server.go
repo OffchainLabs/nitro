@@ -144,7 +144,7 @@ func NewServerWithDAPProvider(ctx context.Context, config *ServerConfig, reader 
 		if err != nil {
 			return nil, fmt.Errorf("failed creating new provider server: %w", err)
 		}
-		handler = node.NewHTTPHandlerStack(rpcServer, nil, nil, jwt)
+		handler = node.NewHTTPHandlerStack(rpcServer, nil, nil, jwt, false)
 	} else {
 		handler = rpcServer
 	}

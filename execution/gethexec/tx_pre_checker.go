@@ -165,7 +165,12 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 		return MakeNonceError(sender, tx.Nonce(), stateNonce)
 	}
 	extraInfo := types.DeserializeHeaderExtraInformation(header)
-	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.SetCodeAuthorizations(), tx.To() == nil, chainConfig.IsHomestead(header.Number), chainConfig.IsIstanbul(header.Number), chainConfig.IsShanghai(header.Number, header.Time, extraInfo.ArbOSFormatVersion), chainConfig.IsAmsterdam(header.Number, header.Time, extraInfo.ArbOSFormatVersion))
+	// isMerge is hardcoded to true: Arbitrum always runs post-merge (the EVM
+	// forces a non-nil Random whenever ArbOS is active), and nitro headers
+	// carry Difficulty = 1, so a difficulty-based check would wrongly disable
+	// the timestamp-gated fork rules (Shanghai and later).
+	rules := chainConfig.Rules(header.Number, true, header.Time, extraInfo.ArbOSFormatVersion)
+	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.SetCodeAuthorizations(), tx.To() == nil, rules, params.CostPerStateByte)
 	if err != nil {
 		return err
 	}
