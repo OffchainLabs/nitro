@@ -324,7 +324,7 @@ func TestSubmitRetryableProcessResultGasUsed(t *testing.T) {
 	}
 	statedb, err := bc.StateAt(parent.Header())
 	Require(t, err)
-	res, err := bc.Processor().Process(ctx, block, statedb, vm.Config{})
+	res, err := bc.Processor().Process(ctx, block, statedb, nil, vm.Config{})
 	Require(t, err)
 	if res.GasUsed != block.GasUsed() {
 		Fatal(t, "ProcessResult.GasUsed mismatch: header", block.GasUsed(), "processed", res.GasUsed)
