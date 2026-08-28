@@ -1,14 +1,8 @@
 // Copyright 2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-use std::{
-    ops::Deref,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::sync::Arc;
 
-use crate::cli::Cli;
-use crate::input::build_stdin;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, ValueEnum};
 use sp1_core_executor::{MinimalExecutor, Program, UserMode};
@@ -16,6 +10,8 @@ use sp1_sdk::{
     Elf, ProvingKey, SP1Stdin,
     blocking::{ProveRequest, Prover, ProverClient},
 };
+
+use crate::{cli::Cli, input::build_stdin};
 
 mod cli;
 mod input;
@@ -53,10 +49,7 @@ fn run_fast(elf: Elf, stdin: SP1Stdin) -> Result<()> {
 /// Executes the program in the full executor and reports its diagnostics.
 fn run_simulation(elf: Elf, stdin: SP1Stdin) -> Result<()> {
     let client = ProverClient::from_env();
-    let (_output, report) = client
-        .execute(elf, stdin)
-        .run()
-        .context("SP1 execution")?;
+    let (_output, report) = client.execute(elf, stdin).run().context("SP1 execution")?;
 
     tracing::info!("cycles: {}", report.total_instruction_count());
     tracing::info!("gas: {}", report.gas().unwrap_or(0));

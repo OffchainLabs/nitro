@@ -1,11 +1,15 @@
-use crate::Mode;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use sp1_core_executor::Program;
 use sp1_sdk::Elf;
-use std::fs;
-use std::path::{Path, PathBuf};
 use validation::ValidationRequest;
+
+use crate::Mode;
 
 #[derive(Parser)]
 #[command(about = "Validate an Arbitrum block in SP1")]
@@ -42,7 +46,7 @@ impl Cli {
     }
 
     fn elf(&self, path: &Path) -> Result<Elf> {
-        Ok(fs::read(&path)
+        Ok(fs::read(path)
             .with_context(|| format!("read ELF from {}", path.display()))?
             .into())
     }

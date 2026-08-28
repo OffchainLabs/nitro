@@ -1,14 +1,13 @@
-use crate::cli::Cli;
-use crate::execute_minimal;
+use std::{collections::HashMap, ops::Deref, sync::Arc};
+
 use anyhow::{Context, Result};
 use arbutil::Bytes32;
 use sp1_core_executor::Program;
 use sp1_sdk::SP1Stdin;
-use std::collections::HashMap;
-use std::ops::Deref;
-use std::sync::Arc;
 use stylus_compiler_program::CompileInput;
 use validation::{UserWasm, ValidationInput};
+
+use crate::{cli::Cli, execute_minimal};
 
 /// Builds the validation payload from a recorded block: the rkyv-serialized `ValidationInput` and
 /// turns it into a ready-to-consume SP1 stdin.
