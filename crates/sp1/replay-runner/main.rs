@@ -21,7 +21,7 @@ use validation::{ValidationInput, ValidationRequest};
 #[derive(Parser)]
 #[command(about = "Validate an Arbitrum block in SP1")]
 struct Cli {
-    /// Path to the *dumped* SP1 replay program ELF, produced by replay-builder.
+    /// Path to the *dumped* (bootloaded) SP1 replay program ELF, produced by `replay-builder`.
     #[arg(long)]
     program: PathBuf,
 
@@ -33,7 +33,7 @@ struct Cli {
     #[arg(value_enum, long, default_value_t = Mode::Fast)]
     mode: Mode,
 
-    /// Path to the SP1 stylus compiler ELF, produced by replay-builder.
+    /// Path to the SP1 stylus compiler ELF, produced by `replay-builder`.
     #[arg(long)]
     stylus_compiler_program: PathBuf,
 
@@ -44,11 +44,10 @@ struct Cli {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 enum Mode {
-    /// Direct execution, without diagnostics.
+    /// Fast execution of the replay ELF, without diagnostics nor proof generation.
     Fast,
-    /// Full execution: slower and more memory-hungry, but reports cycles, gas, syscall counts,
-    /// and cycle trackers.
-    Normal,
+    /// Full SP1 simulation: slower and more memory-hungry, but reports cycles, gas, etc.
+    Simulate,
     /// Full execution with a validity proof, generated and verified. The most expensive mode.
     Prove,
 }
@@ -62,14 +61,14 @@ fn main() -> anyhow::Result<()> {
 
     match cli.mode {
         Mode::Fast => run_fast(&cli.program, stdin),
-        Mode::Normal => run_normal(&cli.program, stdin),
+        Mode::Simulate => run_normal(&cli.program, stdin),
         Mode::Prove => run_prove(&cli.program, stdin),
     }
 }
 
 /// Executes the program directly in the minimal executor.
 fn run_fast(program_file: &Path, stdin: SP1Stdin) -> anyhow::Result<()> {
-    let program = Arc::new(build_program(program_file)?);
+    let program = Arc::new(load_program(program_file)?);
     execute_minimal(program, stdin)?;
     Ok(())
 }

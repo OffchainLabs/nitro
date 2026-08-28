@@ -22,7 +22,7 @@ replay-io = { workspace = true }
 rkyv = { workspace = true }
 serde_json = { workspace = true }
 sp1-core-executor = { workspace = true }
-sp1-sdk = { workspace = true }
+sp1-sdk = { workspace = true, features = ["blocking"] }
 tracing = { workspace = true }
 stylus-compiler-program = { workspace = true }
 validation = { workspace = true, features = ["rkyv", "std"] }
