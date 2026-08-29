@@ -100,13 +100,10 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 		return nil, err
 	}
 	// If the state we are requested to produce is neither validated nor past
-	// threshold, we return ErrChainCatchingUp as an error.
-	stateValidatedAndMessageCountPastThreshold, err := s.isStateValidatedAndMessageCountPastThreshold(ctx, globalState, messageCount)
-	if err != nil {
-		return nil, err
-	}
-	if !stateValidatedAndMessageCountPastThreshold {
-		return nil, fmt.Errorf("%w: batch count %d", state.ErrChainCatchingUp, maxSeqInboxCount)
+	// threshold, we return an error wrapping ErrChainCatchingUp that says
+	// which readiness check is unmet.
+	if err := s.checkStateValidatedAndMessageCountPastThreshold(ctx, globalState, messageCount); err != nil {
+		return nil, fmt.Errorf("target batch count %d: %w", maxSeqInboxCount, err)
 	}
 
 	executionState := &protocol.ExecutionState{
@@ -180,7 +177,7 @@ func computeNextMessageCountAndBatchIndex(
 	messageCount, err := inboxTracker.GetBatchMessageCount(batchIndex - 1)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return 0, 0, fmt.Errorf("%w: batch count %d", state.ErrChainCatchingUp, maxSeqInboxCount)
+			return 0, 0, fmt.Errorf("%w: %w: batch %d (target batch count %d)", state.ErrChainCatchingUp, state.ErrBatchNotYetSeen, batchIndex-1, maxSeqInboxCount)
 		}
 		return 0, 0, err
 	}
@@ -189,7 +186,7 @@ func computeNextMessageCountAndBatchIndex(
 		previousMessageCount, err = inboxTracker.GetBatchMessageCount(previousGlobalState.Batch - 1)
 		if err != nil {
 			if strings.Contains(err.Error(), "not found") {
-				return 0, 0, fmt.Errorf("%w: batch count %d", state.ErrChainCatchingUp, maxSeqInboxCount)
+				return 0, 0, fmt.Errorf("%w: %w: batch %d preceding previous state (target batch count %d)", state.ErrChainCatchingUp, state.ErrBatchNotYetSeen, previousGlobalState.Batch-1, maxSeqInboxCount)
 			}
 			return 0, 0, err
 		}
@@ -206,32 +203,39 @@ func computeNextMessageCountAndBatchIndex(
 	return messageCount, batchIndex, nil
 }
 
-func (s *BOLDStateProvider) isStateValidatedAndMessageCountPastThreshold(
+// checkStateValidatedAndMessageCountPastThreshold returns nil if the given
+// state is ready to be posted as an assertion. Otherwise it returns an error
+// wrapping state.ErrChainCatchingUp that says which readiness check is unmet,
+// or the underlying error if a check itself failed.
+func (s *BOLDStateProvider) checkStateValidatedAndMessageCountPastThreshold(
 	ctx context.Context, gs validator.GoGlobalState, messageCount arbutil.MessageIndex,
-) (bool, error) {
+) error {
 	if s.stateProviderConfig.CheckBatchFinality {
 		finalizedMessageCount, err := s.inboxReader.GetFinalizedMsgCount(ctx)
 		if err != nil {
-			return false, err
+			return fmt.Errorf("could not get finalized message count: %w", err)
 		}
 		if messageCount > finalizedMessageCount {
-			return false, nil
+			return fmt.Errorf("%w: %w: message count %d > finalized message count %d", state.ErrChainCatchingUp, state.ErrBatchNotYetFinalized, messageCount, finalizedMessageCount)
 		}
 	}
 	if s.validator == nil {
 		// If we do not have a validator, we cannot check if the state is validated.
-		// So we assume it is validated and return true.
-		return true, nil
+		// So we assume it is validated.
+		return nil
 	}
 	lastValidatedGs, err := s.validator.ReadLastValidatedInfo()
 	if err != nil {
-		return false, err
+		return fmt.Errorf("could not read last validated state: %w", err)
 	}
 	if lastValidatedGs == nil {
-		return false, state.ErrChainCatchingUp
+		return fmt.Errorf("%w: %w", state.ErrChainCatchingUp, state.ErrNoValidationInfo)
 	}
 	stateValidated := gs.Batch < lastValidatedGs.GlobalState.Batch || (gs.Batch == lastValidatedGs.GlobalState.Batch && gs.PosInBatch <= lastValidatedGs.GlobalState.PosInBatch)
-	return stateValidated, nil
+	if !stateValidated {
+		return fmt.Errorf("%w: %w: waiting for batch %d position %d, last validated batch %d position %d", state.ErrChainCatchingUp, state.ErrStateNotYetValidated, gs.Batch, gs.PosInBatch, lastValidatedGs.GlobalState.Batch, lastValidatedGs.GlobalState.PosInBatch)
+	}
+	return nil
 }
 
 func (s *BOLDStateProvider) StatesInBatchRange(

@@ -21,6 +21,16 @@ import (
 
 var ErrChainCatchingUp = errors.New("chain is catching up to the execution state")
 
+// Specific reasons the chain may still be catching up. Each is wrapped
+// together with ErrChainCatchingUp, so callers matching on that sentinel keep
+// working while logs can show which readiness check is unmet.
+var (
+	ErrBatchNotYetSeen      = errors.New("required batch not yet in the inbox tracker")
+	ErrBatchNotYetFinalized = errors.New("required batch not yet finalized on the parent chain")
+	ErrNoValidationInfo     = errors.New("no validated state available from the block validator yet")
+	ErrStateNotYetValidated = errors.New("state not yet validated by the block validator")
+)
+
 // Batch index for an Arbitrum L2 state.
 type Batch uint64
 
