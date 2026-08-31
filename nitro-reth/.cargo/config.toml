@@ -38,6 +38,7 @@ wasm-check = [
     "-p", "arb-mel-db",
     "-p", "arb-mel-types",
     "-p", "arb-replay",
+    "-p", "arb-stylus",
     "-p", "arb-primitives",
     "-p", "arb-storage",
     "-p", "arb-storage-errors",
