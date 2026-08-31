@@ -5,7 +5,10 @@ package config
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -17,10 +20,14 @@ import (
 	"github.com/r3labs/diff/v3"
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
+	"github.com/offchainlabs/nitro/nitroversion"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -39,6 +46,7 @@ func TestEmptyCliConfig(t *testing.T) {
 	var emptyCliNodeConfig NodeConfig
 	err = confighelpers.EndCommonParse(k, &emptyCliNodeConfig)
 	Require(t, err)
+	emptyCliNodeConfig.Execution.StylusTarget.SetUnconfigurableDefaults()
 	if !reflect.DeepEqual(emptyCliNodeConfig, NodeConfigDefault) {
 		changelog, err := diff.Diff(emptyCliNodeConfig, NodeConfigDefault)
 		Require(t, err)
@@ -127,7 +135,7 @@ func TestCompressionLevelsConflict(t *testing.T) {
 	}
 }
 
-func TestGenesisJsonFileDirectoryClearsDefaultEmptyInit(t *testing.T) {
+func TestGenesisJsonFileDirectorySuppressesDefaultEmptyInit(t *testing.T) {
 	chainId := uint64(42170)
 	tempDir := t.TempDir()
 	genesisFile := filepath.Join(tempDir, fmt.Sprintf("%d.json", chainId))
@@ -137,11 +145,525 @@ func TestGenesisJsonFileDirectoryClearsDefaultEmptyInit(t *testing.T) {
 	nodeConfig, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
-	if nodeConfig.Init.GenesisJsonFile != genesisFile {
-		Fail(t, "expected genesis file from directory", genesisFile, "got", nodeConfig.Init.GenesisJsonFile)
+	if nodeConfig.Init.ResolvedGenesisJsonFile() != genesisFile {
+		Fail(t, "expected genesis file resolved from directory", genesisFile, "got", nodeConfig.Init.ResolvedGenesisJsonFile())
+	}
+	if nodeConfig.Init.GenesisJsonFile != "" {
+		Fail(t, "expected genesis-json-file to stay untouched by directory discovery, got", nodeConfig.Init.GenesisJsonFile)
 	}
 	if nodeConfig.Init.Empty {
-		Fail(t, "expected genesis file from directory to disable empty init")
+		Fail(t, "expected genesis file from directory to suppress the empty init default")
+	}
+}
+
+func TestExplicitEmptyInitConflictsWithDirectoryDiscovery(t *testing.T) {
+	chainId := uint64(42170)
+	tempDir := t.TempDir()
+	Require(t, os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("%d.json", chainId)), []byte("{}"), 0600))
+
+	args := strings.Split(fmt.Sprintf("--persistent.chain /tmp/data --chain.id %d --init.empty --init.genesis-json-file-directory %s", chainId, tempDir), " ")
+	_, _, err := ParseNode(context.Background(), args)
+	if err == nil {
+		Fail(t, "expected error when explicit init.empty is combined with a discovered genesis file")
+	}
+	if !strings.Contains(err.Error(), "cannot be both empty") {
+		Fail(t, "expected empty init conflict error, got:", err.Error())
+	}
+}
+
+const testInlineGenesisConfig = `{
+	"persistent": {"chain": "/tmp/data"},
+	"chain": {"id": 42170},
+	"init": {
+		"genesis-json": {
+			"gasLimit": "0x11e1a300",
+			"difficulty": "0x0",
+			"alloc": {
+				"0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E": {
+					"balance": "0xde0b6b3a7640000",
+					"nonce": "0x5",
+					"code": "0x60ff",
+					"storage": {"0x0000000000000000000000000000000000000000000000000000000000000001": "0x0000000000000000000000000000000000000000000000000000000000000002"}
+				}
+			},
+			"serializedChainConfig": "{\"chainId\":42170,\"arbitrum\":{\"InitialArbOSVersion\":1}}"
+		}
+	}
+}`
+
+func TestInlineGenesisConfigFile(t *testing.T) {
+	configFile := filepath.Join(t.TempDir(), "config.json")
+	Require(t, WriteToConfigFile(configFile, testInlineGenesisConfig))
+
+	nodeConfig, _, err := ParseNode(context.Background(), []string{"--conf.file", configFile})
+	Require(t, err)
+
+	if nodeConfig.Init.Empty {
+		Fail(t, "expected inline genesis to disable the empty init default")
+	}
+	if nodeConfig.Init.GenesisJsonFile != "" {
+		Fail(t, "expected genesis json file to stay empty, got", nodeConfig.Init.GenesisJsonFile)
+	}
+	var gen core.Genesis
+	Require(t, json.Unmarshal([]byte(nodeConfig.Init.GenesisJson), &gen))
+	if gen.GasLimit != 0x11e1a300 {
+		Fail(t, "wrong gas limit", gen.GasLimit)
+	}
+	if !strings.Contains(gen.SerializedChainConfig, "42170") {
+		Fail(t, "wrong serialized chain config", gen.SerializedChainConfig)
+	}
+	account, ok := gen.Alloc[common.HexToAddress("0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E")]
+	if !ok {
+		Fail(t, "expected account missing from genesis alloc")
+	}
+	expectedBalance, _ := new(big.Int).SetString("de0b6b3a7640000", 16)
+	if account.Balance.Cmp(expectedBalance) != 0 {
+		Fail(t, "wrong balance", account.Balance)
+	}
+	if account.Nonce != 5 {
+		Fail(t, "wrong nonce", account.Nonce)
+	}
+	if len(account.Code) != 2 || account.Code[0] != 0x60 || account.Code[1] != 0xff {
+		Fail(t, "wrong code", account.Code)
+	}
+	if account.Storage[common.HexToHash("0x01")] != common.HexToHash("0x02") {
+		Fail(t, "wrong storage", account.Storage)
+	}
+}
+
+func TestInlineGenesisAsJsonString(t *testing.T) {
+	args := []string{
+		"--persistent.chain", "/tmp/data",
+		"--chain.id", "42170",
+		"--init.genesis-json", `{"gasLimit":"0x11e1a300","difficulty":"0x0","alloc":{},"serializedChainConfig":"{\"chainId\":42170}"}`,
+	}
+	nodeConfig, _, err := ParseNode(context.Background(), args)
+	Require(t, err)
+	var gen core.Genesis
+	Require(t, json.Unmarshal([]byte(nodeConfig.Init.GenesisJson), &gen))
+	if gen.GasLimit != 0x11e1a300 {
+		Fail(t, "wrong gas limit", gen.GasLimit)
+	}
+	if nodeConfig.Init.Empty {
+		Fail(t, "expected inline genesis to disable the empty init default")
+	}
+}
+
+func TestAutoEmptyInitPreservedWithoutGenesis(t *testing.T) {
+	// the init.genesis-json flag default (an empty string) is always present
+	// in the parsed config tree and must not count as a configured genesis,
+	// which would suppress the chain's init.empty default
+	args := strings.Split("--persistent.chain /tmp/data --chain.id 42170", " ")
+	nodeConfig, _, err := ParseNode(context.Background(), args)
+	Require(t, err)
+	if !nodeConfig.Init.Empty {
+		Fail(t, "expected the empty init default for a chain without pre-existing genesis state")
+	}
+
+	args = append(args, "--init.genesis-json", "")
+	nodeConfig, _, err = ParseNode(context.Background(), args)
+	Require(t, err)
+	if !nodeConfig.Init.Empty {
+		Fail(t, "expected an explicitly empty init.genesis-json to keep the empty init default")
+	}
+}
+
+func TestInlineGenesisSkipsDirectoryDiscovery(t *testing.T) {
+	tempDir := t.TempDir()
+	Require(t, os.WriteFile(filepath.Join(tempDir, "42170.json"), []byte("{}"), 0600))
+
+	configFile := filepath.Join(t.TempDir(), "config.json")
+	Require(t, WriteToConfigFile(configFile, testInlineGenesisConfig))
+
+	args := []string{"--conf.file", configFile, "--init.genesis-json-file-directory", tempDir}
+	nodeConfig, _, err := ParseNode(context.Background(), args)
+	Require(t, err)
+	if nodeConfig.Init.GenesisJsonFile != "" {
+		Fail(t, "expected inline genesis to skip directory discovery, got", nodeConfig.Init.GenesisJsonFile)
+	}
+}
+
+func TestGenesisFileWinsOverDirectoryDiscovery(t *testing.T) {
+	tempDir := t.TempDir()
+	Require(t, os.WriteFile(filepath.Join(tempDir, "42170.json"), []byte("{}"), 0600))
+
+	explicitFile := "/explicit/genesis.json"
+	args := strings.Split(fmt.Sprintf("--persistent.chain /tmp/data --chain.id 42170 --init.genesis-json-file %s --init.genesis-json-file-directory %s", explicitFile, tempDir), " ")
+	nodeConfig, _, err := ParseNode(context.Background(), args)
+	Require(t, err)
+	if nodeConfig.Init.GenesisJsonFile != explicitFile {
+		Fail(t, "expected explicit genesis file to win over directory discovery, got", nodeConfig.Init.GenesisJsonFile)
+	}
+	if nodeConfig.Init.Empty {
+		Fail(t, "expected configured genesis file to disable the empty init default")
+	}
+}
+
+func TestGenesisModeDirectoryForcesLookup(t *testing.T) {
+	tempDir := t.TempDir()
+	genesisFile := filepath.Join(tempDir, "42170.json")
+	Require(t, os.WriteFile(genesisFile, []byte("{}"), 0600))
+
+	args := strings.Split(fmt.Sprintf("--persistent.chain /tmp/data --chain.id 42170 --init.genesis-mode directory --init.genesis-json-file /nonexistent.json --init.genesis-json-file-directory %s", tempDir), " ")
+	nodeConfig, _, err := ParseNode(context.Background(), args)
+	Require(t, err)
+	if nodeConfig.Init.ResolvedGenesisJsonFile() != genesisFile {
+		Fail(t, "expected genesis-mode directory to resolve the directory file, got", nodeConfig.Init.ResolvedGenesisJsonFile())
+	}
+	if nodeConfig.Init.GenesisJsonFile != "/nonexistent.json" {
+		Fail(t, "expected the ignored genesis-json-file to stay untouched, got", nodeConfig.Init.GenesisJsonFile)
+	}
+}
+
+func TestGenesisModeDirectoryWithoutMatchFails(t *testing.T) {
+	args := strings.Split(fmt.Sprintf("--persistent.chain /tmp/data --chain.id 42170 --init.genesis-mode directory --init.genesis-json-file-directory %s", t.TempDir()), " ")
+	_, _, err := ParseNode(context.Background(), args)
+	if err == nil {
+		Fail(t, "expected error when genesis-mode is directory but no genesis file matches")
+	}
+}
+
+func TestGenesisModeInlineWithoutGenesisFails(t *testing.T) {
+	args := strings.Split("--persistent.chain /tmp/data --chain.id 42170 --init.genesis-mode inline", " ")
+	_, _, err := ParseNode(context.Background(), args)
+	if err == nil {
+		Fail(t, "expected error when genesis-mode is inline but init.genesis-json is empty")
+	}
+}
+
+func TestConfigVersionRange(t *testing.T) {
+	type provenance struct {
+		Tag    string
+		Branch string
+		Commit string
+	}
+	makeVersion := func(p provenance) nitroversion.Version {
+		var timestamp string
+		if p.Tag != "" {
+			timestamp = "2026-01-02T03:04:05Z"
+		}
+		version, err := nitroversion.New(nitroversion.Provenance{
+			Tag:       p.Tag,
+			Branch:    p.Branch,
+			Commit:    p.Commit,
+			Timestamp: timestamp,
+		})
+		Require(t, err)
+		return version
+	}
+
+	for _, tc := range []struct {
+		name       string
+		version    nitroversion.Version
+		jsonConfig string
+		// Empty error expectations mean the configuration is expected to parse.
+		wantErr        error
+		wantErrMessage string
+	}{
+		//////////////////////////////////////////////////////////////////////////////////////////////////////////
+		// excluded from version checks - builds without a SemVer tag have no ordered version to enforce //
+		//////////////////////////////////////////////////////////////////////////////////////////////////////////
+		{
+			name:       "excluded from version checks - local build without provenance",
+			jsonConfig: `{"conf":{"min-version":"v3.9.9", "max-version":"v3.9.9"}}`,
+		},
+		{
+			name:       "excluded from version checks - untagged ci build is not checked",
+			version:    makeVersion(provenance{Branch: "dev"}),
+			jsonConfig: `{"conf":{"min-version":"v3.9.9", "max-version":"v3.9.9"}}`,
+		},
+		{
+			name:       "excluded from version checks - untagged branch build is not checked",
+			version:    makeVersion(provenance{Branch: "branch.name"}),
+			jsonConfig: `{"conf":{"min-version":"v3.9.9", "max-version":"v3.9.9"}}`,
+		},
+		{
+			name:       "excluded from version checks - semver-looking branch remains untagged",
+			version:    makeVersion(provenance{Branch: "v3.9.9"}),
+			jsonConfig: `{"conf":{"max-version":"v3.9.8"}}`,
+		},
+		{
+			name:       "excluded from version checks - consensus tag is not semver-tagged",
+			version:    makeVersion(provenance{Tag: "consensus-v61"}),
+			jsonConfig: `{"conf":{"min-version":"v99.0.0"}}`,
+		},
+		{
+			name:       "excluded from version checks - non-semver private tag is not semver-tagged",
+			version:    makeVersion(provenance{Tag: "v3.11.x-private-patches-1"}),
+			jsonConfig: `{"conf":{"min-version":"v99.0.0"}}`,
+		},
+		//////////////////////////
+		// version check passes //
+		//////////////////////////
+		{
+			name:       "version check passes - no version fields present",
+			version:    makeVersion(provenance{Tag: "v3.9.9"}),
+			jsonConfig: `{"conf":{}}`,
+		},
+		{
+			name:           "version check passes - unknown key is reported",
+			version:        makeVersion(provenance{Tag: "v3.9.9"}),
+			jsonConfig:     `{"conf":{"min-version":"v3.9.0", "totally-unknown-key":true}}`,
+			wantErrMessage: "invalid keys",
+		},
+		{
+			name:       "version check passes - commit is metadata and does not affect ordering",
+			version:    makeVersion(provenance{Tag: "v3.9.9", Commit: "26b4b9b"}),
+			jsonConfig: `{"conf":{"min-version":"v3.9.9","max-version":"v3.9.9"}}`,
+		},
+		{
+			name:       "version check passes - simple",
+			version:    makeVersion(provenance{Tag: "v3.9.3"}),
+			jsonConfig: `{"conf":{"min-version":"v3.9.0","max-version":"v3.10.0"}}`,
+		},
+		{
+			name:       "version check passes - simple min",
+			version:    makeVersion(provenance{Tag: "v3.9.0"}),
+			jsonConfig: `{"conf":{"min-version":"v3.9.0","max-version":"v3.10.0"}}`,
+		},
+		{
+			name:       "version check passes - simple max",
+			version:    makeVersion(provenance{Tag: "v3.10.0"}),
+			jsonConfig: `{"conf":{"min-version":"v3.9.0","max-version":"v3.10.0"}}`,
+		},
+		{
+			name:       "version check passes - single",
+			version:    makeVersion(provenance{Tag: "v3.9.3"}),
+			jsonConfig: `{"conf":{"min-version":"v3.9.3","max-version":"v3.9.3"}}`,
+		},
+		{
+			name:       "version check passes - just max",
+			version:    makeVersion(provenance{Tag: "v2.9.3"}),
+			jsonConfig: `{"conf":{"max-version":"v3.9.3"}}`,
+		},
+		{
+			name:       "version check passes - just min",
+			version:    makeVersion(provenance{Tag: "v4.9.3"}),
+			jsonConfig: `{"conf":{"min-version":"v3.9.3"}}`,
+		},
+		{
+			name:       "version check passes - with prerelease",
+			version:    makeVersion(provenance{Tag: "v3.8.1-rc.1"}),
+			jsonConfig: `{"conf":{"min-version":"v3.8.0","max-version":"v3.10.0"}}`,
+		},
+		{
+			name:       "version check passes - prerelease equals min-version",
+			version:    makeVersion(provenance{Tag: "v3.8.1-rc.2"}),
+			jsonConfig: `{"conf":{"min-version":"v3.8.1-rc.2"}}`,
+		},
+		{
+			name:       "version check passes - prerelease later than min-version",
+			version:    makeVersion(provenance{Tag: "v3.8.1-rc.3"}),
+			jsonConfig: `{"conf":{"min-version":"v3.8.1-rc.2"}}`,
+		},
+		{
+			name:       "version check passes - final release later than prerelease min-version",
+			version:    makeVersion(provenance{Tag: "v3.8.1"}),
+			jsonConfig: `{"conf":{"min-version":"v3.8.1-rc.2"}}`,
+		},
+		{
+			name:       "version check passes - prerelease equals max-version",
+			version:    makeVersion(provenance{Tag: "v3.8.1-rc.2"}),
+			jsonConfig: `{"conf":{"max-version":"v3.8.1-rc.2"}}`,
+		},
+		{
+			name:       "version check passes - prerelease earlier than max-version",
+			version:    makeVersion(provenance{Tag: "v3.8.1-rc.1"}),
+			jsonConfig: `{"conf":{"max-version":"v3.8.1-rc.2"}}`,
+		},
+		{
+			name:       "version check passes - private derivative is between its base and next prerelease",
+			version:    makeVersion(provenance{Tag: "v3.12.0-dev.1.private.2"}),
+			jsonConfig: `{"conf":{"min-version":"v3.12.0-dev.1","max-version":"v3.12.0-dev.2"}}`,
+		},
+		/////////////////////////
+		// version check fails //
+		/////////////////////////
+		{
+			name:           "version check fails - tagged build is subject to bounds",
+			version:        makeVersion(provenance{Tag: "v3.9.9"}),
+			jsonConfig:     `{"conf":{"max-version":"v3.9.8"}}`,
+			wantErr:        nitroversion.ErrUnsupportedVersion,
+			wantErrMessage: "conf.max-version",
+		},
+		{
+			name:           "version check fails - even with unknown key present",
+			version:        makeVersion(provenance{Tag: "v3.10.1"}),
+			jsonConfig:     `{"conf":{"min-version":"v3.9.0","max-version":"v3.10.0","totally-unknown-key":true}}`,
+			wantErr:        nitroversion.ErrUnsupportedVersion,
+			wantErrMessage: "conf.max-version",
+		},
+		{
+			name:           "version check fails - prerelease is before final min-version",
+			version:        makeVersion(provenance{Tag: "v3.9.0-rc.2"}),
+			jsonConfig:     `{"conf":{"min-version":"v3.9.0","max-version":"v3.10.0"}}`,
+			wantErr:        nitroversion.ErrUnsupportedVersion,
+			wantErrMessage: "conf.min-version",
+		},
+		{
+			name:           "version check fails - prerelease is after max-version",
+			version:        makeVersion(provenance{Tag: "v3.10.1-rc.2"}),
+			jsonConfig:     `{"conf":{"min-version":"v3.9.0","max-version":"v3.10.0"}}`,
+			wantErr:        nitroversion.ErrUnsupportedVersion,
+			wantErrMessage: "conf.max-version",
+		},
+		{
+			name:           "version check fails - prerelease earlier than min-version prerelease",
+			version:        makeVersion(provenance{Tag: "v3.8.1-rc.1"}),
+			jsonConfig:     `{"conf":{"min-version":"v3.8.1-rc.2"}}`,
+			wantErr:        nitroversion.ErrUnsupportedVersion,
+			wantErrMessage: "conf.min-version",
+		},
+		{
+			name:           "version check fails - prerelease later than max-version prerelease",
+			version:        makeVersion(provenance{Tag: "v3.8.1-rc.3"}),
+			jsonConfig:     `{"conf":{"max-version":"v3.8.1-rc.2"}}`,
+			wantErr:        nitroversion.ErrUnsupportedVersion,
+			wantErrMessage: "conf.max-version",
+		},
+		{
+			name:           "version check fails - final release later than max-version prerelease",
+			version:        makeVersion(provenance{Tag: "v3.8.1"}),
+			jsonConfig:     `{"conf":{"max-version":"v3.8.1-rc.2"}}`,
+			wantErr:        nitroversion.ErrUnsupportedVersion,
+			wantErrMessage: "conf.max-version",
+		},
+		{
+			name:           "version check fails - newer than max-version",
+			version:        makeVersion(provenance{Tag: "v3.9.1"}),
+			jsonConfig:     `{"conf":{"max-version":"v3.9.0"}}`,
+			wantErr:        nitroversion.ErrUnsupportedVersion,
+			wantErrMessage: "conf.max-version",
+		},
+		/////////////////////////////
+		// config versions invalid //
+		/////////////////////////////
+		{
+			name:           "config versions invalid - invalid version bounds - min-version - short syntax not allowed",
+			version:        makeVersion(provenance{Tag: "v3.9.9"}),
+			jsonConfig:     `{"conf":{"min-version":"v3.9"}}`,
+			wantErr:        nitroversion.ErrInvalidVersionRange,
+			wantErrMessage: "invalid conf.min-version",
+		},
+		{
+			name:           "config versions invalid - invalid version bounds - max-version - short syntax not allowed",
+			version:        makeVersion(provenance{Tag: "v3.9.9"}),
+			jsonConfig:     `{"conf":{"max-version":"v3.9"}}`,
+			wantErr:        nitroversion.ErrInvalidVersionRange,
+			wantErrMessage: "invalid conf.max-version",
+		},
+		{
+			name:           "config versions invalid - min-version requires leading v",
+			version:        makeVersion(provenance{Tag: "v3.9.9"}),
+			jsonConfig:     `{"conf":{"min-version":"3.9.0"}}`,
+			wantErr:        nitroversion.ErrInvalidVersionRange,
+			wantErrMessage: "invalid conf.min-version",
+		},
+		{
+			name:           "config versions invalid - invalid version bounds - min-version",
+			version:        makeVersion(provenance{Tag: "v3.9.9"}),
+			jsonConfig:     `{"conf":{"min-version":"abc"}}`,
+			wantErr:        nitroversion.ErrInvalidVersionRange,
+			wantErrMessage: "invalid conf.min-version",
+		},
+		{
+			name:           "config versions invalid - invalid version bounds - max-version",
+			version:        makeVersion(provenance{Tag: "v3.9.9"}),
+			jsonConfig:     `{"conf":{"max-version":"def"}}`,
+			wantErr:        nitroversion.ErrInvalidVersionRange,
+			wantErrMessage: "invalid conf.max-version",
+		},
+		{
+			name:           "config versions invalid - build metadata not allowed in min-version",
+			version:        makeVersion(provenance{Tag: "v3.9.9"}),
+			jsonConfig:     `{"conf":{"min-version":"v3.9.0+build"}}`,
+			wantErr:        nitroversion.ErrInvalidVersionRange,
+			wantErrMessage: "invalid conf.min-version",
+		},
+		{
+			name:           "config versions invalid - build metadata not allowed in max-version",
+			version:        makeVersion(provenance{Tag: "v3.9.9"}),
+			jsonConfig:     `{"conf":{"max-version":"v3.10.0+build"}}`,
+			wantErr:        nitroversion.ErrInvalidVersionRange,
+			wantErrMessage: "invalid conf.max-version",
+		},
+		{
+			name:           "config versions invalid - unsupported alpha prerelease",
+			version:        makeVersion(provenance{Tag: "v3.9.9"}),
+			jsonConfig:     `{"conf":{"min-version":"v3.10.0-alpha.1"}}`,
+			wantErr:        nitroversion.ErrInvalidVersionRange,
+			wantErrMessage: "invalid conf.min-version",
+		},
+		{
+			name:           "config versions invalid - legacy commit suffix",
+			version:        makeVersion(provenance{Tag: "v3.9.9"}),
+			jsonConfig:     `{"conf":{"max-version":"v3.10.0-rc.1-abcdef"}}`,
+			wantErr:        nitroversion.ErrInvalidVersionRange,
+			wantErrMessage: "invalid conf.max-version",
+		},
+		{
+			name:           "config versions invalid - min-version is greater than max-version",
+			version:        makeVersion(provenance{Tag: "v3.9.9"}),
+			jsonConfig:     `{"conf":{"min-version":"v3.10.0","max-version":"v3.9.0"}}`,
+			wantErr:        nitroversion.ErrInvalidVersionRange,
+			wantErrMessage: "conf.min-version v3.10.0 is greater than conf.max-version v3.9.0",
+		},
+		{
+			name:           "config versions invalid - reversed bounds are validated for untagged build",
+			version:        makeVersion(provenance{Branch: "dev"}),
+			jsonConfig:     `{"conf":{"min-version":"v3.10.0","max-version":"v3.9.0"}}`,
+			wantErr:        nitroversion.ErrInvalidVersionRange,
+			wantErrMessage: "conf.min-version v3.10.0 is greater than conf.max-version v3.9.0",
+		},
+		{
+			name:           "config versions invalid - malformed bound is validated for untagged build",
+			version:        makeVersion(provenance{Branch: "dev"}),
+			jsonConfig:     `{"conf":{"min-version":"not-semver"}}`,
+			wantErr:        nitroversion.ErrInvalidVersionRange,
+			wantErrMessage: "invalid conf.min-version",
+		},
+		{
+			name:           "config versions invalid - reversed bounds are validated for consensus tag",
+			version:        makeVersion(provenance{Tag: "consensus-v61"}),
+			jsonConfig:     `{"conf":{"min-version":"v3.10.0","max-version":"v3.9.0"}}`,
+			wantErr:        nitroversion.ErrInvalidVersionRange,
+			wantErrMessage: "conf.min-version v3.10.0 is greater than conf.max-version v3.9.0",
+		},
+		{
+			name:           "config versions invalid - malformed bound is validated for consensus tag",
+			version:        makeVersion(provenance{Tag: "consensus-v61"}),
+			jsonConfig:     `{"conf":{"min-version":"not-semver"}}`,
+			wantErr:        nitroversion.ErrInvalidVersionRange,
+			wantErrMessage: "invalid conf.min-version",
+		},
+		{
+			name:           "config versions invalid - malformed bound is validated for local build",
+			jsonConfig:     `{"conf":{"min-version":"not-semver"}}`,
+			wantErr:        nitroversion.ErrInvalidVersionRange,
+			wantErrMessage: "invalid conf.min-version",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			configFile := filepath.Join(t.TempDir(), "config.json")
+			Require(t, WriteToConfigFile(configFile, tc.jsonConfig))
+
+			args := []string{"--persistent.chain", "/tmp/data", "--chain.id", "421613", "--conf.file", configFile}
+			_, _, err := ParseNodeWithVersion(context.Background(), args, tc.version)
+
+			if tc.wantErr == nil && tc.wantErrMessage == "" {
+				Require(t, err)
+				return
+			}
+			if err == nil {
+				Fail(t, "expected error", tc.wantErr, tc.wantErrMessage)
+			}
+			if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
+				Fail(t, "expected error", tc.wantErr, "got:", err)
+			}
+			if tc.wantErrMessage != "" && !strings.Contains(err.Error(), tc.wantErrMessage) {
+				Fail(t, "expected error containing", tc.wantErrMessage, "got:", err.Error())
+			}
+		})
 	}
 }
 

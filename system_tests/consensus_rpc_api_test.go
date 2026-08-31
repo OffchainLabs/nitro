@@ -178,7 +178,9 @@ func TestFindBatch(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).DontParalellise()
 	builder.nodeConfig.MessageExtraction.Enable = false
 	l1Info := builder.L1Info
-	initialBalance := new(big.Int).Lsh(big.NewInt(1), 200)
+	// Large, but small enough that the external L1's dev faucet (~10^45 wei)
+	// can fund four such accounts.
+	initialBalance := new(big.Int).Lsh(big.NewInt(1), 130)
 	l1Info.GenerateGenesisAccount("deployer", initialBalance)
 	l1Info.GenerateGenesisAccount("asserter", initialBalance)
 	l1Info.GenerateGenesisAccount("challenger", initialBalance)

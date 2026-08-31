@@ -20,6 +20,7 @@ jobs:
   check-design-approved:
     name: Check if Design Approved
     runs-on: ubuntu-4
+    timeout-minutes: 10
     needs: changes
     if: always()
     permissions:
@@ -42,7 +43,7 @@ jobs:
             fi
           fi
 
-          curl -sSL --fail-with-body \
+          curl -sSL --fail-with-body --retry 3 \
             -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \

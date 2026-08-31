@@ -127,6 +127,7 @@ func (p *DataPoster) postTx(ctx context.Context, s *state.LockedInternalState, t
 	if err != nil {
 		return nil, err
 	}
+	datapostermetrics.SuggestedTipCapGauge.Update(suggestedTip.Int64())
 
 	var currentBlobFee *big.Int
 	if numBlobs > 0 {
@@ -257,6 +258,7 @@ func (p *DataPoster) replaceTx(ctx context.Context, s *state.LockedInternalState
 	if err != nil {
 		return err
 	}
+	datapostermetrics.SuggestedTipCapGauge.Update(suggestedTip.Int64())
 
 	var currentBlobFee *big.Int
 	if numBlobs > 0 {
@@ -308,6 +310,7 @@ func (p *DataPoster) replaceTx(ctx context.Context, s *state.LockedInternalState
 			"lastBlobFeeCap", prevTx.FullTx.BlobGasFeeCap(),
 			"recommendedBlobFeeCap", caps.Fee.Blob,
 		)
+		datapostermetrics.DeferredTipBumpsCounter.Inc(1)
 		newTx.NextReplacement = time.Now().Add(time.Minute)
 		return p.sendTx(ctx, s, prevTx, &newTx)
 	}
@@ -337,6 +340,7 @@ func (p *DataPoster) replaceTx(ctx context.Context, s *state.LockedInternalState
 		return err
 	}
 
+	datapostermetrics.TipBumpsCounter.Inc(1)
 	return p.sendTx(ctx, s, prevTx, &newTx)
 }
 
@@ -423,6 +427,11 @@ func (p *DataPoster) sendTx(ctx context.Context, s *state.LockedInternalState, p
 		log.Info("DataPoster transaction already known", "err", err, "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash())
 	} else {
 		log.Info("DataPoster sent transaction", "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap(), "blobFeeCap", newTx.FullTx.BlobGasFeeCap(), "gas", newTx.FullTx.Gas())
+	}
+	datapostermetrics.LastTipCapGauge.Update(newTx.FullTx.GasTipCap().Int64())
+	datapostermetrics.LastFeeCapGauge.Update(newTx.FullTx.GasFeeCap().Int64())
+	if blobFeeCap := newTx.FullTx.BlobGasFeeCap(); blobFeeCap != nil {
+		datapostermetrics.LastBlobFeeCapGauge.Update(blobFeeCap.Int64())
 	}
 	newerTx := *newTx
 	newerTx.Sent = true

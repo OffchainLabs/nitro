@@ -1,0 +1,15 @@
+{
+  "name": "l1_pricing_state_mutation",
+  "description": "Setting L1 price and units flushes through getters",
+  "setup": { "arbos_version": 30, "chain_id": 412346 },
+  "actions": [
+    { "type": "l1_pricing_set_price_per_unit", "value": "0x3b9aca00" },
+    { "type": "l1_pricing_set_units_since_update", "value": 12345 }
+  ],
+  "assertions": {
+    "l1_pricing": {
+      "price_per_unit": "0x3b9aca00",
+      "units_since_update": 12345
+    }
+  }
+}

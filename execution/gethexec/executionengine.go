@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"path"
 	"runtime/debug"
@@ -80,6 +81,9 @@ var (
 	ResultNotFound        = errors.New("result not found")
 	BlockNumBeforeGenesis = errors.New("block number is before genesis")
 )
+
+// filteredTxLogInterval throttles the repeated logs emitted while halted on a filtered tx.
+const filteredTxLogInterval = 5 * time.Minute
 
 // ErrFilteredDelayedMessage is returned when a delayed message contains transactions
 // that touch filtered addresses. The sequencer should halt and wait for the tx hashes
@@ -286,11 +290,12 @@ type delayedMsg struct {
 // FilteredTxWaitState tracks a halt while waiting for filtered transactions
 // to be added to the onchain filter
 type FilteredTxWaitState struct {
-	TxHashes      []common.Hash
-	DelayedMsgIdx uint64
-	FirstSeen     time.Time
-	LastLogTime   time.Time
-	LastFullRetry time.Time
+	TxHashes       []common.Hash
+	DelayedMsgIdx  uint64
+	FirstSeen      time.Time
+	LastLogTime    time.Time
+	LastErrLogTime time.Time
+	LastFullRetry  time.Time
 }
 
 type ExecutionEngine struct {
@@ -374,6 +379,14 @@ func NewExecutionEngine(
 	}
 }
 
+func (s *ExecutionEngine) GetFilteringReportRPCClient() *FilteringReportRPCClient {
+	return s.filteringReportRPCClient
+}
+
+func (s *ExecutionEngine) ChainID() *big.Int {
+	return s.bc.Config().ChainID
+}
+
 func (s *ExecutionEngine) backlogCallDataUnits() uint64 {
 	s.cachedL1PriceData.mutex.RLock()
 	defer s.cachedL1PriceData.mutex.RUnlock()
@@ -404,7 +417,7 @@ func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	}
 }
 
-func PopulateStylusTargetCache(targetConfig *StylusTargetConfig) error {
+func PopulateStylusTargetCache(targetConfig *programs.StylusTargetConfig) error {
 	localTarget := rawdb.LocalTarget()
 	targets := targetConfig.WasmTargets()
 	var nativeSet bool
@@ -442,7 +455,7 @@ func PopulateStylusTargetCache(targetConfig *StylusTargetConfig) error {
 	return nil
 }
 
-func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *StylusTargetConfig) error {
+func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *programs.StylusTargetConfig) error {
 	if rustCacheCapacityMB != 0 {
 		programs.SetWasmLruCacheCapacity(arbmath.SaturatingUMul(uint64(rustCacheCapacityMB), 1024*1024))
 	}
@@ -451,10 +464,7 @@ func (s *ExecutionEngine) Initialize(rustCacheCapacityMB uint32, targetConfig *S
 	}
 	s.wasmTargets = targetConfig.WasmTargets()
 	programs.SetAllowFallback(targetConfig.AllowFallback)
-	s.bc.StateCache().SetArbNodeConfig(&programs.ArbNodeConfig{
-		MaxOpenPages:       targetConfig.MaxStylusOpenPages,
-		MaxStylusCallDepth: targetConfig.MaxStylusCallDepth,
-	})
+	s.bc.CodeDB().SetArbNodeConfig(targetConfig)
 	// Establishes the baseline for doubleNativeStackSize (overflow recovery).
 	programs.SetInitialNativeStackSize(targetConfig.NativeStackSize)
 	return nil
@@ -621,7 +631,7 @@ func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newM
 	for i := range newMessages {
 		var msgForPrefetch *arbostypes.MessageWithMetadata
 		if i < len(newMessages)-1 {
-			msgForPrefetch = &newMessages[i].MessageWithMeta
+			msgForPrefetch = &newMessages[i+1].MessageWithMeta
 		}
 		nextMsgIdx := msgIdxOfFirstMsgToAdd + arbutil.MessageIndex(i)
 		msgResult, err := s.digestMessageWithBlockMutex(nextMsgIdx, &newMessages[i].MessageWithMeta, msgForPrefetch)
@@ -820,17 +830,13 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, nil, errors.New("can't find block for current header")
 	}
 	var witness *stateless.Witness
-	var witnessStats *stateless.WitnessStats
-	if s.bc.GetVMConfig().StatelessSelfValidation {
-		witness, err = stateless.NewWitness(lastBlock.Header(), s.bc)
+	if s.bc.StatelessSelfValidation() {
+		witness, err = stateless.NewWitness(lastBlock.Header(), s.bc, s.bc.EnableWitnessStats())
 		if err != nil {
 			return nil, nil, err
 		}
-		if s.bc.GetVMConfig().EnableWitnessStats {
-			witnessStats = stateless.NewWitnessStats()
-		}
 	}
-	statedb.StartPrefetcher("Sequencer", witness, witnessStats)
+	statedb.StartPrefetcher("Sequencer", witness)
 	defer statedb.StopPrefetcher()
 	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
 
@@ -980,7 +986,7 @@ func (s *ExecutionEngine) shouldAttemptWhileWaitingForFilteredTx() bool {
 	now := time.Now()
 	waitDuration := now.Sub(s.waitingForFilteredTx.FirstSeen)
 	delayedSequencerFilteredTxWaitSeconds.Update(int64(waitDuration.Seconds()))
-	if now.Sub(s.waitingForFilteredTx.LastLogTime) >= 5*time.Minute {
+	if now.Sub(s.waitingForFilteredTx.LastLogTime) >= filteredTxLogInterval {
 		logLevel := log.Warn
 		if waitDuration > 1*time.Hour {
 			logLevel = log.Error
@@ -1003,7 +1009,12 @@ func (s *ExecutionEngine) shouldAttemptWhileWaitingForFilteredTx() bool {
 	for _, txHash := range s.waitingForFilteredTx.TxHashes {
 		isInFilter, err := s.isTxHashInOnchainFilter(txHash)
 		if err != nil {
-			log.Error("error checking onchain filter", "err", err, "txHash", txHash)
+			if now.Sub(s.waitingForFilteredTx.LastErrLogTime) >= filteredTxLogInterval {
+				log.Error("error checking onchain filter", "err", err, "txHash", txHash,
+					"delayedMsgIdx", s.waitingForFilteredTx.DelayedMsgIdx,
+					"waitingSince", s.waitingForFilteredTx.FirstSeen)
+				s.waitingForFilteredTx.LastErrLogTime = now
+			}
 			return false
 		}
 		if !isInFilter {
@@ -1125,7 +1136,7 @@ func (s *ExecutionEngine) broadcastBlockTxs(block *types.Block, receipts types.R
 	header := block.Header()
 
 	for i, tx := range block.Transactions() {
-		msg, err := transactionfeed.BuildFeedMessage(header, tx, receipts[i])
+		msg, err := transactionfeed.BuildFeedMessage(header, tx, receipts[i], 0)
 		if err != nil {
 			log.Error("Transaction feed: failed to build message", "block", header.Number, "err", err)
 			continue
@@ -1151,7 +1162,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		return nil, nil, nil, errors.New("can't find block for current header")
 	}
 
-	err := s.bc.RecoverState(currentBlock)
+	err := s.bc.RecoverState(s.GetContext(), currentBlock)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to recover block %v state: %w", currentBlock.Number(), err)
 	}
@@ -1175,17 +1186,13 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	runCtx = session.runCtx
 
 	var witness *stateless.Witness
-	var witnessStats *stateless.WitnessStats
-	if s.bc.GetVMConfig().StatelessSelfValidation {
-		witness, err = stateless.NewWitness(currentBlock.Header(), s.bc)
+	if s.bc.StatelessSelfValidation() {
+		witness, err = stateless.NewWitness(currentBlock.Header(), s.bc, s.bc.EnableWitnessStats())
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		if s.bc.GetVMConfig().EnableWitnessStats {
-			witnessStats = stateless.NewWitnessStats()
-		}
 	}
-	statedb.StartPrefetcher("TransactionStreamer", witness, witnessStats)
+	statedb.StartPrefetcher("TransactionStreamer", witness)
 	defer statedb.StopPrefetcher()
 
 	// For delayed message sequencing, we use DelayedFilteringSequencingHooks which can
@@ -1295,13 +1302,14 @@ type tipRecordingSession struct {
 
 func (s *ExecutionEngine) beginTipRecording(parentHeader *types.Header, runCtx *core.MessageRunContext, recordAtTip bool) (*tipRecordingSession, error) {
 	if !recordAtTip {
-		statedb, err := s.bc.StateAt(parentHeader.Root)
+		statedb, err := s.bc.StateAt(parentHeader)
 		if err != nil {
 			return nil, err
 		}
 		return &tipRecordingSession{statedb: statedb, chainContext: s.bc, runCtx: runCtx}, nil
 	}
-	recordingStateDatabase := arbitrum.NewTipRecordingStateDatabase(s.bc.StateCache())
+	stateDatabase := state.NewMPTDatabase(s.bc.TrieDB(), s.bc.CodeDB()).WithSnapshot(s.bc.Snapshots())
+	recordingStateDatabase := arbitrum.NewTipRecordingStateDatabase(stateDatabase)
 	recordingChainContext := arbitrum.NewRecordingChainContext(s.bc, parentHeader)
 	statedb, err := state.NewRecording(parentHeader.Root, recordingStateDatabase)
 	if err != nil {
@@ -1428,7 +1436,7 @@ func (s *ExecutionEngine) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) (*ex
 func (s *ExecutionEngine) updateL1GasPriceEstimateMetric() {
 	bc := s.bc
 	latestHeader := bc.CurrentBlock()
-	latestState, err := bc.StateAt(latestHeader.Root)
+	latestState, err := bc.StateAt(latestHeader)
 	if err != nil {
 		log.Error("error getting latest statedb while fetching l2 Estimate of L1 GasPrice")
 		return
@@ -1449,7 +1457,7 @@ func (s *ExecutionEngine) updateL1GasPriceEstimateMetric() {
 func (s *ExecutionEngine) getL1PricingSurplus() (int64, error) {
 	bc := s.bc
 	latestHeader := bc.CurrentBlock()
-	latestState, err := bc.StateAt(latestHeader.Root)
+	latestState, err := bc.StateAt(latestHeader)
 	if err != nil {
 		return 0, errors.New("error getting latest statedb while fetching current L1 pricing surplus")
 	}
@@ -1754,7 +1762,7 @@ func (s *ExecutionEngine) isTxHashInOnchainFilter(txHash common.Hash) (bool, err
 		return false, err
 	}
 
-	statedb, err := s.bc.StateAt(currentHeader.Root)
+	statedb, err := s.bc.StateAt(currentHeader)
 	if err != nil {
 		return false, err
 	}

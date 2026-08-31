@@ -31,5 +31,5 @@ func testRunP256Verify(env *systest.Env) {
 	if env.Spec.ArbOSVersion.UnwrapOr(0) < params.ArbosVersion_30 {
 		want = nil
 	}
-	env.Zero(bytes.Compare(want, got), "P256Verify() = %x, want %x", got, want)
+	env.True(bytes.Equal(want, got), "P256Verify() = %x, want %x", got, want)
 }

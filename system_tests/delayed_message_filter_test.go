@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
@@ -30,6 +31,8 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	filteringreportapi "github.com/offchainlabs/nitro/cmd/filtering-report/api"
 	"github.com/offchainlabs/nitro/cmd/filtering-report/forwarder"
+	"github.com/offchainlabs/nitro/cmd/filtering-report/signer/signertest"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/transaction-filterer/api"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
@@ -139,7 +142,7 @@ func advanceL1ForDelayed(t *testing.T, ctx context.Context, builder *NodeBuilder
 }
 
 // waitForDelayedSequencerHaltOnHashes waits until the delayed sequencer is halted on exactly the given hashes.
-func waitForDelayedSequencerHaltOnHashes(t *testing.T, ctx context.Context, builder *NodeBuilder, expectedHashes []common.Hash, timeout time.Duration) {
+func waitForDelayedSequencerHaltOnHashes(t *testing.T, _ctx context.Context, builder *NodeBuilder, expectedHashes []common.Hash, timeout time.Duration) {
 	t.Helper()
 	expectedSet := make(map[common.Hash]struct{}, len(expectedHashes))
 	for _, h := range expectedHashes {
@@ -172,7 +175,7 @@ func waitForDelayedSequencerHaltOnHashes(t *testing.T, ctx context.Context, buil
 }
 
 // waitForDelayedSequencerResume waits until the delayed sequencer is no longer halted.
-func waitForDelayedSequencerResume(t *testing.T, ctx context.Context, builder *NodeBuilder, timeout time.Duration) {
+func waitForDelayedSequencerResume(t *testing.T, _ctx context.Context, builder *NodeBuilder, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -188,7 +191,7 @@ func waitForDelayedSequencerResume(t *testing.T, ctx context.Context, builder *N
 	t.Fatal("timeout waiting for delayed sequencer to resume")
 }
 
-func createTransactionFiltererService(t *testing.T, ctx context.Context, builder *NodeBuilder, filtererName string) *api.TransactionFiltererAPI {
+func createTransactionFiltererService(t *testing.T, ctx context.Context, builder *NodeBuilder, filtererName string) *api.TransactionFiltererService {
 	t.Helper()
 
 	filtererTxOpts := builder.L2Info.GetDefaultTransactOpts(filtererName, ctx)
@@ -199,12 +202,12 @@ func createTransactionFiltererService(t *testing.T, ctx context.Context, builder
 	transactionFiltererStackConf.HTTPPort = 0
 	transactionFiltererStackConf.WSPort = 0
 	transactionFiltererStackConf.AuthPort = 0
-	transactionFiltererStack, transactionFiltererAPI, err := api.NewStack(&transactionFiltererStackConf, &filtererTxOpts, nil)
+	transactionFiltererStack, txFilterer, err := api.NewStack(&transactionFiltererStackConf, &filtererTxOpts, nil)
 	require.NoError(t, err)
 
-	err = transactionFiltererAPI.Start(ctx)
+	err = txFilterer.Start(ctx)
 	require.NoError(t, err)
-	t.Cleanup(func() { transactionFiltererAPI.StopAndWait() })
+	t.Cleanup(func() { txFilterer.StopAndWait() })
 
 	err = transactionFiltererStack.Start()
 	require.NoError(t, err)
@@ -212,18 +215,19 @@ func createTransactionFiltererService(t *testing.T, ctx context.Context, builder
 
 	builder.execConfig.TransactionFiltering.TransactionFiltererRPCClient.URL = transactionFiltererStack.HTTPEndpoint()
 
-	return transactionFiltererAPI
+	return txFilterer
 }
 
 func SetupFilteringReport(t *testing.T) (*node.Node, *forwarder.MockExternalEndpoint) {
 	t.Helper()
 
 	queueClient := &sqsclient.MockQueueClient{}
-	pemPath, externalEndpoint := forwarder.NewMockExternalEndpoint(t)
+	signingPair := signertest.NewSigningPair(t)
+	externalEndpoint := forwarder.NewMockExternalEndpoint(t, signingPair.Verifier)
 
-	stack := filteringreportapi.NewTestStack(t, queueClient)
+	stack := filteringreportapi.NewTestStack(t, queueClient, &genericconf.HTTPClientConfigDefault, signingPair.Signer)
 
-	fwd := forwarder.NewTestForwarder(t, queueClient, nil, externalEndpoint.URL(), pemPath)
+	fwd := forwarder.NewTestForwarder(t, queueClient, nil, externalEndpoint.URL(), signingPair.Signer)
 	fwd.Start(t.Context())
 	t.Cleanup(func() { fwd.StopAndWait() })
 
@@ -288,6 +292,21 @@ func verifyCascadingRedeemFiltered(t *testing.T, ctx context.Context, builder *N
 	}
 	require.Equal(t, 0, redeemCount, "no redeem should exist - submission was filtered on retry")
 
+	blockNumber := rpc.BlockNumber(submissionReceipt.BlockNumber.Int64())
+	receipts, err := builder.L2.Client.BlockReceipts(ctx, rpc.BlockNumberOrHash{BlockNumber: &blockNumber})
+	Require(t, err)
+	redeemCount = 0
+	var gasFromReceipts uint64
+	for _, receipt := range receipts {
+		if receipt.Type == types.ArbitrumRetryTxType {
+			redeemCount++
+		}
+		gasFromReceipts += receipt.GasUsed
+	}
+	require.Equal(t, 0, redeemCount, "no receipt for redeem should exist")
+
+	blockGas := block.GasUsed()
+	require.Equal(t, blockGas, gasFromReceipts, "gas from receipts doesn't match gas used in the block")
 	return submissionReceipt
 }
 
@@ -456,7 +475,7 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
 
-	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
+	txFilterer := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
 	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
@@ -505,8 +524,8 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	senderBalanceBefore, err := builder.L2.Client.BalanceAt(ctx, senderAddr, nil)
 	require.NoError(t, err)
 
-	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
-	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	// Set Sequencer client in txFilterer, this will eventually add tx hash to onchain filter
+	err = txFilterer.SetSequencerClient(t, builder.L2.Client)
 	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
@@ -536,10 +555,10 @@ func TestDelayedMessageFilterBypass(t *testing.T) {
 	require.True(t, senderBalanceAfter.Cmp(senderBalanceBefore) < 0, "sender balance should decrease due to gas consumption")
 }
 
-// TestDelayedMessageFilterResumeNotBlockedByLaterUnfinalizedMessage asserts that the filtered
+// TestDelayedMessageFilterResumeNotBlockedByLaterUnfinalizedMessageFlaky asserts that the filtered
 // message processing resumes as soon as its onchain-filter condition is met, regardless of a later
 // message's finality.
-func TestDelayedMessageFilterResumeNotBlockedByLaterUnfinalizedMessage(t *testing.T) {
+func TestDelayedMessageFilterResumeNotBlockedByLaterUnfinalizedMessageFlaky(t *testing.T) {
 	if *testflag.MelFlag {
 		// Under message extraction the delayed sequencer never records
 		// waitingForFinalizedBlock for the later message while halted on the
@@ -759,7 +778,7 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
 
-	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
+	txFilterer := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
 	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
@@ -827,8 +846,8 @@ func TestDelayedMessageFilterBlocksSubsequent(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, normal2Initial, normal2Mid, "normal user 2 balance should not change while blocked")
 
-	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
-	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	// Set Sequencer client in txFilterer, this will eventually add tx hash to onchain filter
+	err = txFilterer.SetSequencerClient(t, builder.L2.Client)
 	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
@@ -876,7 +895,7 @@ func TestDelayedMessageFilterBatch(t *testing.T) {
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
 
-	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
+	txFilterer := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
 	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
@@ -943,7 +962,7 @@ func TestDelayedMessageFilterBatch(t *testing.T) {
 	require.Equal(t, user2Initial, user2Mid, "user2 balance should not change while batch is blocked")
 
 	// Add tx2 hash to onchain filter
-	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	err = txFilterer.SetSequencerClient(t, builder.L2.Client)
 	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
@@ -1077,7 +1096,7 @@ func TestDelayedMessageFilterCall(t *testing.T) {
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
 
-	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
+	txFilterer := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
 	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
@@ -1119,8 +1138,8 @@ func TestDelayedMessageFilterCall(t *testing.T) {
 	// Verify sequencer is halted on this tx
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
-	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
-	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	// Set Sequencer client in txFilterer, this will eventually add tx hash to onchain filter
+	err = txFilterer.SetSequencerClient(t, builder.L2.Client)
 	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
@@ -1146,7 +1165,7 @@ func TestDelayedMessageFilterStaticCall(t *testing.T) {
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
 
-	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
+	txFilterer := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
 	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
@@ -1188,8 +1207,8 @@ func TestDelayedMessageFilterStaticCall(t *testing.T) {
 	// Verify sequencer is halted on this tx
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
-	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
-	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	// Set Sequencer client in txFilterer, this will eventually add tx hash to onchain filter
+	err = txFilterer.SetSequencerClient(t, builder.L2.Client)
 	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
@@ -1212,7 +1231,7 @@ func TestDelayedMessageFilterCreate(t *testing.T) {
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
 
-	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
+	txFilterer := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
 	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
@@ -1258,8 +1277,8 @@ func TestDelayedMessageFilterCreate(t *testing.T) {
 	// Verify sequencer is halted on this tx
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
-	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
-	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	// Set Sequencer client in txFilterer, this will eventually add tx hash to onchain filter
+	err = txFilterer.SetSequencerClient(t, builder.L2.Client)
 	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
@@ -1282,7 +1301,7 @@ func TestDelayedMessageFilterCreate2(t *testing.T) {
 	builder.L2Info.GenerateAccount("Sender")
 	builder.L2Info.GenerateAccount("Filterer")
 
-	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
+	txFilterer := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
 	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
@@ -1326,8 +1345,8 @@ func TestDelayedMessageFilterCreate2(t *testing.T) {
 	// Verify sequencer is halted on this tx
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
-	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
-	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	// Set Sequencer client in txFilterer, this will eventually add tx hash to onchain filter
+	err = txFilterer.SetSequencerClient(t, builder.L2.Client)
 	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume
@@ -1351,7 +1370,7 @@ func TestDelayedMessageFilterSelfdestruct(t *testing.T) {
 	builder.L2Info.GenerateAccount("Filterer")
 	builder.L2Info.GenerateAccount("FilteredBeneficiary")
 
-	transactionFiltererAPI := createTransactionFiltererService(t, ctx, builder, "Filterer")
+	txFilterer := createTransactionFiltererService(t, ctx, builder, "Filterer")
 
 	s3Filter := setupFakeS3AddressFilter(t, builder)
 	cleanup := builder.Build(t)
@@ -1392,8 +1411,8 @@ func TestDelayedMessageFilterSelfdestruct(t *testing.T) {
 	// Verify sequencer is halted on this tx
 	waitForDelayedSequencerHaltOnHashes(t, ctx, builder, []common.Hash{txHash}, 10*time.Second)
 
-	// Set Sequencer client in transactionFiltererAPI, this will eventually add tx hash to onchain filter
-	err = transactionFiltererAPI.SetSequencerClient(t, builder.L2.Client)
+	// Set Sequencer client in txFilterer, this will eventually add tx hash to onchain filter
+	err = txFilterer.SetSequencerClient(t, builder.L2.Client)
 	require.NoError(t, err)
 
 	// Wait for delayed sequencer to resume

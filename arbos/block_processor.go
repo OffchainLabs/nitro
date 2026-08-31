@@ -112,6 +112,7 @@ func (c txCheckpoint) restore(statedb *state.StateDB) {
 type groupCheckpoint struct {
 	backup               *state.StateDB
 	headerGasUsed        uint64
+	gasPool              *core.GasPool
 	blockGasLeft         uint64
 	expectedBalanceDelta *big.Int
 	userTxsProcessed     int
@@ -124,14 +125,18 @@ type groupCheckpoint struct {
 // saveGroupCheckpoint snapshots the loop state so the entire tx group can be
 // rolled back if a descendant redeem is filtered. header is passed separately
 // because only GasUsed is checkpointed; the rest of the header is immutable
-// during the loop.
-func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, checkpoint txCheckpoint, userTx *types.Transaction) error {
+// during the loop. preTxGasPool must be a snapshot of the shared gas pool
+// taken BEFORE the user tx ran, so that a rollback can restore the gas
+// pool's cumulativeUsed and prevent the rolled-back tx's gas from being
+// attributed to subsequent receipts via DeriveFields.
+func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, preTxGasPool *core.GasPool, checkpoint txCheckpoint, userTx *types.Transaction) error {
 	if len(s.redeems) != 0 {
 		return errors.New("saveGroupCheckpoint called with pending redeems")
 	}
 	s.activeGroupCP = &groupCheckpoint{
 		backup:               s.statedb.Copy(),
 		headerGasUsed:        header.GasUsed,
+		gasPool:              preTxGasPool,
 		blockGasLeft:         s.blockGasLeft,
 		expectedBalanceDelta: new(big.Int).Set(s.expectedBalanceDelta),
 		userTxsProcessed:     s.userTxsProcessed,
@@ -144,15 +149,18 @@ func (s *blockBuildState) saveGroupCheckpoint(header *types.Header, checkpoint t
 }
 
 // rollbackToGroupCheckpoint restores loop state to the saved checkpoint,
-// undoing the user tx and all its redeems. header is needed to restore
-// GasUsed, which lives outside blockBuildState.
-func (s *blockBuildState) rollbackToGroupCheckpoint(header *types.Header) error {
+// undoing the user tx and all its redeems. header and gasPool are needed
+// because they live outside blockBuildState; restoring gasPool's
+// cumulativeUsed prevents a rolled-back tx's gas from being attributed
+// to subsequent receipts via DeriveFields.
+func (s *blockBuildState) rollbackToGroupCheckpoint(header *types.Header, gasPool *core.GasPool) error {
 	cp := s.activeGroupCP
 	// Roll the backup back to before the user tx ran (state + warm-start cache),
 	// then make it live; its redeems warmed only the now-discarded live statedb.
 	cp.txCheckpoint.restore(cp.backup)
 	s.statedb = cp.backup
 	header.GasUsed = cp.headerGasUsed
+	gasPool.Set(cp.gasPool)
 	s.blockGasLeft = cp.blockGasLeft
 	s.expectedBalanceDelta.Set(cp.expectedBalanceDelta)
 	s.userTxsProcessed = cp.userTxsProcessed
@@ -186,7 +194,7 @@ func (info *L1Info) L1BlockNumber() uint64 {
 	return info.l1BlockNumber
 }
 
-func createNewHeader(prevHeader *types.Header, l1info *L1Info, baseFee *big.Int, chainConfig *params.ChainConfig) *types.Header {
+func createNewHeader(prevHeader *types.Header, l1info *L1Info, baseFee *big.Int, _chainConfig *params.ChainConfig) *types.Header {
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
 	timestamp := uint64(0)
@@ -246,7 +254,7 @@ type SequencingHooks interface {
 	TxFilter
 	BlockFilter
 	// NextTxToSequence returns the next tx to include, or nil when done.
-	NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error)
+	NextTxToSequence(statedb *state.StateDB, blockGasLeft uint64) (*types.Transaction, *arbitrum_types.ConditionalOptions, error)
 	// CanDiscardTx returns whether failed txs can be excluded from the block.
 	// This is a static property of the implementing type (true for sequencer, false for replay).
 	CanDiscardTx() bool
@@ -267,7 +275,7 @@ type NoopSequencingHooks struct {
 	scheduledTxsCount int
 }
 
-func (n *NoopSequencingHooks) NextTxToSequence() (*types.Transaction, *arbitrum_types.ConditionalOptions, error) {
+func (n *NoopSequencingHooks) NextTxToSequence(statedb *state.StateDB, blockGasLeft uint64) (*types.Transaction, *arbitrum_types.ConditionalOptions, error) {
 	// This is not supposed to happen, if so we have a bug
 	if n.scheduledTxsCount > len(n.txs) {
 		return nil, nil, errors.New("noopTxScheduler: requested too many transactions")
@@ -386,7 +394,7 @@ func ProduceBlockAdvanced(
 	time := header.Time
 
 	// We'll check that the block can fit each message, so this pool is set to not run out
-	gethGas := core.GasPool(l2pricing.GethBlockGasLimit)
+	gethGas := core.NewGasPool(l2pricing.GethBlockGasLimit)
 
 	firstTx := types.NewTx(startTx)
 
@@ -444,7 +452,7 @@ func ProduceBlockAdvanced(
 			}
 			buildState.clearGroupCheckpoint()
 			var conditionalOptions *arbitrum_types.ConditionalOptions
-			tx, conditionalOptions, err = sequencingHooks.NextTxToSequence()
+			tx, conditionalOptions, err = sequencingHooks.NextTxToSequence(statedb, buildState.blockGasLeft)
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("error fetching next transaction to sequence, userTxsProcessed: %d, err: %w", buildState.userTxsProcessed, err)
 			}
@@ -534,7 +542,12 @@ func ProduceBlockAdvanced(
 			}
 
 			snap := buildState.statedb.Snapshot()
-			buildState.statedb.SetTxContext(tx.Hash(), len(buildState.receipts)) // the number of successful state transitions
+			// The block access list index follows geth's convention of txIndex+1, with
+			// index 0 reserved for pre-execution system calls. It is only consumed when
+			// EIP-7928 block access lists are active, which for Arbitrum chains requires
+			// ArbOS >= params.ArbosVersion_Amsterdam; below that the value is inert.
+			// #nosec G115
+			buildState.statedb.SetTxContext(tx.Hash(), len(buildState.receipts), uint32(len(buildState.receipts)+1)) // the number of successful state transitions
 
 			// Also snapshot the warm-start cache so a dropped or rolled-back tx that warmed a
 			// program leaves nothing behind for later included txs
@@ -544,16 +557,18 @@ func ProduceBlockAdvanced(
 				checkpoint.recentWasms = &rw
 			}
 
-			gasPool := gethGas
+			// Snapshot the gas pool BEFORE running the tx so a later group rollback
+			// can restore the gas pool's cumulativeUsed (otherwise the rolled-back
+			// tx's gas leaks into subsequent receipts via DeriveFields).
+			preTxGasPool := gethGas.Snapshot()
 			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
 			evm := vm.NewEVM(blockContext, buildState.statedb, chainConfig, vm.Config{ExposeMultiGas: exposeMultiGas})
-			receipt, result, err := core.ApplyTransactionWithResultFilter(
+			receipt, _, result, err := core.ApplyTransactionWithResultFilter(
 				evm,
-				&gasPool,
+				gethGas,
 				buildState.statedb,
 				header,
 				tx,
-				&header.GasUsed,
 				runCtx,
 				func(result *core.ExecutionResult) error {
 					if tx.Type() != types.ArbitrumInternalTxType {
@@ -566,7 +581,7 @@ func ProduceBlockAdvanced(
 						return err
 					}
 					if isUserTx && len(result.ScheduledTxes) > 0 && sequencingHooks.SupportsGroupRollback() {
-						if err := buildState.saveGroupCheckpoint(header, checkpoint, tx); err != nil {
+						if err := buildState.saveGroupCheckpoint(header, preTxGasPool, checkpoint, tx); err != nil {
 							return err
 						}
 					}
@@ -578,8 +593,22 @@ func ProduceBlockAdvanced(
 				// function; restore also undoes any warm-start it left behind.
 				checkpoint.restore(buildState.statedb)
 				buildState.statedb.ClearTxFilter()
+				// Restore gas pool: state_transition's normal path already ran CheckGasLegacy/ChargeGasLegacy
+				// before resultFilter (which is what reported the error here), so gp's
+				// cumulativeUsed and remaining were charged for this discarded tx.
+				// Leaving them as-is would inflate subsequent receipts' CumulativeGasUsed
+				// and break receipt.GasUsed (computed via DeriveFields as a cumulative diff).
+				gethGas.Set(preTxGasPool)
 				return nil, nil, err
 			}
+
+			// Upstream geth's ApplyTransaction no longer takes a *usedGas pointer;
+			// callers must update header.GasUsed themselves. result.UsedGas equals
+			// this tx's gas pool consumption (endTxNow paths like deposits and
+			// retryable submissions consume their reported gas from the pool too),
+			// keeping header.GasUsed consistent with gethGas.Used(), which
+			// ValidateState checks against ProcessResult.GasUsed on replay.
+			header.GasUsed += result.UsedGas
 
 			return receipt, result, nil
 		})()
@@ -592,7 +621,7 @@ func ProduceBlockAdvanced(
 				// Capture everything before rollback — addressCheckerStateß
 				cp := buildState.activeGroupCP
 				_, filteredAddresses := buildState.statedb.IsAddressFiltered()
-				if err := buildState.rollbackToGroupCheckpoint(header); err != nil {
+				if err := buildState.rollbackToGroupCheckpoint(header, gethGas); err != nil {
 					return nil, nil, nil, err
 				}
 				sequencingHooks.TxFailed(&ErrFilteredCascadingRedeem{
@@ -745,7 +774,7 @@ func ProduceBlockAdvanced(
 
 	binary.BigEndian.PutUint64(header.Nonce[:], delayedMessagesRead)
 
-	FinalizeBlock(header, buildState.complete, buildState.statedb, chainConfig)
+	FinalizeBlock(header, buildState.statedb, chainConfig)
 
 	// Touch up the block hashes in receipts
 	tmpBlock := types.NewBlock(header, &types.Body{Transactions: buildState.complete}, buildState.receipts, trie.NewStackTrie(nil))
@@ -777,52 +806,50 @@ func ProduceBlockAdvanced(
 	return block, buildState.statedb, buildState.receipts, nil
 }
 
-// Also sets header.Root
-func FinalizeBlock(header *types.Header, txs types.Transactions, statedb vm.StateDB, chainConfig *params.ChainConfig) {
-	if header != nil {
-		if header.Number.Uint64() < chainConfig.ArbitrumChainParams.GenesisBlockNum {
-			panic("cannot finalize blocks before genesis")
-		}
+// FinalizeBlock writes the Arbitrum header info into header and sets header.Root; no-op if header is nil.
+func FinalizeBlock(header *types.Header, statedb vm.StateDB, chainConfig *params.ChainConfig) {
+	if header == nil {
+		return
+	}
+	var arbitrumHeader *types.HeaderInfo
+	genesisBlockNum := chainConfig.ArbitrumChainParams.GenesisBlockNum
+	switch blockNum := header.Number.Uint64(); {
+	case blockNum < genesisBlockNum:
+		panic("cannot finalize blocks before genesis")
+	case blockNum == genesisBlockNum:
+		arbitrumHeader = &types.HeaderInfo{ArbOSFormatVersion: chainConfig.ArbitrumChainParams.InitialArbOSVersion}
+	default:
+		arbitrumHeader = postGenesisHeaderInfo(statedb, header)
+	}
 
-		var sendRoot common.Hash
-		var sendCount uint64
-		var nextL1BlockNumber uint64
-		var arbosVersion uint64
-		collectTips := false
+	arbitrumHeader.UpdateHeaderWithInfo(header)
+	header.Root = statedb.IntermediateRoot(true)
+}
 
-		if header.Number.Uint64() == chainConfig.ArbitrumChainParams.GenesisBlockNum {
-			arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
-		} else {
-			state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
-			if err != nil {
-				newErr := fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root)
-				panic(newErr)
-			}
-			collectTips, err = state.CollectTips()
-			if err != nil {
-				newErr := fmt.Errorf("%w while reading collect tips setting. Block: %d root: %v", err, header.Number, header.Root)
-				panic(newErr)
-			}
-			// Delayed-message blocks never collect tips, regardless of the chain-wide setting.
-			// All transactions in a block share the same Coinbase, so this is a block-level property.
-			if collectTips && header.Coinbase != l1pricing.BatchPosterAddress {
-				collectTips = false
-			}
-			// Add outbox info to the header for client-side proving
-			acc := state.SendMerkleAccumulator()
-			sendRoot, _ = acc.Root()
-			sendCount, _ = acc.Size()
-			nextL1BlockNumber, _ = state.Blockhashes().L1BlockNumber()
-			arbosVersion = state.ArbOSVersion()
-		}
-		arbitrumHeader := types.HeaderInfo{
-			SendRoot:           sendRoot,
-			SendCount:          sendCount,
-			L1BlockNumber:      nextL1BlockNumber,
-			ArbOSFormatVersion: arbosVersion,
-			CollectTips:        collectTips,
-		}
-		arbitrumHeader.UpdateHeaderWithInfo(header)
-		header.Root = statedb.IntermediateRoot(true)
+func postGenesisHeaderInfo(statedb vm.StateDB, header *types.Header) *types.HeaderInfo {
+	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	if err != nil {
+		panic(fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root))
+	}
+	collectTips, err := arbState.CollectTips()
+	if err != nil {
+		panic(fmt.Errorf("%w while reading collect tips setting. Block: %d root: %v", err, header.Number, header.Root))
+	}
+	// Delayed-message blocks never collect tips, regardless of the chain-wide setting.
+	// All transactions in a block share the same Coinbase, so this is a block-level property.
+	if collectTips && header.Coinbase != l1pricing.BatchPosterAddress {
+		collectTips = false
+	}
+	acc := arbState.SendMerkleAccumulator()
+	sendRoot, _ := acc.Root()
+	sendCount, _ := acc.Size()
+	nextL1BlockNumber, _ := arbState.Blockhashes().L1BlockNumber()
+
+	return &types.HeaderInfo{
+		SendRoot:           sendRoot,
+		SendCount:          sendCount,
+		L1BlockNumber:      nextL1BlockNumber,
+		ArbOSFormatVersion: arbState.ArbOSVersion(),
+		CollectTips:        collectTips,
 	}
 }

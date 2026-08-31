@@ -17,6 +17,8 @@ pub enum UserOutcome {
     /// Unlike OutOfStack (which is the deterministic DepthChecker limit), this indicates
     /// the physical stack was exhausted and the call should be retried with a larger stack.
     NativeStackOverflow,
+    StorageCacheLimitExceeded,
+    SystemError(ErrReport),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, TryFromPrimitive, IntoPrimitive)]
@@ -28,6 +30,8 @@ pub enum UserOutcomeKind {
     OutOfInk,
     OutOfStack,
     NativeStackOverflow,
+    StorageCacheLimitExceeded,
+    SystemError,
 }
 
 impl UserOutcome {
@@ -36,7 +40,7 @@ impl UserOutcome {
         let data = match self {
             Self::Success(out) => out,
             Self::Revert(out) => out,
-            Self::Failure(err) => format!("{err:?}").as_bytes().to_vec(),
+            Self::Failure(err) | Self::SystemError(err) => format!("{err:?}").as_bytes().to_vec(),
             _ => vec![],
         };
         (kind, data)
@@ -57,6 +61,8 @@ impl From<&UserOutcome> for UserOutcomeKind {
             OutOfInk => Self::OutOfInk,
             OutOfStack => Self::OutOfStack,
             NativeStackOverflow => Self::NativeStackOverflow,
+            StorageCacheLimitExceeded => Self::StorageCacheLimitExceeded,
+            SystemError(_) => Self::SystemError,
         }
     }
 }
@@ -76,6 +82,8 @@ impl Display for UserOutcome {
             OutOfInk => write!(f, "out of ink"),
             OutOfStack => write!(f, "out of stack"),
             NativeStackOverflow => write!(f, "native stack overflow"),
+            StorageCacheLimitExceeded => write!(f, "storage cache limit exceeded"),
+            SystemError(err) => write!(f, "system error {err:?}"),
             Revert(data) => {
                 let text = String::from_utf8(data.clone()).unwrap_or_else(|_| hex::encode(data));
                 write!(f, "revert {text}")
@@ -95,6 +103,8 @@ impl Display for UserOutcomeKind {
             OutOfInk => write!(f, "out of ink ({as_u8})"),
             OutOfStack => write!(f, "out of stack ({as_u8})"),
             NativeStackOverflow => write!(f, "native stack overflow ({as_u8})"),
+            StorageCacheLimitExceeded => write!(f, "storage cache limit exceeded ({as_u8})"),
+            SystemError => write!(f, "system error ({as_u8})"),
         }
     }
 }

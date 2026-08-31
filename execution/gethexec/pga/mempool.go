@@ -6,71 +6,46 @@ package pga
 
 import (
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/metrics"
 )
 
-// Mempool is a two-stage mempool for PGA. The first stage is a channel with the waiting list and the second stage is a
-// priority queue. It is not safe for concurrent use; every method runs on the block-production goroutine.
+var (
+	txsAddedCounter     = metrics.NewRegisteredCounter("arb/sequencer/pga/mempool/txsadded", nil)
+	txsProcessedCounter = metrics.NewRegisteredCounter("arb/sequencer/pga/mempool/txsprocessed", nil)
+	txsDroppedCounter   = metrics.NewRegisteredCounter("arb/sequencer/pga/mempool/txsdropped", nil)
+)
+
+// Mempool is the priority queue backing one block's PGA rounds: transactions are keyed against the basefee fixed at
+// construction, so the sequencer builds a fresh mempool per block. It is not safe for concurrent use; every method
+// runs on the block-production goroutine.
 type Mempool[T Tx] struct {
-	txQueue              <-chan T  // stage one: the waiting list
-	heap                 txHeap[T] // stage two: the priority queue
+	heap                 txHeap[T] // the priority queue
 	baseFee              *big.Int  // basefee of the block under construction
-	maxTxDataSize        int       // max promoted-transaction size, for the block under construction
 	boostDivisor         uint64    // used to compute the priority boost
 	lastIncludedPriority uint64    // the priority of the last transaction included in the pga round
 }
 
-func NewMempool[T Tx](txQueue <-chan T, roundsPerBlock uint) *Mempool[T] {
+func NewMempool[T Tx](roundsPerBlock uint, baseFee *big.Int) *Mempool[T] {
 	if roundsPerBlock == 0 {
 		panic("roundsPerBlock is zero; impossible")
 	}
 	return &Mempool[T]{
-		txQueue:      txQueue,
 		boostDivisor: 2 * uint64(roundsPerBlock),
+		baseFee:      baseFee,
 	}
 }
 
-// PriorityQueueLen returns the number of transactions promoted into the priority queue (stage two); it does not count
-// the waiting list.
+// PriorityQueueLen returns the number of transactions in the priority queue.
 func (m *Mempool[T]) PriorityQueueLen() int {
 	return m.heap.Len()
 }
 
-// AreThereTxsForNextRound reports whether the next PGA round would have anything to work with.
-func (m *Mempool[T]) AreThereTxsForNextRound() bool {
-	return m.heap.Len() != 0 || len(m.txQueue) != 0
-}
-
-// StartNewBlock begins a block: it records the block's basefee and max transaction size, then re-keys the queued
-// transactions against the new basefee, dropping any whose fee cap fell below it. It finishes by calling
-// StartNewPGARound, which promotes the waiting list and re-establishes the heap, so it doubles as the block's first PGA
-// round.
-func (m *Mempool[T]) StartNewBlock(baseFee *big.Int, maxTxDataSize int) {
-	m.baseFee = baseFee
-	m.maxTxDataSize = maxTxDataSize
-	m.heap.rekey(m.baseFee)
-	m.StartNewPGARound()
-}
-
-// StartNewPGARound advances the mempool to a new PGA round. It applies the anti-starvation boost to transactions that
-// are still in the priority queue, and promotes transactions from the waiting list.
-func (m *Mempool[T]) StartNewPGARound() {
-	if delta := m.lastIncludedPriority / m.boostDivisor; delta != 0 {
-		m.heap.addBoost(delta)
-	}
+// ApplyRoundBoost advances the mempool to a new PGA round: it applies the anti-starvation boost, derived from the
+// last included transaction, to the transactions still in the priority queue.
+func (m *Mempool[T]) ApplyRoundBoost() {
+	m.heap.applyRoundBoundary(m.lastIncludedPriority / m.boostDivisor)
 	m.lastIncludedPriority = 0
-
-	// n (the waiting-list length) is captured once; we are the sole consumer, so these receivers never block, and
-	// arrivals after the snapshot stay buffered for the next round.
-	n := len(m.txQueue)
-	promoted := make([]PrioritizedTx[T], 0, n)
-	for range n {
-		entry := PrioritizedTx[T]{tx: <-m.txQueue}
-		if !entry.setPriority(m.baseFee) {
-			continue
-		}
-		promoted = append(promoted, entry)
-	}
-	m.heap.pushBatch(promoted)
 }
 
 // RecordIncludedTx records the priority of a transaction just included in the block during the current round.
@@ -78,28 +53,60 @@ func (m *Mempool[T]) RecordIncludedTx(priority uint64) {
 	m.lastIncludedPriority = priority
 }
 
-// Pop removes and returns the highest-priority valid entry, dropping candidates that fail the size or context checks.
-func (m *Mempool[T]) Pop() (PrioritizedTx[T], bool) {
+// ValidateAndPeek returns the highest-priority valid transaction without removing it, discarding entries
+// whose submission context has expired.
+func (m *Mempool[T]) ValidateAndPeek() (emptyEntry T, found bool) {
 	for m.heap.Len() > 0 {
-		entry := m.heap.popConcrete()
-		if entry.validate(m.maxTxDataSize) {
+		if entry := m.heap.peekConcrete(); entry.Validate() {
 			return entry, true
 		}
+		m.heap.popConcrete() // expired: discard
+		txsDroppedCounter.Inc(1)
 	}
-	return PrioritizedTx[T]{}, false
+	return emptyEntry, false
 }
 
-// Push adds a boost-free transaction, keying it against the current basefee. Use it for a transaction revived from the
-// nonce-failure cache, which re-enters the queue fresh without any boost it accumulated before being cached.
-func (m *Mempool[T]) Push(item T) {
-	m.PushPrioritized(PrioritizedTx[T]{tx: item})
+// Pop removes and returns the highest-priority transaction. It does not validate, it's expected that a preceding ValidateAndPeek
+// already did, and re-validating here could drop the entry the caller is about to sequence.
+func (m *Mempool[T]) Pop() (emptyEntry T, found bool) {
+	if m.heap.Len() == 0 {
+		return emptyEntry, false
+	}
+	entry := m.heap.popConcrete()
+	txsProcessedCounter.Inc(1)
+	return entry, true
 }
 
-// PushPrioritized re-adds an already-prioritized entry, re-keying it against the current basefee while preserving its
-// accumulated boost. Use it for a transaction that did not fit in the block and returns to the queue.
-func (m *Mempool[T]) PushPrioritized(entry PrioritizedTx[T]) {
-	if !entry.setPriority(m.baseFee) {
-		return
+// Push adds a transaction, keying it against the mempool's basefee with its carried boost folded in. It reports
+// whether the transaction was inserted rather than dropped.
+func (m *Mempool[T]) Push(item T) bool {
+	if !item.ComputePgaPriority(m.baseFee) {
+		txsDroppedCounter.Inc(1)
+		return false
 	}
-	m.heap.pushConcrete(entry)
+	m.heap.pushConcrete(item)
+	txsAddedCounter.Inc(1)
+	return true
+}
+
+// PushBatch adds a batch of transactions, keying them against the mempool's basefee with their carried boosts folded
+// in. More efficient than pushing one at a time, it re-heapifies the entire queue in a single O(n) pass. It returns
+// the inserted transactions, excluding the ones dropped at priority computation.
+func (m *Mempool[T]) PushBatch(items []T) []T {
+	validated := items[:0]
+	for _, item := range items {
+		if item.ComputePgaPriority(m.baseFee) {
+			validated = append(validated, item)
+		} else {
+			txsDroppedCounter.Inc(1)
+		}
+	}
+	m.heap.pushBatch(validated)
+	txsAddedCounter.Inc(int64(len(validated)))
+	return validated
+}
+
+// TakeRemaining returns all remaining transactions in the mempool.
+func (m *Mempool[T]) TakeRemaining() []T {
+	return m.heap.takeRemaining()
 }

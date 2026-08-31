@@ -19,7 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
@@ -43,11 +42,18 @@ import (
 )
 
 func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
-	t.Parallel()
+	for _, tc := range challengeBlockRecorderTestCases(t) {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			testChallengeProtocolBOLDBisections(t, tc)
+		})
+	}
+}
+
+func testChallengeProtocolBOLDBisections(t *testing.T, recorderCase blockRecorderTestCase) {
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx, 1<<5)
-	defer requireClose(t, l1stack)
+	l2node, l1info, l2info, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx, 1<<5, recorderCase)
 	defer l2node.StopAndWait()
 	l2info.GenerateAccount("Destination")
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
@@ -160,12 +166,19 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 }
 
 func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
-	t.Parallel()
+	for _, tc := range challengeBlockRecorderTestCases(t) {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			testChallengeProtocolBOLDStateProvider(t, tc)
+		})
+	}
+}
+
+func testChallengeProtocolBOLDStateProvider(t *testing.T, recorderCase blockRecorderTestCase) {
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 	maxNumBlocks := uint64(1 << 14)
-	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx, maxNumBlocks)
-	defer requireClose(t, l1stack)
+	l2node, l1info, l2info, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx, maxNumBlocks, recorderCase)
 	defer l2node.StopAndWait()
 	l2info.GenerateAccount("Destination")
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
@@ -346,7 +359,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	})
 }
 
-func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHeight uint64) (*arbnode.Node, *BlockchainTestInfo, *BlockchainTestInfo, *node.Node, *ethclient.Client, *bold.BOLDStateProvider, *staker.BlockValidator) {
+func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHeight uint64, recorderCase blockRecorderTestCase) (*arbnode.Node, *BlockchainTestInfo, *BlockchainTestInfo, *ethclient.Client, *bold.BOLDStateProvider, *staker.BlockValidator) {
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 	l2chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	l2info := NewBlockChainTestInfo(
@@ -364,17 +377,17 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 		MinimumAssertionPeriod: 0,
 	}
 
-	_, l2node, l2execNode, _, l2stack, l1info, _, l1client, l1stack, _, _, _, _, _ := createCompleteTestNodeOnL1(
+	_, l2node, l2execNode, _, l2stack, l1info, l1client, _, _, _, _, _ := createCompleteTestNodeOnL1(
 		t,
 		ctx,
 		false,
 		nil,
 		l2chainConfig,
-		nil,
 		sconf,
 		l2info,
 		false, // useExternalSigner
 		false, // enableCustomDA
+		withBlockRecorderTestCase(recorderCase),
 	)
 
 	valnode.TestValidationConfig.UseJit = false
@@ -429,5 +442,5 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, blockChallengeHei
 
 	_, err = execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, l2stack, l2execNode, l2node)
 	Require(t, err)
-	return l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator
+	return l2node, l1info, l2info, l1client, stateManager, blockValidator
 }

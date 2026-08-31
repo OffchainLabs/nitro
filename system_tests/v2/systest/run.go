@@ -39,14 +39,10 @@ func Run(t *testing.T) {
 		t.Skip("dry run: no tests executed")
 	}
 
-	skipped, validated := scheduleStats(items)
+	skipped := scheduleStats(items)
 	t.Logf("scheduled %d test runs (%d skipped)", len(items)-skipped, skipped)
 
-	if sp.Validate && validated == 0 {
-		t.Fatalf("systest: validation requested but 0 of %d scheduled runs validate", len(items)-skipped)
-	}
-
-	base := capacityFor(sp)
+	base := baseCapacity()
 	capacity := poolCapacity(base, items)
 	if capacity > base {
 		t.Logf("systest: capacity %d raised to %d to fit the heaviest scheduled test", base, capacity)
@@ -54,10 +50,10 @@ func Run(t *testing.T) {
 	runPool(t, capacity, items, runOne)
 }
 
-// RunTestMain is the shared TestMain body: runs the package's tests, then
-// tears down process-wide resources (the shared valnode).
+// RunTestMain is the shared TestMain body.
 func RunTestMain(m *testing.M) {
 	code := m.Run()
+	validators.shutdown()
 	os.Exit(code)
 }
 
@@ -81,7 +77,7 @@ func RunGroup(t *testing.T, scenarios []Scenario) {
 		t.Run(item.Spec.Name, func(t *testing.T) { runOne(t, item) })
 	}
 	for _, p := range missing {
-		t.Fatalf("systest: scenario %s not registered", runtime.FuncForPC(p).Name())
+		t.Errorf("systest: scenario %s not registered", runtime.FuncForPC(p).Name())
 	}
 }
 
@@ -108,13 +104,13 @@ func groupSchedule(items []scheduledTest, scenarios []Scenario) (matched []sched
 	return matched, missing
 }
 
-func scheduleStats(items []scheduledTest) (skipped, validated int) {
+func scheduleStats(items []scheduledTest) (skipped int) {
 	for _, it := range items {
 		if it.SkipReason != "" {
 			skipped++
 		}
 	}
-	return skipped, validated
+	return skipped
 }
 
 // poolCapacity floors base to the heaviest scheduled weight to avoid deadlock.

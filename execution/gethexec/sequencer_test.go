@@ -6,58 +6,60 @@ package gethexec
 import (
 	"context"
 	"errors"
+	"math"
+	"math/big"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
-func TestSequencerConfigValidatePGA(t *testing.T) {
+func TestSequencerConfigValidate(t *testing.T) {
 	tests := []struct {
 		name    string
 		modify  func(*SequencerConfig)
 		wantErr bool
 	}{
 		{"default config", func(c *SequencerConfig) {}, false},
-		{"pga enabled", func(c *SequencerConfig) {
-			c.ExperimentalPGA.Enable = true
+		{"forced fifo", func(c *SequencerConfig) {
+			c.PGA.DangerousForceFIFO = true
 		}, false},
 		{"timeboost enabled", func(c *SequencerConfig) {
 			c.Timeboost.Enable = true
 		}, false},
-		{"pga and timeboost enabled", func(c *SequencerConfig) {
-			c.ExperimentalPGA.Enable = true
+		{"forced fifo and timeboost enabled", func(c *SequencerConfig) {
+			c.PGA.DangerousForceFIFO = true
 			c.Timeboost.Enable = true
-		}, true},
+		}, false},
 		{"zero value pga config", func(c *SequencerConfig) {
-			c.ExperimentalPGA = PGAConfig{}
+			c.PGA = PGAConfig{}
 		}, true},
-		{"pga enabled with zero rounds per block", func(c *SequencerConfig) {
-			c.ExperimentalPGA.Enable = true
-			c.ExperimentalPGA.RoundsPerBlock = 0
+		{"zero rounds per block", func(c *SequencerConfig) {
+			c.PGA.RoundsPerBlock = 0
 		}, true},
-		{"pga enabled with one round per block", func(c *SequencerConfig) {
-			c.ExperimentalPGA.Enable = true
-			c.ExperimentalPGA.RoundsPerBlock = 1
+		{"one round per block", func(c *SequencerConfig) {
+			c.PGA.RoundsPerBlock = 1
 		}, false},
-		{"round length below minimum", func(c *SequencerConfig) {
-			c.ExperimentalPGA.Enable = true
+		{"many rounds per block", func(c *SequencerConfig) {
+			c.Enable = true
 			c.MaxBlockSpeed = 250 * time.Millisecond
-			c.ExperimentalPGA.RoundsPerBlock = 6
-		}, true},
-		{"round length at minimum", func(c *SequencerConfig) {
-			c.ExperimentalPGA.Enable = true
-			c.MaxBlockSpeed = 250 * time.Millisecond
-			c.ExperimentalPGA.RoundsPerBlock = 5
+			c.PGA.RoundsPerBlock = 6
 		}, false},
-		{"fast blocks with pga disabled", func(c *SequencerConfig) {
+		{"round length below 5ms", func(c *SequencerConfig) {
 			c.MaxBlockSpeed = 10 * time.Millisecond
-			c.ExperimentalPGA.RoundsPerBlock = 1
-		}, false},
+			c.PGA.RoundsPerBlock = 6
+		}, true},
+		{"zero max block tx candidates", func(c *SequencerConfig) {
+			c.MaxBlockTxCandidates = 0
+		}, true},
+		{"negative max block tx candidates", func(c *SequencerConfig) {
+			c.MaxBlockTxCandidates = -1
+		}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -75,10 +77,7 @@ func TestSequencerConfigValidatePGA(t *testing.T) {
 }
 
 func TestPGARoundLength(t *testing.T) {
-	c := DefaultSequencerConfig
-	c.MaxBlockSpeed = 250 * time.Millisecond
-	c.ExperimentalPGA.RoundsPerBlock = 2
-	if got := c.PGARoundLength(); got != 125*time.Millisecond {
+	if got := pgaRoundLength(250*time.Millisecond, 2); got != 125*time.Millisecond {
 		t.Errorf("expected round length 125ms, got %v", got)
 	}
 }
@@ -271,7 +270,7 @@ func TestCheckHealthChosenSequencerDeadline(t *testing.T) {
 // A block-creation turn that exits after the orderer is armed must leave the never-attempted
 // txs in txRetryQueue via the deferred sweep, not fail them back to their submitters.
 func TestCreateBlockRequeuesNeverAttemptedTxs(t *testing.T) {
-	engine := &ExecutionEngine{}
+	engine := newTestRecorderEngine(t, 0) // genesis-only chain so the pre-StartBlock state fetch succeeds
 	configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
 	// A non-nil l1Reader with no known L1 block forces the early exit after StartBlock.
 	seq, err := NewSequencer(engine, &headerreader.HeaderReader{}, configFetcher, nil, nil, nil)
@@ -280,9 +279,19 @@ func TestCreateBlockRequeuesNeverAttemptedTxs(t *testing.T) {
 	}
 
 	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
-	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}})
+	ordererConfig := txOrdererConfig{
+		latestHeader:         engine.bc.CurrentBlock(),
+		baseFee:              big.NewInt(testBaseFee),
+		maxBlockTxCandidates: math.MaxInt,
+		maxBlockSpeed:        DefaultSequencerConfig.MaxBlockSpeed,
+	}
+	orderer := newFIFOTxOrderer(newStubOrdererSequencer(item), ordererConfig, DefaultSequencerConfig.PollInterval)
 
-	sequencedMsg, _ := seq.createBlockWithTxOrderer(context.Background(), orderer)
+	statedb, err := engine.bc.StateAt(ordererConfig.latestHeader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sequencedMsg, _ := seq.createBlockWithTxOrderer(context.Background(), orderer, statedb)
 
 	if sequencedMsg != nil {
 		t.Fatal("expected no block to be sequenced")
@@ -297,10 +306,19 @@ func TestCreateBlockRequeuesNeverAttemptedTxs(t *testing.T) {
 	}
 }
 
+// panicAfterArmOrderer arms the block's candidates normally, then panics: it stands in for a
+// panic anywhere in block creation while the orderer still holds txs.
+type panicAfterArmOrderer struct{ *fifoTxOrderer }
+
+func (p panicAfterArmOrderer) StartBlock(statedb *state.StateDB) bool {
+	p.fifoTxOrderer.StartBlock(statedb)
+	panic("test-injected block creation panic")
+}
+
 // A panic during block creation must fail the orderer's remaining txs with an internal error
 // rather than requeue them: a requeue could resurrect a tx that panics the sequencer in a loop.
 func TestCreateBlockPanicFailsTxsInsteadOfRequeueing(t *testing.T) {
-	engine := &ExecutionEngine{} // nil blockchain: SequenceTransactions panics
+	engine := newTestRecorderEngine(t, 0)
 	configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
 	seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
 	if err != nil {
@@ -308,9 +326,19 @@ func TestCreateBlockPanicFailsTxsInsteadOfRequeueing(t *testing.T) {
 	}
 
 	item, resultChan := makeTestQueueItem(t, 0, testBaseFee)
-	orderer := newFIFOTxOrderer(&stubOrdererSequencer{items: []txQueueItem{item}})
+	ordererConfig := txOrdererConfig{
+		latestHeader:         engine.bc.CurrentBlock(),
+		baseFee:              big.NewInt(testBaseFee),
+		maxBlockTxCandidates: math.MaxInt,
+		maxBlockSpeed:        DefaultSequencerConfig.MaxBlockSpeed,
+	}
+	orderer := newFIFOTxOrderer(newStubOrdererSequencer(item), ordererConfig, DefaultSequencerConfig.PollInterval)
 
-	sequencedMsg, throttle := seq.createBlockWithTxOrderer(context.Background(), orderer)
+	statedb, err := engine.bc.StateAt(ordererConfig.latestHeader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sequencedMsg, throttle := seq.createBlockWithTxOrderer(context.Background(), panicAfterArmOrderer{orderer}, statedb)
 
 	if sequencedMsg != nil {
 		t.Fatal("expected no block to be sequenced")

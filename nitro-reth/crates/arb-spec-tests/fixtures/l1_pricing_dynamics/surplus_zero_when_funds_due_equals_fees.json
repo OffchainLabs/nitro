@@ -1,0 +1,20 @@
+{
+  "name": "surplus_zero_when_funds_due_equals_fees",
+  "description": "Funds due exactly equal to fees available yields zero surplus",
+  "setup": {"arbos_version": 30, "chain_id": 412346},
+  "actions": [
+    {"type": "l1_pricing_add_to_fees_available", "amount": "0x3e8"},
+    {
+      "type": "l1_pricing_set_poster_funds_due",
+      "poster": "0xa4b0000000000000000000000000000073657175",
+      "amount": "0x3e8"
+    }
+  ],
+  "assertions": {
+    "l1_pricing": {
+      "l1_fees_available": "0x3e8",
+      "total_funds_due": "0x3e8",
+      "surplus_is_zero": true
+    }
+  }
+}

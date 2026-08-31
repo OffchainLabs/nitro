@@ -21,6 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/execution"
@@ -122,9 +123,9 @@ func NewTransactionStreamerForTest(t *testing.T, ctx context.Context, ownerAddre
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &DefaultTransactionStreamerConfig }
 	execEngine := gethexec.NewExecutionEngine(bc, 0, false, false, nil, nil, time.Second)
-	stylusTargetConfig := &gethexec.DefaultStylusTargetConfig
+	stylusTargetConfig := &programs.DefaultStylusTargetConfig
 	Require(t, stylusTargetConfig.Validate()) // pre-processes config (i.a. parses wasmTargets)
-	if err := execEngine.Initialize(gethexec.DefaultCachingConfig.StylusLRUCacheCapacity, &gethexec.DefaultStylusTargetConfig); err != nil {
+	if err := execEngine.Initialize(gethexec.DefaultCachingConfig.StylusLRUCacheCapacity, &programs.DefaultStylusTargetConfig); err != nil {
 		Fail(t, err)
 	}
 	execClient := &execClientWrapper{execEngine, t}
@@ -296,7 +297,7 @@ func TestTransactionStreamer(t *testing.T) {
 				Fail(t, "missing state block", state.blockNumber)
 			}
 			for acct, balance := range state.balances {
-				state, err := bc.StateAt(block.Root())
+				state, err := bc.StateAt(block.Header())
 				if err != nil {
 					Fail(t, "error getting block state", err)
 				}

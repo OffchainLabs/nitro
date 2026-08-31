@@ -4,7 +4,9 @@
 use std::{
     collections::BTreeMap,
     fmt::Debug,
+    num::NonZeroUsize,
     ops::{Deref, DerefMut},
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use arbutil::{
@@ -30,8 +32,10 @@ use prover::{
 };
 use wasmer::{
     AsStoreMut, Function, FunctionEnv, Instance, Memory, Module, Pages, Store, TypedFunction,
-    Value, WasmTypeList, imports, sys::Target,
+    Value, WasmTypeList, imports,
+    sys::{NativeEngineExt as _, Target},
 };
+use wasmer_types::{CompilationProgressCallback, UserAbort};
 use wasmer_vm::VMExtern;
 
 use crate::{
@@ -40,6 +44,8 @@ use crate::{
     host,
     target_cache::target_native,
 };
+
+const SINGLEPASS_OUTPUT_REPORT_CHUNK_SIZE: usize = 1024;
 
 #[derive(Debug)]
 pub struct NativeInstance<D: DataReader, E: EvmApi<D>> {
@@ -365,6 +371,26 @@ impl<D: DataReader, E: EvmApi<D>> StartlessMachine for NativeInstance<D, E> {
     }
 }
 
+fn singlepass_output_budget(limit: usize) -> CompilationProgressCallback {
+    let remaining = AtomicUsize::new(limit);
+    CompilationProgressCallback::new(|_| Ok(())).with_reserve_size_callback(
+        move |amount| {
+            remaining
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+                    remaining.checked_sub(amount)
+                })
+                .map_err(|_| {
+                    UserAbort::new(format!(
+                        "singlepass compiler output exceeds limit of {limit} bytes"
+                    ))
+                })?;
+            Ok(())
+        },
+        NonZeroUsize::new(SINGLEPASS_OUTPUT_REPORT_CHUNK_SIZE)
+            .expect("the Singlepass output reporting chunk must be non-zero"),
+    )
+}
+
 pub fn module(
     wasm: &[u8],
     compile: CompileConfig,
@@ -372,7 +398,13 @@ pub fn module(
     cranelift: bool,
 ) -> Result<Vec<u8>> {
     let mut store = compile.store(target, cranelift);
-    let module = Module::new(&store, wasm)?;
+    let module = if !cranelift && let Some(limit) = compile.max_singlepass_output_size() {
+        store
+            .engine()
+            .new_module_with_progress(wasm, singlepass_output_budget(limit))?
+    } else {
+        Module::new(&store, wasm)?
+    };
     macro_rules! stub {
         (u8 <- $($types:tt)+) => {
             Function::new_typed(&mut store, $($types)+ -> u8 { panic!("incomplete import") })
@@ -458,6 +490,7 @@ pub fn module(
     Ok(module.to_vec())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn activate(
     wasm: &[u8],
     codehash: &Bytes32,
@@ -466,6 +499,7 @@ pub fn activate(
     page_limit: u16,
     debug: bool,
     gas: &mut u64,
+    op_limit: u32,
 ) -> Result<(ProverModule, StylusData)> {
     let (module, stylus_data) = ProverModule::activate(
         wasm,
@@ -475,6 +509,7 @@ pub fn activate(
         page_limit,
         debug,
         gas,
+        op_limit.try_into()?,
     )?;
 
     Ok((module, stylus_data))
@@ -486,7 +521,9 @@ pub fn compile(
     debug: bool,
     target: Target,
     cranelift: bool,
+    max_singlepass_output_size: Option<usize>,
 ) -> Result<Vec<u8>> {
-    let compile = CompileConfig::version(version, debug);
+    let compile = CompileConfig::version(version, debug)
+        .with_max_singlepass_output_size(max_singlepass_output_size);
     self::module(wasm, compile, target, cranelift)
 }

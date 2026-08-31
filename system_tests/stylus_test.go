@@ -11,60 +11,64 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 )
 
+func withProgramArbitratorRecorder(builder *NodeBuilder) {
+	builder.WithLegacyBlockRecorder()
+}
+
 func TestProgramArbitratorKeccak(t *testing.T) {
-	keccakTest(t, false)
+	keccakTest(t, false, withProgramArbitratorRecorder)
 }
 
 func TestProgramArbitratorErrors(t *testing.T) {
-	errorTest(t, false)
+	errorTest(t, false, withProgramArbitratorRecorder)
 }
 
 func TestProgramArbitratorStorage(t *testing.T) {
-	storageTest(t, false)
+	storageTest(t, false, withProgramArbitratorRecorder)
 }
 
 func TestProgramArbitratorTransientStorage(t *testing.T) {
-	transientStorageTest(t, false)
+	transientStorageTest(t, false, withProgramArbitratorRecorder)
 }
 
 func TestProgramArbitratorMath(t *testing.T) {
-	fastMathTest(t, false)
+	fastMathTest(t, false, withProgramArbitratorRecorder)
 }
 
 func TestProgramArbitratorCalls(t *testing.T) {
-	testCalls(t, false)
+	testCalls(t, false, withProgramArbitratorRecorder)
 }
 
 func TestProgramArbitratorReturnData(t *testing.T) {
-	testReturnData(t, false)
+	testReturnData(t, false, withProgramArbitratorRecorder)
 }
 
 func TestProgramArbitratorLogs(t *testing.T) {
-	testLogs(t, false, false)
+	testLogs(t, false, false, withProgramArbitratorRecorder)
 }
 
 func TestProgramArbitratorCreate(t *testing.T) {
-	testCreate(t, false)
+	testCreate(t, false, withProgramArbitratorRecorder)
 }
 
 func TestProgramArbitratorEvmData(t *testing.T) {
-	testEvmData(t, false)
+	testEvmData(t, false, withProgramArbitratorRecorder)
 }
 
 func TestProgramArbitratorMemory(t *testing.T) {
-	testMemory(t, false)
+	testMemory(t, false, withProgramArbitratorRecorder)
 }
 
 func TestProgramArbitratorActivateTwice(t *testing.T) {
-	testActivateTwice(t, false)
+	testActivateTwice(t, false, withProgramArbitratorRecorder)
 }
 
 func TestProgramArbitratorActivateFails(t *testing.T) {
-	testActivateFails(t, false)
+	testActivateFails(t, false, withProgramArbitratorRecorder)
 }
 
 func TestProgramArbitratorEarlyExit(t *testing.T) {
-	testEarlyExit(t, false)
+	testEarlyExit(t, false, withProgramArbitratorRecorder)
 }
 
 func fullRecurseTest() [][]multiCallRecurse {
@@ -107,9 +111,9 @@ func TestProgramLongArbitratorCall(t *testing.T) {
 }
 
 func TestProgramArbitratorStylusUpgrade(t *testing.T) {
-	testStylusUpgrade(t, false)
+	testStylusUpgrade(t, false, withProgramArbitratorRecorder)
 }
 
 func TestProgramArbitratorMemoryGrowMachineLimit(t *testing.T) {
-	testMemoryGrowMachineLimit(t, false)
+	testMemoryGrowMachineLimit(t, false, withProgramArbitratorRecorder)
 }

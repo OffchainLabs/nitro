@@ -79,7 +79,7 @@ type ValidationNode struct {
 	config     ValidationConfigFetcher
 	arbSpawner *server_arb.ArbitratorSpawner
 	jitSpawner *server_jit.JitSpawner
-	serverAPI  *ExecServerAPI
+	execServer *ExecServer
 
 	redisConsumer *redis.ValidationServer
 }
@@ -110,6 +110,7 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	if err != nil {
 		return nil, err
 	}
+	execServer := NewExecServer(arbSpawner, arbConfigFetcher)
 	var serverAPI *ExecServerAPI
 	var jitSpawner *server_jit.JitSpawner
 	if config.UseJit {
@@ -119,9 +120,9 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 		if err != nil {
 			return nil, err
 		}
-		serverAPI = NewExecutionServerAPI(jitSpawner, arbSpawner, arbConfigFetcher)
+		serverAPI = NewExecServerAPI(jitSpawner, execServer)
 	} else {
-		serverAPI = NewExecutionServerAPI(arbSpawner, arbSpawner, arbConfigFetcher)
+		serverAPI = NewExecServerAPI(arbSpawner, execServer)
 	}
 	var redisConsumer *redis.ValidationServer
 	redisValidationConfig := arbConfigFetcher().RedisValidationServerConfig
@@ -140,7 +141,7 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	}}
 	stack.RegisterAPIs(valAPIs)
 
-	return &ValidationNode{configFetcher, arbSpawner, jitSpawner, serverAPI, redisConsumer}, nil
+	return &ValidationNode{configFetcher, arbSpawner, jitSpawner, execServer, redisConsumer}, nil
 }
 
 func (v *ValidationNode) Start(ctx context.Context) error {
@@ -155,7 +156,7 @@ func (v *ValidationNode) Start(ctx context.Context) error {
 	if v.redisConsumer != nil {
 		v.redisConsumer.Start(ctx)
 	}
-	v.serverAPI.Start(ctx) // starting cleanup of stale execRuns
+	v.execServer.Start(ctx) // starting cleanup of stale execRuns
 	return nil
 }
 
@@ -167,7 +168,7 @@ func (v *ValidationNode) Stop() {
 	if v.jitSpawner != nil {
 		v.jitSpawner.Stop()
 	}
-	v.serverAPI.StopAndWait() // cleanup of all execRuns
+	v.execServer.StopAndWait() // cleanup of all execRuns
 }
 
 func (v *ValidationNode) GetExec() validator.ExecutionSpawner {

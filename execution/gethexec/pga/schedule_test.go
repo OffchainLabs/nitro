@@ -29,6 +29,31 @@ func TestScheduleInitialState(t *testing.T) {
 	})
 }
 
+func TestScheduleRoundIsOver(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := NewSchedule(2, testRoundLength)
+		if s.RoundIsOver() {
+			t.Error("round reported over at its start")
+		}
+		// RoundIsOver is a strict after: exactly at the deadline the round is still on.
+		time.Sleep(testRoundLength)
+		if s.RoundIsOver() {
+			t.Error("round reported over exactly at its deadline")
+		}
+		time.Sleep(time.Nanosecond)
+		if !s.RoundIsOver() {
+			t.Error("round not reported over past its deadline")
+		}
+		// Advancing to the next round renews the deadline.
+		if err := s.WaitAndAdvanceRound(context.Background()); err != nil {
+			t.Fatalf("WaitAndAdvanceRound returned %v, want nil", err)
+		}
+		if s.RoundIsOver() {
+			t.Error("new round reported over at its start")
+		}
+	})
+}
+
 func TestScheduleWaitAndAdvanceRoundWaitsForBoundary(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		start := time.Now()
@@ -150,7 +175,7 @@ func TestScheduleAdvancesThroughBlock(t *testing.T) {
 		const rounds = 3
 		blockStart := time.Now()
 		s := NewSchedule(rounds, testRoundLength)
-		for r := uint(1); r < rounds; r++ {
+		for r := uint64(1); r < rounds; r++ {
 			if s.IsLastRound() {
 				t.Fatalf("round %d should not be the last of %d", r, rounds)
 			}
@@ -177,4 +202,25 @@ func TestScheduleSingleRoundPerBlock(t *testing.T) {
 	if !s.IsLastRound() {
 		t.Error("round 1 of 1 should be the last round")
 	}
+}
+
+func TestScheduleElapsedInterval(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := NewSchedule(3, testRoundLength)
+		if got := s.ElapsedInterval(); got != testRoundLength {
+			t.Errorf("round 1 ElapsedInterval = %v, want %v", got, testRoundLength)
+		}
+		if err := s.WaitAndAdvanceRound(context.Background()); err != nil {
+			t.Fatalf("WaitAndAdvanceRound returned %v, want nil", err)
+		}
+		if got := s.ElapsedInterval(); got != 2*testRoundLength {
+			t.Errorf("round 2 ElapsedInterval = %v, want %v", got, 2*testRoundLength)
+		}
+		if err := s.WaitAndAdvanceRound(context.Background()); err != nil {
+			t.Fatalf("WaitAndAdvanceRound returned %v, want nil", err)
+		}
+		if got := s.ElapsedInterval(); got != 3*testRoundLength {
+			t.Errorf("last round ElapsedInterval = %v, want the block time %v", got, 3*testRoundLength)
+		}
+	})
 }

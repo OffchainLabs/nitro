@@ -4,6 +4,7 @@ package arbtest
 
 import (
 	"context"
+	"math"
 	"math/big"
 	"testing"
 	"time"
@@ -69,7 +70,7 @@ func TestSequencerBlockFilterReject(t *testing.T) {
 func TestSequencerBlockFilterAccept(t *testing.T) {
 	builder, header, txes, hooks, cleanup := setupSequencerFilterTest(t, true)
 	defer cleanup()
-	_, _, err := hooks.NextTxToSequence() // remove first transaction from hooks
+	_, _, err := hooks.NextTxToSequence(nil, math.MaxUint64) // remove first transaction from hooks
 	Require(t, err)
 	hooks.TxSucceeded()
 	_, block, err := builder.L2.ExecNode.ExecEngine.SequenceTransactions(header, hooks)

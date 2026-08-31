@@ -340,7 +340,7 @@ func stateAndHeader(blockchain *core.BlockChain, block uint64) (*arbosState.Arbo
 	if !blockchain.Config().IsArbitrumNitro(header.Number) {
 		return nil, nil, types.ErrUseFallback
 	}
-	statedb, err := blockchain.StateAt(header.Root)
+	statedb, err := blockchain.StateAt(header)
 	if err != nil {
 		return nil, nil, err
 	}

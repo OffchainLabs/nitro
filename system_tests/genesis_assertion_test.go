@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -72,13 +71,12 @@ func TestValidateGenesisAssertion(t *gotesting.T) {
 		MinimumAssertionPeriod: 0,
 	}
 
-	_, l2nodeA, _, _, _, _, _, l1client, l1stack, _, _, _, l2blockchain, addresses := createCompleteTestNodeOnL1(
+	_, l2nodeA, _, _, _, _, l1client, _, _, _, l2blockchain, addresses := createCompleteTestNodeOnL1(
 		t,
 		ctx,
 		true,
 		nil,
 		l2chainConfig,
-		nil,
 		sconf,
 		l2info,
 		false,
@@ -88,7 +86,6 @@ func TestValidateGenesisAssertion(t *gotesting.T) {
 	if l2blockchain == nil || addresses == nil {
 		t.Fatal("Both l2blockchain and addresses have to be non nil")
 	}
-	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
 
 	// Chain assertion info contains a BeforeState and AfterState which are used to dictate if genesis
@@ -149,19 +146,19 @@ func createCompleteTestNodeOnL1(
 	isSequencer bool,
 	nodeConfig *arbnode.Config,
 	chainConfig *params.ChainConfig,
-	_ *node.Config,
 	rollupStackConf setup.RollupStackConfig,
 	l2infoIn info,
 	useExternalSigner bool,
 	enableCustomDA bool,
+	execConfigOpts ...func(*gethexec.Config),
 ) (
 	l2info info, currentNode *arbnode.Node, execNode *gethexec.ExecutionNode, l2client *ethclient.Client, l2stack *node.Node,
-	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
+	l1info info, l1client *ethclient.Client,
 	assertionChain *sol.AssertionChain, stakeTokenAddr common.Address, asserterOpts *bind.TransactOpts, l2blockchain *core.BlockChain, addresses *chaininfo.RollupAddresses,
 ) {
 	// First set up L1 and deploy contracts
 	var signerCfg *dataposterconfig.ExternalSignerConfig
-	l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr, asserterOpts, signerCfg = setupL1WithRollupAddresses(
+	l1info, l1client, addresses, stakeTokenAddr, asserterOpts, signerCfg = setupL1WithRollupAddresses(
 		t, ctx, rollupStackConf, useExternalSigner, nodeConfig, chainConfig, enableCustomDA,
 	)
 
@@ -169,7 +166,7 @@ func createCompleteTestNodeOnL1(
 	l2info, currentNode, execNode, l2client, l2stack, assertionChain, l2blockchain = createL2NodeWithRollupAddresses(
 		t, ctx, isSequencer, nodeConfig, chainConfig, l2infoIn,
 		l1info, l1client, addresses,
-		useExternalSigner, asserterOpts, signerCfg,
+		useExternalSigner, asserterOpts, signerCfg, execConfigOpts...,
 	)
 
 	return
@@ -184,8 +181,8 @@ func setupL1WithRollupAddresses(
 	chainConfig *params.ChainConfig,
 	enableCustomDA bool,
 ) (
-	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
-	addresses *chaininfo.RollupAddresses, stakeTokenAddr common.Address, asserterOpts *bind.TransactOpts,
+	l1info info, l1client *ethclient.Client, addresses *chaininfo.RollupAddresses,
+	stakeTokenAddr common.Address, asserterOpts *bind.TransactOpts,
 	signerCfg *dataposterconfig.ExternalSignerConfig,
 ) {
 	var srv *externalsignertest.SignerServer
@@ -207,8 +204,9 @@ func setupL1WithRollupAddresses(
 		chainConfig = chaininfo.ArbitrumDevTestChainConfig()
 	}
 	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
-	withoutClientWrapper := false
-	l1info, l1client, l1backend, l1stack, _, _ = createTestL1BlockChain(t, nil, withoutClientWrapper, testhelpers.CreateStackConfigForTest(""), nil)
+	// The external harness registers its process cleanup directly on the test.
+	extL1 := CreateExternalL1(t, ctx, ExternalL1Params{GethBinary: externalL1Binary(t)})
+	l1info, l1client = extL1.Info, extL1.Client
 
 	var err error
 	if useExternalSigner {
@@ -267,7 +265,7 @@ func setupL1WithRollupAddresses(
 	l1info.SetContract("Rollup", addresses.Rollup)
 	l1info.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
 
-	return l1info, l1backend, l1client, l1stack, addresses, stakeTokenAddr, asserterOpts, signerCfg
+	return l1info, l1client, addresses, stakeTokenAddr, asserterOpts, signerCfg
 }
 
 func createL2NodeWithRollupAddresses(
@@ -283,6 +281,7 @@ func createL2NodeWithRollupAddresses(
 	useExternalSigner bool,
 	asserterOpts *bind.TransactOpts,
 	signerCfg *dataposterconfig.ExternalSignerConfig,
+	execConfigOpts ...func(*gethexec.Config),
 ) (
 	l2info info, currentNode *arbnode.Node, execNode *gethexec.ExecutionNode, l2client *ethclient.Client, l2stack *node.Node,
 	assertionChain *sol.AssertionChain, l2blockchain *core.BlockChain,
@@ -293,6 +292,9 @@ func createL2NodeWithRollupAddresses(
 	fatalErrChan := make(chan error, 10)
 
 	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
+	for _, opt := range execConfigOpts {
+		opt(execConfig)
+	}
 
 	Require(t, execConfig.Validate())
 	stackConfig := testhelpers.CreateStackConfigForTest("")
@@ -302,7 +304,7 @@ func createL2NodeWithRollupAddresses(
 
 	var l2executionDB ethdb.Database
 	var l2consensusDB ethdb.Database
-	l2info, l2stack, l2executionDB, l2consensusDB, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2infoIn, "", chainConfig, nil, initMessage, stackConfig, execConfig, false)
+	l2info, l2stack, l2executionDB, l2consensusDB, l2blockchain = createNonL1BlockChainWithStackConfig(t, l2infoIn, "", chainConfig, nil, initMessage, stackConfig, execConfig, false, false)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -326,7 +328,7 @@ func createL2NodeWithRollupAddresses(
 	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &nodeConfig.ParentChainReader }, arbSys)
 	Require(t, err)
 	parentChain := parent.NewParentChain(ctx, parentChainId, l1Reader)
-	execNode, err = gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, containers.Some(l1client), NewCommonConfigFetcher(execConfig), 0, parentChain, fatalErrChan)
+	execNode, err = gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, NewCommonConfigFetcher(execConfig), gethexec.WithL1Client(containers.Some(l1client)), gethexec.WithParentChain(parentChain), gethexec.WithFatalErrChan(fatalErrChan))
 	Require(t, err)
 
 	locator, err := server_common.NewMachineLocator("")

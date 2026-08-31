@@ -16,14 +16,13 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	arbtest "github.com/offchainlabs/nitro/system_tests"
+	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
-// Test-facing chain helpers. All take an explicit *ethclient.Client and
-// *BlockchainTestInfo so tests can vary the underlying client (in-process,
-// HTTP, WS, secondary node) without rebinding to a default.
+// Internal tx-wait plumbing shared by the chain handles and node builders.
 
 // DefaultTxWaitTimeout is the default wait-for-receipt timeout.
 const DefaultTxWaitTimeout = 30 * time.Second
@@ -31,19 +30,8 @@ const DefaultTxWaitTimeout = 30 * time.Second
 // DefaultSetupTxTimeout is the wait-for-receipt timeout used during node setup.
 const DefaultSetupTxTimeout = 10 * time.Second
 
-// EnsureTxSucceededWithin polls until tx is mined and the receipt block is
-// reflected in the latest header, then runs the same success checks as v1's
-// EnsureTxSucceeded: a multi-gas consistency check and a revert-reason decode.
-// Fails the test on timeout or revert.
-func EnsureTxSucceededWithin(t testing.TB, ctx context.Context, client *ethclient.Client, tx *types.Transaction, timeout time.Duration) *types.Receipt {
-	t.Helper()
-	receipt, err := ensureTxSucceededWithin(ctx, client, tx, timeout)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return receipt
-}
-
+// ensureTxSucceededWithin polls until tx is mined, then runs v1's
+// EnsureTxSucceeded success checks.
 func ensureTxSucceededWithin(ctx context.Context, client *ethclient.Client, tx *types.Transaction, timeout time.Duration) (*types.Receipt, error) {
 	receipt, err := waitForTxWithTimeout(ctx, client, tx.Hash(), timeout)
 	if err != nil {
@@ -61,40 +49,29 @@ func ensureTxSucceededWithin(ctx context.Context, client *ethclient.Client, tx *
 	return receipt, nil
 }
 
-// EnsureTxFailed waits for tx to be mined and fails the test unless it reverted.
-func EnsureTxFailed(t testing.TB, ctx context.Context, client *ethclient.Client, tx *types.Transaction) *types.Receipt {
-	t.Helper()
-	receipt, err := waitForTxWithTimeout(ctx, client, tx.Hash(), DefaultTxWaitTimeout)
-	if err != nil {
-		t.Fatalf("wait tx %s: %v", tx.Hash(), err)
-	}
-	if receipt.Status != types.ReceiptStatusFailed {
-		t.Fatalf("transaction %s unexpectedly succeeded", tx.Hash())
-	}
-	return receipt
-}
-
-// TxReceiptWithin waits for tx's receipt with no success checks — caller
-// decides what to verify.
-func TxReceiptWithin(ctx context.Context, client *ethclient.Client, tx *types.Transaction, timeout time.Duration) (*types.Receipt, error) {
-	return waitForTxWithTimeout(ctx, client, tx.Hash(), timeout)
-}
-
-// AdvanceBlocks emits n no-op self-transfers from the Owner account through
-// client, waiting each to mine. Use to move the chain head forward.
-func AdvanceBlocks(t testing.TB, ctx context.Context, client *ethclient.Client, info *arbtest.BlockchainTestInfo, n int) {
-	t.Helper()
-	for range n {
-		tx := info.PrepareTx("Owner", "Owner", info.TransferGas, big.NewInt(0), nil)
-		if err := client.SendTransaction(ctx, tx); err != nil {
-			t.Fatalf("AdvanceBlocks send: %v", err)
-		}
-		EnsureTxSucceededWithin(t, ctx, client, tx, DefaultTxWaitTimeout)
-	}
-}
-
 func isTxIndexing(err error) bool {
 	return err != nil && strings.Contains(strings.ToLower(err.Error()), "indexing is in progress")
+}
+
+// waitForSafeBlock blocks until the chain's safe block reaches target, the
+// timeout elapses, or ctx is cancelled.
+func waitForSafeBlock(ctx context.Context, client *ethclient.Client, target *big.Int, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	for {
+		safe, err := client.HeaderByNumber(ctx, big.NewInt(int64(rpc.SafeBlockNumber)))
+		if err != nil {
+			return err
+		}
+		if safe.Number.Cmp(target) >= 0 {
+			return nil
+		}
+		select {
+		case <-time.After(headerreader.TestConfig.Dangerous.WaitForTxApprovalSafePoll):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
 func dialOptional(t testing.TB, url string) *ethclient.Client {

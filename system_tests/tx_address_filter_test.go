@@ -7,10 +7,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -28,14 +32,29 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
+	filteringreportapi "github.com/offchainlabs/nitro/cmd/filtering-report/api"
+	"github.com/offchainlabs/nitro/cmd/filtering-report/signer/signertest"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
 	"github.com/offchainlabs/nitro/solgen/go/localgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/s3client"
 	"github.com/offchainlabs/nitro/util/s3syncer"
+	"github.com/offchainlabs/nitro/util/sqsclient"
 )
+
+func storeFilterHashes(t *testing.T, store *addressfilter.HashStore, id uuid.UUID, salt uuid.UUID, scheme addressfilter.HashingScheme, hashes []common.Hash, digest string) {
+	t.Helper()
+	require.NoError(t, store.Store(digest, len(hashes), func(addHash func(common.Hash)) (*addressfilter.ListMeta, error) {
+		for _, h := range hashes {
+			addHash(h)
+		}
+		return &addressfilter.ListMeta{ID: id, Salt: salt, Scheme: scheme}, nil
+	}))
+}
 
 func isFilteredError(err error) bool {
 	if err == nil {
@@ -1304,12 +1323,15 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 
 	// Create a filter service with valid config but without loaded rules
 	filterCfg := &addressfilter.Config{
-		S3: s3syncer.Config{
-			Config:    s3client.Config{Region: "us-east-1"},
-			Bucket:    "test-bucket",
-			ObjectKey: "test-key",
-		},
-		PollInterval:              5 * time.Minute,
+		Files: []addressfilter.FileConfig{{
+			Config: s3syncer.Config{
+				Config:      s3client.Config{Region: "us-east-1"},
+				Bucket:      "test-bucket",
+				ObjectKey:   "test-key",
+				DownloadDir: t.TempDir(),
+			},
+			PollInterval: 5 * time.Minute,
+		}},
 		CacheSize:                 100,
 		AddressCheckerWorkerCount: 1,
 		AddressCheckerQueueSize:   10,
@@ -1328,7 +1350,7 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	}
 
 	// Store hashes to the hashstore so FilteringReady returns true
-	filterService.GetHashStore().Store(uuid.New(), testFilterSalt, addressfilter.HashingSchemeStringInput, nil, "test-digest")
+	storeFilterHashes(t, filterService.GetHashStore(t, 0), uuid.New(), testFilterSalt, addressfilter.HashingSchemeStringInput, nil, "test-digest")
 
 	if !execNode.Sequencer.FilteringReady() {
 		t.Fatal("FilteringReady should be true after filter rules are loaded")
@@ -1339,10 +1361,156 @@ func TestSyncBlockedUntilFilteringReady(t *testing.T) {
 	}
 }
 
-// Exercises an end-to-end filtering tx flow under the string-input hashing scheme:
-// the S3 address-filter pipeline serves a list of sha256-stringinput hashes and
-// the sequencer must still reject txs to/from a listed address.
-func TestAddressFilterDirectTransferStringInputScheme(t *testing.T) {
+func TestPeriodicFilterSetIDReporting(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	signingPair := signertest.NewSigningPair(t)
+
+	// Capture every POST sent to the "external provider".
+	reportCh := make(chan addressfilter.FilterSetIDsReport, 16)
+	externalEndpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+			http.Error(w, "bad method", http.StatusMethodNotAllowed)
+			return
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("expected Content-Type application/json, got %s", ct)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+			http.Error(w, "read failed", http.StatusInternalServerError)
+			return
+		}
+		if err := signingPair.Verifier.VerifyHTTPRequest(r, body); err != nil {
+			t.Errorf("verifier rejected filter-set ids report: %v", err)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		var report addressfilter.FilterSetIDsReport
+		if err := json.Unmarshal(body, &report); err != nil {
+			t.Errorf("unmarshal body: %v", err)
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		select {
+		case reportCh <- report:
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer externalEndpoint.Close()
+
+	// Stand up the filtering-report service pointing at the external endpoint.
+	filteringReportStack := filteringreportapi.NewTestStack(t, &sqsclient.MockQueueClient{}, &genericconf.HTTPClientConfig{
+		URL:     externalEndpoint.URL,
+		Timeout: 5 * time.Second,
+	}, signingPair.Signer)
+
+	// Build an active sequencer node wired to the filtering-report service.
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
+	builder.execConfig.Sequencer.FilterSetReportingInterval = 200 * time.Millisecond
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	// Inject an enabled filter service (without S3) with two files and a
+	// static list, so the report must carry every list's id, and wire it into
+	// the sequencer via the test-only setter. Using a direct hash store
+	// Store() lets us control the file ids deterministically.
+	staticID := uuid.New()
+	fileConfig := func(objectKey string) addressfilter.FileConfig {
+		return addressfilter.FileConfig{
+			Config: s3syncer.Config{
+				Config:      s3client.Config{Region: "us-east-1"},
+				Bucket:      "test-bucket",
+				ObjectKey:   objectKey,
+				DownloadDir: t.TempDir(),
+			},
+			PollInterval: 5 * time.Minute,
+		}
+	}
+	filterCfg := &addressfilter.Config{
+		Files:                     []addressfilter.FileConfig{fileConfig("test-key-0"), fileConfig("test-key-1")},
+		StaticList:                `{"id":"` + staticID.String() + `","hashing_scheme":"plaintext","hashes":[]}`,
+		CacheSize:                 100,
+		AddressCheckerWorkerCount: 1,
+		AddressCheckerQueueSize:   10,
+	}
+	filterService, err := addressfilter.NewFilterService(filterCfg)
+	require.NoError(t, err)
+	builder.L2.ExecNode.Sequencer.SetAddressFilterServiceForTest(t, filterService)
+
+	salt, err := uuid.Parse("3ccf0cbf-b23f-47ba-9c2f-4e7bd672b4c7")
+	require.NoError(t, err)
+
+	idFile0 := uuid.New()
+	idFile1 := uuid.New()
+	storeFilterHashes(t, filterService.GetHashStore(t, 0), idFile0, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-0")
+	storeFilterHashes(t, filterService.GetHashStore(t, 1), idFile1, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-1")
+
+	expectedChainID := builder.L2.ExecNode.ExecEngine.ChainID().Uint64()
+	waitForReport := func(wantIDs []uuid.UUID) addressfilter.FilterSetIDsReport {
+		t.Helper()
+		deadline := time.After(10 * time.Second)
+		for {
+			select {
+			case got := <-reportCh:
+				if slices.Equal(got.FilterSetIDs, wantIDs) {
+					return got
+				}
+				// Drop stale reports (e.g. from the previous ids during rotation).
+			case <-deadline:
+				t.Fatalf("timed out waiting for report with filter-set ids %s", wantIDs)
+			}
+		}
+	}
+
+	first := waitForReport([]uuid.UUID{idFile0, idFile1, staticID})
+	require.Equal(t, expectedChainID, first.ChainID, "chain id mismatch")
+	require.False(t, first.ReportedAt.IsZero(), "reported-at should be set")
+
+	// Rotate the first file's filter set; the next reporting tick must pick
+	// up its new id while the other ids are unchanged.
+	idFile0Rotated := uuid.New()
+	storeFilterHashes(t, filterService.GetHashStore(t, 0), idFile0Rotated, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-0-rotated")
+
+	second := waitForReport([]uuid.UUID{idFile0Rotated, idFile1, staticID})
+	require.Equal(t, expectedChainID, second.ChainID, "chain id mismatch after rotation")
+	require.True(t, second.ReportedAt.After(first.ReportedAt) || second.ReportedAt.Equal(first.ReportedAt),
+		"second report's reported-at (%s) should be >= first (%s)", second.ReportedAt, first.ReportedAt)
+
+	// An inactive sequencer must not report. Pause, then wait out any tick that
+	// was already past the IsActive check before draining stale reports.
+	builder.L2.ExecNode.Sequencer.Pause()
+	time.Sleep(500 * time.Millisecond)
+	for drained := false; !drained; {
+		select {
+		case <-reportCh:
+		default:
+			drained = true
+		}
+	}
+
+	id3 := uuid.New()
+	storeFilterHashes(t, filterService.GetHashStore(t, 0), id3, salt, addressfilter.HashingSchemeRawBytesInput, nil, "test-digest-3")
+
+	select {
+	case got := <-reportCh:
+		t.Fatalf("paused sequencer sent filter-set ids report %s", got.FilterSetIDs)
+	case <-time.After(1 * time.Second):
+	}
+
+	// Reporting must resume once the sequencer becomes active again.
+	builder.L2.ExecNode.Sequencer.Activate()
+	third := waitForReport([]uuid.UUID{id3, idFile1, staticID})
+	require.Equal(t, expectedChainID, third.ChainID, "chain id mismatch after reactivation")
+}
+
+func testAddressFilterDirectTransferWithScheme(t *testing.T, scheme addressfilter.HashingScheme) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1350,7 +1518,7 @@ func TestAddressFilterDirectTransferStringInputScheme(t *testing.T) {
 	builder.isSequencer = true
 	filteringReportStack, endpoint := SetupFilteringReport(t)
 	builder.execConfig.TransactionFiltering.FilteringReportRPCClient.URL = filteringReportStack.HTTPEndpoint()
-	s3Filter := setupFakeS3AddressFilterWithScheme(t, builder, addressfilter.HashingSchemeStringInput)
+	s3Filter := setupFakeS3AddressFilterWithScheme(t, builder, scheme)
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -1365,7 +1533,7 @@ func TestAddressFilterDirectTransferStringInputScheme(t *testing.T) {
 	tx := builder.L2Info.PrepareTx("NormalUser", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	err := builder.L2.Client.SendTransaction(ctx, tx)
 	if err == nil {
-		t.Fatal("expected transaction to filtered address to be rejected under string-input scheme")
+		t.Fatalf("expected transaction to filtered address to be rejected under scheme %q", scheme)
 	}
 	if !isFilteredError(err) {
 		t.Fatalf("expected filtered error, got: %v", err)
@@ -1384,6 +1552,94 @@ func TestAddressFilterDirectTransferStringInputScheme(t *testing.T) {
 	Require(t, err)
 
 	endpoint.AssertNoReport(t, 500*time.Millisecond)
+}
+
+func TestAddressFilterDirectTransferStringInputScheme(t *testing.T) {
+	testAddressFilterDirectTransferWithScheme(t, addressfilter.HashingSchemeStringInput)
+}
+
+func TestAddressFilterDirectTransferPlaintextScheme(t *testing.T) {
+	testAddressFilterDirectTransferWithScheme(t, addressfilter.HashingSchemePlaintext)
+}
+
+func TestAddressFilterMultiFile(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+	s3Filter := setupFakeS3AddressFilterMultiFile(t, builder, 2)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GenerateAccount("FilteredUser1")
+	builder.L2Info.GenerateAccount("FilteredUser2")
+	builder.L2Info.GenerateAccount("NormalUser")
+	builder.L2Info.GenerateAccount("AnotherUser")
+	builder.L2.TransferBalance(t, "Owner", "NormalUser", big.NewInt(1e18), builder.L2Info)
+
+	s3Filter.setFilteredAddressesForFile(t, ctx, builder.L2.ExecNode, 0, []common.Address{builder.L2Info.GetAddress("FilteredUser1")})
+	s3Filter.setFilteredAddressesForFile(t, ctx, builder.L2.ExecNode, 1, []common.Address{builder.L2Info.GetAddress("FilteredUser2")})
+
+	// Tx to an address listed in the first file is rejected.
+	tx := builder.L2Info.PrepareTx("NormalUser", "FilteredUser1", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err := builder.L2.Client.SendTransaction(ctx, tx)
+	if err == nil || !isFilteredError(err) {
+		t.Fatalf("expected filtered error for address listed in first file, got: %v", err)
+	}
+
+	// Tx to an address listed only in the second file is rejected.
+	builder.L2Info.GetInfoWithPrivKey("NormalUser").Nonce.Store(0)
+	tx = builder.L2Info.PrepareTx("NormalUser", "FilteredUser2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
+	if err == nil || !isFilteredError(err) {
+		t.Fatalf("expected filtered error for address listed in second file, got: %v", err)
+	}
+
+	// Tx between unlisted addresses succeeds.
+	builder.L2Info.GetInfoWithPrivKey("NormalUser").Nonce.Store(0)
+	tx = builder.L2Info.PrepareTx("NormalUser", "AnotherUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	Require(t, builder.L2.Client.SendTransaction(ctx, tx))
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+}
+
+func TestAddressFilterStaticList(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.isSequencer = true
+
+	// The static list is fixed at startup, so the filtered address must be
+	// known before the node is built.
+	builder.L2Info.GenerateAccount("FilteredUser")
+	builder.L2Info.GenerateAccount("NormalUser")
+	filteredAddr := builder.L2Info.GetAddress("FilteredUser")
+
+	filteringConfig := &builder.execConfig.TransactionFiltering
+	filteringConfig.Enable = true
+	filteringConfig.TransactionFiltererRPCClient.URL = gethexec.TransactionFiltererURLNone
+	filteringConfig.AddressFilter.StaticList = string(hashListJSON(t, addressfilter.HashingSchemeRawBytesInput, []common.Address{filteredAddr}))
+
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2.TransferBalance(t, "Owner", "NormalUser", big.NewInt(1e18), builder.L2Info)
+
+	tx := builder.L2Info.PrepareTx("NormalUser", "FilteredUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err := builder.L2.Client.SendTransaction(ctx, tx)
+	if err == nil || !isFilteredError(err) {
+		t.Fatalf("expected filtered error for address in the static list, got: %v", err)
+	}
+
+	// Tx between unlisted addresses succeeds.
+	builder.L2Info.GetInfoWithPrivKey("NormalUser").Nonce.Store(0)
+	builder.L2Info.GenerateAccount("AnotherUser")
+	tx = builder.L2Info.PrepareTx("NormalUser", "AnotherUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	Require(t, builder.L2.Client.SendTransaction(ctx, tx))
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
 }
 
 func TestGenerateAddressHashesFixtureScript(t *testing.T) {
@@ -1406,6 +1662,7 @@ func TestGenerateAddressHashesFixtureScript(t *testing.T) {
 	for _, scheme := range []addressfilter.HashingScheme{
 		addressfilter.HashingSchemeStringInput,
 		addressfilter.HashingSchemeRawBytesInput,
+		addressfilter.HashingSchemePlaintext,
 	} {
 		t.Run(string(scheme), func(t *testing.T) {
 			out := filepath.Join(t.TempDir(), "list.json")
@@ -1441,9 +1698,12 @@ func TestGenerateAddressHashesFixtureScript(t *testing.T) {
 			prefix := addressfilter.GetHashStringInputPrefix(salt)
 			for _, a := range addrs {
 				var want common.Hash
-				if scheme == addressfilter.HashingSchemeRawBytesInput {
+				switch scheme {
+				case addressfilter.HashingSchemeRawBytesInput:
 					want = addressfilter.HashRawBytesInput(salt, a)
-				} else {
+				case addressfilter.HashingSchemePlaintext:
+					want = common.BytesToHash(a.Bytes())
+				default:
 					want = addressfilter.HashStringInputWithPrefix(prefix, a)
 				}
 				if _, ok := set[want]; !ok {
@@ -1453,7 +1713,7 @@ func TestGenerateAddressHashesFixtureScript(t *testing.T) {
 
 			// The generated file loads and filters via the production HashStore.
 			store := addressfilter.NewHashStore(100)
-			store.Store(uuid.New(), salt, scheme, hashes, "test")
+			storeFilterHashes(t, store, uuid.New(), salt, scheme, hashes, "test")
 			for _, a := range addrs {
 				if restricted, _ := store.IsRestricted(a); !restricted {
 					t.Fatalf("addr %s should be restricted under %s", a.Hex(), scheme)

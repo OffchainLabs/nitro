@@ -35,7 +35,6 @@ pub mod run;
 mod cache;
 mod evm_api;
 mod target_cache;
-mod util;
 
 #[cfg(test)]
 mod test;
@@ -119,6 +118,7 @@ pub unsafe extern "C" fn stylus_activate(
     module_hash: *mut Bytes32,
     stylus_data: *mut StylusData,
     gas: *mut u64,
+    op_limit: u32,
 ) -> UserOutcomeKind {
     unsafe {
         let wasm = wasm.slice();
@@ -135,6 +135,7 @@ pub unsafe extern "C" fn stylus_activate(
             page_limit,
             debug,
             gas,
+            op_limit,
         ) {
             Ok(val) => val,
             Err(err) => return write_err(output, err),
@@ -166,6 +167,7 @@ pub unsafe extern "C" fn stylus_compile(
     debug: bool,
     target: GoSliceData,
     cranelift: bool,
+    max_singlepass_output_size: u64,
     output: *mut RustBytes,
 ) -> UserOutcomeKind {
     unsafe {
@@ -180,7 +182,29 @@ pub unsafe extern "C" fn stylus_compile(
             Err(err) => return write_err(output, err),
         };
 
-        let asm = match native::compile(wasm, version, debug, target, cranelift) {
+        let max_singlepass_output_size = match max_singlepass_output_size {
+            0 => None,
+            limit => match usize::try_from(limit) {
+                Ok(limit) => Some(limit),
+                Err(_) => {
+                    return write_err(
+                        output,
+                        eyre::eyre!(
+                            "Singlepass output size limit {limit} does not fit this host's usize"
+                        ),
+                    );
+                }
+            },
+        };
+
+        let asm = match native::compile(
+            wasm,
+            version,
+            debug,
+            target,
+            cranelift,
+            max_singlepass_output_size,
+        ) {
             Ok(val) => val,
             Err(err) => return write_err(output, err),
         };
@@ -257,6 +281,14 @@ pub extern "C" fn stylus_get_native_stack_size() -> u64 {
     wasmer_vm::get_stack_size() as u64
 }
 
+/// Returns wasmer's MetadataHeader::CURRENT_VERSION, the source-of-truth version stamped into
+/// serialized Stylus modules. Go mirrors it in cmd/nitro/init to purge stale cached modules;
+/// exported so a test can catch the two drifting apart.
+#[unsafe(no_mangle)]
+pub extern "C" fn stylus_wasmer_serialize_version() -> u32 {
+    wasmer_types::MetadataHeader::CURRENT_VERSION
+}
+
 /// On-disk WAVM module wire format version. `reconcileWavmSerializeVersion`
 /// in `cmd/nitro/init` reads this and bails on mismatch with the Go-side
 /// `WavmSerializeVersion`, so a one-sided bump fails fast.
@@ -268,8 +300,8 @@ pub extern "C" fn stylus_wavm_format_version() -> u32 {
 /// Calls an activated user program.
 ///
 /// Returns `UserOutcomeKind::NativeStackOverflow` if the Wasmer coroutine
-/// stack overflows. The Go caller is responsible for retry logic (cranelift
-/// recompilation, stack doubling, etc.).
+/// stack overflows, or `UserOutcomeKind::SystemError` if initialization fails.
+/// The Go caller handles recovery.
 ///
 /// # Safety
 ///
@@ -290,7 +322,7 @@ pub unsafe extern "C" fn stylus_call(
     unsafe {
         let module = module.slice();
         let calldata = calldata.slice().to_vec();
-        let evm_api = EvmApiRequestor::new(req_handler);
+        let evm_api = EvmApiRequestor::new(req_handler, evm_data.storage_cache_limit);
         let pricing = config.pricing;
         let output = &mut *output;
         let ink = pricing.gas_to_ink(Gas(*gas));
@@ -306,7 +338,12 @@ pub unsafe extern "C" fn stylus_call(
         );
         let mut instance = match instance {
             Ok(instance) => instance,
-            Err(error) => util::panic_with_wasm(module, error.wrap_err("init failed")),
+            Err(error) => {
+                return write_outcome(
+                    output,
+                    UserOutcome::SystemError(error.wrap_err("init failed")),
+                );
+            }
         };
 
         let outcome = instance.run_main(&calldata, config, ink);
@@ -369,6 +406,21 @@ pub extern "C" fn stylus_evict_module(
     debug: bool,
 ) {
     InitCache::evict(module_hash, version, arbos_tag, debug);
+}
+
+/// Replaces an activated user program in the init cache.
+///
+/// # Safety
+///
+/// `module` must represent a valid serialized native module.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stylus_replace_module(
+    module: GoSliceData,
+    module_hash: Bytes32,
+    version: u16,
+    debug: bool,
+) {
+    InitCache::replace(module_hash, module.slice(), version, debug);
 }
 
 /// Reorgs the init cache. This will likely never happen.

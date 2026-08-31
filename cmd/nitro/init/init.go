@@ -38,6 +38,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/programs"
@@ -61,8 +62,8 @@ import (
 
 var errNotFound = errors.New("file not found")
 
-// taken from wasmer's lib/types/src/serialize.rs: MetadataHeader::CURRENT_VERSION
-const WasmerSerializeVersion = 16
+// mirrors wasmer's MetadataHeader::CURRENT_VERSION (lib/types/src/serialize.rs)
+const WasmerSerializeVersion = 17
 const InitialWasmerSerializeVersion = 8
 
 // Version of the WAVM module wire format used for activated Stylus programs under
@@ -321,7 +322,7 @@ func joinArchive(parts []string, archivePath string) (string, error) {
 }
 
 // setLatestSnapshotUrl sets the Url in initConfig to the latest one available on the mirror.
-func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chain string) error {
+func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chain string, stateScheme string) error {
 	if initConfig.Latest == "" {
 		return nil
 	}
@@ -332,7 +333,11 @@ func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chai
 	if err != nil {
 		return fmt.Errorf("failed to parse latest mirror \"%s\": %w", initConfig.LatestBase, err)
 	}
-	latestFileUrl := baseUrl.JoinPath(chain, "latest-"+initConfig.Latest+".txt").String()
+	snapshotKind, err := latestSnapshotKind(initConfig.Latest, stateScheme)
+	if err != nil {
+		return err
+	}
+	latestFileUrl := baseUrl.JoinPath(chain, "latest-"+snapshotKind+".txt").String()
 	latestFileUrl = strings.ToLower(latestFileUrl)
 	latestFileBytes, err := httpGet(ctx, latestFileUrl)
 	if err != nil {
@@ -347,6 +352,31 @@ func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chai
 	}
 	initConfig.Url = strings.ToLower(initConfig.Url)
 	log.Info("Set latest snapshot url", "url", initConfig.Url)
+	return nil
+}
+
+func latestSnapshotKind(snapshotKind string, stateScheme string) (string, error) {
+	if stateScheme != rawdb.PathScheme {
+		return snapshotKind, nil
+	}
+	switch snapshotKind {
+	case conf.SnapshotKindArchive:
+		return conf.SnapshotKindArchivePath, nil
+	case conf.SnapshotKindPruned:
+		return conf.SnapshotKindFullPath, nil
+	case conf.SnapshotKindGenesis:
+		return "", errors.New("genesis snapshots are not available for the path state scheme")
+	default:
+		return "", fmt.Errorf("snapshot kind %q is not supported for the path state scheme", snapshotKind)
+	}
+}
+
+// validateConfiguredChainId errors when the chain config the database was
+// opened or initialized with does not target the configured chain.id.
+func validateConfiguredChainId(chainConfig *params.ChainConfig, chainId *big.Int) error {
+	if chainConfig.ChainID == nil || !arbmath.BigEquals(chainConfig.ChainID, chainId) {
+		return fmt.Errorf("database contains chain ID %v but configured chain ID is %v; if the database was just initialized from a mismatched init source (genesis document or snapshot), delete the data directory and initialize again", chainConfig.ChainID, chainId)
+	}
 	return nil
 }
 
@@ -726,7 +756,7 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 // Opens the execution DB, falling back to download+genesis initialization when no existing
 // DB is found. The returned bool reports whether the DB was freshly created on this call.
 func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *config.NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig, l1Client *ethclient.Client, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, statetransfer.InitDataReader, *core.BlockChain, bool, error) {
-	executionDB, wasmDB, l2BlockChain, chainConfig, err := OpenExistingExecutionDB(stack, config, chainId, cacheConfig, tracer, persistentConfig)
+	executionDB, wasmDB, l2BlockChain, chainConfig, err := OpenExistingExecutionDB(stack, config, cacheConfig, tracer, persistentConfig)
 	if err != nil {
 		return nil, nil, nil, false, err
 	}
@@ -766,6 +796,10 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 		}
 	}
 
+	if err := validateConfiguredChainId(chainConfig, chainId); err != nil {
+		return executionDB, nil, l2BlockChain, false, err
+	}
+
 	err = pruneExecutionDB(ctx, executionDB, stack, config, cacheConfig, persistentConfig, l1Client, rollupAddrs)
 	if err != nil {
 		return executionDB, nil, nil, false, fmt.Errorf("error pruning: %w", err)
@@ -776,7 +810,7 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 		return executionDB, nil, l2BlockChain, false, err
 	}
 
-	err = recreateMissingStates(config, executionDB, l2BlockChain, cacheConfig)
+	err = recreateMissingStates(ctx, config, executionDB, l2BlockChain, cacheConfig)
 	if err != nil {
 		return executionDB, nil, l2BlockChain, false, fmt.Errorf("failed to recreate missing states: %w", err)
 	}
@@ -786,9 +820,9 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 	return executionDB, initDataReader, l2BlockChain, dbFreshlyCreated, err
 }
 
-func recreateMissingStates(config *config.NodeConfig, executionDB ethdb.Database, l2BlockChain *core.BlockChain, cacheConfig *core.BlockChainConfig) error {
+func recreateMissingStates(ctx context.Context, config *config.NodeConfig, executionDB ethdb.Database, l2BlockChain *core.BlockChain, cacheConfig *core.BlockChainConfig) error {
 	if config.Init.RecreateMissingStateFrom > 0 {
-		err := staterecovery.RecreateMissingStates(executionDB, l2BlockChain, cacheConfig, config.Init.RecreateMissingStateFrom)
+		err := staterecovery.RecreateMissingStates(ctx, executionDB, l2BlockChain, cacheConfig, config.Init.RecreateMissingStateFrom)
 		if err != nil {
 			return fmt.Errorf("failed to recreate missing states: %w", err)
 		}
@@ -846,46 +880,19 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
 	}
 
-	genesisJsonFile := config.Init.GenesisJsonFile
-	if genesisJsonFile == "" && initDataReader != nil {
-		genesisJsonFile, err = GetGenesisFileNameFromDirectory(config.Init.GenesisJsonFileDirectory, config.Chain.ID)
-		if err != nil {
-			log.Error("error getting genesis json file from directory", "err", err)
-		}
+	gen, err := resolveGenesisDocument(&config.Init, config.Chain.ID, initDataReader != nil)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
-	if genesisJsonFile != "" {
+	if gen != nil {
 		if initDataReader != nil {
 			return nil, nil, nil, errors.New("multiple init methods supplied")
 		}
-		genesisJson, err := os.ReadFile(genesisJsonFile)
+		initDataReader, chainConfig, genesisArbOSInit, err = initDataFromGenesis(gen)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		var gen core.Genesis
-		if err := json.Unmarshal(genesisJson, &gen); err != nil {
-			return nil, nil, nil, err
-		}
-		var accounts []statetransfer.AccountInitializationInfo
-		for address, account := range gen.Alloc {
-			accounts = append(accounts, statetransfer.AccountInitializationInfo{
-				Addr:       address,
-				EthBalance: account.Balance,
-				Nonce:      account.Nonce,
-				ContractInfo: &statetransfer.AccountInitContractInfo{
-					Code:            account.Code,
-					ContractStorage: account.Storage,
-				},
-			})
-		}
-		initDataReader = statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{
-			Accounts: accounts,
-		})
-		chainConfig, err = gen.GetConfig()
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		genesisArbOSInit = gen.ArbOSInit
 	} else {
 		if initDataReader == nil {
 			chainConfig = gethexec.TryReadStoredChainConfig(executionDB)
@@ -911,6 +918,93 @@ func GetInit(config *config.NodeConfig, executionDB ethdb.Database) (statetransf
 	}
 
 	return initDataReader, chainConfig, genesisArbOSInit, nil
+}
+
+// resolveGenesisDocument picks the genesis document to init from, honoring
+// init.genesis-mode. With the default (empty) mode the first configured
+// source wins, in the order: genesis-json (inline), genesis-json-file,
+// genesis-json-file-directory. Returns nil when no document is configured.
+func resolveGenesisDocument(initConfig *conf.InitConfig, chainId uint64, otherInitMethodSupplied bool) (*core.Genesis, error) {
+	parseGenesis := func(genesisJson []byte) (*core.Genesis, error) {
+		var gen core.Genesis
+		if err := json.Unmarshal(genesisJson, &gen); err != nil {
+			return nil, err
+		}
+		return &gen, nil
+	}
+	readGenesisFile := func(genesisJsonFile string) (*core.Genesis, error) {
+		genesisJson, err := os.ReadFile(genesisJsonFile)
+		if err != nil {
+			return nil, err
+		}
+		return parseGenesis(genesisJson)
+	}
+	switch initConfig.GenesisMode {
+	case conf.GenesisModeInline:
+		return parseGenesis([]byte(initConfig.GenesisJson))
+	case conf.GenesisModeFile:
+		return readGenesisFile(initConfig.GenesisJsonFile)
+	case conf.GenesisModeDirectory:
+		// normally already resolved at config parse time; the lookup below
+		// serves callers that build the config directly
+		genesisJsonFile := initConfig.ResolvedGenesisJsonFile()
+		if genesisJsonFile == "" {
+			var err error
+			genesisJsonFile, err = GetGenesisFileNameFromDirectory(initConfig.GenesisJsonFileDirectory, chainId)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return readGenesisFile(genesisJsonFile)
+	}
+	if initConfig.GenesisJson != "" {
+		if initConfig.GenesisJsonFile != "" {
+			log.Warn("both init.genesis-json and init.genesis-json-file are configured, using init.genesis-json; set init.genesis-mode to choose explicitly", "ignoredFile", initConfig.GenesisJsonFile)
+		}
+		return parseGenesis([]byte(initConfig.GenesisJson))
+	}
+	if initConfig.GenesisJsonFile != "" {
+		return readGenesisFile(initConfig.GenesisJsonFile)
+	}
+	if resolvedGenesisJsonFile := initConfig.ResolvedGenesisJsonFile(); resolvedGenesisJsonFile != "" {
+		return readGenesisFile(resolvedGenesisJsonFile)
+	}
+	if otherInitMethodSupplied && initConfig.GenesisJsonFileDirectory != "" {
+		// lookup kept so that a directory match while another init method is
+		// supplied is reported as "multiple init methods supplied"
+		genesisJsonFile, err := GetGenesisFileNameFromDirectory(initConfig.GenesisJsonFileDirectory, chainId)
+		if err != nil {
+			log.Error("error getting genesis json file from directory", "err", err)
+			return nil, nil
+		}
+		return readGenesisFile(genesisJsonFile)
+	}
+	return nil, nil
+}
+
+// initDataFromGenesis converts a genesis document into init data and the
+// chain config it carries.
+func initDataFromGenesis(gen *core.Genesis) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, error) {
+	chainConfig, _, err := cmd_util.ReadChainConfig(gen)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	var accounts []statetransfer.AccountInitializationInfo
+	for address, account := range gen.Alloc {
+		accounts = append(accounts, statetransfer.AccountInitializationInfo{
+			Addr:       address,
+			EthBalance: account.Balance,
+			Nonce:      account.Nonce,
+			ContractInfo: &statetransfer.AccountInitContractInfo{
+				Code:            account.Code,
+				ContractStorage: account.Storage,
+			},
+		})
+	}
+	initDataReader := statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{
+		Accounts: accounts,
+	})
+	return initDataReader, chainConfig, gen.ArbOSInit, nil
 }
 
 func GetGenesisFileNameFromDirectory(genesisFileDirectory string, chainId uint64) (string, error) {
@@ -1040,7 +1134,7 @@ func checkDBDir(stack *node.Node, config *config.NodeConfig) error {
 }
 
 func downloadDB(ctx context.Context, stack *node.Node, config *config.NodeConfig) (bool, error) {
-	if err := setLatestSnapshotUrl(ctx, &config.Init, config.Chain.Name); err != nil {
+	if err := setLatestSnapshotUrl(ctx, &config.Init, config.Chain.Name, config.Execution.Caching.StateScheme); err != nil {
 		return false, err
 	}
 
@@ -1145,15 +1239,11 @@ func openExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *c
 	return &openedExecutionDB{executionDB: executionDB, wasmDB: wasmDB, wavmPurged: wavmPurged}, nil
 }
 
-func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, *core.BlockChain, *params.ChainConfig, error) {
+func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, *core.BlockChain, *params.ChainConfig, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{AncientsDirectory: config.Persistent.Ancient, MetricsNamespace: "l2chaindata/", ReadOnly: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("l2chaindata")}); err == nil {
 			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
 				readOnlyDb.Close()
-				if !arbmath.BigEquals(chainConfig.ChainID, chainId) {
-					return nil, nil, nil, chainConfig, fmt.Errorf("database has chain ID %v but config has chain ID %v (are you sure this database is for the right chain?)", chainConfig.ChainID, chainId)
-				}
-
 				opened, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
 				if err != nil {
 					return nil, nil, nil, chainConfig, err
@@ -1450,7 +1540,12 @@ func testUpdateTxIndex(executionDB ethdb.Database, chainConfig *params.ChainConf
 	}()
 }
 
-func InitReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inboxTracker *arbnode.InboxTracker) error {
+// InitReorg rewinds the node to the batch requested by --init.reorg-to-*. Under MEL the inbox
+// tracker is nil, so the rewind goes through the message extractor and the transaction streamer.
+func InitReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inboxTracker *arbnode.InboxTracker, txStreamer *arbnode.TransactionStreamer, msgExtractor mel.MELNative) error {
+	if inboxTracker == nil && msgExtractor == nil {
+		return errors.New("init reorg requested, but node has neither an inbox tracker nor a message extractor")
+	}
 	var batchCount uint64
 	if initConfig.ReorgToBatch >= 0 {
 		// #nosec G115
@@ -1475,7 +1570,11 @@ func InitReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inbo
 		// Reorg out the batch containing the next message
 		var found bool
 		var err error
-		batchCount, found, err = inboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
+		if msgExtractor != nil {
+			batchCount, found, err = msgExtractor.FindInboxBatchContainingMessage(messageIndex + 1)
+		} else {
+			batchCount, found, err = inboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
+		}
 		if err != nil {
 			return err
 		}
@@ -1484,5 +1583,28 @@ func InitReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inbo
 			return nil
 		}
 	}
+	if msgExtractor != nil {
+		return melReorgBatchesTo(batchCount, txStreamer, msgExtractor)
+	}
 	return inboxTracker.ReorgBatchesTo(batchCount)
+}
+
+// melReorgBatchesTo is the MEL counterpart of InboxTracker.ReorgBatchesTo: it rewinds the extractor
+// to the parent chain block holding the last batch kept and truncates the streamer at that batch's
+// message count. The extractor goes first, so the block validator is rewound (via the reorg
+// notifier the node drains) before the streamer starts handing out messages again.
+func melReorgBatchesTo(batchCount uint64, txStreamer *arbnode.TransactionStreamer, msgExtractor mel.MELNative) error {
+	if batchCount == 0 {
+		// MEL keeps no state before the one it was initialized with, so it cannot rewind past
+		// the first batch the way the inbox tracker can.
+		return errors.New("cannot reorg to zero batches when running with MEL")
+	}
+	prevBatchMeta, err := msgExtractor.GetBatchMetadata(batchCount - 1)
+	if err != nil {
+		return err
+	}
+	if err := msgExtractor.ReorgTo(prevBatchMeta.ParentChainBlock); err != nil {
+		return err
+	}
+	return txStreamer.ReorgAt(prevBatchMeta.MessageCount)
 }

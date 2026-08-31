@@ -165,11 +165,16 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 		return MakeNonceError(sender, tx.Nonce(), stateNonce)
 	}
 	extraInfo := types.DeserializeHeaderExtraInformation(header)
-	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.SetCodeAuthorizations(), tx.To() == nil, chainConfig.IsHomestead(header.Number), chainConfig.IsIstanbul(header.Number), chainConfig.IsShanghai(header.Number, header.Time, extraInfo.ArbOSFormatVersion))
+	// isMerge is hardcoded to true: Arbitrum always runs post-merge (the EVM
+	// forces a non-nil Random whenever ArbOS is active), and nitro headers
+	// carry Difficulty = 1, so a difficulty-based check would wrongly disable
+	// the timestamp-gated fork rules (Shanghai and later).
+	rules := chainConfig.Rules(header.Number, true, header.Time, extraInfo.ArbOSFormatVersion)
+	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.SetCodeAuthorizations(), tx.To() == nil, rules, params.CostPerStateByte)
 	if err != nil {
 		return err
 	}
-	if tx.Gas() < intrinsic {
+	if tx.Gas() < intrinsic.Sum() {
 		return core.ErrIntrinsicGas
 	}
 	if config.Strictness < TxPreCheckerStrictnessLikelyCompatible {
@@ -198,7 +203,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 				blocksTraversed++
 			}
 			if !headerreader.HeadersEqual(oldHeader, header) {
-				secondOldStatedb, err := bc.StateAt(oldHeader.Root)
+				secondOldStatedb, err := bc.StateAt(oldHeader)
 				if err != nil {
 					return fmt.Errorf("failed to get old state: %w", err)
 				}
@@ -225,7 +230,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 	}
 	dataCost, _ := arbos.L1PricingState().GetPosterInfo(tx, l1pricing.BatchPosterAddress, brotliCompressionLevel)
 	dataGas := arbmath.BigDiv(dataCost, header.BaseFee)
-	if tx.Gas() < intrinsic+dataGas.Uint64() {
+	if tx.Gas() < intrinsic.Sum()+dataGas.Uint64() {
 		return core.ErrIntrinsicGas
 	}
 	return nil
@@ -233,7 +238,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 
 func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
 	block := c.bc.CurrentBlock()
-	statedb, err := c.bc.StateAt(block.Root)
+	statedb, err := c.bc.StateAt(block)
 	if err != nil {
 		return err
 	}
@@ -266,7 +271,7 @@ func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *t
 	}
 
 	block := c.bc.CurrentBlock()
-	statedb, err := c.bc.StateAt(block.Root)
+	statedb, err := c.bc.StateAt(block)
 	if err != nil {
 		return err
 	}
@@ -304,7 +309,7 @@ func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *t
 
 func (c *TxPreChecker) PublishAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
 	block := c.bc.CurrentBlock()
-	statedb, err := c.bc.StateAt(block.Root)
+	statedb, err := c.bc.StateAt(block)
 	if err != nil {
 		return err
 	}
@@ -330,7 +335,7 @@ func (c *TxPreChecker) checkFilteredAddresses(ctx context.Context, tx *types.Tra
 	if c.txFilterer == nil || c.backend == nil || c.config().Strictness < TxPreCheckerStrictnessAlwaysCompatible {
 		return nil
 	}
-	statedb, err := c.bc.StateAt(header.Root)
+	statedb, err := c.bc.StateAt(header)
 	if err != nil {
 		return err
 	}

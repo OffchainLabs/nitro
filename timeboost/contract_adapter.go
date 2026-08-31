@@ -13,6 +13,8 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/holiman/uint256"
+
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -80,11 +82,11 @@ func (a *contractAdapter) CallContract(ctx context.Context, call ethereum.CallMs
 	msg := &core.Message{
 		From:                  call.From,
 		To:                    call.To,
-		Value:                 big.NewInt(0),
+		Value:                 uint256.NewInt(0),
 		GasLimit:              math.MaxUint64,
-		GasPrice:              big.NewInt(0),
-		GasFeeCap:             big.NewInt(0),
-		GasTipCap:             big.NewInt(0),
+		GasPrice:              uint256.NewInt(0),
+		GasFeeCap:             uint256.NewInt(0),
+		GasTipCap:             uint256.NewInt(0),
 		Data:                  call.Data,
 		AccessList:            call.AccessList,
 		SkipNonceChecks:       true,
@@ -94,7 +96,7 @@ func (a *contractAdapter) CallContract(ctx context.Context, call ethereum.CallMs
 	}
 
 	evm := a.apiBackend.GetEVM(ctx, state, header, &vm.Config{NoBaseFee: true}, nil)
-	gp := new(core.GasPool).AddGas(math.MaxUint64)
+	gp := core.NewGasPool(math.MaxUint64)
 	result, err := core.ApplyMessage(evm, msg, gp)
 	if err != nil {
 		return nil, err

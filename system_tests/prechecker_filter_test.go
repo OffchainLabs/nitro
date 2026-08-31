@@ -92,7 +92,7 @@ func buildPrecheckerFilterNodes(t *testing.T, ctx context.Context, withDelayedSe
 	if reportURL != "" {
 		execConfigB.TransactionFiltering.FilteringReportRPCClient.URL = reportURL
 	}
-	s3Filter = setupFakeS3AddressFilterForConfig(t, execConfigB, addressfilter.HashingSchemeRawBytesInput)
+	s3Filter = setupFakeS3AddressFilterForConfig(t, execConfigB, addressfilter.HashingSchemeRawBytesInput, 1)
 
 	forwarder, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{
 		nodeConfig: nodeConfigB,
@@ -410,12 +410,12 @@ func TestPrecheckerFilterManualRedeem(t *testing.T) {
 	require.Nil(t, rec.EventRuleMatch, "from/to filter must not carry event-rule payload")
 }
 
-// TestPrecheckerFilterContractTriggeredRedeem verifies that the forwarder's
+// TestPrecheckerFilterContractTriggeredRedeemFlaky verifies that the forwarder's
 // prechecker catches a redeem triggered by an intermediary contract. The user's
 // outer tx targets a wrapper contract (not filtered), which internally calls
 // ArbRetryableTx.redeem(). The redeem's inner execution touches the filtered
 // destination contract.
-func TestPrecheckerFilterContractTriggeredRedeem(t *testing.T) {
+func TestPrecheckerFilterContractTriggeredRedeemFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

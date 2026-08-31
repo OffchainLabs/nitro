@@ -7,6 +7,7 @@ use std::str;
 use arbutil::evm::{EvmData, api::Ink};
 use jit::{machine::WasmEnv, program::JitConfig};
 use prover::programs::{
+    DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT,
     config::{CompileConfig, PricingParams},
     prelude::StylusConfig,
 };
@@ -75,7 +76,14 @@ fn run(compiled_module: Vec<u8>) -> (Duration, Ink) {
 pub fn benchmark(wat: Vec<u8>) -> eyre::Result<()> {
     let wasm = wasmer::wat2wasm(&wat)?;
 
-    let compiled_module = native::compile(&wasm, 2, true, Target::default(), false)?;
+    let compiled_module = native::compile(
+        &wasm,
+        2,
+        true,
+        Target::default(),
+        false,
+        Some(DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT),
+    )?;
 
     let mut durations: Vec<Duration> = Vec::new();
     let mut ink_spent = Ink(0);

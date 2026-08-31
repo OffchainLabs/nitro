@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 func TestDoublePinPanics(t *testing.T) {
@@ -29,6 +32,26 @@ func TestDoublePinPanics(t *testing.T) {
 					o(b)
 				}
 			})
+		})
+	}
+}
+
+func TestSpecWeightDerivation(t *testing.T) {
+	tests := []struct {
+		name     string
+		topology Topology
+		want     weight
+	}{
+		{"L2-only", TopologyL2Only, weightLight},
+		{"L1L2", TopologyL1L2, weightMedium},
+		{"multi-node", TopologyMultiNode, weightHeavy},
+		{"staking-validation", TopologyStakingValidation, weightMax},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := specWeight(tt.topology); got != tt.want {
+				t.Fatalf("specWeight(%v) = %d, want %d", tt.topology, got, tt.want)
+			}
 		})
 	}
 }
@@ -56,6 +79,8 @@ func TestDoubleAppliedSilentOptionsNowPanic(t *testing.T) {
 		{"MinArbOS twice", []TestOption{MinArbOS(params.ArbosVersion_30), MinArbOS(params.ArbosVersion_40)}, "MinArbOS applied twice"},
 		{"MaxArbOS twice", []TestOption{MaxArbOS(params.ArbosVersion_30), MaxArbOS(params.ArbosVersion_40)}, "MaxArbOS applied twice"},
 		{"WithTimeout twice", []TestOption{WithTimeout(time.Second), WithTimeout(2 * time.Second)}, "WithTimeout applied twice"},
+		{"WithArbOSInit twice", []TestOption{WithArbOSInit(params.ArbOSInit{}), WithArbOSInit(params.ArbOSInit{})}, "WithArbOSInit applied twice"},
+		{"WithoutChainOwner twice", []TestOption{WithoutChainOwner(), WithoutChainOwner()}, "WithoutChainOwner applied twice"},
 		{"MinArbOS zero", []TestOption{MinArbOS(0)}, "MinArbOS version must be positive"},
 		{"MaxArbOS zero", []TestOption{MaxArbOS(0)}, "MaxArbOS version must be positive"},
 		{"Named empty", []TestOption{Named("")}, "must be non-empty"},
@@ -73,6 +98,70 @@ func TestDoubleAppliedSilentOptionsNowPanic(t *testing.T) {
 	}
 }
 
+func TestSkipOnStateSchemesSkipsMatchingPin(t *testing.T) {
+	b := newBuilder()
+	SkipOnStateSchemes(StateSchemePath)(b)
+	if got := b.shouldSkip(scheduleParams{StateScheme: containers.Some(StateSchemePath)}); got != `incompatible with state scheme "path"` {
+		t.Fatalf("matching scheme pin: got %q, want skip reason", got)
+	}
+	if got := b.shouldSkip(scheduleParams{StateScheme: containers.Some(StateSchemeHash)}); got != "" {
+		t.Fatalf("non-matching scheme pin must not skip, got %q", got)
+	}
+}
+
+func TestSkipOnRace(t *testing.T) {
+	b := newBuilder()
+	SkipOnRace()(b)
+	saved := raceEnabled
+	defer func() { raceEnabled = saved }()
+	raceEnabled = true
+	if got := b.shouldSkip(scheduleParams{}); got != "skipped under -race" {
+		t.Fatalf("race build: got %q, want race skip reason", got)
+	}
+	raceEnabled = false
+	if got := b.shouldSkip(scheduleParams{}); got != "" {
+		t.Fatalf("non-race build must not skip, got %q", got)
+	}
+}
+
+func TestOptionsCarryToSpec(t *testing.T) {
+	b := newBuilder()
+	WithArbOSInit(params.ArbOSInit{TransactionFilteringEnabled: true})(b)
+	WithoutChainOwner()(b)
+	WithRPCEndpoints()(b)
+	spec := b.freeze("")
+	if spec.arbOSInit == nil || !spec.arbOSInit.TransactionFilteringEnabled {
+		t.Fatalf("Spec.arbOSInit = %+v, want WithArbOSInit's value", spec.arbOSInit)
+	}
+	if !spec.SkipChainOwner {
+		t.Fatal("WithoutChainOwner did not set Spec.SkipChainOwner")
+	}
+	if !spec.ExposeRPC {
+		t.Fatal("WithRPCEndpoints did not set Spec.ExposeRPC")
+	}
+}
+
+func TestWithInitDataOverrideAccumulates(t *testing.T) {
+	b := newBuilder()
+	WithInitDataOverride(func(*statetransfer.ArbosInitializationInfo) {})(b)
+	WithInitDataOverride(func(*statetransfer.ArbosInitializationInfo) {})(b)
+	if got := len(b.initDataOverrides); got != 2 {
+		t.Fatalf("initDataOverrides: got %d, want 2", got)
+	}
+}
+
+func TestComposeAppliesAllOptions(t *testing.T) {
+	preset := Compose(WithCategory("challenge"), WithL1())
+	b := newBuilder()
+	preset(b)
+	if b.category != "challenge" {
+		t.Fatalf("category = %q, want challenge", b.category)
+	}
+	if b.topology != TopologyL1L2 {
+		t.Fatalf("topology = %v, want TopologyL1L2", b.topology)
+	}
+}
+
 func TestOptionValueValidation(t *testing.T) {
 	cases := []struct {
 		name string
@@ -80,6 +169,7 @@ func TestOptionValueValidation(t *testing.T) {
 		want string
 	}{
 		{"WithStateScheme invalid", []TestOption{WithStateScheme("bogus")}, "WithStateScheme invalid"},
+		{"SkipOnStateSchemes invalid", []TestOption{SkipOnStateSchemes("bogus")}, "SkipOnStateSchemes invalid"},
 		{"WithDBEngine invalid", []TestOption{WithDBEngine("rocksdb")}, "WithDBEngine invalid"},
 		{"WithTimeout zero", []TestOption{WithTimeout(0)}, "must be positive"},
 		{"WithTimeout negative", []TestOption{WithTimeout(-time.Second)}, "must be positive"},
@@ -93,5 +183,73 @@ func TestOptionValueValidation(t *testing.T) {
 				}
 			})
 		})
+	}
+}
+
+func TestWithL1(t *testing.T) {
+	// Default builder is L2-only and freezes to TopologyL2Only.
+	base := newBuilder()
+	if base.topology != TopologyL2Only {
+		t.Fatalf("default topology = %v, want TopologyL2Only", base.topology)
+	}
+
+	b := newBuilder()
+	WithL1()(b)
+	if b.topology != TopologyL1L2 {
+		t.Fatalf("topology = %v, want TopologyL1L2", b.topology)
+	}
+	if w := specWeight(b.topology); w != weightMedium {
+		t.Fatalf("weight = %d, want weightMedium (%d)", w, weightMedium)
+	}
+	if spec := b.freeze(""); spec.Topology != TopologyL1L2 {
+		t.Fatalf("frozen Spec.Topology = %v, want TopologyL1L2", spec.Topology)
+	}
+}
+
+func TestTopologyConflictPanics(t *testing.T) {
+	cases := []struct {
+		name string
+		opts []TestOption
+		want string
+	}{
+		{"WithL1 twice", []TestOption{WithL1(), WithL1()}, "WithL1 applied twice"},
+		{"WithMultiNode twice", []TestOption{WithMultiNode(), WithMultiNode()}, "WithMultiNode applied twice"},
+		{"WithL1 then WithMultiNode", []TestOption{WithL1(), WithMultiNode()}, "conflicts with another topology"},
+		{"WithMultiNode then WithL1", []TestOption{WithMultiNode(), WithL1()}, "conflicts with another topology"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			mustPanic(t, c.want, func() {
+				b := newBuilder()
+				for _, o := range c.opts {
+					o(b)
+				}
+			})
+		})
+	}
+}
+
+func TestExpandMatrixCarriesTopology(t *testing.T) {
+	for _, tc := range []struct {
+		opt  TestOption
+		want Topology
+	}{
+		{WithL1(), TopologyL1L2},
+		{WithMultiNode(), TopologyMultiNode},
+		{WithStakingValidation(), TopologyStakingValidation},
+	} {
+		b := newBuilder()
+		b.name = "X"
+		tc.opt(b)
+		MatrixArbOS(params.ArbosVersion_30, params.ArbosVersion_40)(b)
+		out := expandMatrix(b, scheduleParams{})
+		if len(out) != 2 {
+			t.Fatalf("got %d cells, want 2", len(out))
+		}
+		for _, e := range out {
+			if e.Spec.Topology != tc.want {
+				t.Fatalf("cell %q topology = %v, want %v", e.Spec.Name, e.Spec.Topology, tc.want)
+			}
+		}
 	}
 }

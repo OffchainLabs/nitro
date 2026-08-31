@@ -1,0 +1,14 @@
+{
+  "name": "arbos_version_v60",
+  "description": "Harness boots cleanly through to v60",
+  "setup": {
+    "arbos_version": 60,
+    "chain_id": 421614
+  },
+  "assertions": {
+    "arbos_state": {
+      "arbos_version": 60,
+      "chain_id": "0x66eee"
+    }
+  }
+}

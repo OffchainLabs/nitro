@@ -1,16 +1,29 @@
 // Copyright 2021-2026, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
-#[cfg(not(feature = "cc_brotli"))]
 fn main() {
-    use std::env;
+    // Without `link` nothing is compiled or linked: brotli is reached through the
+    // `arbcompress` host imports, which only exist on wasm targets. Note: build scripts
+    // run on the host, so the target must be read from the environment, not via cfg.
+    if std::env::var_os("CARGO_FEATURE_LINK").is_none() {
+        let target = std::env::var("TARGET").unwrap();
+        assert!(
+            target.contains("wasm32"),
+            "the `link` feature is required for non-wasm targets"
+        );
+        return;
+    }
+    link();
+}
 
-    let target_arch = env::var("TARGET").unwrap();
+#[cfg(not(feature = "cc_brotli"))]
+fn link() {
+    let target_arch = std::env::var("TARGET").unwrap();
 
     if target_arch.contains("wasm32") {
         println!("cargo:rustc-link-search=target/lib-wasm/");
     } else if target_arch.contains("riscv64") {
-        println!("cargo:rustc-link-search=target/lib-sp1/lib");
+        println!("cargo:rustc-link-search=../../target/lib-sp1/lib");
     } else {
         println!("cargo:rustc-link-search=target/lib/");
         println!("cargo:rustc-link-search=../../target/lib/");
@@ -21,8 +34,14 @@ fn main() {
 }
 
 #[cfg(feature = "cc_brotli")]
-fn main() {
+fn link() {
     use std::{env, path::PathBuf};
+
+    assert!(
+        !env::var("TARGET").unwrap().contains("wasm32"),
+        "cc_brotli cannot target wasm; wasm builds link prebuilt libs or use host imports"
+    );
+
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let include_dir = manifest_dir.join("../../brotli/c/include");
     cc::Build::new()
@@ -66,5 +85,5 @@ fn main() {
         .compile("brotli");
 
     println!("cargo:include={}", include_dir.display());
-    println!("cargo:rerun-if-changed=brotli/c");
+    println!("cargo:rerun-if-changed=../../brotli/c");
 }

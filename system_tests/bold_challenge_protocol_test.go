@@ -66,14 +66,23 @@ import (
 )
 
 func TestChallengeProtocolBOLDReadInboxChallenge(t *gotesting.T) {
-	testChallengeProtocolBOLD(t, false, false)
+	testChallengeProtocolBOLDRecorderModes(t, false, false)
+}
+
+func testChallengeProtocolBOLDRecorderModes(t *gotesting.T, useExternalSigner bool, useRedis bool, spawnerOpts ...server_arb.SpawnerOption) {
+	for _, tc := range challengeBlockRecorderTestCases(t) {
+		tc := tc
+		t.Run(tc.name, func(t *gotesting.T) {
+			testChallengeProtocolBOLD(t, tc, useExternalSigner, useRedis, spawnerOpts...)
+		})
+	}
 }
 
 func TestChallengeProtocolBOLDWithRedisReadInboxChallenge(t *gotesting.T) {
-	testChallengeProtocolBOLD(t, false, true)
+	testChallengeProtocolBOLDRecorderModes(t, false, true)
 }
 func TestChallengeProtocolBOLDReadInboxChallengeWithExternalSigner(t *gotesting.T) {
-	testChallengeProtocolBOLD(t, true, false)
+	testChallengeProtocolBOLDRecorderModes(t, true, false)
 }
 
 func TestChallengeProtocolBOLDStartStepChallenge(t *gotesting.T) {
@@ -85,10 +94,10 @@ func TestChallengeProtocolBOLDStartStepChallenge(t *gotesting.T) {
 			return NewIncorrectIntermediateMachine(inner, 1)
 		}),
 	}
-	testChallengeProtocolBOLD(t, false, false, opts...)
+	testChallengeProtocolBOLDRecorderModes(t, false, false, opts...)
 }
 
-func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis bool, spawnerOpts ...server_arb.SpawnerOption) {
+func testChallengeProtocolBOLD(t *gotesting.T, recorderCase blockRecorderTestCase, useExternalSigner bool, useRedis bool, spawnerOpts ...server_arb.SpawnerOption) {
 	goodDir, err := os.MkdirTemp("", "good_*")
 	Require(t, err)
 	evilDir, err := os.MkdirTemp("", "evil_*")
@@ -116,19 +125,18 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 		MinimumAssertionPeriod: 0,
 	}
 
-	_, l2nodeA, l2execNodeA, _, l2StackA, l1info, _, l1client, l1stack, assertionChain, stakeTokenAddr, asserterOpts, _, _ := createCompleteTestNodeOnL1(
+	_, l2nodeA, l2execNodeA, _, l2StackA, l1info, l1client, assertionChain, stakeTokenAddr, asserterOpts, _, _ := createCompleteTestNodeOnL1(
 		t,
 		ctx,
 		true,
 		nil,
 		l2chainConfig,
-		nil,
 		sconf,
 		l2info,
 		useExternalSigner,
 		false,
+		withBlockRecorderTestCase(recorderCase),
 	)
-	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
 
 	// Make sure we shut down test functionality before the rest of the node
@@ -142,7 +150,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 		t,
 		ctx,
 		l2nodeA,
-		l1stack,
+		l1client,
 		l1info,
 		&l2info.ArbInitData,
 		l2nodeConfig,
@@ -151,6 +159,7 @@ func testChallengeProtocolBOLD(t *gotesting.T, useExternalSigner bool, useRedis 
 		stakeTokenAddr,
 		asserterOpts,
 		false,
+		withBlockRecorderTestCase(recorderCase),
 	)
 	defer l2nodeB.StopAndWait()
 
@@ -527,7 +536,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	t *gotesting.T,
 	ctx context.Context,
 	first *arbnode.Node,
-	l1stack *node.Node,
+	l1client *ethclient.Client,
 	l1info *BlockchainTestInfo,
 	l2InitData *statetransfer.ArbosInitializationInfo,
 	nodeConfig *arbnode.Config,
@@ -536,10 +545,9 @@ func create2ndNodeWithConfigForBoldProtocol(
 	stakeTokenAddr common.Address,
 	asserterOpts *bind.TransactOpts,
 	enableCustomDA bool,
+	execConfigOpts ...func(*gethexec.Config),
 ) (*node.Node, *ethclient.Client, *arbnode.Node, *gethexec.ExecutionNode, *sol.AssertionChain) {
 	fatalErrChan := make(chan error, 10)
-	l1rpcClient := l1stack.Attach()
-	l1client := ethclient.NewClient(l1rpcClient)
 	firstExec, ok := first.ExecutionClient.(*gethexec.ExecutionNode)
 	if !ok {
 		Fatal(t, "not geth execution node")
@@ -580,6 +588,9 @@ func create2ndNodeWithConfigForBoldProtocol(
 	Require(t, err)
 
 	execConfig := ExecConfigDefaultNonSequencerTest(t, rawdb.HashScheme)
+	for _, opt := range execConfigOpts {
+		opt(execConfig)
+	}
 	Require(t, execConfig.Validate())
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(&execConfig.Caching)
 	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2executionDB, coreCacheConfig, initReader, chainConfig, nil, nil, initMessage, &execConfig.TxIndexer, 0, execConfig.ExposeMultiGas)
@@ -592,7 +603,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &nodeConfig.ParentChainReader }, arbSys)
 	Require(t, err)
 	parentChain := parent.NewParentChain(ctx, l1ChainId, l1Reader)
-	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, containers.Some(l1client), NewCommonConfigFetcher(execConfig), 0, parentChain, fatalErrChan)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2executionDB, l2blockchain, NewCommonConfigFetcher(execConfig), gethexec.WithL1Client(containers.Some(l1client)), gethexec.WithParentChain(parentChain), gethexec.WithFatalErrChan(fatalErrChan))
 	Require(t, err)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)

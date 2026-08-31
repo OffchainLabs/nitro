@@ -12,7 +12,8 @@ permissions:
 
 jobs:
   list:
-    runs-on: arbitrator-ci
+    runs-on: ocl-16cpu-64ram-dind-500gi
+    timeout-minutes: 20
     if: github.event_name != 'schedule' || github.repository == 'OffchainLabs/nitro-private'
 
     steps:
@@ -36,7 +37,7 @@ jobs:
 
   fuzz:
     runs-on: ubuntu-4
-    timeout-minutes: 360
+    timeout-minutes: 30
     needs: list
     strategy:
       fail-fast: false

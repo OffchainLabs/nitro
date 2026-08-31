@@ -23,6 +23,10 @@ type HashingScheme string
 const (
 	HashingSchemeStringInput   HashingScheme = "sha256-stringinput"
 	HashingSchemeRawBytesInput HashingScheme = "sha256-rawbytesinput"
+	// HashingSchemePlaintext means list entries are not hashed: each entry is a
+	// plain address, stored left-padded to 32 bytes, and lookups use the
+	// address itself. The salt is ignored.
+	HashingSchemePlaintext HashingScheme = "plaintext"
 )
 
 // hashData holds a hash list snapshot. In preallocated mode Store recycles a
@@ -33,10 +37,11 @@ type hashData struct {
 	mu                    sync.RWMutex
 	id                    uuid.UUID
 	salt                  uuid.UUID
-	useRawBytesInput      bool
+	scheme                HashingScheme
 	hashStringInputPrefix string
 	hashes                map[common.Hash]struct{}
 	digest                string
+	loaded                bool
 	loadedAt              time.Time
 	cache                 *lru.Cache[common.Address, bool] // LRU cache for address lookup results
 }
@@ -47,12 +52,13 @@ type hashData struct {
 // blocking the swap.
 //
 // When maxHashes > 0 the store preallocates two ping-pong hashData buffers and
-// reuses them on every Store, so a reload performs no large allocation. Store
-// recycles a buffer in place, so it must not clear one a reader still holds.
-// Each hashData carries an RWMutex: a reader holds the read lock for the whole
-// call, and Store write-locks the buffer it is about to recycle, blocking until
-// every in-flight reader of that buffer has released it. Store is single-writer
-// (serialized by the syncer mutex), so active needs no synchronization.
+// reuses them on every Store, so a reload performs no large allocation.
+// Store recycles a buffer in place, so it must not clear one a reader still
+// holds. Each hashData carries an RWMutex: a reader holds the read lock for the
+// whole call, and Store write-locks the buffer it is about to recycle,
+// blocking until every in-flight reader of that buffer has released it.
+// Store is single-writer (serialized by the syncer mutex), so active needs
+// no synchronization.
 type HashStore struct {
 	data      atomic.Pointer[hashData]
 	cacheSize int
@@ -78,10 +84,14 @@ func GetHashStringInputPrefix(salt uuid.UUID) string {
 }
 
 func (d *hashData) hashAddress(addr common.Address) common.Hash {
-	if d.useRawBytesInput {
+	switch d.scheme {
+	case HashingSchemeRawBytesInput:
 		return HashRawBytesInput(d.salt, addr)
+	case HashingSchemePlaintext:
+		return common.BytesToHash(addr.Bytes())
+	default:
+		return HashStringInputWithPrefix(d.hashStringInputPrefix, addr)
 	}
-	return HashStringInputWithPrefix(d.hashStringInputPrefix, addr)
 }
 
 // NewHashStore creates a hash store without preallocation.
@@ -116,7 +126,7 @@ func newHashStore(cacheSize int, maxHashes int) *HashStore {
 			}
 			h.buffers[i] = d
 		}
-		h.data.Store(h.buffers[0]) // empty, salt Nil: reports uninitialized
+		h.data.Store(h.buffers[0]) // empty, loaded=false: reports uninitialized
 		return h
 	}
 	h.data.Store(&hashData{
@@ -126,35 +136,47 @@ func newHashStore(cacheSize int, maxHashes int) *HashStore {
 	return h
 }
 
-// fillData populates the scalar fields and hash map of d from a parsed list.
-func fillData(d *hashData, id uuid.UUID, salt uuid.UUID, scheme HashingScheme, hashes []common.Hash, digest string) {
-	d.id = id
-	d.salt = salt
-	d.useRawBytesInput = scheme == HashingSchemeRawBytesInput
-	d.hashStringInputPrefix = GetHashStringInputPrefix(salt)
-	for _, hash := range hashes {
-		d.hashes[hash] = struct{}{}
-	}
+// ListMeta holds the scalar metadata of a hash list.
+type ListMeta struct {
+	ID     uuid.UUID
+	Salt   uuid.UUID
+	Scheme HashingScheme
+}
+
+func (d *hashData) setMeta(meta *ListMeta, digest string) {
+	d.id = meta.ID
+	d.salt = meta.Salt
+	d.scheme = meta.Scheme
+	d.hashStringInputPrefix = GetHashStringInputPrefix(meta.Salt)
 	d.digest = digest
+	d.loaded = true
 	d.loadedAt = time.Now()
 }
 
-// Store atomically swaps in a new hash list.
-// This is called after a new hash list has been downloaded and parsed.
+// Store fills a new hash list via fill and atomically swaps it in only if
+// fill returns nil. On error nothing is published; in preallocated mode the
+// dirty buffer is re-cleared at the start of the next store. sizeHint is an
+// upper bound on the number of hashes, used to size the map when not
+// preallocated.
+//
 // In preallocated mode it recycles a ping-pong buffer in place under the
 // buffer's write lock, which blocks until every in-flight reader of that buffer
 // has released it; otherwise it builds a new hashData. Either way the LRU cache
 // is reset so it stays consistent with the new data. Store is single-writer
 // (serialized by the syncer mutex).
-func (h *HashStore) Store(id uuid.UUID, salt uuid.UUID, scheme HashingScheme, hashes []common.Hash, digest string) {
+func (h *HashStore) Store(digest string, sizeHint int, fill func(add func(common.Hash)) (*ListMeta, error)) error {
 	if h.maxHashes == 0 {
 		newData := &hashData{
-			hashes: make(map[common.Hash]struct{}, len(hashes)),
+			hashes: make(map[common.Hash]struct{}, sizeHint),
 			cache:  lru.NewCache[common.Address, bool](h.cacheSize),
 		}
-		fillData(newData, id, salt, scheme, hashes, digest)
+		meta, err := fill(func(hash common.Hash) { newData.hashes[hash] = struct{}{} })
+		if err != nil {
+			return err
+		}
+		newData.setMeta(meta, digest)
 		h.data.Store(newData) // Atomic pointer swap
-		return
+		return nil
 	}
 
 	// Recycle the non-published buffer in place. Its write lock blocks until every
@@ -166,9 +188,40 @@ func (h *HashStore) Store(id uuid.UUID, salt uuid.UUID, scheme HashingScheme, ha
 	defer d.mu.Unlock()
 	clear(d.hashes) // retains bucket memory
 	d.cache.Purge()
-	fillData(d, id, salt, scheme, hashes, digest)
+	meta, err := fill(func(hash common.Hash) { d.hashes[hash] = struct{}{} })
+	if err != nil {
+		return err
+	}
+	d.setMeta(meta, digest)
 	h.data.Store(d) // publish under the write lock; the deferred Unlock releases readers
 	h.active = next
+	return nil
+}
+
+type HashStoreSet struct {
+	stores []*HashStore
+}
+
+func NewHashStoreSet(stores []*HashStore) *HashStoreSet {
+	return &HashStoreSet{stores: stores}
+}
+
+func (s *HashStoreSet) IsRestricted(addr common.Address) (bool, uuid.UUID) {
+	for _, store := range s.stores {
+		if restricted, id := store.IsRestricted(addr); restricted {
+			return true, id
+		}
+	}
+	return false, uuid.Nil
+}
+
+func (s *HashStoreSet) AllLoaded() bool {
+	for _, store := range s.stores {
+		if store.LoadedAt().IsZero() {
+			return false
+		}
+	}
+	return true
 }
 
 // IsRestricted returns whether the address is restricted and the filter set ID,
@@ -177,7 +230,7 @@ func (h *HashStore) IsRestricted(addr common.Address) (bool, uuid.UUID) {
 	data := h.data.Load() // lock-free snapshot load
 	data.mu.RLock()
 	defer data.mu.RUnlock()
-	if data.salt == uuid.Nil {
+	if !data.loaded {
 		return false, uuid.Nil // Not initialized
 	}
 
@@ -197,6 +250,13 @@ func (h *HashStore) Digest() string {
 	data.mu.RLock()
 	defer data.mu.RUnlock()
 	return data.digest
+}
+
+func (h *HashStore) Id() uuid.UUID {
+	data := h.data.Load()
+	data.mu.RLock()
+	defer data.mu.RUnlock()
+	return data.id
 }
 
 func (h *HashStore) Size() int {

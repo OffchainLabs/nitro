@@ -7,10 +7,19 @@ runs:
 
   steps:
     - name: Install dependencies
-      run: sudo apt update && sudo apt install -y wabt gotestsum protobuf-compiler
+      run: sudo apt update && sudo apt install -y build-essential cmake clang wabt gotestsum protobuf-compiler python3 jq curl wget uuid-runtime lld-14
       shell: bash
 
     - name: Setup Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: "24"
+
+    - name: Enable corepack (provides yarn)
+      run: corepack enable
+      shell: bash
+
+    - name: Setup Node.js with yarn cache
       uses: actions/setup-node@v6
       with:
         node-version: "24"
@@ -31,9 +40,7 @@ runs:
       shell: bash
 
     - name: Install wasm-ld
-      run: |
-        sudo apt-get update && sudo apt-get install -y lld-14
-        sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
+      run: sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
       shell: bash
 
     - name: Install rust
@@ -41,7 +48,7 @@ runs:
       uses: ./.github/actions/install-rust
 
     - name: Setup Foundry
-      uses: foundry-rs/foundry-toolchain@8789b3e21e6c11b2697f5eb56eddae542f746c10  # v1
+      uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09  # v1.9.1
       with:
         cache: false
         version: v1.0.0

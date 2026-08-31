@@ -57,7 +57,7 @@ func TestHashStore_IsRestricted(t *testing.T) {
 
 	// Store the hashes
 	filterSetID := uuid.New()
-	store.Store(filterSetID, salt, HashingSchemeStringInput, hashes, "test-etag")
+	storeHashes(t, store, filterSetID, salt, HashingSchemeStringInput, hashes, "test-etag")
 
 	// Test restricted addresses
 	for _, addr := range addresses {
@@ -98,7 +98,7 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 
 	// Store first set
 	filterSetID1 := uuid.New()
-	store.Store(filterSetID1, salt1, HashingSchemeStringInput, []common.Hash{hash1}, "etag1")
+	storeHashes(t, store, filterSetID1, salt1, HashingSchemeStringInput, []common.Hash{hash1}, "etag1")
 	restricted, returnedID := store.IsRestricted(addr1)
 	if !restricted {
 		t.Error("addr1 should be restricted after first load")
@@ -113,7 +113,7 @@ func TestHashStore_AtomicSwap(t *testing.T) {
 	hash2 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt2), addr2)
 
 	filterSetID2 := uuid.New()
-	store.Store(filterSetID2, salt2, HashingSchemeStringInput, []common.Hash{hash2}, "etag2")
+	storeHashes(t, store, filterSetID2, salt2, HashingSchemeStringInput, []common.Hash{hash2}, "etag2")
 
 	// addr1 should no longer be restricted (different salt)
 	restricted, returnedID = store.IsRestricted(addr1)
@@ -150,7 +150,7 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 		hash := HashStringInputWithPrefix(GetHashStringInputPrefix(salt1), addr)
 		hashes1 = append(hashes1, hash)
 	}
-	store.Store(uuid.New(), salt1, HashingSchemeStringInput, hashes1, "etag")
+	storeHashes(t, store, uuid.New(), salt1, HashingSchemeStringInput, hashes1, "etag")
 
 	// prepare second set for swapping
 	salt2, _ := uuid.Parse("2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6")
@@ -203,13 +203,13 @@ func TestHashStore_ConcurrentAccess(t *testing.T) {
 		for i := 0; i < 20; i++ {
 			switch i % 4 {
 			case 0:
-				store.Store(uuid.New(), salt1, HashingSchemeStringInput, hashes1, "salt1-str")
+				storeHashes(t, store, uuid.New(), salt1, HashingSchemeStringInput, hashes1, "salt1-str")
 			case 1:
-				store.Store(uuid.New(), salt2, HashingSchemeStringInput, hashes2, "salt2-str")
+				storeHashes(t, store, uuid.New(), salt2, HashingSchemeStringInput, hashes2, "salt2-str")
 			case 2:
-				store.Store(uuid.New(), salt1, HashingSchemeRawBytesInput, rawHashes1, "salt1-raw")
+				storeHashes(t, store, uuid.New(), salt1, HashingSchemeRawBytesInput, rawHashes1, "salt1-raw")
 			case 3:
-				store.Store(uuid.New(), salt2, HashingSchemeRawBytesInput, rawHashes2, "salt2-raw")
+				storeHashes(t, store, uuid.New(), salt2, HashingSchemeRawBytesInput, rawHashes2, "salt2-raw")
 			}
 			time.Sleep(time.Millisecond)
 		}
@@ -235,27 +235,28 @@ func TestParseHashListJSON(t *testing.T) {
 			hex.EncodeToString(hashed_addr2[:]),
 		},
 	}
-	validJSON, _ := json.Marshal(validPayload)
+	validJSON, err := json.Marshal(validPayload)
+	require.NoError(t, err)
 
-	parsedJson, err := parseHashListJSONInto(validJSON, nil)
+	meta, hashes, err := parseHashListBytes(validJSON)
 	if err != nil {
 		t.Fatalf("failed to parse valid JSON: %v", err)
 	}
 	expectedSalt, _ := uuid.Parse("2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6")
-	if parsedJson.Salt != expectedSalt {
-		t.Errorf("expected salt '%s', got '%s'", expectedSalt.String(), parsedJson.Salt.String())
+	if meta.Salt != expectedSalt {
+		t.Errorf("expected salt '%s', got '%s'", expectedSalt.String(), meta.Salt.String())
 	}
 
-	if parsedJson.Id != id {
-		t.Errorf("expected id '%s', got '%s'", id.String(), parsedJson.Id.String())
+	if meta.ID != id {
+		t.Errorf("expected id '%s', got '%s'", id.String(), meta.ID.String())
 	}
 
-	if len(parsedJson.Hashes) != 2 {
-		t.Errorf("expected 2 hashes, got %d", len(parsedJson.Hashes))
+	if len(hashes) != 2 {
+		t.Errorf("expected 2 hashes, got %d", len(hashes))
 	}
 
 	// Test invalid JSON
-	_, err = parseHashListJSONInto([]byte("not json"), nil)
+	_, _, err = parseHashListBytes([]byte("not json"))
 	if err == nil {
 		t.Error("expected error for invalid JSON")
 	}
@@ -266,8 +267,9 @@ func TestParseHashListJSON(t *testing.T) {
 		"id":     uuid.NewString(),
 		"hashes": []string{hex.EncodeToString(hashed_addr1[:])},
 	}
-	invalidSaltJSON, _ := json.Marshal(invalidSaltPayload)
-	_, err = parseHashListJSONInto(invalidSaltJSON, nil)
+	invalidSaltJSON, err := json.Marshal(invalidSaltPayload)
+	require.NoError(t, err)
+	_, _, err = parseHashListBytes(invalidSaltJSON)
 	if err == nil {
 		t.Error("expected error for invalid salt hex")
 	}
@@ -278,8 +280,9 @@ func TestParseHashListJSON(t *testing.T) {
 		"id":     uuid.NewString(),
 		"hashes": []string{"not-hex"},
 	}
-	invalidHashJSON, _ := json.Marshal(invalidHashPayload)
-	_, err = parseHashListJSONInto(invalidHashJSON, nil)
+	invalidHashJSON, err := json.Marshal(invalidHashPayload)
+	require.NoError(t, err)
+	_, _, err = parseHashListBytes(invalidHashJSON)
 	if err == nil {
 		t.Error("expected error for invalid hash hex")
 	}
@@ -290,8 +293,9 @@ func TestParseHashListJSON(t *testing.T) {
 		"id":     uuid.NewString(),
 		"hashes": []string{"0123456789abcdef"},
 	}
-	wrongLenJSON, _ := json.Marshal(wrongLenPayload)
-	_, err = parseHashListJSONInto(wrongLenJSON, nil)
+	wrongLenJSON, err := json.Marshal(wrongLenPayload)
+	require.NoError(t, err)
+	_, _, err = parseHashListBytes(wrongLenJSON)
 	if err == nil {
 		t.Error("expected error for wrong hash length")
 	}
@@ -303,16 +307,17 @@ func TestParseHashListJSON(t *testing.T) {
 		"hashing_scheme": "sha256-stringinput",
 		"hashes":         []string{hex.EncodeToString(hashed_addr1[:])},
 	}
-	sha256JSON, _ := json.Marshal(sha256Payload)
-	parsedJson, err = parseHashListJSONInto(sha256JSON, nil)
+	sha256JSON, err := json.Marshal(sha256Payload)
+	require.NoError(t, err)
+	meta, hashes, err = parseHashListBytes(sha256JSON)
 	if err != nil {
 		t.Fatalf("failed to parse JSON with sha256-stringinput hashing_scheme: %v", err)
 	}
-	if len(parsedJson.Hashes) != 1 {
-		t.Errorf("expected 1 hash, got %d", len(parsedJson.Hashes))
+	if len(hashes) != 1 {
+		t.Errorf("expected 1 hash, got %d", len(hashes))
 	}
-	if parsedJson.Scheme != HashingSchemeStringInput {
-		t.Errorf("expected scheme %q, got %q", HashingSchemeStringInput, parsedJson.Scheme)
+	if meta.Scheme != HashingSchemeStringInput {
+		t.Errorf("expected scheme %q, got %q", HashingSchemeStringInput, meta.Scheme)
 	}
 
 	// Test with hashing_scheme: sha256-rawbytesinput
@@ -324,10 +329,10 @@ func TestParseHashListJSON(t *testing.T) {
 	}
 	rawBytesJSON, err := json.Marshal(rawBytesPayload)
 	require.NoError(t, err)
-	parsedJson, err = parseHashListJSONInto(rawBytesJSON, nil)
+	meta, _, err = parseHashListBytes(rawBytesJSON)
 	require.NoError(t, err)
-	if parsedJson.Scheme != HashingSchemeRawBytesInput {
-		t.Errorf("expected scheme %q, got %q", HashingSchemeRawBytesInput, parsedJson.Scheme)
+	if meta.Scheme != HashingSchemeRawBytesInput {
+		t.Errorf("expected scheme %q, got %q", HashingSchemeRawBytesInput, meta.Scheme)
 	}
 
 	// Test with unknown hashing_scheme — hard error
@@ -337,8 +342,9 @@ func TestParseHashListJSON(t *testing.T) {
 		"hashing_scheme": "Unknown",
 		"hashes":         []string{hex.EncodeToString(hashed_addr1[:])},
 	}
-	unknownSchemeJSON, _ := json.Marshal(unknownSchemePayload)
-	if _, err := parseHashListJSONInto(unknownSchemeJSON, nil); err == nil {
+	unknownSchemeJSON, err := json.Marshal(unknownSchemePayload)
+	require.NoError(t, err)
+	if _, _, err := parseHashListBytes(unknownSchemeJSON); err == nil {
 		t.Error("expected error for unknown hashing_scheme")
 	}
 
@@ -350,7 +356,7 @@ func TestParseHashListJSON(t *testing.T) {
 		"hashes":         []string{hex.EncodeToString(hashed_addr1[:])},
 	}
 	upperSchemeJSON, _ := json.Marshal(upperSchemePayload)
-	if _, err := parseHashListJSONInto(upperSchemeJSON, nil); err == nil {
+	if _, _, err := parseHashListBytes(upperSchemeJSON); err == nil {
 		t.Error("expected error for uppercased hashing_scheme")
 	}
 
@@ -363,16 +369,17 @@ func TestParseHashListJSON(t *testing.T) {
 			"0X" + hex.EncodeToString(hashed_addr2[:]),
 		},
 	}
-	prefixedJSON, _ := json.Marshal(prefixedPayload)
-	parsedJson, err = parseHashListJSONInto(prefixedJSON, nil)
+	prefixedJSON, err := json.Marshal(prefixedPayload)
+	require.NoError(t, err)
+	_, hashes, err = parseHashListBytes(prefixedJSON)
 	if err != nil {
 		t.Fatalf("failed to parse 0x-prefixed JSON: %v", err)
 	}
-	if len(parsedJson.Hashes) != 2 {
-		t.Errorf("expected 2 hashes, got %d", len(parsedJson.Hashes))
+	if len(hashes) != 2 {
+		t.Errorf("expected 2 hashes, got %d", len(hashes))
 	}
-	if parsedJson.Hashes[0] != hashed_addr1 {
-		t.Errorf("hash[0] mismatch: got %x, want %x", parsedJson.Hashes[0], hashed_addr1)
+	if hashes[0] != hashed_addr1 {
+		t.Errorf("hash[0] mismatch: got %x, want %x", hashes[0], hashed_addr1)
 	}
 	// Test without hashing_scheme field (backward compatible)
 	noSchemePayload := map[string]interface{}{
@@ -380,61 +387,31 @@ func TestParseHashListJSON(t *testing.T) {
 		"id":     uuid.NewString(),
 		"hashes": []string{hex.EncodeToString(hashed_addr1[:])},
 	}
-	noSchemeJSON, _ := json.Marshal(noSchemePayload)
-	parsedJson, err = parseHashListJSONInto(noSchemeJSON, nil)
+	noSchemeJSON, err := json.Marshal(noSchemePayload)
+	require.NoError(t, err)
+	meta, hashes, err = parseHashListBytes(noSchemeJSON)
 	if err != nil {
 		t.Fatalf("failed to parse JSON without hashing_scheme: %v", err)
 	}
-	if len(parsedJson.Hashes) != 1 {
-		t.Errorf("expected 1 hash, got %d", len(parsedJson.Hashes))
+	if len(hashes) != 1 {
+		t.Errorf("expected 1 hash, got %d", len(hashes))
 	}
-	if parsedJson.Scheme != HashingSchemeStringInput {
-		t.Errorf("missing scheme should default to %q, got %q", HashingSchemeStringInput, parsedJson.Scheme)
-	}
-}
-
-func TestConfig_Validate(t *testing.T) {
-	// Test config with missing fields
-	emptyConfig := Config{}
-	if err := emptyConfig.Validate(); err == nil {
-		t.Error("config with missing fields should be invalid")
+	if meta.Scheme != HashingSchemeStringInput {
+		t.Errorf("missing scheme should default to %q, got %q", HashingSchemeStringInput, meta.Scheme)
 	}
 
-	// Test valid config
-	validConfig := Config{
-		S3: s3syncer.Config{
-			Config:    s3client.Config{Region: "us-east-1"},
-			Bucket:    "test-bucket",
-			ObjectKey: "hashlists/current.json",
-		},
-		PollInterval:              5 * time.Minute,
-		CacheSize:                 10000,
-		AddressCheckerWorkerCount: 4,
-		AddressCheckerQueueSize:   8192,
+	// Test with malformed id field: must fail loudly so operators catch
+	// provider misconfiguration.
+	badIdPayload := map[string]interface{}{
+		"salt":   "2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6",
+		"id":     "not-a-uuid",
+		"hashes": []string{hex.EncodeToString(hashed_addr1[:])},
 	}
-	if err := validConfig.Validate(); err != nil {
-		t.Errorf("valid config should pass validation: %v", err)
-	}
-
-	// Test invalid poll interval
-	invalidPollConfig := validConfig
-	invalidPollConfig.PollInterval = 0
-	if err := invalidPollConfig.Validate(); err == nil {
-		t.Error("config with zero poll interval should be invalid")
-	}
-
-	// Test invalid cache size (zero)
-	invalidCacheConfig := validConfig
-	invalidCacheConfig.PollInterval = 5 * time.Minute
-	invalidCacheConfig.CacheSize = 0
-	if err := invalidCacheConfig.Validate(); err == nil {
-		t.Error("config with zero cache size should be invalid")
-	}
-
-	// Test invalid cache size (negative)
-	invalidCacheConfig.CacheSize = -1
-	if err := invalidCacheConfig.Validate(); err == nil {
-		t.Error("config with negative cache size should be invalid")
+	badIdJSON, err := json.Marshal(badIdPayload)
+	require.NoError(t, err)
+	_, _, err = parseHashListBytes(badIdJSON)
+	if err == nil {
+		t.Error("expected error for malformed id")
 	}
 }
 
@@ -457,7 +434,7 @@ func TestHashStore_CustomCacheSize(t *testing.T) {
 	}
 
 	// Store the hashes
-	store.Store(uuid.New(), salt, HashingSchemeStringInput, hashes, "test-etag")
+	storeHashes(t, store, uuid.New(), salt, HashingSchemeStringInput, hashes, "test-etag")
 
 	// Verify store works correctly with custom size
 	if restricted, _ := store.IsRestricted(addresses[0]); !restricted {
@@ -484,7 +461,7 @@ func TestHashStore_LoadedAt(t *testing.T) {
 	// After load, should have current time
 	before := time.Now()
 	salt, _ := uuid.Parse("2cef04bf-b23f-47ba-9c2f-4e7bd652c1c6")
-	store.Store(uuid.New(), salt, HashingSchemeStringInput, nil, "etag")
+	storeHashes(t, store, uuid.New(), salt, HashingSchemeStringInput, nil, "etag")
 	after := time.Now()
 
 	loadedAt := store.LoadedAt()
@@ -495,22 +472,31 @@ func TestHashStore_LoadedAt(t *testing.T) {
 
 const filteringTestBucket = "addressfilter-test"
 
-func newFilteringTestConfig(endpoint, key string, maxFileSizeMB int) *Config {
-	cfg := DefaultConfig
-	cfg.S3 = s3syncer.Config{
-		Config: s3client.Config{
-			Region:    "us-east-1",
-			AccessKey: "dummy-access-key",
-			SecretKey: "dummy-secret-key",
-			Endpoint:  endpoint,
+func newFilteringTestFileConfig(t *testing.T, endpoint, key string, maxFileSizeMB int) FileConfig {
+	return FileConfig{
+		Config: s3syncer.Config{
+			Config: s3client.Config{
+				Region:    "us-east-1",
+				AccessKey: "dummy-access-key",
+				SecretKey: "dummy-secret-key",
+				Endpoint:  endpoint,
+			},
+			Bucket:        filteringTestBucket,
+			ObjectKey:     key,
+			ChunkSizeMB:   s3syncer.DefaultS3Config.ChunkSizeMB,
+			MaxRetries:    s3syncer.DefaultS3Config.MaxRetries,
+			Concurrency:   s3syncer.DefaultS3Config.Concurrency,
+			MaxFileSizeMB: maxFileSizeMB,
+			DownloadDir:   t.TempDir(),
 		},
-		Bucket:            filteringTestBucket,
-		ObjectKey:         key,
-		ChunkSizeMB:       s3syncer.DefaultS3Config.ChunkSizeMB,
-		MaxRetries:        s3syncer.DefaultS3Config.MaxRetries,
-		Concurrency:       s3syncer.DefaultS3Config.Concurrency,
-		MaxFileSizeMB:     maxFileSizeMB,
-		PreallocateMemory: true,
+		PollInterval: DefaultFileConfig.PollInterval,
+	}
+}
+
+func newFilteringTestConfig(t *testing.T, endpoint string, maxFileSizeMB int, keys ...string) *Config {
+	cfg := DefaultConfig
+	for _, key := range keys {
+		cfg.Files = append(cfg.Files, newFilteringTestFileConfig(t, endpoint, key, maxFileSizeMB))
 	}
 	return &cfg
 }
@@ -523,7 +509,7 @@ func TestFilterService_Initialize_RejectsOversizedFile(t *testing.T) {
 	tooLargeBefore := fileTooLargeCounter.Snapshot().Count()
 	syncFailureBefore := syncFailureCounter.Snapshot().Count()
 
-	service, err := NewFilterService(newFilteringTestConfig(endpoint, key, 1))
+	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, 1, key))
 	require.NoError(t, err)
 
 	err = service.Initialize(context.Background())
@@ -550,7 +536,7 @@ func TestFilterService_Initialize_GenericFailure(t *testing.T) {
 	tooLargeBefore := fileTooLargeCounter.Snapshot().Count()
 	syncFailureBefore := syncFailureCounter.Snapshot().Count()
 
-	service, err := NewFilterService(newFilteringTestConfig(endpoint, "missing.json", 1))
+	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, 1, "missing.json"))
 	require.NoError(t, err)
 
 	err = service.Initialize(context.Background())
@@ -588,16 +574,16 @@ func TestFilterService_KeepsListOnOversizedSync(t *testing.T) {
 	endpoint, backend := s3syncertest.NewFakeS3(t, filteringTestBucket, map[string][]byte{key: initialBody})
 
 	// 1 MB limit; initial body is well under, the swap body will be 2 MB.
-	service, err := NewFilterService(newFilteringTestConfig(endpoint, key, 1))
+	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, 1, key))
 	require.NoError(t, err)
 
 	require.NoError(t, service.Initialize(context.Background()))
 
-	digestBefore := service.GetHashStoreDigest()
-	countBefore := service.GetHashCount()
+	digestBefore := service.getHashStoreDigest(t, 0)
+	countBefore := service.getHashCount(t, 0)
 	require.NotEmpty(t, digestBefore, "initial digest should be set")
 	require.Equal(t, 1, countBefore)
-	restricted, _ := service.hashStore.IsRestricted(restrictedAddr)
+	restricted, _ := service.GetHashStore(t, 0).IsRestricted(restrictedAddr)
 	require.True(t, restricted, "address should be restricted after initial load")
 
 	// Swap the S3 object for a payload that exceeds the configured limit.
@@ -606,18 +592,18 @@ func TestFilterService_KeepsListOnOversizedSync(t *testing.T) {
 	require.NoError(t, err)
 
 	// Drive one sync tick directly — same call the Start() poll loop makes.
-	err = service.syncMgr.Syncer.CheckAndSync(context.Background())
+	err = service.files[0].syncMgr.Syncer.CheckAndSync(context.Background())
 	if !errors.Is(err, s3syncer.ErrObjectTooLarge) {
 		t.Fatalf("expected ErrObjectTooLarge from oversized swap, got %v", err)
 	}
 
-	if got := service.GetHashStoreDigest(); got != digestBefore {
+	if got := service.getHashStoreDigest(t, 0); got != digestBefore {
 		t.Errorf("digest changed after failed sync: got %q, want %q", got, digestBefore)
 	}
-	if got := service.GetHashCount(); got != countBefore {
+	if got := service.getHashCount(t, 0); got != countBefore {
 		t.Errorf("hash count changed after failed sync: got %d, want %d", got, countBefore)
 	}
-	if restricted, _ := service.hashStore.IsRestricted(restrictedAddr); !restricted {
+	if restricted, _ := service.GetHashStore(t, 0).IsRestricted(restrictedAddr); !restricted {
 		t.Error("address should still be restricted after failed sync")
 	}
 }
@@ -628,7 +614,7 @@ func (h *HashStore) isAllRestricted(addrs []common.Address) bool {
 	data := h.data.Load() // lock-free snapshot load
 	data.mu.RLock()
 	defer data.mu.RUnlock()
-	if data.salt == uuid.Nil {
+	if !data.loaded {
 		return false // Not initialized
 	}
 	for _, addr := range addrs {
@@ -655,7 +641,7 @@ func (h *HashStore) isAnyRestricted(addrs []common.Address) bool {
 	data := h.data.Load() // lock-free snapshot load
 	data.mu.RLock()
 	defer data.mu.RUnlock()
-	if data.salt == uuid.Nil {
+	if !data.loaded {
 		return false // Not initialized
 	}
 	for _, addr := range addrs {
@@ -696,7 +682,7 @@ func TestHashStore_RawBytesScheme(t *testing.T) {
 	addrAllowed := common.HexToAddress("0x000000000000000000000000000000000000beef")
 	hashRestricted := HashRawBytesInput(salt, addrRestricted)
 
-	store.Store(uuid.New(), salt, HashingSchemeRawBytesInput, []common.Hash{hashRestricted}, "raw")
+	storeHashes(t, store, uuid.New(), salt, HashingSchemeRawBytesInput, []common.Hash{hashRestricted}, "raw")
 
 	if restricted, _ := store.IsRestricted(addrRestricted); !restricted {
 		t.Fatal("restricted address should match under raw bytes scheme")
@@ -706,7 +692,7 @@ func TestHashStore_RawBytesScheme(t *testing.T) {
 	}
 
 	// Same hash bytes reloaded under string scheme must not match: scheme drives the lookup function.
-	store.Store(uuid.New(), salt, HashingSchemeStringInput, []common.Hash{hashRestricted}, "str")
+	storeHashes(t, store, uuid.New(), salt, HashingSchemeStringInput, []common.Hash{hashRestricted}, "str")
 	if restricted, _ := store.IsRestricted(addrRestricted); restricted {
 		t.Fatal("raw-bytes hash should not match under string input scheme")
 	}
@@ -729,11 +715,11 @@ func TestRawBytesScheme_ParseStoreLookup(t *testing.T) {
 	raw, err := json.Marshal(payload)
 	require.NoError(t, err)
 
-	parsed, err := parseHashListJSONInto(raw, nil)
+	meta, hashes, err := parseHashListBytes(raw)
 	require.NoError(t, err)
 
 	store := NewHashStore(8)
-	store.Store(parsed.Id, parsed.Salt, parsed.Scheme, parsed.Hashes, "etag")
+	storeHashes(t, store, meta.ID, meta.Salt, meta.Scheme, hashes, "etag")
 
 	if restricted, _ := store.IsRestricted(addr); !restricted {
 		t.Fatal("vendor address must be restricted after parse+Store under raw bytes scheme")
@@ -745,19 +731,212 @@ func TestRawBytesScheme_ParseStoreLookup(t *testing.T) {
 }
 
 func hashListBody(t *testing.T, salt uuid.UUID, hashes ...common.Hash) []byte {
+	return hashListBodyWithID(t, uuid.New(), salt, hashes...)
+}
+
+func hashListBodyWithID(t *testing.T, id uuid.UUID, salt uuid.UUID, hashes ...common.Hash) []byte {
 	t.Helper()
 	hexes := make([]string, len(hashes))
 	for i, h := range hashes {
 		hexes[i] = hex.EncodeToString(h[:])
 	}
 	body, err := json.Marshal(map[string]any{
-		"id":             uuid.NewString(),
+		"id":             id.String(),
 		"salt":           salt.String(),
 		"hashing_scheme": string(HashingSchemeStringInput),
 		"hashes":         hexes,
 	})
 	require.NoError(t, err)
 	return body
+}
+
+func TestFilterService_MultiFile(t *testing.T) {
+	salt1 := uuid.New()
+	salt2 := uuid.New()
+	addr1 := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	addr2 := common.HexToAddress("0x2222222222222222222222222222222222222222")
+	listID1 := uuid.New()
+	listID2 := uuid.New()
+	h1 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt1), addr1)
+	h2 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt2), addr2)
+
+	key1, key2 := "filter1.json", "filter2.json"
+	endpoint, backend := s3syncertest.NewFakeS3(t, filteringTestBucket, map[string][]byte{
+		key1: hashListBodyWithID(t, listID1, salt1, h1),
+		key2: hashListBodyWithID(t, listID2, salt2, h2),
+	})
+
+	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, 1, key1, key2))
+	require.NoError(t, err)
+	require.Equal(t, 2, service.numFiles(t))
+
+	require.False(t, service.AllFilesLoaded(), "no file should be loaded before Initialize")
+	require.NoError(t, service.Initialize(context.Background()))
+	require.True(t, service.AllFilesLoaded(), "all files should be loaded after Initialize")
+
+	// Address listed only in the first file.
+	restricted, id := service.storeSet.IsRestricted(addr1)
+	require.True(t, restricted)
+	require.Equal(t, listID1, id)
+
+	// Address listed only in the second file.
+	restricted, id = service.storeSet.IsRestricted(addr2)
+	require.True(t, restricted)
+	require.Equal(t, listID2, id)
+
+	// Address in neither file.
+	restricted, id = service.storeSet.IsRestricted(common.HexToAddress("0x3333333333333333333333333333333333333333"))
+	require.False(t, restricted)
+	require.Equal(t, uuid.Nil, id)
+
+	// Replace the second file's list, sync, and re-check: only that file's
+	// contents should change.
+	addr3 := common.HexToAddress("0x4444444444444444444444444444444444444444")
+	h3 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt2), addr3)
+	body := hashListBodyWithID(t, listID2, salt2, h3)
+	_, err = backend.PutObject(filteringTestBucket, key2, map[string]string{}, bytes.NewReader(body), int64(len(body)), &gofakes3.PutConditions{})
+	require.NoError(t, err)
+	require.NoError(t, service.TriggerSyncForTest(t, context.Background()))
+
+	restricted, _ = service.storeSet.IsRestricted(addr3)
+	require.True(t, restricted, "addr3 should be restricted after second file re-syncs")
+	restricted, _ = service.storeSet.IsRestricted(addr2)
+	require.False(t, restricted, "addr2 should no longer be restricted after second file re-syncs")
+	restricted, _ = service.storeSet.IsRestricted(addr1)
+	require.True(t, restricted, "addr1 from the first file should stay restricted")
+}
+
+func TestFilterService_StaticListOnly(t *testing.T) {
+	salt := uuid.New()
+	listID := uuid.New()
+	addr := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	h := HashStringInputWithPrefix(GetHashStringInputPrefix(salt), addr)
+	body := hashListBodyWithID(t, listID, salt, h)
+
+	cfg := DefaultConfig
+	cfg.StaticList = string(body)
+
+	service, err := NewFilterService(&cfg)
+	require.NoError(t, err)
+	require.Equal(t, 0, service.numFiles(t))
+	require.True(t, service.AllFilesLoaded(), "static list should be loaded at construction, before Initialize")
+	require.NoError(t, service.Initialize(context.Background()))
+
+	restricted, id := service.storeSet.IsRestricted(addr)
+	require.True(t, restricted)
+	require.Equal(t, listID, id)
+
+	restricted, id = service.storeSet.IsRestricted(common.HexToAddress("0x2222222222222222222222222222222222222222"))
+	require.False(t, restricted)
+	require.Equal(t, uuid.Nil, id)
+}
+
+func TestFilterService_StaticListInvalid(t *testing.T) {
+	t.Run("malformed json", func(t *testing.T) {
+		cfg := DefaultConfig
+		cfg.StaticList = "not json"
+		_, err := NewFilterService(&cfg)
+		require.ErrorContains(t, err, "failed to parse address-filter static-list")
+	})
+
+	t.Run("invalid salt", func(t *testing.T) {
+		cfg := DefaultConfig
+		cfg.StaticList = `{"id":"` + uuid.NewString() + `","salt":"not-a-uuid","hashing_scheme":"sha256-stringinput","hashes":[]}`
+		_, err := NewFilterService(&cfg)
+		require.ErrorContains(t, err, "failed to parse address-filter static-list")
+	})
+}
+
+func TestFilterService_StaticListPlusS3File(t *testing.T) {
+	saltFile := uuid.New()
+	saltStatic := uuid.New()
+	addrFile := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	addrStatic := common.HexToAddress("0x2222222222222222222222222222222222222222")
+	listIDFile := uuid.New()
+	listIDStatic := uuid.New()
+	hFile := HashStringInputWithPrefix(GetHashStringInputPrefix(saltFile), addrFile)
+	hStatic := HashStringInputWithPrefix(GetHashStringInputPrefix(saltStatic), addrStatic)
+
+	key := "filter.json"
+	endpoint, backend := s3syncertest.NewFakeS3(t, filteringTestBucket, map[string][]byte{
+		key: hashListBodyWithID(t, listIDFile, saltFile, hFile),
+	})
+
+	cfg := newFilteringTestConfig(t, endpoint, 1, key)
+	cfg.StaticList = string(hashListBodyWithID(t, listIDStatic, saltStatic, hStatic))
+
+	service, err := NewFilterService(cfg)
+	require.NoError(t, err)
+	require.Equal(t, 1, service.numFiles(t))
+
+	require.False(t, service.AllFilesLoaded(), "the S3 file is not loaded before Initialize")
+	require.NoError(t, service.Initialize(context.Background()))
+	require.True(t, service.AllFilesLoaded())
+
+	restricted, id := service.storeSet.IsRestricted(addrFile)
+	require.True(t, restricted)
+	require.Equal(t, listIDFile, id)
+
+	restricted, id = service.storeSet.IsRestricted(addrStatic)
+	require.True(t, restricted)
+	require.Equal(t, listIDStatic, id)
+
+	// Re-syncing the S3 file leaves the static list untouched.
+	addrFile2 := common.HexToAddress("0x3333333333333333333333333333333333333333")
+	hFile2 := HashStringInputWithPrefix(GetHashStringInputPrefix(saltFile), addrFile2)
+	body := hashListBodyWithID(t, listIDFile, saltFile, hFile2)
+	_, err = backend.PutObject(filteringTestBucket, key, map[string]string{}, bytes.NewReader(body), int64(len(body)), &gofakes3.PutConditions{})
+	require.NoError(t, err)
+	require.NoError(t, service.TriggerSyncForTest(t, context.Background()))
+
+	restricted, _ = service.storeSet.IsRestricted(addrFile2)
+	require.True(t, restricted, "addrFile2 should be restricted after the file re-syncs")
+	restricted, _ = service.storeSet.IsRestricted(addrFile)
+	require.False(t, restricted, "addrFile should no longer be restricted after the file re-syncs")
+	restricted, _ = service.storeSet.IsRestricted(addrStatic)
+	require.True(t, restricted, "the static list address should stay restricted")
+}
+
+func TestFilterService_CurrentFilterSetIDs(t *testing.T) {
+	salt := uuid.New()
+	listID1 := uuid.New()
+	listID2 := uuid.New()
+	listIDStatic := uuid.New()
+
+	key1, key2 := "filter1.json", "filter2.json"
+	endpoint, _ := s3syncertest.NewFakeS3(t, filteringTestBucket, map[string][]byte{
+		key1: hashListBodyWithID(t, listID1, salt),
+		key2: hashListBodyWithID(t, listID2, salt),
+	})
+
+	cfg := newFilteringTestConfig(t, endpoint, 1, key1, key2)
+	cfg.StaticList = string(hashListBodyWithID(t, listIDStatic, salt))
+
+	service, err := NewFilterService(cfg)
+	require.NoError(t, err)
+
+	require.Equal(t, []uuid.UUID{uuid.Nil, uuid.Nil, listIDStatic}, service.CurrentFilterSetIDs(),
+		"before Initialize the S3 files have no id yet while the static list already has one")
+
+	require.NoError(t, service.Initialize(context.Background()))
+	require.Equal(t, []uuid.UUID{listID1, listID2, listIDStatic}, service.CurrentFilterSetIDs(),
+		"ids follow the config order of the files, with the static list last")
+}
+
+func TestFilterService_Initialize_FailsWhenOneFileMissing(t *testing.T) {
+	salt := uuid.New()
+	key1 := "filter1.json"
+	endpoint, _ := s3syncertest.NewFakeS3(t, filteringTestBucket, map[string][]byte{
+		key1: hashListBody(t, salt),
+	})
+
+	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, 1, key1, "missing.json"))
+	require.NoError(t, err)
+
+	err = service.Initialize(context.Background())
+	require.Error(t, err, "Initialize must fail when any configured file is missing")
+	require.ErrorContains(t, err, "missing.json")
+	require.False(t, service.AllFilesLoaded())
 }
 
 func TestFilterService_PreallocLoadAndReload(t *testing.T) {
@@ -770,42 +949,40 @@ func TestFilterService_PreallocLoadAndReload(t *testing.T) {
 	key := "filter.json"
 	endpoint, backend := s3syncertest.NewFakeS3(t, filteringTestBucket, map[string][]byte{key: hashListBody(t, salt, h1)})
 
-	service, err := NewFilterService(newFilteringTestConfig(endpoint, key, 1))
+	service, err := NewFilterService(newFilteringTestConfig(t, endpoint, 1, key))
 	require.NoError(t, err)
 
-	// Preallocation engaged: backing and ping-pong buffers exist and are sized.
-	require.NotNil(t, service.syncMgr.hashesBacking)
-	wantHashes := service.config.S3.NumPreallocatedHashes()
-	require.Equal(t, wantHashes, cap(service.syncMgr.hashesBacking))
-	require.Equal(t, wantHashes, service.hashStore.maxHashes)
+	hashStore := service.GetHashStore(t, 0)
+
+	// Preallocation engaged: ping-pong buffers exist and are sized.
+	wantHashes := service.files[0].config.numPreallocatedHashes()
+	require.Equal(t, wantHashes, hashStore.maxHashes)
 
 	require.NoError(t, service.Initialize(context.Background()))
-	if r, _ := service.hashStore.IsRestricted(addr1); !r {
+	if r, _ := hashStore.IsRestricted(addr1); !r {
 		t.Fatal("addr1 should be restricted after initial load")
 	}
-	require.Equal(t, 1, service.GetHashCount())
+	require.Equal(t, 1, service.getHashCount(t, 0))
 
 	// Capture the preallocated structures to prove they are reused, not replaced.
-	d0 := service.hashStore.buffers[0]
-	d1 := service.hashStore.buffers[1]
-	backingPtr := &service.syncMgr.hashesBacking[0]
+	d0 := hashStore.buffers[0]
+	d1 := hashStore.buffers[1]
 
 	// Swap the file for a different valid list (new etag triggers a download).
 	body2 := hashListBody(t, salt, h2)
 	_, err = backend.PutObject(filteringTestBucket, key, map[string]string{}, bytes.NewReader(body2), int64(len(body2)), &gofakes3.PutConditions{})
 	require.NoError(t, err)
-	require.NoError(t, service.syncMgr.Syncer.CheckAndSync(context.Background()))
+	require.NoError(t, service.files[0].syncMgr.Syncer.CheckAndSync(context.Background()))
 
-	if r, _ := service.hashStore.IsRestricted(addr2); !r {
+	if r, _ := hashStore.IsRestricted(addr2); !r {
 		t.Fatal("addr2 should be restricted after reload")
 	}
-	if r, _ := service.hashStore.IsRestricted(addr1); r {
+	if r, _ := hashStore.IsRestricted(addr1); r {
 		t.Fatal("addr1 should no longer be restricted after reload")
 	}
-	require.Equal(t, 1, service.GetHashCount())
+	require.Equal(t, 1, service.getHashCount(t, 0))
 
 	// Structures reused across the reload.
-	require.Same(t, d0, service.hashStore.buffers[0])
-	require.Same(t, d1, service.hashStore.buffers[1])
-	require.Equal(t, backingPtr, &service.syncMgr.hashesBacking[0])
+	require.Same(t, d0, hashStore.buffers[0])
+	require.Same(t, d1, hashStore.buffers[1])
 }

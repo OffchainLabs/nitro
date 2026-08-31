@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/core/vm/program"
 	"github.com/ethereum/go-ethereum/params"
@@ -30,9 +29,9 @@ var deploymentTests = func() []systest.Scenario {
 	}
 	return append(tests,
 		systest.Test(testContractDeploy(40000, vm.ErrMaxCodeSizeExceeded), systest.Named("ContractDeployExceedsCodeSize")),
-		systest.Test(testContractDeploy(60000, core.ErrMaxInitCodeSizeExceeded), systest.Named("ContractDeployExceedsInitCodeSize")),
+		systest.Test(testContractDeploy(60000, vm.ErrMaxInitCodeSizeExceeded), systest.Named("ContractDeployExceedsInitCodeSize")),
 		systest.Test(testContractDeploy(100000, vm.ErrMaxCodeSizeExceeded), systest.Named("ExtendedContractDeployExceedsCodeSize"), extended),
-		systest.Test(testContractDeploy(200000, core.ErrMaxInitCodeSizeExceeded), systest.Named("ExtendedContractDeployExceedsInitCodeSize"), extended),
+		systest.Test(testContractDeploy(200000, vm.ErrMaxInitCodeSizeExceeded), systest.Named("ExtendedContractDeployExceedsInitCodeSize"), extended),
 	)
 }()
 
@@ -58,7 +57,7 @@ func deployContract(env *systest.Env, size int, expectedErr error) {
 	receipt := env.L2.EnsureTxSucceeded(tx)
 
 	deployedCode := env.L2.CodeAt(receipt.ContractAddress, receipt.BlockNumber)
-	env.Zero(bytes.Compare(contractCode, deployedCode), "deployed code mismatch: want len %d, got len %d", len(contractCode), len(deployedCode))
+	env.True(bytes.Equal(contractCode, deployedCode), "deployed code mismatch: want len %d, got len %d", len(contractCode), len(deployedCode))
 
 	callResult := env.L2.CallContract(ethereum.CallMsg{To: &receipt.ContractAddress}, nil)
 	env.Empty(callResult, "somehow got a non-empty result from contract")

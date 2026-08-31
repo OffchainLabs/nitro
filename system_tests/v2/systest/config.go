@@ -4,7 +4,7 @@
 package systest
 
 // Default configuration values + generic config-fetcher plumbing. Knobs
-// that don't fit defaults are mutated via overrides applied in build_l2.go
+// that don't fit defaults are mutated via overrides applied in build_common.go
 // after defaults are seeded.
 
 import (
@@ -46,6 +46,7 @@ var defaultSequencerConfig = gethexec.SequencerConfig{
 	Forwarder:                    defaultForwarderConfig,
 	QueueSize:                    128,
 	QueueTimeout:                 5 * time.Second,
+	MaxBlockTxCandidates:         gethexec.DefaultSequencerConfig.MaxBlockTxCandidates,
 	NonceCacheSize:               4,
 	MaxTxDataSize:                95000,
 	NonceFailureCacheSize:        1024,
@@ -54,7 +55,8 @@ var defaultSequencerConfig = gethexec.SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	ExpectedSurplusGasPriceMode:  "CalldataPrice",
 	EnableProfiling:              false,
-	ExperimentalPGA:              gethexec.DefaultPGAConfig,
+	PGA:                          gethexec.DefaultPGAConfig,
+	FilterSetReportingInterval:   time.Minute,
 }
 
 func defaultExecConfig(t *testing.T, stateScheme containers.Option[StateScheme]) *gethexec.Config {

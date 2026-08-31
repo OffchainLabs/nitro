@@ -11,8 +11,10 @@ timeout=""
 tags=""
 run=""
 skip=""
+packages="./..."
 test_state_scheme=""
 test_database_engine=""
+test_redis=""
 junitfile=""
 log=true
 race=false
@@ -48,6 +50,12 @@ while [[ $# -gt 0 ]]; do
       skip=$1
       shift
       ;;
+    --packages)
+      shift
+      check_missing_value $# "$1" "--packages"
+      packages=$1
+      shift
+      ;;
     --test_state_scheme)
       shift
       check_missing_value $# "$1" "--test_state_scheme"
@@ -58,6 +66,12 @@ while [[ $# -gt 0 ]]; do
       shift
       check_missing_value $# "$1" "--test_database_engine"
       test_database_engine=$1
+      shift
+      ;;
+    --test_redis)
+      shift
+      check_missing_value $# "$1" "--test_redis"
+      test_redis=$1
       shift
       ;;
     --race)
@@ -109,14 +123,14 @@ done
 
 if [ "$flaky" == true ]; then
   if [ "$run" != "" ]; then
-    run="Flaky/$run"
+    run="($run).*Flaky"
   else
     run="Flaky"
   fi
 fi
 
 # Add the gotestsum flags first
-cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"./...\" --rerun-fails=1 --rerun-fails-max-failures=30 --no-color=false"
+cmd="stdbuf -oL gotestsum --format short-verbose --packages=\"$packages\" --rerun-fails=1 --rerun-fails-max-failures=30 --no-color=false"
 
 if [ "$junitfile" != "" ]; then
   cmd="$cmd --junitfile \"$junitfile\""
@@ -158,7 +172,11 @@ if [ "$cover" == true ]; then
 fi
 
 if [ "$reduce_parallelism" == true ]; then
-  cmd="$cmd -p 1 -parallel $(( $(nproc) > 4 ? $(nproc) / 4 : 1 ))"
+  jobs=${BUILD_JOBS:-$(nproc)}
+  cmd="$cmd -p 1 -parallel $(( jobs > 4 ? jobs / 4 : 1 ))"
+elif [ "$test_redis" != "" ]; then
+  # Tests share a single external redis instance, so run packages serially.
+  cmd="$cmd -p 1"
 fi
 
 if [ "$test_state_scheme" != "" ]; then
@@ -177,6 +195,10 @@ fi
 
 if [ "$test_database_engine" != "" ]; then
     cmd="$cmd --test_database_engine=$test_database_engine"
+fi
+
+if [ "$test_redis" != "" ]; then
+    cmd="$cmd --test_redis=$test_redis"
 fi
 
 if [ "$log" == true ]; then

@@ -16,12 +16,16 @@ jobs:
   miri:
     name: miri aliasing
     runs-on: ocl-4cpu-16ram
-    timeout-minutes: 20
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri

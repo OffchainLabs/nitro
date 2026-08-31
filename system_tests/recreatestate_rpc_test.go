@@ -84,7 +84,7 @@ func removeStatesFromDb(t *testing.T, bc *core.BlockChain, db ethdb.Database, fr
 	}
 	for i := from; i <= to; i++ {
 		header := bc.GetHeaderByNumber(i)
-		_, err := bc.StateAt(header.Root)
+		_, err := bc.StateAt(header)
 		if err == nil {
 			Fatal(t, "internal test error - failed to remove state from db")
 		}
@@ -101,7 +101,7 @@ func TestRecreateStateForRPCNoDepthLimit(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
-	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxBlockSpeed = 5 * time.Millisecond
 	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	builder.execConfig.Caching.Archive = true
 	builder.execConfig.Caching.SnapshotCache = 0 // disable snapshots
@@ -139,7 +139,7 @@ func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = depthGasLimit
-	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxBlockSpeed = 5 * time.Millisecond
 	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	builder.execConfig.Caching.Archive = true
 	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
@@ -175,7 +175,7 @@ func TestRecreateStateForRPCDepthLimitExceeded(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithDatabase(rawdb.DBPebble).WithTakeOwnership(false)
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = int64(200)
-	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxBlockSpeed = 5 * time.Millisecond
 	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	builder.execConfig.Caching.Archive = true
 	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
@@ -211,7 +211,7 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
-	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxBlockSpeed = 5 * time.Millisecond
 	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	builder.execConfig.Caching.Archive = true
 	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
@@ -257,7 +257,7 @@ func TestRecreateStateForRPCBeyondGenesis(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
-	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxBlockSpeed = 5 * time.Millisecond
 	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	builder.execConfig.Caching.Archive = true
 	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
@@ -294,7 +294,7 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
-	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxBlockSpeed = 5 * time.Millisecond
 	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	builder.execConfig.Caching.Archive = true
 	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
@@ -340,7 +340,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithDatabase(rawdb.DBPebble)
 
 	builder.execConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
-	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxBlockSpeed = 5 * time.Millisecond
 	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	builder.execConfig.Caching = *cacheConfig
 
@@ -396,7 +396,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 			continue
 		}
 		gas += block.GasUsed()
-		_, err := bc.StateAt(block.Root())
+		_, err := bc.StateAt(block.Header())
 		blocks++
 		if (skipBlocks == 0 && skipGas == 0) || (skipBlocks != 0 && blocks > skipBlocks) || (skipGas != 0 && gas > skipGas) {
 			if err != nil {
@@ -531,7 +531,7 @@ func testGettingState(t *testing.T, execConfig *gethexec.Config) {
 	// force garbage collection of StateDB object, what should cause the state finalizer to run
 	state = nil
 	runtime.GC()
-	_, err = bc.StateAt(header.Root)
+	_, err = bc.StateAt(header)
 	if err == nil {
 		Fatal(t, "StateAndHeaderByNumber didn't failed as expected")
 	}
@@ -545,7 +545,7 @@ func TestGettingState(t *testing.T) {
 	execConfig := ExecConfigDefaultTest(t, env.GetTestStateScheme())
 	execConfig.Caching.SnapshotCache = 0 // disable snapshots
 	execConfig.Caching.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
-	execConfig.Sequencer.MaxBlockSpeed = 0
+	execConfig.Sequencer.MaxBlockSpeed = 5 * time.Millisecond
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	t.Run("full-node", func(t *testing.T) {
 		testGettingState(t, execConfig)
@@ -557,7 +557,7 @@ func TestGettingState(t *testing.T) {
 	execConfig.Caching.BlockCount = 128
 	execConfig.Caching.SnapshotCache = 0 // disable snapshots
 	execConfig.Caching.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
-	execConfig.Sequencer.MaxBlockSpeed = 0
+	execConfig.Sequencer.MaxBlockSpeed = 5 * time.Millisecond
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	t.Run("sparse-archive-node", func(t *testing.T) {
 		testGettingState(t, execConfig)

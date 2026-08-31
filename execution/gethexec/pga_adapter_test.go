@@ -4,6 +4,7 @@
 package gethexec
 
 import (
+	"context"
 	"errors"
 	"math"
 	"math/big"
@@ -18,7 +19,8 @@ import (
 // computation over real dynamic-fee transactions: the EffectiveGasTip bounds,
 // uint64 saturation, the core.ErrFeeCapTooLow mapping for a fee cap below the
 // basefee, and propagation of other EffectiveGasTip errors such as
-// types.ErrUint256Overflow for >256-bit fee/tip/basefee values.
+// types.ErrUint256Overflow for >256-bit fee/tip/basefee values. Dropped txs
+// must get the error on their result channel.
 func TestTxQueueItemComputePgaPriority(t *testing.T) {
 	// over64 exceeds uint64, so the effective tip saturates to math.MaxUint64.
 	over64 := new(big.Int).Lsh(big.NewInt(1), 70)
@@ -41,26 +43,36 @@ func TestTxQueueItemComputePgaPriority(t *testing.T) {
 		{name: "fee cap exceeds 256 bits", gasFeeCap: over256, gasTipCap: over256, baseFee: big.NewInt(40), wantErr: types.ErrUint256Overflow},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			item := txQueueItem{tx: types.NewTx(&types.DynamicFeeTx{
+			tx := types.NewTx(&types.DynamicFeeTx{
 				ChainID:   big.NewInt(1),
 				GasTipCap: tc.gasTipCap,
 				GasFeeCap: tc.gasFeeCap,
 				Gas:       21000,
 				To:        &common.Address{},
 				Value:     big.NewInt(0),
-			})}
-			got, err := item.ComputePgaPriority(tc.baseFee)
+			})
+			resultChan := make(chan error, 1)
+			item := newTxQueueItem(context.Background(), tx, nil, resultChan)
+			ok := item.ComputePgaPriority(tc.baseFee)
 			if tc.wantErr != nil {
-				if !errors.Is(err, tc.wantErr) {
-					t.Fatalf("err = %v, want errors.Is(%v)", err, tc.wantErr)
+				if ok {
+					t.Fatal("ComputePgaPriority = true, want the tx dropped")
+				}
+				select {
+				case err := <-resultChan:
+					if !errors.Is(err, tc.wantErr) {
+						t.Fatalf("result error = %v, want errors.Is(%v)", err, tc.wantErr)
+					}
+				default:
+					t.Fatalf("no result reported, want %v", tc.wantErr)
 				}
 				return
 			}
-			if err != nil {
-				t.Fatalf("unexpected err: %v", err)
+			if !ok {
+				t.Fatal("ComputePgaPriority = false, want true")
 			}
-			if got != tc.want {
-				t.Fatalf("priority fee = %d, want %d", got, tc.want)
+			if item.GetPriority() != tc.want {
+				t.Fatalf("priority = %d, want %d", item.GetPriority(), tc.want)
 			}
 		})
 	}

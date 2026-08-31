@@ -1,0 +1,46 @@
+[package]
+name = "arb-evm"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+alloy-consensus = { workspace = true, features = ["std"] }
+alloy-eips = { workspace = true }
+alloy-evm = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std"] }
+alloy-rlp = { workspace = true, features = ["derive"] }
+alloy-rpc-types-engine = { workspace = true }
+arb-alloy-consensus = { workspace = true }
+arb-chainspec = { workspace = true }
+arb-context = { workspace = true }
+arb-precompiles = { workspace = true }
+arb-primitives = { workspace = true }
+arb-storage = { workspace = true }
+arb-stylus = { workspace = true }
+arbos = { workspace = true }
+parking_lot = { workspace = true }
+reth-chainspec = { workspace = true }
+reth-ethereum-primitives = { workspace = true }
+reth-evm = { workspace = true }
+reth-primitives-traits = { workspace = true }
+reth-storage-api = { workspace = true }
+reth-storage-errors = { workspace = true }
+revm = { workspace = true, features = ["optional_balance_check", "optional_eip3541", "optional_eip3607", "optional_priority_fee_check", "optional_eip7623", "optional_no_base_fee"] }
+revm-database = { workspace = true }
+revm-state = { workspace = true }
+rustc-hash = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+revm = { workspace = true, features = ["secp256k1", "c-kzg", "blst", "portable"] }
+
+[dev-dependencies]
+arb-test-utils = { workspace = true }
+
+[lints]
+workspace = true

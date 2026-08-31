@@ -5,6 +5,7 @@
 
 use arbutil::evm::{
     api::{DataReader, EvmApi, Ink},
+    storage::StorageCacheLimitExceeded as StorageCacheLimitError,
     user::UserOutcome,
 };
 use eyre::{Result, eyre};
@@ -96,7 +97,7 @@ impl<D: DataReader, E: EvmApi<D>> RunProgram for NativeInstance<D, E> {
             Err(outcome) => {
                 // Detect native stack overflow FIRST — it takes priority because
                 // the DepthChecker counter may also be at zero when SIGSEGV fires,
-                // and we need the Go-side retry logic (handleNativeStackOverflow) to see
+                // and we need the Go-side retry logic (handleSystemError) to see
                 // NativeStackOverflow.
                 if outcome.clone().to_trap() == Some(TrapCode::StackOverflow) {
                     return Ok(NativeStackOverflow);
@@ -115,7 +116,13 @@ impl<D: DataReader, E: EvmApi<D>> RunProgram for NativeInstance<D, E> {
                 match escape {
                     Escape::OutOfInk => return Ok(OutOfInk),
                     Escape::Memory(error) => return Ok(Failure(error.into())),
-                    Escape::Internal(error) | Escape::Logical(error) => return Ok(Failure(error)),
+                    Escape::Internal(error) => {
+                        if error.downcast_ref::<StorageCacheLimitError>().is_some() {
+                            return Ok(StorageCacheLimitExceeded);
+                        }
+                        return Ok(Failure(error));
+                    }
+                    Escape::Logical(error) => return Ok(Failure(error)),
                     Escape::Exit(status) => status,
                 }
             }

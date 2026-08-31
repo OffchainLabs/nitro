@@ -10,7 +10,8 @@ permissions:
 
 jobs:
   build_and_run:
-    runs-on: arbitrator-ci
+    runs-on: ocl-16cpu-64ram-dind-500gi
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -25,6 +26,11 @@ jobs:
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4
         with:
           driver-opts: network=host
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["registry-cache.registry-cache.svc.cluster.local:5000"]
+            [registry."registry-cache.registry-cache.svc.cluster.local:5000"]
+              http = true
 
       - name: Cache Docker layers
         uses: actions/cache@v5

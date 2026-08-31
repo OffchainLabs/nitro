@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/eth/catalyst"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode/parent"
@@ -82,37 +81,30 @@ func TestParentChainEthConfigPolling(t *testing.T) {
 	}
 }
 
-// TestParentChainEthConfigForkTransition verifies that the ParentChain poller
+// TestParentChainEthConfigForkTransitionFlaky verifies that the ParentChain poller
 // detects when the parent chain transitions through a fork that changes the
 // blob schedule (e.g., Osaka -> BPO1).
-func TestParentChainEthConfigForkTransition(t *testing.T) {
+func TestParentChainEthConfigForkTransitionFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Pick a BPO1 activation far enough in the future that Build()'s setup
-	// blocks won't already cross it, and drive L1 past it explicitly later.
-	// The dev-mode L1 seals one block per transaction with timestamp
-	// max(wallclock, parent+1), so the head timestamp advances by at least
-	// one second per block regardless of wall-clock time. Build() can mint
-	// hundreds of L1 blocks (the bridging wait loop alone is budgeted for up
-	// to 600) on a slow runner, so the offset must comfortably exceed the
-	// number of setup blocks plus setup wall-clock seconds; 600 was
-	// observably crossable in CI, 30000 is not reachable within the test
-	// timeout.
-	// The pointer is set once before Build() and never mutated again, so we
-	// don't depend on geth retaining the same struct pointer we passed in.
-	// #nosec G115
+	// Pick an activation far enough in the future that setup cannot cross it,
+	// then advance the external L1 explicitly after observing Osaka.
+	// #nosec G115 -- current Unix time is non-negative
 	bpo1Time := uint64(time.Now().Unix()) + 30000
-	l1ChainConfig := *params.AllDevChainProtocolChanges
-	l1ChainConfig.BPO1Time = &bpo1Time
-	l1ChainConfig.BlobScheduleConfig = &params.BlobScheduleConfig{
+	blobSchedule := &params.BlobScheduleConfig{
 		Cancun: params.DefaultCancunBlobConfig,
 		Prague: params.DefaultPragueBlobConfig,
 		Osaka:  params.DefaultOsakaBlobConfig,
 		BPO1:   params.DefaultBPO1BlobConfig,
 	}
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithL1ChainConfig(&l1ChainConfig)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExternalL1GenesisOverrides(map[string]interface{}{
+		"bpo1Time":     bpo1Time,
+		"blobSchedule": blobSchedule,
+		// The upstream developer genesis schedules Bogota at genesis. Remove it
+		// so BPO1 is the next fork after Osaka.
+		"bogotaTime": nil,
+	})
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -126,10 +118,12 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 	l1HeaderReader.Start(ctx)
 	defer l1HeaderReader.StopAndWait()
 
+	l1ChainID, err := builder.L1.Client.ChainID(ctx)
+	Require(t, err)
 	testConfig := parent.Config{ConfigPollInterval: 200 * time.Millisecond}
 	pc := parent.NewParentChainWithConfig(
 		ctx,
-		l1ChainConfig.ChainID,
+		l1ChainID,
 		l1HeaderReader,
 		func() *parent.Config { return &testConfig },
 	)
@@ -156,14 +150,6 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 			lastPhase1Cfg.Max == params.DefaultOsakaBlobConfig.Max
 	})
 
-	// Drive the L1 head timestamp past BPO1Time. Each dev-mode L1 block only
-	// bumps the timestamp by ~1s when blocks are minted quickly, so instead
-	// of minting tens of thousands of blocks we seal a single block with an
-	// explicitly adjusted timestamp via the simulated beacon.
-	simBeacon, ok := builder.L1.L1BlobReader.Unwrap().(*catalyst.SimulatedBeacon)
-	if !ok {
-		t.Fatalf("expected L1 blob reader to be a *catalyst.SimulatedBeacon, got %T", builder.L1.L1BlobReader.Unwrap())
-	}
 	pollUntil(t, ctx, 60*time.Second, 100*time.Millisecond, "L1 timestamp past BPO1Time", func() bool {
 		head, err := builder.L1.Client.BlockByNumber(ctx, nil)
 		if err != nil {
@@ -173,11 +159,10 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 		if head.Time() >= bpo1Time {
 			return true
 		}
-		// AdjustTime fails if the txpool has pending transactions (e.g. a
-		// batch poster tx in flight); just retry on the next iteration.
-		// #nosec G115
-		if err := simBeacon.AdjustTime(time.Duration(bpo1Time-head.Time()+1) * time.Second); err != nil {
-			t.Logf("AdjustTime failed (will retry): %v", err)
+		// Retry if another L1 submission happens to be in flight.
+		// #nosec G115 -- the subtraction is guarded by the comparison above
+		if err := builder.L1.AdvanceL1Time(ctx, time.Duration(bpo1Time-head.Time()+1)*time.Second); err != nil {
+			t.Logf("AdvanceL1Time failed (will retry): %v", err)
 		}
 		return false
 	})

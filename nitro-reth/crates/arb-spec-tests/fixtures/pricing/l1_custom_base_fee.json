@@ -1,0 +1,14 @@
+{
+  "name": "l1_custom_base_fee",
+  "description": "Custom L1 initial base fee is recorded as price_per_unit",
+  "setup": {
+    "arbos_version": 30,
+    "chain_id": 421614,
+    "l1_initial_base_fee": "0x1dcd6500"
+  },
+  "assertions": {
+    "l1_pricing": {
+      "price_per_unit": "0x1dcd6500"
+    }
+  }
+}

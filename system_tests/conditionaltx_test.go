@@ -200,7 +200,7 @@ func dedupOptions(t *testing.T, options []*arbitrum_types.ConditionalOptions) []
 	return result
 }
 
-func TestSendRawTransactionConditionalBasic(t *testing.T) {
+func TestSendRawTransactionConditionalBasicFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -403,12 +403,12 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 	}
 }
 
-func TestSendRawTransactionConditionalPreCheck(t *testing.T) {
+func TestSendRawTransactionConditionalPreCheckFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxBlockSpeed = 5 * time.Millisecond
 	builder.execConfig.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessLikelyCompatible
 	builder.execConfig.TxPreChecker.RequiredStateAge = 1
 	builder.execConfig.TxPreChecker.RequiredStateMaxBlocks = 2

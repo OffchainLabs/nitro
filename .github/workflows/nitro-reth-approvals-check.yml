@@ -28,6 +28,7 @@ jobs:
   check-nitro-reth-approvals:
     name: Check Nitro Reth approvals
     runs-on: ubuntu-4
+    timeout-minutes: 10
     needs: changes
     if: always()
     permissions:
@@ -65,7 +66,7 @@ jobs:
             fi
           fi
 
-          curl -sSL --fail-with-body \
+          curl -sSL --fail-with-body --retry 3 \
             -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \

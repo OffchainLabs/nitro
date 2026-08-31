@@ -73,8 +73,16 @@ func (ep *Producer[T]) Start(ctx context.Context) {
 			}
 			ep.Unlock()
 		case <-ctx.Done():
-			close(ep.doneListener)
+			// doneListener is intentionally NOT closed here. Subscriptions send
+			// their id to it while tearing down (see Subscription.Next), so
+			// closing it would race with those sends and panic ("send on closed
+			// channel"). Nothing receives from it after we return; that is safe
+			// because Next's send is non-blocking, so late teardowns drop their
+			// id rather than blocking on a full buffer. The channel is freed
+			// once the Producer and all of its Subscriptions become unreachable.
+			ep.Lock()
 			ep.subs = nil
+			ep.Unlock()
 			return
 		}
 	}
@@ -85,10 +93,13 @@ func (ep *Producer[T]) Start(ctx context.Context) {
 func (ep *Producer[T]) Subscribe() *Subscription[T] {
 	ep.Lock()
 	defer ep.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
 	sub := &Subscription[T]{
 		id:     ep.nextId, // Assign a stable, monotonically increasing ID
 		events: make(chan T),
 		done:   ep.doneListener,
+		ctx:    ctx,
+		cancel: cancel,
 	}
 	ep.nextId++
 	ep.subs = append(ep.subs, sub)
@@ -108,6 +119,7 @@ func (ep *Producer[T]) Broadcast(ctx context.Context, event T) {
 			case listener.events <- event:
 			case <-time.After(ep.broadcastTimeout):
 			case <-ctx.Done():
+			case <-listener.ctx.Done():
 			}
 		}(sub)
 	}
@@ -121,18 +133,30 @@ type Subscription[T any] struct {
 	id     subId
 	events chan T
 	done   chan subId
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
-// Next waits for the next event or context cancelation, returning the event or an error.
+// Next waits for the next event or for ctx to be canceled. It returns
+// (event, false) when an event is delivered, and (zeroVal, true) once the
+// subscription is finished. Cancelling ctx tears the subscription down; callers
+// must keep calling Next until it reports true, or the subscription is never
+// cleaned up. Next is idempotent: after it has reported true once, every later
+// call reports true immediately.
 func (es *Subscription[T]) Next(ctx context.Context) (T, bool) {
 	var zeroVal T
 	for {
 		select {
 		case ev := <-es.events:
 			return ev, false
+		case <-es.ctx.Done():
+			return zeroVal, true
 		case <-ctx.Done():
-			es.done <- es.id
-			close(es.events)
+			es.cancel()
+			select {
+			case es.done <- es.id:
+			default:
+			}
 			return zeroVal, true
 		}
 	}

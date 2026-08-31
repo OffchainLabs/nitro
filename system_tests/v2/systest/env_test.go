@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 )
@@ -36,6 +37,53 @@ func TestEqualBig(t *testing.T) {
 		if tb.errCount() != 1 {
 			t.Fatalf("EqualBig(%v, %v) must record exactly 1 error, got %d", tc.expected, tc.actual, tb.errCount())
 		}
+	}
+}
+
+func TestEqual(t *testing.T) {
+	tb := &recordingT{}
+	e := &Env{t: tb}
+	e.Equal(42, 42)
+	if tb.errCount() != 0 {
+		t.Fatalf("equal values must not record errors, got %d", tb.errCount())
+	}
+
+	tb2 := &recordingT{}
+	e2 := &Env{t: tb2}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		e2.Equal(42, 43)
+	}()
+	<-done
+	if tb2.errCount() != 1 {
+		t.Fatalf("unequal values must record exactly 1 error, got %d", tb2.errCount())
+	}
+}
+
+func TestWaitFor(t *testing.T) {
+	tb := &recordingT{}
+	e := &Env{t: tb, Ctx: context.Background()}
+	e.WaitFor("condition already true", func() bool { return true })
+	if tb.errCount() != 0 {
+		t.Fatalf("satisfied condition must not record errors, got %d", tb.errCount())
+	}
+
+	tb2 := &recordingT{}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	e2 := &Env{t: tb2, Ctx: ctx}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		e2.WaitFor("never satisfied", func() bool { return false })
+	}()
+	<-done
+	if tb2.errCount() != 1 {
+		t.Fatalf("cancelled wait must record exactly 1 error, got %d", tb2.errCount())
+	}
+	if !strings.Contains(tb2.errors[0], "never satisfied") {
+		t.Fatalf("failure must name the condition, got %q", tb2.errors[0])
 	}
 }
 
@@ -170,5 +218,41 @@ func TestEnvWaitTimeoutReportsAndMarksDead(t *testing.T) {
 	lateAssert(e, "after timeout") // dead flag set by the timeout path → dropped
 	if tb.errCount() != 1 {
 		t.Fatalf("dead env should drop later reports, got %d", tb.errCount())
+	}
+}
+
+func TestFollowerHelperOnSingleNodeEnvFails(t *testing.T) {
+	tb := &recordingT{}
+	e := &Env{t: tb}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		e.Follower()
+	}()
+	<-done
+	if tb.errCount() != 1 {
+		t.Fatalf("follower helper on a single-node env must record exactly 1 error, got %d", tb.errCount())
+	}
+	if !strings.Contains(tb.errors[0], "systest.WithMultiNode()") {
+		t.Fatalf("failure must point at WithMultiNode, got %q", tb.errors[0])
+	}
+}
+
+// TestL1HelperOnL2OnlyEnvFails pins the requireL1 guard: L1 helpers on an
+// L2-only scenario fail with a pointer to WithL1.
+func TestL1HelperOnL2OnlyEnvFails(t *testing.T) {
+	tb := &recordingT{}
+	e := &Env{t: tb}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		e.LookupL2Tx(nil)
+	}()
+	<-done
+	if tb.errCount() != 1 {
+		t.Fatalf("L1 helper on an L2-only env must record exactly 1 error, got %d", tb.errCount())
+	}
+	if !strings.Contains(tb.errors[0], "systest.WithL1()") {
+		t.Fatalf("failure must point at WithL1, got %q", tb.errors[0])
 	}
 }

@@ -46,6 +46,8 @@ type builder struct {
 	skipChainOwner   bool
 	exposeRPC        bool
 
+	validation bool
+
 	postHooks []Hook
 	dims      map[axis][]axisVariant
 
@@ -64,10 +66,10 @@ func newBuilder() *builder {
 func (b *builder) clone() *builder {
 	out := *b
 	if len(b.skipStateSchemes) > 0 {
-		out.skipStateSchemes = append([]StateScheme(nil), b.skipStateSchemes...)
+		out.skipStateSchemes = append([]StateScheme{}, b.skipStateSchemes...)
 	}
 	if len(b.postHooks) > 0 {
-		out.postHooks = append([]Hook(nil), b.postHooks...)
+		out.postHooks = append([]Hook{}, b.postHooks...)
 	}
 	if len(b.nodeOverrides) > 0 {
 		out.nodeOverrides = append([]func(*arbnode.Config){}, b.nodeOverrides...)
@@ -94,6 +96,18 @@ func (b *builder) validate() {
 	if b.maxArbOS != 0 && b.minArbOS > b.maxArbOS {
 		panic(fmt.Sprintf("systest: MinArbOS(%d) > MaxArbOS(%d)", b.minArbOS, b.maxArbOS))
 	}
+	if b.validation && b.topology == TopologyL2Only {
+		panic("systest: WithValidation requires a parent chain")
+	}
+	if b.validates() && b.stateScheme.IsSome() && b.stateScheme.Unwrap() != validationScheme {
+		panic(fmt.Sprintf("systest: validation requires %s state scheme; conflicts with WithStateScheme(%s)", validationScheme, b.stateScheme.Unwrap()))
+	}
+}
+
+// validates reports whether any node in this test runs block validation:
+// requested via WithValidation, or TopologyStakingValidation's staker follower (buildFollowerNode).
+func (b *builder) validates() bool {
+	return b.validation || b.topology == TopologyStakingValidation
 }
 
 func (b *builder) shouldSkip(sp scheduleParams) string {
@@ -121,6 +135,9 @@ func (b *builder) shouldSkip(sp scheduleParams) string {
 		if scheme.IsSome() && scheme.Unwrap() == s {
 			return fmt.Sprintf("incompatible with state scheme %q", s)
 		}
+	}
+	if b.validates() && scheme.IsSome() && scheme.Unwrap() != validationScheme {
+		return fmt.Sprintf("validation requires %s state scheme", validationScheme)
 	}
 	if !sp.categoryEnabled(b.category) {
 		return fmt.Sprintf("category %q not enabled", b.category)
@@ -171,6 +188,15 @@ func (b *builder) mergeParams(sp scheduleParams) {
 	}
 }
 
+// weight is the scheduler-slot cost: topology-derived, floored to weightMax
+// when the run validates (JIT validation saturates a core).
+func (b *builder) weight() weight {
+	if b.validates() {
+		return weightMax
+	}
+	return specWeight(b.topology)
+}
+
 func (b *builder) freeze(nameSuffix string) Spec {
 	name := b.name
 	if nameSuffix != "" {
@@ -178,7 +204,7 @@ func (b *builder) freeze(nameSuffix string) Spec {
 	}
 	return Spec{
 		Name:           name,
-		Weight:         weightLight,
+		Weight:         b.weight(),
 		ArbOSVersion:   b.arbOS,
 		StateScheme:    b.stateScheme,
 		DBEngine:       b.dbEngine,
@@ -188,6 +214,7 @@ func (b *builder) freeze(nameSuffix string) Spec {
 		SkipChainOwner: b.skipChainOwner,
 		ExposeRPC:      b.exposeRPC,
 		arbOSInit:      b.arbOSInit,
+		Validate:       b.validation,
 	}
 }
 

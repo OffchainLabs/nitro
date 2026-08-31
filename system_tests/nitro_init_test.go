@@ -5,7 +5,6 @@ package arbtest
 import (
 	"context"
 	"encoding/json"
-	"math/big"
 	"reflect"
 	"testing"
 
@@ -101,7 +100,6 @@ func TestOpenExistingExecutionDB(t *testing.T) {
 	executionDB, _, _, _, err := nitroinit.OpenExistingExecutionDB(
 		stack,
 		&nodeConfig,
-		new(big.Int).SetUint64(nodeConfig.Chain.ID),
 		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
 		nil,
 		&nodeConfig.Persistent,

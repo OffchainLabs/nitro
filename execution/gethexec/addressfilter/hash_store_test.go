@@ -5,6 +5,7 @@ package addressfilter
 
 import (
 	"encoding/binary"
+	"errors"
 	"math/rand/v2"
 	"sync"
 	"testing"
@@ -14,6 +15,57 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 )
+
+func storeHashes(t testing.TB, store *HashStore, id uuid.UUID, salt uuid.UUID, scheme HashingScheme, hashes []common.Hash, digest string) {
+	t.Helper()
+	require.NoError(t, store.Store(digest, len(hashes), func(addHash func(common.Hash)) (*ListMeta, error) {
+		for _, h := range hashes {
+			addHash(h)
+		}
+		return &ListMeta{ID: id, Salt: salt, Scheme: scheme}, nil
+	}))
+}
+
+func TestHashStorePlaintextScheme(t *testing.T) {
+	addr1 := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	addr2 := common.HexToAddress("0x2222222222222222222222222222222222222222")
+
+	for _, mode := range []struct {
+		name  string
+		store *HashStore
+	}{
+		{"no preallocation", NewHashStore(100)},
+		{"preallocated", newHashStore(100, 1000)},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			id := uuid.New()
+			storeHashes(t, mode.store, id, uuid.Nil, HashingSchemePlaintext, []common.Hash{common.BytesToHash(addr1.Bytes())}, "e1")
+
+			restricted, gotId := mode.store.IsRestricted(addr1)
+			require.True(t, restricted)
+			require.Equal(t, id, gotId)
+
+			restricted, _ = mode.store.IsRestricted(addr2)
+			require.False(t, restricted)
+		})
+	}
+}
+
+func TestHashStoreUninitialized(t *testing.T) {
+	for _, mode := range []struct {
+		name  string
+		store *HashStore
+	}{
+		{"no preallocation", NewHashStore(100)},
+		{"preallocated", newHashStore(100, 1000)},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			restricted, id := mode.store.IsRestricted(common.HexToAddress("0x1111111111111111111111111111111111111111"))
+			require.False(t, restricted)
+			require.Equal(t, uuid.Nil, id)
+		})
+	}
+}
 
 func TestHashStorePingPongReuse(t *testing.T) {
 	store := newHashStore(100, 1000)
@@ -28,7 +80,7 @@ func TestHashStorePingPongReuse(t *testing.T) {
 	require.NotNil(t, d0)
 	require.NotNil(t, d1)
 
-	store.Store(uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h1}, "e1")
+	storeHashes(t, store, uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h1}, "e1")
 	require.Same(t, d1, store.data.Load(), "first store should publish buffer 1")
 	if r, _ := store.IsRestricted(addr1); !r {
 		t.Fatal("addr1 should be restricted after first store")
@@ -38,7 +90,7 @@ func TestHashStorePingPongReuse(t *testing.T) {
 	}
 	require.Equal(t, 1, store.Size())
 
-	store.Store(uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h2}, "e2")
+	storeHashes(t, store, uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h2}, "e2")
 	require.Same(t, d0, store.data.Load(), "second store should publish buffer 0")
 	if r, _ := store.IsRestricted(addr2); !r {
 		t.Fatal("addr2 should be restricted after second store")
@@ -61,11 +113,11 @@ func TestHashStoreSnapshotStableAcrossSwap(t *testing.T) {
 	h1 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt), addr1)
 	h2 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt), addr2)
 
-	store.Store(uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h1}, "e1")
+	storeHashes(t, store, uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h1}, "e1")
 	snap := store.data.Load() // hold the old snapshot
 
 	// The next store reuses the other buffer; it must not mutate snap.
-	store.Store(uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h2}, "e2")
+	storeHashes(t, store, uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h2}, "e2")
 
 	_, ok := snap.hashes[snap.hashAddress(addr1)]
 	require.True(t, ok, "old snapshot should still contain addr1 after a swap")
@@ -78,9 +130,9 @@ func TestHashStoreDisabledModeAllocatesNewData(t *testing.T) {
 	addr := common.HexToAddress("0x1111111111111111111111111111111111111111")
 	h := HashStringInputWithPrefix(GetHashStringInputPrefix(salt), addr)
 
-	store.Store(uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h}, "e1")
+	storeHashes(t, store, uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h}, "e1")
 	d1 := store.data.Load()
-	store.Store(uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h}, "e2")
+	storeHashes(t, store, uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h}, "e2")
 	d2 := store.data.Load()
 	require.NotSame(t, d1, d2, "disabled mode should allocate a new hashData each Store")
 }
@@ -114,10 +166,95 @@ func TestHashStorePreallocConcurrentReuseRaceFree(t *testing.T) {
 
 	// Recycle the buffers many times in quick succession while readers hammer them.
 	for range 1000 {
-		store.Store(uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h}, "e")
+		storeHashes(t, store, uuid.New(), salt, HashingSchemeStringInput, []common.Hash{h}, "e")
 	}
 	close(stop)
 	wg.Wait()
+}
+
+func TestHashStoreStoreFailureKeepsSnapshot(t *testing.T) {
+	for _, maxHashes := range []int{0, 1000} {
+		name := "prealloc"
+		if maxHashes == 0 {
+			name = "no prealloc"
+		}
+		t.Run(name, func(t *testing.T) {
+			store := newHashStore(100, maxHashes)
+			salt := uuid.New()
+			addr1 := common.HexToAddress("0x1111111111111111111111111111111111111111")
+			addr2 := common.HexToAddress("0x2222222222222222222222222222222222222222")
+			h1 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt), addr1)
+			h2 := HashStringInputWithPrefix(GetHashStringInputPrefix(salt), addr2)
+
+			id1 := uuid.New()
+			storeHashes(t, store, id1, salt, HashingSchemeStringInput, []common.Hash{h1}, "e1")
+
+			// A fill that inserts a hash and then fails must publish nothing.
+			fillErr := errors.New("stream broke")
+			err := store.Store("e2", 1, func(add func(common.Hash)) (*ListMeta, error) {
+				add(h2)
+				return nil, fillErr
+			})
+			require.ErrorIs(t, err, fillErr)
+
+			restricted, gotID := store.IsRestricted(addr1)
+			require.True(t, restricted, "old snapshot must survive a failed fill")
+			require.Equal(t, id1, gotID)
+			if restricted, _ := store.IsRestricted(addr2); restricted {
+				t.Fatal("hash from the failed fill must not be visible")
+			}
+			require.Equal(t, "e1", store.Digest())
+			require.Equal(t, 1, store.Size())
+
+			// The next successful store must not resurrect the aborted fill's hashes.
+			require.NoError(t, store.Store("e3", 1, func(add func(common.Hash)) (*ListMeta, error) {
+				add(h1)
+				return &ListMeta{ID: uuid.New(), Salt: salt, Scheme: HashingSchemeStringInput}, nil
+			}))
+			if restricted, _ := store.IsRestricted(addr2); restricted {
+				t.Fatal("residue from the aborted fill leaked into the next snapshot")
+			}
+			if restricted, _ := store.IsRestricted(addr1); !restricted {
+				t.Fatal("addr1 should be restricted after the successful reload")
+			}
+			require.Equal(t, "e3", store.Digest())
+		})
+	}
+}
+
+// TestHashStoreStoreConcurrentReaders verifies readers keep serving the old
+// snapshot, race-free, while a slow streaming fill is in progress (run with -race).
+func TestHashStoreStoreConcurrentReaders(t *testing.T) {
+	store := newHashStore(100, 1000)
+	salt := uuid.New()
+	addr := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	h := HashStringInputWithPrefix(GetHashStringInputPrefix(salt), addr)
+	id1 := uuid.New()
+	storeHashes(t, store, id1, salt, HashingSchemeStringInput, []common.Hash{h}, "e1")
+
+	fillStarted := make(chan struct{})
+	finishFill := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- store.Store("e2", 1, func(add func(common.Hash)) (*ListMeta, error) {
+			close(fillStarted)
+			add(h)
+			<-finishFill
+			return &ListMeta{ID: uuid.New(), Salt: salt, Scheme: HashingSchemeStringInput}, nil
+		})
+	}()
+
+	<-fillStarted
+	// Mid-fill, readers must still see the previous snapshot.
+	for range 100 {
+		restricted, gotID := store.IsRestricted(addr)
+		require.True(t, restricted)
+		require.Equal(t, id1, gotID)
+		require.Equal(t, "e1", store.Digest())
+	}
+	close(finishFill)
+	require.NoError(t, <-done)
+	require.Equal(t, "e2", store.Digest())
 }
 
 // benchIsRestrictedAddrs is the number of restricted addresses each IsRestricted
@@ -140,7 +277,7 @@ func benchmarkIsRestricted(b *testing.B, cacheSize int) {
 	}
 
 	store := NewHashStore(cacheSize)
-	store.Store(uuid.New(), salt, HashingSchemeStringInput, hashes, "bench")
+	storeHashes(b, store, uuid.New(), salt, HashingSchemeStringInput, hashes, "bench")
 
 	// Precompute random indices so the timed loop does no RNG work. The length is a
 	// power of two far larger than the cache, so masking is cheap and cycling back to

@@ -4,75 +4,76 @@
 package pga
 
 import (
-	"context"
 	"math/big"
 	"time"
-
-	"github.com/ethereum/go-ethereum/core/txpool"
 
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-// Tx is a transaction managed by the priority mempool. The sequencer's txQueueItem implements it; the mempool depends
-// only on this interface so it stays decoupled from that concrete type.
+// Tx is a transaction managed by the priority mempool. The sequencer's txQueueItem implements it;
+// the mempool depends only on this interface so it stays decoupled from that concrete type.
 type Tx interface {
-	// ComputePgaPriority returns the transaction's base priority for PGA, independent of any anti-starvation boost.
-	ComputePgaPriority(baseFee *big.Int) (uint64, error)
-	// ReportError resolves the submitting client's result channel with err.
-	ReportError(err error)
-	// GetContext returns the submission context, used to drop expired entries.
-	GetContext() context.Context
-	// GetSize returns the size in bytes of the marshalled transaction.
-	GetSize() int
+	// Priority returns the priority of the transaction.
+	GetPriority() uint64
+	// ApplyRoundBoundary marks a PGA round boundary: the tx counts it as a round waited in the
+	// priority queue and folds the given anti-starvation boost into its priority.
+	ApplyRoundBoundary(boostDelta uint64)
+	// ComputePgaPriority computes the transaction priority for PGA and stores it in the tx,
+	// returning false if the transaction was dropped.
+	ComputePgaPriority(baseFee *big.Int) bool
+	// Validate returns false if the transaction was dropped.
+	Validate() bool
 	// GetFirstAppearance returns when the transaction first reached the sequencer; it breaks ties between
 	// equal-priority entries.
 	GetFirstAppearance() time.Time
 }
 
-// PrioritizedTx pairs a queued transaction with its priority key.
-type PrioritizedTx[T Tx] struct {
-	tx T
-	// cachedPriority is the ordering key: the priority fee plus the accumulated boost. The priority fee is cached
-	// rather than recomputed on every access because it changes only with the basefee at a block boundary, not during
-	// the block.
-	cachedPriority uint64
-	boost          uint64 // accumulated anti-starvation boost
+// PGAState should be embedded by the Tx. It provides the GetPriority and ApplyRoundBoundary methods.
+type PGAState struct {
+	tip          uint64 // effective tip per gas as of the last SetTip
+	boost        uint64 // accumulated PGA anti-starvation boost
+	roundsWaited uint64 // PGA round boundaries the tx sat through in the priority queue
+	promoted     bool   // whether the tx has ever entered the priority queue
 }
 
-// Tx returns the wrapped transaction.
-func (item PrioritizedTx[T]) Tx() T { return item.tx }
-
-// Priority returns the entry's priority key.
-func (item PrioritizedTx[T]) Priority() uint64 { return item.cachedPriority }
-
-// setPriority recomputes the base priority from ComputePgaPriority and folds in the accumulated boost. On error it
-// returns false, signalling that the transaction was dropped.
-func (item *PrioritizedTx[T]) setPriority(baseFee *big.Int) bool {
-	base, err := item.tx.ComputePgaPriority(baseFee)
-	if err != nil {
-		item.tx.ReportError(err)
-		return false
-	}
-	item.cachedPriority = arbmath.SaturatingUAdd(base, item.boost)
-	return true
+func (p *PGAState) SetTip(tip uint64) {
+	p.tip = tip
 }
 
-// addBoost adds delta to the accumulated boost and the priority key. The add saturates so a key near the uint64 ceiling
-// cannot wrap.
-func (item *PrioritizedTx[T]) addBoost(delta uint64) {
-	item.boost = arbmath.SaturatingUAdd(item.boost, delta)
-	item.cachedPriority = arbmath.SaturatingUAdd(item.cachedPriority, delta)
+func (p *PGAState) GetPriority() uint64 {
+	// Overflow should not happen, use saturating function just to be safe.
+	return arbmath.SaturatingUAdd(p.tip, p.boost)
 }
 
-// validate returns false if the transaction was dropped.
-func (item *PrioritizedTx[T]) validate(maxTxDataSize int) bool {
-	if err := item.tx.GetContext().Err(); err != nil {
-		item.tx.ReportError(err)
+func (p *PGAState) GetBoost() uint64 {
+	return p.boost
+}
+
+func (p *PGAState) GetTip() uint64 {
+	return p.tip
+}
+
+func (p *PGAState) GetRoundsWaited() uint64 {
+	return p.roundsWaited
+}
+
+func (p *PGAState) ResetBoost() {
+	p.boost = 0
+}
+
+// ApplyRoundBoundary counts a PGA round boundary the tx sat through in the priority queue,
+// applying the round's anti-starvation boost.
+func (p *PGAState) ApplyRoundBoundary(boostDelta uint64) {
+	p.roundsWaited++
+	p.boost = arbmath.SaturatingUAdd(p.boost, boostDelta)
+}
+
+// MarkPromoted records the tx's first promotion into the priority queue, reporting whether this
+// call was the first.
+func (p *PGAState) MarkPromoted() bool {
+	if p.promoted {
 		return false
 	}
-	if item.tx.GetSize() > maxTxDataSize {
-		item.tx.ReportError(txpool.ErrOversizedData)
-		return false
-	}
+	p.promoted = true
 	return true
 }

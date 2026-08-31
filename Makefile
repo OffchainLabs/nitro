@@ -15,16 +15,24 @@ else
 endif
 
 
-ifneq ($(origin NITRO_VERSION),undefined)
- GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.version=$(NITRO_VERSION)
+ifneq ($(origin NITRO_TAG),undefined)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/nitroversion.tag=$(NITRO_TAG)
+endif
+
+ifneq ($(origin NITRO_BRANCH),undefined)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/nitroversion.branch=$(NITRO_BRANCH)
+endif
+
+ifneq ($(origin NITRO_COMMIT),undefined)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/nitroversion.commit=$(NITRO_COMMIT)
 endif
 
 ifneq ($(origin NITRO_DATETIME),undefined)
- GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.datetime=$(NITRO_DATETIME)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/nitroversion.datetime=$(NITRO_DATETIME)
 endif
 
 ifneq ($(origin NITRO_MODIFIED),undefined)
- GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.modified=$(NITRO_MODIFIED)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/nitroversion.modified=$(NITRO_MODIFIED)
 endif
 
 # Stripped-binary build (STRIP=1): adds -s -w to Go ldflags, -trimpath to go
@@ -51,6 +59,8 @@ endif
 export GOTOOLCHAIN := go1.25.12
 GOLANGCI_LINT_VERSION := v2.5.0
 golangci_lint := target/bin/golangci-lint
+upstream_geth_version ?= glamsterdam-devnet-8
+upstream_geth_toolchain ?= auto
 
 UNAME_S := $(shell uname -s)
 
@@ -185,6 +195,8 @@ CBROTLI_WASM_BUILD_ARGS ?=-d
 
 # user targets
 
+.DEFAULT_GOAL := build
+
 ##@ Setup
 
 .PHONY: init-submodules ## Initialize private submodules.
@@ -232,6 +244,11 @@ test-go-deps: \
 	$(arbitrator_stylus_lib) \
 	$(arbitrator_generated_header) \
 	$(patsubst %,$(arbitrator_cases)/%.wasm, global-state read-inboxmsg-10 global-state-wrapper const)
+
+.PHONY: build-upstream-geth ## Install the configured upstream geth used to run external L1
+build-upstream-geth:
+	GOTOOLCHAIN=$(upstream_geth_toolchain) GOBIN=$(abspath target/bin) \
+		go install github.com/ethereum/go-ethereum/cmd/geth@$(upstream_geth_version)
 
 .PHONY: build-prover-header ## Build the prover generated header.
 build-prover-header: $(arbitrator_generated_header)
@@ -691,7 +708,7 @@ contracts/test/prover/proofs/forward-test.json: $(arbitrator_cases)/forward-test
 	$(prover_bin) $< -o $@ --allow-hostapi $(patsubst %,-l %, $(arbitrator_tests_forward_deps))
 
 contracts/test/prover/proofs/link.json: $(arbitrator_cases)/link.wasm $(arbitrator_tests_link_deps) $(prover_bin)
-	$(prover_bin) $< -o $@ --allow-hostapi --stylus-modules $(arbitrator_tests_link_deps) --require-success
+	$(prover_bin) $< -o $@ --allow-hostapi $(patsubst %, --stylus-modules %, $(arbitrator_tests_link_deps)) --require-success
 
 contracts/test/prover/proofs/dynamic.json: $(patsubst %,$(arbitrator_cases)/%.wasm, dynamic user) $(prover_bin)
 	$(prover_bin) $< -o $@ --allow-hostapi --stylus-modules $(arbitrator_cases)/user.wasm --require-success

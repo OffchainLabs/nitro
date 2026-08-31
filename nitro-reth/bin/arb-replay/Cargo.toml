@@ -1,0 +1,26 @@
+[package]
+name = "arb-replay"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+description = "The classic replay entrypoint: re-executes one block inside the prover's wasm machine."
+
+[[bin]]
+name = "arb-replay"
+path = "src/main.rs"
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+nitro-brotli = { workspace = true }
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+nitro-brotli = { workspace = true, features = ["cc_brotli"] }
+
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
+caller-env = { workspace = true, features = ["brotli", "wasmer_traits"] }
+wasmer = { workspace = true, features = ["sys", "cranelift"] }
+
+[lints]
+workspace = true

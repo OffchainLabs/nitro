@@ -15,36 +15,60 @@ import (
 	"github.com/offchainlabs/nitro/util"
 )
 
+// Values accepted by InitConfig.GenesisMode. The default (empty) selects the
+// first configured genesis source in the order: genesis-json,
+// genesis-json-file, genesis-json-file-directory.
+const (
+	GenesisModeDefault   = ""
+	GenesisModeInline    = "inline"
+	GenesisModeFile      = "file"
+	GenesisModeDirectory = "directory"
+)
+
+const (
+	SnapshotKindArchive     = "archive"
+	SnapshotKindPruned      = "pruned"
+	SnapshotKindGenesis     = "genesis"
+	SnapshotKindArchivePath = "archive-path"
+	SnapshotKindFullPath    = "full-path"
+)
+
 type InitConfig struct {
-	Force                         bool          `koanf:"force"`
-	Url                           string        `koanf:"url"`
-	Latest                        string        `koanf:"latest"`
-	LatestBase                    string        `koanf:"latest-base"`
-	ValidateChecksum              bool          `koanf:"validate-checksum"`
-	DownloadPath                  string        `koanf:"download-path"`
-	DownloadPoll                  time.Duration `koanf:"download-poll"`
-	DevInit                       bool          `koanf:"dev-init"`
-	DevInitAddress                string        `koanf:"dev-init-address"`
-	DevMaxCodeSize                uint64        `koanf:"dev-max-code-size"`
-	DevInitBlockNum               uint64        `koanf:"dev-init-blocknum"`
-	Empty                         bool          `koanf:"empty"`
-	ImportWasm                    bool          `koanf:"import-wasm"`
-	AccountsPerSync               uint          `koanf:"accounts-per-sync"`
-	ImportFile                    string        `koanf:"import-file"`
-	GenesisJsonFile               string        `koanf:"genesis-json-file"`
-	GenesisJsonFileDirectory      string        `koanf:"genesis-json-file-directory"`
-	ThenQuit                      bool          `koanf:"then-quit"`
-	Prune                         string        `koanf:"prune"`
-	PruneParallelStorageTraversal bool          `koanf:"prune-parallel-storage-traversal"`
-	PruneBloomSize                uint64        `koanf:"prune-bloom-size"`
-	PruneThreads                  int           `koanf:"prune-threads"`
-	PruneTrieCleanCache           int           `koanf:"prune-trie-clean-cache"`
-	RecreateMissingStateFrom      uint64        `koanf:"recreate-missing-state-from"`
-	RebuildLocalWasm              string        `koanf:"rebuild-local-wasm"`
-	ReorgToBatch                  int64         `koanf:"reorg-to-batch"`
-	ReorgToMessageBatch           int64         `koanf:"reorg-to-message-batch"`
-	ReorgToBlockBatch             int64         `koanf:"reorg-to-block-batch"`
-	ValidateGenesisAssertion      bool          `koanf:"validate-genesis-assertion"`
+	Force                    bool          `koanf:"force"`
+	Url                      string        `koanf:"url"`
+	Latest                   string        `koanf:"latest"`
+	LatestBase               string        `koanf:"latest-base"`
+	ValidateChecksum         bool          `koanf:"validate-checksum"`
+	DownloadPath             string        `koanf:"download-path"`
+	DownloadPoll             time.Duration `koanf:"download-poll"`
+	DevInit                  bool          `koanf:"dev-init"`
+	DevInitAddress           string        `koanf:"dev-init-address"`
+	DevMaxCodeSize           uint64        `koanf:"dev-max-code-size"`
+	DevInitBlockNum          uint64        `koanf:"dev-init-blocknum"`
+	Empty                    bool          `koanf:"empty"`
+	ImportWasm               bool          `koanf:"import-wasm"`
+	AccountsPerSync          uint          `koanf:"accounts-per-sync"`
+	ImportFile               string        `koanf:"import-file"`
+	GenesisJson              string        `koanf:"genesis-json"`
+	GenesisMode              string        `koanf:"genesis-mode"`
+	GenesisJsonFile          string        `koanf:"genesis-json-file"`
+	GenesisJsonFileDirectory string        `koanf:"genesis-json-file-directory"`
+	// resolvedGenesisJsonFile holds the file discovered in
+	// GenesisJsonFileDirectory at config parse time. Unexported on purpose:
+	// koanf skips it, so no config layer can set it.
+	resolvedGenesisJsonFile       string
+	ThenQuit                      bool   `koanf:"then-quit"`
+	Prune                         string `koanf:"prune"`
+	PruneParallelStorageTraversal bool   `koanf:"prune-parallel-storage-traversal"`
+	PruneBloomSize                uint64 `koanf:"prune-bloom-size"`
+	PruneThreads                  int    `koanf:"prune-threads"`
+	PruneTrieCleanCache           int    `koanf:"prune-trie-clean-cache"`
+	RecreateMissingStateFrom      uint64 `koanf:"recreate-missing-state-from"`
+	RebuildLocalWasm              string `koanf:"rebuild-local-wasm"`
+	ReorgToBatch                  int64  `koanf:"reorg-to-batch"`
+	ReorgToMessageBatch           int64  `koanf:"reorg-to-message-batch"`
+	ReorgToBlockBatch             int64  `koanf:"reorg-to-block-batch"`
+	ValidateGenesisAssertion      bool   `koanf:"validate-genesis-assertion"`
 }
 
 var InitConfigDefault = InitConfig{
@@ -62,6 +86,8 @@ var InitConfigDefault = InitConfig{
 	Empty:                         false,
 	ImportWasm:                    false,
 	ImportFile:                    "",
+	GenesisJson:                   "",
+	GenesisMode:                   GenesisModeDefault,
 	GenesisJsonFile:               "",
 	GenesisJsonFileDirectory:      "",
 	AccountsPerSync:               100000,
@@ -95,8 +121,10 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".import-wasm", InitConfigDefault.ImportWasm, "if set, import the wasm directory when downloading a database (contains executable code - only use with highly trusted source)")
 	f.Bool(prefix+".then-quit", InitConfigDefault.ThenQuit, "quit after init is done")
 	f.String(prefix+".import-file", InitConfigDefault.ImportFile, "path for json data to import")
+	f.String(prefix+".genesis-json", InitConfigDefault.GenesisJson, "genesis document identical in format to a genesis json file; in a config file it may be a nested json object; quote large numbers as hex strings")
 	f.String(prefix+".genesis-json-file", InitConfigDefault.GenesisJsonFile, "path for genesis json file")
 	f.String(prefix+".genesis-json-file-directory", InitConfigDefault.GenesisJsonFileDirectory, "directory path for genesis json files - will search for a file named by the chain ID")
+	f.String(prefix+".genesis-mode", InitConfigDefault.GenesisMode, "genesis source to use: \"inline\" ("+prefix+".genesis-json), \"file\" ("+prefix+".genesis-json-file) or \"directory\" ("+prefix+".genesis-json-file-directory); empty selects the first configured of those, in that order")
 	f.Uint(prefix+".accounts-per-sync", InitConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
 	f.String(prefix+".prune", InitConfigDefault.Prune, "pruning for a given use: \"full\" for full nodes serving RPC requests, or \"validator\" for validators")
 	f.Bool(prefix+".prune-parallel-storage-traversal", InitConfigDefault.PruneParallelStorageTraversal, "if true: use parallel pruning per account")
@@ -115,9 +143,42 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".validate-genesis-assertion", InitConfigDefault.ValidateGenesisAssertion, "tests genesis assertion posted on parent chain against the genesis block created on init")
 }
 
+func (c *InitConfig) ResolvedGenesisJsonFile() string {
+	return c.resolvedGenesisJsonFile
+}
+
+func (c *InitConfig) SetResolvedGenesisJsonFile(genesisJsonFile string) {
+	c.resolvedGenesisJsonFile = genesisJsonFile
+}
+
 func (c *InitConfig) Validate() error {
 	if c.Empty && c.GenesisJsonFile != "" {
 		return fmt.Errorf("init config cannot be both empty and have a genesis json file specified")
+	}
+	if c.Empty && c.GenesisJson != "" {
+		return fmt.Errorf("init config cannot be both empty and have an inline genesis (genesis-json) specified")
+	}
+	if c.Empty && c.resolvedGenesisJsonFile != "" {
+		return fmt.Errorf("init config cannot be both empty and have a genesis json file discovered in genesis-json-file-directory")
+	}
+	c.GenesisMode = strings.ToLower(c.GenesisMode)
+	switch c.GenesisMode {
+	case GenesisModeDefault:
+		// no genesis source forced - the first configured one is used
+	case GenesisModeInline:
+		if c.GenesisJson == "" {
+			return fmt.Errorf("genesis-mode is %q but genesis-json is empty", GenesisModeInline)
+		}
+	case GenesisModeFile:
+		if c.GenesisJsonFile == "" {
+			return fmt.Errorf("genesis-mode is %q but genesis-json-file is empty", GenesisModeFile)
+		}
+	case GenesisModeDirectory:
+		if c.GenesisJsonFileDirectory == "" {
+			return fmt.Errorf("genesis-mode is %q but genesis-json-file-directory is empty", GenesisModeDirectory)
+		}
+	default:
+		return fmt.Errorf("invalid value of genesis-mode, want: inline or file or directory, got: %s", c.GenesisMode)
 	}
 	if c.Force && c.RecreateMissingStateFrom > 0 {
 		log.Warn("force init enabled, recreate-missing-state-from will have no effect")
@@ -152,6 +213,6 @@ func (c *InitConfig) IsReorgRequested() bool {
 }
 
 var (
-	acceptedSnapshotKinds    = []string{"archive", "pruned", "genesis"}
+	acceptedSnapshotKinds    = []string{SnapshotKindArchive, SnapshotKindPruned, SnapshotKindGenesis}
 	acceptedSnapshotKindsStr = "(accepted values: \"" + strings.Join(acceptedSnapshotKinds, "\" | \"") + "\")"
 )

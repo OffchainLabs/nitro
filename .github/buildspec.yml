@@ -40,7 +40,7 @@ phases:
           export GITHUB_TOKEN
           GITHUB_TOKEN=$(printf '%s' "$TOKEN_RESPONSE" | jq -r '.token // empty')
           if [ -z "$GITHUB_TOKEN" ]; then
-            redacted=$(printf '%s' "$TOKEN_RESPONSE" | sed -E 's/(ghs_|ghu_)[A-Za-z0-9]+/\1REDACTED/g')
+            redacted=$(printf '%s' "$TOKEN_RESPONSE" | sed -E 's/(ghs_|ghu_)[A-Za-z0-9._-]+/\1REDACTED/g')
             echo "ERROR: installation token missing from response: ${redacted}" >&2
             exit 1
           fi
@@ -52,24 +52,22 @@ phases:
       - echo Logging in to Dockerhub....
       - printf '%s' "$DOCKERHUB_PASSWORD" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin
       - aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin "$REPOSITORY_URI"
-      - COMMIT_HASH=$(git rev-parse --short=7 HEAD)
-      - >-
-        VERSION_TAG=$(git tag --points-at HEAD | sed '/-/!s/$/_/' | sort -rV |
-        sed 's/_$//' | head -n 1 | grep ^ || git show -s --pretty=%D | sed 's/, /\n/g' |
-        grep -v '^origin/' |grep -v '^grafted\|HEAD\|master\|main$' || echo "dev")
-      - NITRO_VERSION=${VERSION_TAG}-${COMMIT_HASH}
-      - IMAGE_TAG=${NITRO_VERSION}
+      # Sets NITRO_TAG, NITRO_BRANCH, NITRO_COMMIT, and the Docker-safe
+      # IMAGE_TAG.
+      - . scripts/ci-version-select.sh
       - NITRO_DATETIME=$(git show -s --date=iso-strict --format=%cd)
       - NITRO_MODIFIED="false"
-      - echo ${NITRO_VERSION} > ./.nitro-tag.txt
+      - echo ${IMAGE_TAG} > ./.nitro-tag.txt
       - >-
-        BUILD_ARGS="--build-arg version=$NITRO_VERSION
+        BUILD_ARGS="--build-arg tag=$NITRO_TAG
+        --build-arg branch=$NITRO_BRANCH
+        --build-arg commit=$NITRO_COMMIT
         --build-arg datetime=$NITRO_DATETIME
         --build-arg modified=$NITRO_MODIFIED"
   build:
     commands:
       - echo Build started on `date`
-      - echo Building the Docker image ${NITRO_VERSION}...
+      - echo Building the Docker image ${IMAGE_TAG}...
       - |
         set -euo pipefail
         # CodeBuild does not propagate env between phases (only IMAGE_TAG is
@@ -92,7 +90,7 @@ phases:
           export GITHUB_TOKEN
           GITHUB_TOKEN=$(printf '%s' "$TOKEN_RESPONSE" | jq -r '.token // empty')
           if [ -z "$GITHUB_TOKEN" ]; then
-            redacted=$(printf '%s' "$TOKEN_RESPONSE" | sed -E 's/(ghs_|ghu_)[A-Za-z0-9]+/\1REDACTED/g')
+            redacted=$(printf '%s' "$TOKEN_RESPONSE" | sed -E 's/(ghs_|ghu_)[A-Za-z0-9._-]+/\1REDACTED/g')
             echo "ERROR: installation token missing from response: ${redacted}" >&2
             exit 1
           fi
