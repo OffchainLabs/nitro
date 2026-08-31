@@ -1,0 +1,59 @@
+name: nitro-reth setup
+description: >
+  Common setup for nitro-reth CI jobs: submodules, C build deps, prebuilt brotli
+  static libs, the Rust toolchain, and the shared cargo cache. Run after checkout.
+
+inputs:
+  client-id:
+    description: GitHub App client id for submodule access
+    required: true
+  app-private-key:
+    description: GitHub App private key for submodule access
+    required: true
+  toolchain:
+    description: Rust toolchain to install
+    default: "1.93"
+  components:
+    description: Extra toolchain components (comma-separated)
+    default: ""
+  targets:
+    description: Extra compilation targets (comma-separated)
+    default: ""
+  build-deps:
+    description: Install the C build dependencies (clang, cmake, ...)
+    default: "true"
+  brotli:
+    description: Build the prebuilt brotli static libs (needed by jobs that link)
+    default: "false"
+  cache:
+    description: Use the shared rust-cache
+    default: "true"
+  cache-shared-key:
+    description: rust-cache shared-key (empty means per-job default keys)
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/init-submodules
+      with:
+        client-id: ${{ inputs.client-id }}
+        app-private-key: ${{ inputs.app-private-key }}
+    - name: Install build deps
+      if: inputs.build-deps == 'true'
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
+    - name: Build brotli static libs
+      if: inputs.brotli == 'true'
+      shell: bash
+      run: ./scripts/build-brotli.sh -l
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ inputs.toolchain }}
+        components: ${{ inputs.components }}
+        targets: ${{ inputs.targets }}
+    - uses: Swatinem/rust-cache@v2
+      if: inputs.cache == 'true'
+      with:
+        workspaces: nitro-reth
+        shared-key: ${{ inputs.cache-shared-key }}

@@ -22,13 +22,14 @@ jobs:
       - uses: actions/checkout@v6
       # Any cargo invocation (fmt included) loads the manifests of the whole
       # local path-dep closure, which includes the wasmer submodule.
-      - uses: ./.github/actions/init-submodules
+      - uses: ./.github/actions/nitro-reth-setup
         with:
           client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
+          toolchain: nightly
           components: rustfmt
+          build-deps: "false"
+          cache: "false"
       # Plain fmt (not --all): --all would also format the path-based deps,
       # i.e. crates/{prover,arbutil,brotli} and the vendored wasmer.
       - run: cargo +nightly fmt --check
@@ -42,18 +43,11 @@ jobs:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
-      - uses: ./.github/actions/init-submodules
+      - uses: ./.github/actions/nitro-reth-setup
         with:
           client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
-      - name: Install build deps
-        run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
-      - uses: dtolnay/rust-toolchain@1.93
-        with:
           components: clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: nitro-reth
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   wasm-check:
@@ -65,16 +59,12 @@ jobs:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
-      - uses: ./.github/actions/init-submodules
+      - uses: ./.github/actions/nitro-reth-setup
         with:
           client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
-      - uses: dtolnay/rust-toolchain@1.93
-        with:
           targets: wasm32-wasip1
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: nitro-reth
+          build-deps: "false"
       - run: cargo wasm-check
 
   docs:
@@ -88,16 +78,10 @@ jobs:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
-      - uses: ./.github/actions/init-submodules
+      - uses: ./.github/actions/nitro-reth-setup
         with:
           client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
-      - name: Install build deps
-        run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
-      - uses: dtolnay/rust-toolchain@1.93
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: nitro-reth
       - run: cargo doc --workspace --no-deps
 
   guardrails:
