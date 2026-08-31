@@ -255,7 +255,9 @@ impl ProbeEvmApi {
                 0,
                 Gas(0),
             ),
-            CreateOutcome::NormalFailure => (CreateResponse::Success(Bytes20::default()), 0, Gas(0)),
+            CreateOutcome::NormalFailure => {
+                (CreateResponse::Success(Bytes20::default()), 0, Gas(0))
+            }
         }
     }
 }

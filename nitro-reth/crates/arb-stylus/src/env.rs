@@ -12,13 +12,6 @@ use crate::{
     meter::{GasMeteredMachine, HOSTIO_INK, MachineMeter, MeteredMachine},
 };
 
-/// Consensus open-page cap (ArbOS >= 59): a non-zero `page_limit` that
-/// `new_open` exceeds forces a saturating out-of-gas charge.
-#[inline]
-pub fn page_limit_exceeded(arbos_version: u64, page_limit: u16, new_open: u16) -> bool {
-    arbos_version >= ARBOS_VERSION_59 && page_limit > 0 && new_open > page_limit
-}
-
 /// `pay_for_memory_grow` page operand overflow (ArbOS >= 59): an operand wider
 /// than `u16::MAX` must buy the whole gas budget before truncation, so the
 /// program traps out of ink rather than wrapping to a cheap small grow.
