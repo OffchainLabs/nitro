@@ -6,6 +6,7 @@
 //! frame) and callers benefit from a single match site.
 
 use thiserror::Error;
+#[cfg(not(target_family = "wasm"))]
 use wasmer::MemoryAccessError;
 
 /// All failure modes raised by the Stylus runtime.
@@ -13,6 +14,8 @@ use wasmer::MemoryAccessError;
 pub enum StylusError {
     /// WASM linear-memory access (read/write) failed, typically because a
     /// host function received an out-of-bounds pointer from the program.
+    /// Only raised by the native (wasmer-backed) engine.
+    #[cfg(not(target_family = "wasm"))]
     #[error("memory access failed: {0}")]
     Memory(#[from] MemoryAccessError),
 
