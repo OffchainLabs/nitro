@@ -620,11 +620,10 @@ impl EvmApi for StylusEvmApi {
         gas_left: Gas,
         gas_req: Gas,
         value: U256,
-        pages: (u16, u16),
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))> {
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
         if self.read_only && !value.is_zero() {
             self.return_data = Vec::new();
-            return Ok((0, Gas(0), UserOutcomeKind::Failure, pages));
+            return Ok((0, Gas(0), UserOutcomeKind::Failure));
         }
 
         let do_call = match self.do_call {
@@ -635,7 +634,6 @@ impl EvmApi for StylusEvmApi {
                     self.return_data.len() as u32,
                     Gas(0),
                     UserOutcomeKind::Failure,
-                    pages,
                 ));
             }
         };
@@ -644,7 +642,7 @@ impl EvmApi for StylusEvmApi {
             wasm_call_cost(self.journal(), contract, &value, gas_left.0);
         if oog {
             self.return_data = Vec::new();
-            return Ok((0, Gas(gas_left.0), UserOutcomeKind::Failure, pages));
+            return Ok((0, Gas(gas_left.0), UserOutcomeKind::Failure));
         }
 
         let start_gas = gas_left.0.saturating_sub(base_cost) * 63 / 64;
@@ -666,9 +664,10 @@ impl EvmApi for StylusEvmApi {
             calldata,
             gas,
             value,
-            pages,
+            (self.pages.open, self.pages.ever),
         );
 
+        (self.pages.open, self.pages.ever) = result.pages;
         self.return_data = result.output;
         let cost = base_cost.saturating_add(result.gas_cost);
         self.record_sub_call(call_mg, result.gas_cost);
@@ -679,12 +678,7 @@ impl EvmApi for StylusEvmApi {
         } else {
             UserOutcomeKind::Failure
         };
-        Ok((
-            self.return_data.len() as u32,
-            Gas(cost),
-            outcome,
-            result.pages,
-        ))
+        Ok((self.return_data.len() as u32, Gas(cost), outcome))
     }
 
     fn delegate_call(
@@ -693,8 +687,7 @@ impl EvmApi for StylusEvmApi {
         calldata: &[u8],
         gas_left: Gas,
         gas_req: Gas,
-        pages: (u16, u16),
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))> {
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
         let do_call = match self.do_call {
             Some(f) => f,
             None => {
@@ -703,7 +696,6 @@ impl EvmApi for StylusEvmApi {
                     self.return_data.len() as u32,
                     Gas(0),
                     UserOutcomeKind::Failure,
-                    pages,
                 ));
             }
         };
@@ -712,7 +704,7 @@ impl EvmApi for StylusEvmApi {
             wasm_call_cost(self.journal(), contract, &U256::ZERO, gas_left.0);
         if oog {
             self.return_data = Vec::new();
-            return Ok((0, Gas(gas_left.0), UserOutcomeKind::Failure, pages));
+            return Ok((0, Gas(gas_left.0), UserOutcomeKind::Failure));
         }
 
         let start_gas = gas_left.0.saturating_sub(base_cost) * 63 / 64;
@@ -728,9 +720,10 @@ impl EvmApi for StylusEvmApi {
             calldata,
             gas,
             self.call_value,
-            pages,
+            (self.pages.open, self.pages.ever),
         );
 
+        (self.pages.open, self.pages.ever) = result.pages;
         self.return_data = result.output;
         let cost = base_cost.saturating_add(result.gas_cost);
         self.record_sub_call(call_mg, result.gas_cost);
@@ -741,12 +734,7 @@ impl EvmApi for StylusEvmApi {
         } else {
             UserOutcomeKind::Failure
         };
-        Ok((
-            self.return_data.len() as u32,
-            Gas(cost),
-            outcome,
-            result.pages,
-        ))
+        Ok((self.return_data.len() as u32, Gas(cost), outcome))
     }
 
     fn static_call(
@@ -755,8 +743,7 @@ impl EvmApi for StylusEvmApi {
         calldata: &[u8],
         gas_left: Gas,
         gas_req: Gas,
-        pages: (u16, u16),
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))> {
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
         let do_call = match self.do_call {
             Some(f) => f,
             None => {
@@ -765,7 +752,6 @@ impl EvmApi for StylusEvmApi {
                     self.return_data.len() as u32,
                     Gas(0),
                     UserOutcomeKind::Failure,
-                    pages,
                 ));
             }
         };
@@ -774,7 +760,7 @@ impl EvmApi for StylusEvmApi {
             wasm_call_cost(self.journal(), contract, &U256::ZERO, gas_left.0);
         if oog {
             self.return_data = Vec::new();
-            return Ok((0, Gas(gas_left.0), UserOutcomeKind::Failure, pages));
+            return Ok((0, Gas(gas_left.0), UserOutcomeKind::Failure));
         }
 
         let start_gas = gas_left.0.saturating_sub(base_cost) * 63 / 64;
@@ -790,9 +776,10 @@ impl EvmApi for StylusEvmApi {
             calldata,
             gas,
             U256::ZERO,
-            pages,
+            (self.pages.open, self.pages.ever),
         );
 
+        (self.pages.open, self.pages.ever) = result.pages;
         self.return_data = result.output;
         let cost = base_cost.saturating_add(result.gas_cost);
         self.record_sub_call(call_mg, result.gas_cost);
@@ -803,12 +790,7 @@ impl EvmApi for StylusEvmApi {
         } else {
             UserOutcomeKind::Failure
         };
-        Ok((
-            self.return_data.len() as u32,
-            Gas(cost),
-            outcome,
-            result.pages,
-        ))
+        Ok((self.return_data.len() as u32, Gas(cost), outcome))
     }
 
     fn create1(
@@ -816,16 +798,10 @@ impl EvmApi for StylusEvmApi {
         code: Vec<u8>,
         endowment: U256,
         gas: Gas,
-        pages: (u16, u16),
-    ) -> eyre::Result<(CreateResponse, u32, Gas, (u16, u16))> {
+    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
         if self.read_only {
             self.return_data = Vec::new();
-            return Ok((
-                CreateResponse::Fail("write protection".into()),
-                0,
-                Gas(0),
-                pages,
-            ));
+            return Ok((CreateResponse::Fail("write protection".into()), 0, Gas(0)));
         }
 
         let do_create = match self.do_create {
@@ -836,7 +812,6 @@ impl EvmApi for StylusEvmApi {
                     CreateResponse::Fail("not available".into()),
                     self.return_data.len() as u32,
                     Gas(0),
-                    pages,
                 ));
             }
         };
@@ -844,12 +819,7 @@ impl EvmApi for StylusEvmApi {
         let base_cost: u64 = 32000;
         if gas.0 < base_cost {
             self.return_data = Vec::new();
-            return Ok((
-                CreateResponse::Fail("out of gas".into()),
-                0,
-                Gas(gas.0),
-                pages,
-            ));
+            return Ok((CreateResponse::Fail("out of gas".into()), 0, Gas(gas.0)));
         }
         let remaining = gas.0 - base_cost;
         let one_64th = remaining / 64;
@@ -863,9 +833,10 @@ impl EvmApi for StylusEvmApi {
             call_gas,
             endowment,
             None,
-            pages,
+            (self.pages.open, self.pages.ever),
         );
 
+        (self.pages.open, self.pages.ever) = result.pages;
         self.return_data = result.output.clone();
         let cost = base_cost.saturating_add(result.gas_cost);
         self.record_sub_call(MultiGas::computation_gas(base_cost), result.gas_cost);
@@ -875,12 +846,7 @@ impl EvmApi for StylusEvmApi {
             None => CreateResponse::Success(Address::ZERO),
         };
 
-        Ok((
-            response,
-            self.return_data.len() as u32,
-            Gas(cost),
-            result.pages,
-        ))
+        Ok((response, self.return_data.len() as u32, Gas(cost)))
     }
 
     fn create2(
@@ -889,16 +855,10 @@ impl EvmApi for StylusEvmApi {
         endowment: U256,
         salt: B256,
         gas: Gas,
-        pages: (u16, u16),
-    ) -> eyre::Result<(CreateResponse, u32, Gas, (u16, u16))> {
+    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
         if self.read_only {
             self.return_data = Vec::new();
-            return Ok((
-                CreateResponse::Fail("write protection".into()),
-                0,
-                Gas(0),
-                pages,
-            ));
+            return Ok((CreateResponse::Fail("write protection".into()), 0, Gas(0)));
         }
 
         let do_create = match self.do_create {
@@ -909,7 +869,6 @@ impl EvmApi for StylusEvmApi {
                     CreateResponse::Fail("not available".into()),
                     self.return_data.len() as u32,
                     Gas(0),
-                    pages,
                 ));
             }
         };
@@ -919,12 +878,7 @@ impl EvmApi for StylusEvmApi {
         let base_cost = 32000u64.saturating_add(keccak_cost);
         if gas.0 < base_cost {
             self.return_data = Vec::new();
-            return Ok((
-                CreateResponse::Fail("out of gas".into()),
-                0,
-                Gas(gas.0),
-                pages,
-            ));
+            return Ok((CreateResponse::Fail("out of gas".into()), 0, Gas(gas.0)));
         }
         let remaining = gas.0 - base_cost;
         let one_64th = remaining / 64;
@@ -938,9 +892,10 @@ impl EvmApi for StylusEvmApi {
             call_gas,
             endowment,
             Some(salt),
-            pages,
+            (self.pages.open, self.pages.ever),
         );
 
+        (self.pages.open, self.pages.ever) = result.pages;
         self.return_data = result.output.clone();
         let cost = base_cost.saturating_add(result.gas_cost);
         self.record_sub_call(MultiGas::computation_gas(base_cost), result.gas_cost);
@@ -950,12 +905,7 @@ impl EvmApi for StylusEvmApi {
             None => CreateResponse::Success(Address::ZERO),
         };
 
-        Ok((
-            response,
-            self.return_data.len() as u32,
-            Gas(cost),
-            result.pages,
-        ))
+        Ok((response, self.return_data.len() as u32, Gas(cost)))
     }
 
     fn get_return_data(&self) -> Vec<u8> {
@@ -1042,6 +992,10 @@ impl EvmApi for StylusEvmApi {
         };
         self.add_multi_gas(multi_gas::account_touch(is_cold, 0));
         Ok((hash, Gas(gas_cost)))
+    }
+
+    fn add_pages(&mut self, pages: u16) -> eyre::Result<Gas> {
+        Ok(Gas(self.pages.charge(pages, self.arbos_version)))
     }
 
     fn capture_hostio(
