@@ -83,5 +83,6 @@ phases:
         push_variant "-slim"
         push_variant "-dev"
         push_variant "-validator"
+        push_variant "-rust-validator"
         push_variant "-stripped"
         push_variant "-slim-stripped"
