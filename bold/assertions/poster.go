@@ -231,6 +231,7 @@ func (m *Manager) PostAssertionBasedOnParent(
 			chainCatchingUpCounter.Inc(1)
 			log.Info(
 				"Waiting for more batches to post next assertion",
+				"reason", err,
 				"latestStakedAssertionBatchCount", batchCount,
 				"latestStakedAssertionBlockHash", containers.Trunc(parentBlockHash[:]),
 			)

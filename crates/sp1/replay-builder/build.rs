@@ -4,11 +4,13 @@
 use sp1_build::{BuildArgs, build_program_with_args};
 
 fn main() {
-    build_program_with_args(
-        "../replay-program",
-        BuildArgs {
-            locked: true,
-            ..Default::default()
-        },
-    )
+    for program in ["../stylus-compiler-program", "../replay-program"] {
+        build_program_with_args(
+            program,
+            BuildArgs {
+                locked: true,
+                ..Default::default()
+            },
+        )
+    }
 }

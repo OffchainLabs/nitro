@@ -69,7 +69,7 @@ func RecreateMissingStates(ctx context.Context, executionDB ethdb.Database, bc *
 		}
 		currentState, err := state.New(currentBlock.Root(), database)
 		if err != nil {
-			_, err := bc.Processor().Process(ctx, currentBlock, previousState, vm.Config{})
+			_, err := bc.Processor().Process(ctx, currentBlock, previousState, nil, vm.Config{})
 			if err != nil {
 				return fmt.Errorf("processing block %d failed: %w", current, err)
 			}

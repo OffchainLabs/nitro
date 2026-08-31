@@ -60,6 +60,7 @@ var activationGasKey = []byte{5}
 
 var ErrProgramActivation = errors.New("program activation failed")
 var ErrNativeStackOverflow = errors.New("native stack overflow")
+var ErrStylusSystem = errors.New("stylus system error")
 var ErrStorageCacheLimitExceeded = errors.New("storage cache limit exceeded")
 
 var ProgramNotWasmError func() error
@@ -292,8 +293,13 @@ func (p Programs) CallProgram(
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
 		if startingGas < evmCost {
-			// burn all remaining gas for this call
-			contract.Gas.Exhaust()
+			// Burn all remaining gas for this call. Zeroing StateGas directly
+			// is only correct below ArbOS params.ArbosVersion_Amsterdam, where
+			// the EIP-8037 reservoir is always empty: on exceptional halts the
+			// EVM instead restores the reservoir to its initial value and
+			// books the burn under UsedRegularGas (GasBudget.ExitHalt).
+			contract.Gas.RegularGas = 0
+			contract.Gas.StateGas = 0
 			attributeWasmComputation(contract, startingGas)
 			// #nosec G115
 			metrics.GetOrRegisterCounter(fmt.Sprintf("arb/arbos/stylus/gas_used/%s", runCtx.RunModeMetricName()), nil).Inc(int64(startingGas))
@@ -792,6 +798,7 @@ const (
 	userOutOfStack
 	userNativeStackOverflow
 	userStorageCacheLimitExceeded
+	userSystemError
 )
 
 func (status userStatus) toResult(data []byte, _debug bool) ([]byte, string, error) {
@@ -812,6 +819,9 @@ func (status userStatus) toResult(data []byte, _debug bool) ([]byte, string, err
 		// before calling toResult when status is userNativeStackOverflow.
 		log.Error("unexpected userNativeStackOverflow in toResult", "data", msg)
 		return nil, "", ErrNativeStackOverflow
+	case userSystemError:
+		log.Error("unexpected userSystemError in toResult", "data", msg)
+		return nil, msg, ErrStylusSystem
 	case userStorageCacheLimitExceeded:
 		return nil, ErrStorageCacheLimitExceeded.Error(), ErrStorageCacheLimitExceeded
 	default:

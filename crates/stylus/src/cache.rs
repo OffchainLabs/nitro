@@ -260,6 +260,33 @@ impl InitCache {
         }
     }
 
+    pub(crate) fn replace(module_hash: Bytes32, module: &[u8], version: u16, debug: bool) {
+        let replacement = deserialize_module(module, version, debug)
+            .map(|(module, engine, size)| CacheItem::new(module, engine, size));
+        let key = CacheKey::new(module_hash, version, debug);
+        let mut cache = cache!();
+        let replace_long_term = match cache.long_term.remove(&key) {
+            Some(previous) => {
+                cache.long_term_size_bytes -= previous.entry_size_estimate_bytes;
+                true
+            }
+            None => false,
+        };
+        let replace_in_lru = cache.lru.pop(&key).is_some();
+        let Ok(replacement) = replacement else {
+            return;
+        };
+
+        if replace_long_term {
+            cache.long_term_size_bytes += replacement.entry_size_estimate_bytes;
+            cache.long_term.insert(key, replacement.clone());
+        }
+        if replace_in_lru && cache.lru.put_with_weight(key, replacement).is_err() {
+            cache.lru_counters.does_not_fit += 1;
+            eprintln!("{}", Self::DOES_NOT_FIT_MSG);
+        }
+    }
+
     pub fn clear_long_term(long_term_tag: u32) {
         if long_term_tag != Self::ARBOS_TAG {
             return;

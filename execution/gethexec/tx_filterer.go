@@ -32,7 +32,11 @@ func (f *txFilterer) Setup(statedb *state.StateDB) {
 	if f.execEngine.addressChecker != nil {
 		statedb.SetAddressCheckerState(f.execEngine.addressChecker.NewTxState())
 	}
-	statedb.SetTxContext(common.Hash{}, 0)
+	// This is a dummy context for simulation, so the EIP-7928 block access
+	// list index is 0 (the slot reserved for system calls) rather than the
+	// txIndex+1 convention block building uses. The index is only consumed
+	// at ArbOS >= params.ArbosVersion_Amsterdam.
+	statedb.SetTxContext(common.Hash{}, 0, 0)
 }
 
 func (f *txFilterer) TouchAddresses(statedb *state.StateDB, tx *types.Transaction, sender common.Address) {

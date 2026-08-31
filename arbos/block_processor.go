@@ -542,7 +542,12 @@ func ProduceBlockAdvanced(
 			}
 
 			snap := buildState.statedb.Snapshot()
-			buildState.statedb.SetTxContext(tx.Hash(), len(buildState.receipts)) // the number of successful state transitions
+			// The block access list index follows geth's convention of txIndex+1, with
+			// index 0 reserved for pre-execution system calls. It is only consumed when
+			// EIP-7928 block access lists are active, which for Arbitrum chains requires
+			// ArbOS >= params.ArbosVersion_Amsterdam; below that the value is inert.
+			// #nosec G115
+			buildState.statedb.SetTxContext(tx.Hash(), len(buildState.receipts), uint32(len(buildState.receipts)+1)) // the number of successful state transitions
 
 			// Also snapshot the warm-start cache so a dropped or rolled-back tx that warmed a
 			// program leaves nothing behind for later included txs
@@ -558,7 +563,7 @@ func ProduceBlockAdvanced(
 			preTxGasPool := gethGas.Snapshot()
 			blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
 			evm := vm.NewEVM(blockContext, buildState.statedb, chainConfig, vm.Config{ExposeMultiGas: exposeMultiGas})
-			receipt, result, err := core.ApplyTransactionWithResultFilter(
+			receipt, _, result, err := core.ApplyTransactionWithResultFilter(
 				evm,
 				gethGas,
 				buildState.statedb,
@@ -588,7 +593,7 @@ func ProduceBlockAdvanced(
 				// function; restore also undoes any warm-start it left behind.
 				checkpoint.restore(buildState.statedb)
 				buildState.statedb.ClearTxFilter()
-				// Restore gas pool: state_transition's normal path already ran SubGas/ReturnGas
+				// Restore gas pool: state_transition's normal path already ran CheckGasLegacy/ChargeGasLegacy
 				// before resultFilter (which is what reported the error here), so gp's
 				// cumulativeUsed and remaining were charged for this discarded tx.
 				// Leaving them as-is would inflate subsequent receipts' CumulativeGasUsed
