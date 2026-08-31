@@ -63,6 +63,20 @@ jobs:
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
           targets: wasm32-wasip1
       - run: cargo wasm-check
+      # The macOS-lies guard: a local `cargo check` can pass a wasm tree that still
+      # contains C (clang headers mask the missing WASI sysroot), so require the
+      # dependency tree of every listed crate to be free of -sys crates.
+      - name: No C dependencies in the wasm trees
+        run: |
+          set -euo pipefail
+          bad=0
+          for c in $(grep -oE '"-p", "[a-z0-9-]+"' .cargo/config.toml | cut -d'"' -f4); do
+            if cargo tree -p "$c" -e normal --target wasm32-wasip1 | grep -E -- '-sys v'; then
+              echo "::error::$c pulls a -sys crate into its wasm dependency tree"
+              bad=1
+            fi
+          done
+          exit $bad
 
   docs:
     name: docs
