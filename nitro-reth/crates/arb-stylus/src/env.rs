@@ -5,10 +5,10 @@ use arbos::programs::{memory::MemoryModel, types::EvmData};
 use wasmer::{FunctionEnvMut, Global, Memory, MemoryView, Pages, StoreMut, Value};
 
 use crate::{
+    Ink,
     config::{CompileConfig, StylusConfig},
     error::StylusError,
     evm_api::EvmApi,
-    ink::Ink,
     meter::{GasMeteredMachine, HOSTIO_INK, MachineMeter, MeteredMachine},
 };
 

@@ -1,10 +1,10 @@
 use arbos::programs::types::UserOutcome;
 
 use crate::{
+    Ink,
     config::StylusConfig,
     error::StylusError,
     evm_api::EvmApi,
-    ink::Ink,
     meter::{DepthCheckedMachine, MachineMeter, MeteredMachine, STYLUS_ENTRY_POINT},
     native::NativeInstance,
 };

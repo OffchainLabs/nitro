@@ -11,12 +11,11 @@ pub mod evm_api;
 pub mod evm_api_impl;
 #[allow(unused_mut)]
 pub mod host;
-pub mod ink;
 pub mod meter;
 pub mod middleware;
 pub mod multi_gas;
 pub mod native;
-pub mod pricing;
+pub use nitro_arbutil::pricing;
 pub mod run;
 pub mod trace;
 
@@ -25,9 +24,9 @@ pub use config::{CompileConfig, StylusConfig};
 pub use error::{MaybeEscape, StylusError};
 pub use evm_api::EvmApi;
 pub use evm_api_impl::StylusEvmApi;
-pub use ink::{Gas, Ink};
 pub use meter::{MachineMeter, MeteredMachine, STYLUS_ENTRY_POINT};
 pub use native::{NativeInstance, compile_module};
+pub use nitro_arbutil::evm::api::{Gas, Ink};
 pub use run::RunProgram;
 
 /// Prefix bytes that identify a Stylus WASM program in contract bytecode.

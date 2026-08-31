@@ -116,6 +116,7 @@ build: $(BROTLI_LIB_DIR)/lib/libbrotlienc-static.a
 run: # Validate $(BLOCK_INPUTS_DIR)/$(BLOCK).json with the SP1 replay runner (set BLOCK=<name>).
 	$(OUTPUT_DIR)/replay-runner \
 		--program $(OUTPUT_DIR)/dumped_replay_wasm.elf \
+		--stylus-compiler-program $(OUTPUT_DIR)/stylus-compiler-program.elf \
 		--block-file $(BLOCK_INPUTS_DIR)/$(BLOCK).json
 
 .PHONY: test

@@ -116,7 +116,7 @@ func testProgramNativeStackOverflowRecovery(t *testing.T, builderOpts ...func(*N
 
 	programAddress := deployWasm(t, ctx, auth, l2client, stackOverflowWatFile(t))
 
-	// eth_call (off-chain): handleNativeStackOverflow skips all retries
+	// eth_call (off-chain): handleSystemError skips all retries
 	// for off-chain execution, so the call should fail.
 	msg := ethereum.CallMsg{
 		To:    &programAddress,

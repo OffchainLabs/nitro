@@ -6,8 +6,8 @@ use arb_primitives::multigas::MultiGas;
 use revm::Database;
 
 use crate::{
+    Gas,
     evm_api::{CreateResponse, EvmApi, UserOutcomeKind},
-    ink::Gas,
     multi_gas,
 };
 
@@ -993,8 +993,8 @@ impl EvmApi for StylusEvmApi {
         _name: &str,
         _args: &[u8],
         _outs: &[u8],
-        _start_ink: crate::ink::Ink,
-        _end_ink: crate::ink::Ink,
+        _start_ink: crate::Ink,
+        _end_ink: crate::Ink,
     ) {
         // Debug tracing — no-op in production.
     }
