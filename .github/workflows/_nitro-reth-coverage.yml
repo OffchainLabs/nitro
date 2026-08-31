@@ -26,6 +26,8 @@ jobs:
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
       - name: Install build deps
         run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
+      - name: Build brotli static libs
+        run: ../scripts/build-brotli.sh -l
       - uses: dtolnay/rust-toolchain@1.93
         with:
           components: llvm-tools-preview
