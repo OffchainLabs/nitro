@@ -9,6 +9,18 @@ env:
 phases:
   pre_build:
     commands:
+      # CODEBUILD_CLONE_REF checks out the source action's BranchName, not the
+      # revision the execution resolved, so pin the tree before anything reads git.
+      - |
+        set -euo pipefail
+        REF=${SOURCE_REF:-auto}
+        if [ "$REF" = auto ]; then REF=$CODEBUILD_RESOLVED_SOURCE_VERSION; fi
+        if ! git rev-parse --verify --quiet "${REF}^{commit}" >/dev/null; then
+          echo "ERROR: $REF is not in the clone. CodeBuild does not leave usable credentials on origin, so it cannot be fetched." >&2
+          echo "local refs:" >&2; git for-each-ref --format='  %(refname)' >&2
+          exit 1
+        fi
+        git checkout --force --detach "$REF"
       - |
         set -euo pipefail
         if [ -n "${GITHUB_APP_KEY:-}" ]; then
