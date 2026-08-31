@@ -1,10 +1,10 @@
 //! End-to-end test for the read-only `create1`/`create2` halt.
 //!
-//! A read-only `CreateRespone::Fail` returns `Err` before `buy_gas`, halting
+//! A read-only `CreateResponse::Fail` returns `Err` before `buy_gas`, halting
 //! the WASM frame (`Failure`) with the ink preserved.
 //!
 //! In a `STATICCALL` context the `EvmApi` returns
-//! `(CreateRespone::Fail("write protection"), 0, Gas(0), pages)`. These tests
+//! `(CreateResponse::Fail("write protection"), 0, Gas(0))`. These tests
 //! drive the real `host::create1`/`create2` imports through `NativeInstance`
 //! against an `EvmApi` that returns that exact tuple and assert the entrypoint
 //! traps with the meter still ready (a frame `Failure`, not an out-of-ink and not
