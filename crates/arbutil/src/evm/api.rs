@@ -165,8 +165,8 @@ pub struct Ink(pub u64);
 
 derive_math!(Ink);
 
-pub enum CreateRespone {
-    Succes(Bytes20),
+pub enum CreateResponse {
+    Success(Bytes20),
     Fail(String),
 }
 
@@ -237,7 +237,7 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
         code: Vec<u8>,
         endowment: Bytes32,
         gas: Gas,
-    ) -> Result<(CreateRespone, u32, Gas)>;
+    ) -> Result<(CreateResponse, u32, Gas)>;
 
     /// Deploys a new contract using the init code provided, with an address determined in part by
     /// the `salt`. Returns the new contract's address on success, or the error reason on
@@ -249,7 +249,7 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
         endowment: Bytes32,
         salt: Bytes32,
         gas: Gas,
-    ) -> Result<(CreateRespone, u32, Gas)>;
+    ) -> Result<(CreateResponse, u32, Gas)>;
 
     /// Returns the EVM return data.
     /// Analogous to `vm.RETURNDATACOPY`.

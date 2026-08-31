@@ -4,7 +4,7 @@ use nitro_arbutil::{
     Bytes20, Bytes32,
     evm::{
         self as evm_gas,
-        api::{CreateRespone, DataReader, EvmApi, VecReader},
+        api::{CreateResponse, DataReader, EvmApi, VecReader},
         storage::StorageCache,
         user::UserOutcomeKind,
     },
@@ -490,8 +490,8 @@ pub fn create1<E: EvmApi<VecReader>>(
     };
     let (response, ret_len, gas_cost) = result.map_err(|e| StylusError::Internal(e.to_string()))?;
     let address = match response {
-        CreateRespone::Succes(addr) => Address::from(addr.0),
-        CreateRespone::Fail(reason) => return Err(StylusError::Internal(reason)),
+        CreateResponse::Success(addr) => Address::from(addr.0),
+        CreateResponse::Fail(reason) => return Err(StylusError::Internal(reason)),
     };
     info.buy_gas(gas_cost)?;
     info.env.evm_return_data_len = ret_len;
@@ -551,8 +551,8 @@ pub fn create2<E: EvmApi<VecReader>>(
     };
     let (response, ret_len, gas_cost) = result.map_err(|e| StylusError::Internal(e.to_string()))?;
     let address = match response {
-        CreateRespone::Succes(addr) => Address::from(addr.0),
-        CreateRespone::Fail(reason) => return Err(StylusError::Internal(reason)),
+        CreateResponse::Success(addr) => Address::from(addr.0),
+        CreateResponse::Fail(reason) => return Err(StylusError::Internal(reason)),
     };
     info.buy_gas(gas_cost)?;
     info.env.evm_return_data_len = ret_len;

@@ -7,7 +7,7 @@ use arbos::programs::memory::MemoryModel;
 use nitro_arbutil::{
     Bytes20, Bytes32,
     evm::{
-        api::{CreateRespone, EvmApi, VecReader},
+        api::{CreateResponse, EvmApi, VecReader},
         user::UserOutcomeKind,
     },
 };
@@ -804,11 +804,11 @@ impl EvmApi<VecReader> for StylusEvmApi {
         code: Vec<u8>,
         endowment: Bytes32,
         gas: Gas,
-    ) -> eyre::Result<(CreateRespone, u32, Gas)> {
+    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
         let endowment = U256::from_be_bytes(endowment.0);
         if self.read_only {
             self.return_data = Vec::new();
-            return Ok((CreateRespone::Fail("write protection".into()), 0, Gas(0)));
+            return Ok((CreateResponse::Fail("write protection".into()), 0, Gas(0)));
         }
 
         let do_create = match self.do_create {
@@ -816,7 +816,7 @@ impl EvmApi<VecReader> for StylusEvmApi {
             None => {
                 self.return_data = b"creates not available".to_vec();
                 return Ok((
-                    CreateRespone::Fail("not available".into()),
+                    CreateResponse::Fail("not available".into()),
                     self.return_data.len() as u32,
                     Gas(0),
                 ));
@@ -826,7 +826,7 @@ impl EvmApi<VecReader> for StylusEvmApi {
         let base_cost: u64 = 32000;
         if gas.0 < base_cost {
             self.return_data = Vec::new();
-            return Ok((CreateRespone::Fail("out of gas".into()), 0, Gas(gas.0)));
+            return Ok((CreateResponse::Fail("out of gas".into()), 0, Gas(gas.0)));
         }
         let remaining = gas.0 - base_cost;
         let one_64th = remaining / 64;
@@ -849,8 +849,8 @@ impl EvmApi<VecReader> for StylusEvmApi {
         self.record_sub_call(MultiGas::computation_gas(base_cost), result.gas_cost);
 
         let response = match result.address {
-            Some(addr) => CreateRespone::Succes(Bytes20::from(addr.into_array())),
-            None => CreateRespone::Succes(Bytes20::default()),
+            Some(addr) => CreateResponse::Success(Bytes20::from(addr.into_array())),
+            None => CreateResponse::Success(Bytes20::default()),
         };
 
         Ok((response, self.return_data.len() as u32, Gas(cost)))
@@ -862,12 +862,12 @@ impl EvmApi<VecReader> for StylusEvmApi {
         endowment: Bytes32,
         salt: Bytes32,
         gas: Gas,
-    ) -> eyre::Result<(CreateRespone, u32, Gas)> {
+    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
         let endowment = U256::from_be_bytes(endowment.0);
         let salt = B256::from(salt.0);
         if self.read_only {
             self.return_data = Vec::new();
-            return Ok((CreateRespone::Fail("write protection".into()), 0, Gas(0)));
+            return Ok((CreateResponse::Fail("write protection".into()), 0, Gas(0)));
         }
 
         let do_create = match self.do_create {
@@ -875,7 +875,7 @@ impl EvmApi<VecReader> for StylusEvmApi {
             None => {
                 self.return_data = b"creates not available".to_vec();
                 return Ok((
-                    CreateRespone::Fail("not available".into()),
+                    CreateResponse::Fail("not available".into()),
                     self.return_data.len() as u32,
                     Gas(0),
                 ));
@@ -887,7 +887,7 @@ impl EvmApi<VecReader> for StylusEvmApi {
         let base_cost = 32000u64.saturating_add(keccak_cost);
         if gas.0 < base_cost {
             self.return_data = Vec::new();
-            return Ok((CreateRespone::Fail("out of gas".into()), 0, Gas(gas.0)));
+            return Ok((CreateResponse::Fail("out of gas".into()), 0, Gas(gas.0)));
         }
         let remaining = gas.0 - base_cost;
         let one_64th = remaining / 64;
@@ -910,8 +910,8 @@ impl EvmApi<VecReader> for StylusEvmApi {
         self.record_sub_call(MultiGas::computation_gas(base_cost), result.gas_cost);
 
         let response = match result.address {
-            Some(addr) => CreateRespone::Succes(Bytes20::from(addr.into_array())),
-            None => CreateRespone::Succes(Bytes20::default()),
+            Some(addr) => CreateResponse::Success(Bytes20::from(addr.into_array())),
+            None => CreateResponse::Success(Bytes20::default()),
         };
 
         Ok((response, self.return_data.len() as u32, Gas(cost)))

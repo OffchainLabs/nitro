@@ -31,7 +31,7 @@ use arbos::programs::types::EvmData;
 use nitro_arbutil::{
     Bytes20, Bytes32,
     evm::{
-        api::{CreateRespone, EvmApi, VecReader},
+        api::{CreateResponse, EvmApi, VecReader},
         user::UserOutcomeKind,
     },
 };
@@ -245,17 +245,17 @@ struct ProbeEvmApi {
 }
 
 impl ProbeEvmApi {
-    fn create_response(&self) -> (CreateRespone, u32, Gas) {
+    fn create_response(&self) -> (CreateResponse, u32, Gas) {
         match self.outcome {
             CreateOutcome::ReadOnlyFail => {
-                (CreateRespone::Fail("write protection".into()), 0, Gas(0))
+                (CreateResponse::Fail("write protection".into()), 0, Gas(0))
             }
             CreateOutcome::Success => (
-                CreateRespone::Succes(Bytes20::from(DEPLOYED.into_array())),
+                CreateResponse::Success(Bytes20::from(DEPLOYED.into_array())),
                 0,
                 Gas(0),
             ),
-            CreateOutcome::NormalFailure => (CreateRespone::Succes(Bytes20::default()), 0, Gas(0)),
+            CreateOutcome::NormalFailure => (CreateResponse::Success(Bytes20::default()), 0, Gas(0)),
         }
     }
 }
@@ -317,7 +317,7 @@ impl EvmApi<VecReader> for ProbeEvmApi {
         _code: Vec<u8>,
         _endowment: Bytes32,
         _gas: Gas,
-    ) -> eyre::Result<(CreateRespone, u32, Gas)> {
+    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
         Ok(self.create_response())
     }
     fn create2(
@@ -326,7 +326,7 @@ impl EvmApi<VecReader> for ProbeEvmApi {
         _endowment: Bytes32,
         _salt: Bytes32,
         _gas: Gas,
-    ) -> eyre::Result<(CreateRespone, u32, Gas)> {
+    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
         Ok(self.create_response())
     }
     fn add_pages(&mut self, _pages: u16) -> eyre::Result<Gas> {

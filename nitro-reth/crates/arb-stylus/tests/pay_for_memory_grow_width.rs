@@ -26,7 +26,7 @@ use arbos::programs::types::EvmData;
 use nitro_arbutil::{
     Bytes20, Bytes32,
     evm::{
-        api::{CreateRespone, EvmApi, VecReader},
+        api::{CreateResponse, EvmApi, VecReader},
         user::UserOutcomeKind,
     },
 };
@@ -307,7 +307,7 @@ impl EvmApi<VecReader> for NoopEvmApi {
         _code: Vec<u8>,
         _endowment: Bytes32,
         _gas: Gas,
-    ) -> eyre::Result<(CreateRespone, u32, Gas)> {
+    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
         unreachable!()
     }
     fn create2(
@@ -316,7 +316,7 @@ impl EvmApi<VecReader> for NoopEvmApi {
         _endowment: Bytes32,
         _salt: Bytes32,
         _gas: Gas,
-    ) -> eyre::Result<(CreateRespone, u32, Gas)> {
+    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
         unreachable!()
     }
     fn add_pages(&mut self, pages: u16) -> eyre::Result<Gas> {
