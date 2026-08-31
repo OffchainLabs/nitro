@@ -25,8 +25,9 @@ pub fn build_stdin(cli: &Cli) -> Result<SP1Stdin> {
     Ok(replay_io::send::validation_stdin(&serialized))
 }
 
-/// Goes over raw user wasm sources in `input` that are not already compiled to rv64 and compiles
-/// them using SP1 Stylus compiler.
+/// Compiles the request's raw user wasm sources (`wasms`) to rv64 with the SP1 Stylus
+/// compiler, skipping modules `input` already carries, and inserts the results into
+/// `input.module_asms`.
 fn compile_user_wasms(
     cli: &Cli,
     wasms: &HashMap<Bytes32, UserWasm>,
@@ -50,6 +51,10 @@ fn compile_user_wasms(
 }
 
 /// Compiles a Stylus wasm to a rv64 binary by running the stylus compiler inside SP1.
+///
+/// Note: the compilation itself is *unproven* — the compiler runs in execute-only mode and its
+/// output enters the proven replay run as trusted stdin. Proving (or caching verified) compilation
+/// results is an open decision for the further project development.
 fn compile_in_sp1(
     compiler: Arc<Program>,
     wasm: &[u8],
