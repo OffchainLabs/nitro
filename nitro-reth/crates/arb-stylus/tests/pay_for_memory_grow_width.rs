@@ -19,6 +19,7 @@ use arb_stylus::{
     Gas, Ink,
     config::{CompileConfig, StylusConfig},
     evm_api::{CreateResponse, EvmApi},
+    evm_api_impl::PageTracker,
     meter::{MachineMeter, MeteredMachine, STYLUS_INK_LEFT, STYLUS_INK_STATUS, STYLUS_STACK_LEFT},
     native::NativeInstance,
 };
@@ -73,18 +74,12 @@ fn run(operand: u32, arbos_version: u64) -> Outcome {
         .expect("wat compiles")
         .into_owned();
 
-    let mut native = NativeInstance::from_bytes_with_pages(
+    let mut native = NativeInstance::from_bytes(
         &wasm,
-        NoopEvmApi,
+        NoopEvmApi::new(arbos_version),
         evm_data_stub(arbos_version),
         &compile,
         config,
-        0,
-        0,
-        0,
-        PAGE_GAS,
-        PAGE_LIMIT,
-        arbos_version,
     )
     .expect("instantiate");
 
@@ -175,18 +170,12 @@ fn grow_65536_at_v58_barely_consumes_ink() {
     let wasm = wat::parse_bytes(wat_grow(65_536).as_bytes())
         .expect("wat compiles")
         .into_owned();
-    let mut native = NativeInstance::from_bytes_with_pages(
+    let mut native = NativeInstance::from_bytes(
         &wasm,
-        NoopEvmApi,
+        NoopEvmApi::new(ARBOS_58),
         evm_data_stub(ARBOS_58),
         &compile,
         StylusConfig::default(),
-        0,
-        0,
-        0,
-        PAGE_GAS,
-        PAGE_LIMIT,
-        ARBOS_58,
     )
     .expect("instantiate");
     seed_meter(&mut native);
@@ -236,7 +225,19 @@ fn evm_data_stub(arbos_version: u64) -> EvmData {
 }
 
 #[derive(Debug)]
-struct NoopEvmApi;
+struct NoopEvmApi {
+    pages: PageTracker,
+    arbos_version: u64,
+}
+
+impl NoopEvmApi {
+    fn new(arbos_version: u64) -> Self {
+        Self {
+            pages: PageTracker::new(0, 0, 0, PAGE_GAS, PAGE_LIMIT),
+            arbos_version,
+        }
+    }
+}
 
 impl EvmApi for NoopEvmApi {
     fn get_bytes32(&mut self, _key: B256, _gas: Gas) -> eyre::Result<(B256, Gas)> {
@@ -265,8 +266,7 @@ impl EvmApi for NoopEvmApi {
         _gas_left: Gas,
         _gas_req: Gas,
         _value: U256,
-        _pages: (u16, u16),
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))> {
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
         unreachable!()
     }
     fn delegate_call(
@@ -275,8 +275,7 @@ impl EvmApi for NoopEvmApi {
         _calldata: &[u8],
         _gas_left: Gas,
         _gas_req: Gas,
-        _pages: (u16, u16),
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))> {
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
         unreachable!()
     }
     fn static_call(
@@ -285,8 +284,7 @@ impl EvmApi for NoopEvmApi {
         _calldata: &[u8],
         _gas_left: Gas,
         _gas_req: Gas,
-        _pages: (u16, u16),
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))> {
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
         unreachable!()
     }
     fn create1(
@@ -294,8 +292,7 @@ impl EvmApi for NoopEvmApi {
         _code: Vec<u8>,
         _endowment: U256,
         _gas: Gas,
-        _pages: (u16, u16),
-    ) -> eyre::Result<(CreateResponse, u32, Gas, (u16, u16))> {
+    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
         unreachable!()
     }
     fn create2(
@@ -304,9 +301,11 @@ impl EvmApi for NoopEvmApi {
         _endowment: U256,
         _salt: B256,
         _gas: Gas,
-        _pages: (u16, u16),
-    ) -> eyre::Result<(CreateResponse, u32, Gas, (u16, u16))> {
+    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
         unreachable!()
+    }
+    fn add_pages(&mut self, pages: u16) -> eyre::Result<Gas> {
+        Ok(Gas(self.pages.charge(pages, self.arbos_version)))
     }
     fn get_return_data(&self) -> Vec<u8> {
         vec![]

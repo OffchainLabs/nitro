@@ -32,10 +32,6 @@ use arbos::programs::types::EvmData;
 use nitro_arbutil::evm::user::UserOutcomeKind;
 use wasmer::{TypedFunction, Value};
 
-const ARBOS_60: u64 = 60;
-
-const PAGE_GAS: u16 = 1_000;
-const PAGE_LIMIT: u16 = 128;
 const SEED_INK: i64 = i64::MAX;
 const DEPLOYED: Address = address!("00000000000000000000000000000000deadbeef");
 
@@ -110,18 +106,12 @@ fn run(wat: &str, outcome: CreateOutcome) -> Outcome {
         .expect("wat compiles")
         .into_owned();
 
-    let mut native = NativeInstance::from_bytes_with_pages(
+    let mut native = NativeInstance::from_bytes(
         &wasm,
         ProbeEvmApi { outcome },
         evm_data_stub(),
         &compile,
         config,
-        0,
-        0,
-        0,
-        PAGE_GAS,
-        PAGE_LIMIT,
-        ARBOS_60,
     )
     .expect("instantiate");
 
@@ -250,18 +240,13 @@ struct ProbeEvmApi {
 }
 
 impl ProbeEvmApi {
-    fn create_response(&self, pages: (u16, u16)) -> (CreateResponse, u32, Gas, (u16, u16)) {
+    fn create_response(&self) -> (CreateResponse, u32, Gas) {
         match self.outcome {
-            CreateOutcome::ReadOnlyFail => (
-                CreateResponse::Fail("write protection".into()),
-                0,
-                Gas(0),
-                pages,
-            ),
-            CreateOutcome::Success => (CreateResponse::Success(DEPLOYED), 0, Gas(0), pages),
-            CreateOutcome::NormalFailure => {
-                (CreateResponse::Success(Address::ZERO), 0, Gas(0), pages)
+            CreateOutcome::ReadOnlyFail => {
+                (CreateResponse::Fail("write protection".into()), 0, Gas(0))
             }
+            CreateOutcome::Success => (CreateResponse::Success(DEPLOYED), 0, Gas(0)),
+            CreateOutcome::NormalFailure => (CreateResponse::Success(Address::ZERO), 0, Gas(0)),
         }
     }
 }
@@ -293,8 +278,7 @@ impl EvmApi for ProbeEvmApi {
         _gas_left: Gas,
         _gas_req: Gas,
         _value: U256,
-        _pages: (u16, u16),
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))> {
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
         unreachable!()
     }
     fn delegate_call(
@@ -303,8 +287,7 @@ impl EvmApi for ProbeEvmApi {
         _calldata: &[u8],
         _gas_left: Gas,
         _gas_req: Gas,
-        _pages: (u16, u16),
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))> {
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
         unreachable!()
     }
     fn static_call(
@@ -313,8 +296,7 @@ impl EvmApi for ProbeEvmApi {
         _calldata: &[u8],
         _gas_left: Gas,
         _gas_req: Gas,
-        _pages: (u16, u16),
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))> {
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
         unreachable!()
     }
     fn create1(
@@ -322,9 +304,8 @@ impl EvmApi for ProbeEvmApi {
         _code: Vec<u8>,
         _endowment: U256,
         _gas: Gas,
-        pages: (u16, u16),
-    ) -> eyre::Result<(CreateResponse, u32, Gas, (u16, u16))> {
-        Ok(self.create_response(pages))
+    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
+        Ok(self.create_response())
     }
     fn create2(
         &mut self,
@@ -332,9 +313,11 @@ impl EvmApi for ProbeEvmApi {
         _endowment: U256,
         _salt: B256,
         _gas: Gas,
-        pages: (u16, u16),
-    ) -> eyre::Result<(CreateResponse, u32, Gas, (u16, u16))> {
-        Ok(self.create_response(pages))
+    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
+        Ok(self.create_response())
+    }
+    fn add_pages(&mut self, _pages: u16) -> eyre::Result<Gas> {
+        Ok(Gas(0))
     }
     fn get_return_data(&self) -> Vec<u8> {
         vec![]
