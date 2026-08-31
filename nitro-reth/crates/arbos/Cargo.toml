@@ -33,7 +33,7 @@ serde_json = { workspace = true }
 workspace = true
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-nitro-brotli = { workspace = true, features = ["cc_brotli"] }
+nitro-brotli = { workspace = true, features = ["link"] }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 nitro-brotli = { workspace = true }
