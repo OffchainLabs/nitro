@@ -43,7 +43,13 @@ fn predicate_inert_when_limit_zero() {
 // ── page-charge saturation ─────────────────────────────────────
 
 fn pages_with(open: u16, page_limit: u16) -> PageTracker {
-    PageTracker::new(open, open, FREE_PAGES, PAGE_GAS, page_limit)
+    PageTracker {
+        open,
+        ever: open,
+        free_pages: FREE_PAGES,
+        page_gas: PAGE_GAS,
+        page_limit,
+    }
 }
 
 /// Footprint 1 already open, grow 8 → open 9 > limit 4 at arbos 60: the charge

@@ -1,6 +1,9 @@
 use alloy_primitives::{Address, B256, U256};
 use arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_CHARGING_FIXES;
-use nitro_arbutil::evm::{self as evm_gas, storage::StorageCache, user::UserOutcomeKind};
+use nitro_arbutil::{
+    Bytes20, Bytes32,
+    evm::{self as evm_gas, storage::StorageCache, user::UserOutcomeKind},
+};
 use wasmer::FunctionEnvMut;
 
 use crate::{
@@ -103,7 +106,7 @@ pub fn storage_load_bytes32<E: EvmApi>(
         info.pricing().ink_to_gas(crate::pricing::EVM_API_INK)
     };
     info.require_gas(evm_gas::COLD_SLOAD_GAS + StorageCache::REQUIRED_ACCESS_GAS + evm_api_gas)?;
-    let key = B256::from(info.read_fixed::<32>(key_ptr)?);
+    let key = Bytes32::from(info.read_fixed::<32>(key_ptr)?);
     let (value, gas_cost) = info
         .env
         .evm_api
@@ -136,8 +139,8 @@ pub fn storage_cache_bytes32<E: EvmApi>(
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::STORAGE_CACHE_BASE_INK)?;
     info.require_gas(evm_gas::SSTORE_SENTRY_GAS + StorageCache::REQUIRED_ACCESS_GAS)?;
-    let key = B256::from(info.read_fixed::<32>(key_ptr)?);
-    let value = B256::from(info.read_fixed::<32>(value_ptr)?);
+    let key = Bytes32::from(info.read_fixed::<32>(key_ptr)?);
+    let value = Bytes32::from(info.read_fixed::<32>(value_ptr)?);
     let gas_cost = info
         .env
         .evm_api
@@ -213,7 +216,7 @@ pub fn transient_load_bytes32<E: EvmApi>(
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::TRANSIENT_LOAD_BASE_INK)?;
     info.buy_gas(evm_gas::TLOAD_GAS)?;
-    let key = B256::from(info.read_fixed::<32>(key_ptr)?);
+    let key = Bytes32::from(info.read_fixed::<32>(key_ptr)?);
     let value = info
         .env
         .evm_api
@@ -245,8 +248,8 @@ pub fn transient_store_bytes32<E: EvmApi>(
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
     info.buy_ink(hio::TRANSIENT_STORE_BASE_INK)?;
     info.buy_gas(evm_gas::TSTORE_GAS)?;
-    let key = B256::from(info.read_fixed::<32>(key_ptr)?);
-    let value = B256::from(info.read_fixed::<32>(value_ptr)?);
+    let key = Bytes32::from(info.read_fixed::<32>(key_ptr)?);
+    let value = Bytes32::from(info.read_fixed::<32>(value_ptr)?);
     let status = info
         .env
         .evm_api
@@ -296,10 +299,13 @@ pub fn call_contract<E: EvmApi>(
     if trace_on {
         crate::trace::enter_subcall();
     }
-    let result = info
-        .env
-        .evm_api
-        .contract_call(contract, &calldata, gas_left, gas_req, value);
+    let result = info.env.evm_api.contract_call(
+        Bytes20::from(contract.into_array()),
+        &calldata,
+        gas_left,
+        gas_req,
+        Bytes32::from(value.to_be_bytes()),
+    );
     let steps = if trace_on {
         crate::trace::exit_subcall()
     } else {
@@ -351,10 +357,12 @@ pub fn delegate_call_contract<E: EvmApi>(
     if trace_on {
         crate::trace::enter_subcall();
     }
-    let result = info
-        .env
-        .evm_api
-        .delegate_call(contract, &calldata, gas_left, gas_req);
+    let result = info.env.evm_api.delegate_call(
+        Bytes20::from(contract.into_array()),
+        &calldata,
+        gas_left,
+        gas_req,
+    );
     let steps = if trace_on {
         crate::trace::exit_subcall()
     } else {
@@ -405,10 +413,12 @@ pub fn static_call_contract<E: EvmApi>(
     if trace_on {
         crate::trace::enter_subcall();
     }
-    let result = info
-        .env
-        .evm_api
-        .static_call(contract, &calldata, gas_left, gas_req);
+    let result = info.env.evm_api.static_call(
+        Bytes20::from(contract.into_array()),
+        &calldata,
+        gas_left,
+        gas_req,
+    );
     let steps = if trace_on {
         crate::trace::exit_subcall()
     } else {
@@ -458,7 +468,11 @@ pub fn create1<E: EvmApi>(
     if trace_on {
         crate::trace::enter_subcall();
     }
-    let result = info.env.evm_api.create1(code.clone(), endowment, gas_left);
+    let result = info.env.evm_api.create1(
+        code.clone(),
+        Bytes32::from(endowment.to_be_bytes()),
+        gas_left,
+    );
     let steps = if trace_on {
         crate::trace::exit_subcall()
     } else {
@@ -466,7 +480,7 @@ pub fn create1<E: EvmApi>(
     };
     let (response, ret_len, gas_cost) = result.map_err(|e| StylusError::Internal(e.to_string()))?;
     let address = match response {
-        crate::evm_api::CreateResponse::Success(addr) => addr,
+        crate::evm_api::CreateResponse::Success(addr) => Address::from(addr.0),
         crate::evm_api::CreateResponse::Fail(reason) => return Err(StylusError::Internal(reason)),
     };
     info.buy_gas(gas_cost)?;
@@ -514,10 +528,12 @@ pub fn create2<E: EvmApi>(
     if trace_on {
         crate::trace::enter_subcall();
     }
-    let result = info
-        .env
-        .evm_api
-        .create2(code.clone(), endowment, salt, gas_left);
+    let result = info.env.evm_api.create2(
+        code.clone(),
+        Bytes32::from(endowment.to_be_bytes()),
+        Bytes32::from(salt.0),
+        gas_left,
+    );
     let steps = if trace_on {
         crate::trace::exit_subcall()
     } else {
@@ -525,7 +541,7 @@ pub fn create2<E: EvmApi>(
     };
     let (response, ret_len, gas_cost) = result.map_err(|e| StylusError::Internal(e.to_string()))?;
     let address = match response {
-        crate::evm_api::CreateResponse::Success(addr) => addr,
+        crate::evm_api::CreateResponse::Success(addr) => Address::from(addr.0),
         crate::evm_api::CreateResponse::Fail(reason) => return Err(StylusError::Internal(reason)),
     };
     info.buy_gas(gas_cost)?;
@@ -686,16 +702,16 @@ pub fn account_balance<E: EvmApi>(
     let (balance, gas_cost) = info
         .env
         .evm_api
-        .account_balance(address)
+        .account_balance(Bytes20::from(address.into_array()))
         .map_err(|e| StylusError::Internal(e.to_string()))?;
     info.buy_gas(gas_cost)?;
-    info.write_slice(dest_ptr, &balance.to_be_bytes::<32>())?;
+    info.write_slice(dest_ptr, &balance.0)?;
     if trace_on {
         let end_ink = info.ink_ready().map(|i| i.0).unwrap_or(0);
         crate::trace::record(
             "account_balance",
             alloy_primitives::Bytes::copy_from_slice(address.as_slice()),
-            alloy_primitives::Bytes::copy_from_slice(&balance.to_be_bytes::<32>()),
+            alloy_primitives::Bytes::copy_from_slice(&balance.0),
             start_ink,
             end_ink,
             Some(address),
@@ -723,7 +739,7 @@ pub fn account_code<E: EvmApi>(
     let (code, gas_cost) = info
         .env
         .evm_api
-        .account_code(arbos_version, address, gas_left)
+        .account_code(arbos_version, Bytes20::from(address.into_array()), gas_left)
         .map_err(|e| StylusError::Internal(e.to_string()))?;
     info.buy_gas(gas_cost)?;
     info.pay_for_write(code.len() as u32)?;
@@ -768,7 +784,7 @@ pub fn account_code_size<E: EvmApi>(
     let (code, gas_cost) = info
         .env
         .evm_api
-        .account_code(arbos_version, address, gas_left)
+        .account_code(arbos_version, Bytes20::from(address.into_array()), gas_left)
         .map_err(|e| StylusError::Internal(e.to_string()))?;
     info.buy_gas(gas_cost)?;
     let len = code.len() as u32;
@@ -801,7 +817,7 @@ pub fn account_codehash<E: EvmApi>(
     let (hash, gas_cost) = info
         .env
         .evm_api
-        .account_codehash(address)
+        .account_codehash(Bytes20::from(address.into_array()))
         .map_err(|e| StylusError::Internal(e.to_string()))?;
     info.buy_gas(gas_cost)?;
     info.write_slice(dest_ptr, hash.as_slice())?;

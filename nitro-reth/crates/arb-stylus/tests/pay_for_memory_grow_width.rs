@@ -14,7 +14,7 @@
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
-use alloy_primitives::{Address, B256, U256};
+use alloy_primitives::{Address, B256};
 use arb_stylus::{
     Gas, Ink,
     config::{CompileConfig, StylusConfig},
@@ -24,7 +24,7 @@ use arb_stylus::{
     native::NativeInstance,
 };
 use arbos::programs::types::EvmData;
-use nitro_arbutil::evm::user::UserOutcomeKind;
+use nitro_arbutil::{Bytes20, Bytes32, evm::user::UserOutcomeKind};
 use wasmer::{TypedFunction, Value};
 
 const ARBOS_60: u64 = 60;
@@ -233,17 +233,23 @@ struct NoopEvmApi {
 impl NoopEvmApi {
     fn new(arbos_version: u64) -> Self {
         Self {
-            pages: PageTracker::new(0, 0, 0, PAGE_GAS, PAGE_LIMIT),
+            pages: PageTracker {
+                open: 0,
+                ever: 0,
+                free_pages: 0,
+                page_gas: PAGE_GAS,
+                page_limit: PAGE_LIMIT,
+            },
             arbos_version,
         }
     }
 }
 
 impl EvmApi for NoopEvmApi {
-    fn get_bytes32(&mut self, _key: B256, _gas: Gas) -> eyre::Result<(B256, Gas)> {
+    fn get_bytes32(&mut self, _key: Bytes32, _gas: Gas) -> eyre::Result<(Bytes32, Gas)> {
         unreachable!("page accounting must not touch the EVM bridge")
     }
-    fn cache_bytes32(&mut self, _key: B256, _value: B256) -> eyre::Result<Gas> {
+    fn cache_bytes32(&mut self, _key: Bytes32, _value: Bytes32) -> eyre::Result<Gas> {
         unreachable!()
     }
     fn flush_storage_cache(
@@ -253,25 +259,29 @@ impl EvmApi for NoopEvmApi {
     ) -> eyre::Result<(Gas, UserOutcomeKind)> {
         unreachable!()
     }
-    fn get_transient_bytes32(&mut self, _key: B256) -> eyre::Result<B256> {
+    fn get_transient_bytes32(&mut self, _key: Bytes32) -> eyre::Result<Bytes32> {
         unreachable!()
     }
-    fn set_transient_bytes32(&mut self, _key: B256, _value: B256) -> eyre::Result<UserOutcomeKind> {
+    fn set_transient_bytes32(
+        &mut self,
+        _key: Bytes32,
+        _value: Bytes32,
+    ) -> eyre::Result<UserOutcomeKind> {
         unreachable!()
     }
     fn contract_call(
         &mut self,
-        _contract: Address,
+        _contract: Bytes20,
         _calldata: &[u8],
         _gas_left: Gas,
         _gas_req: Gas,
-        _value: U256,
+        _value: Bytes32,
     ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
         unreachable!()
     }
     fn delegate_call(
         &mut self,
-        _contract: Address,
+        _contract: Bytes20,
         _calldata: &[u8],
         _gas_left: Gas,
         _gas_req: Gas,
@@ -280,7 +290,7 @@ impl EvmApi for NoopEvmApi {
     }
     fn static_call(
         &mut self,
-        _contract: Address,
+        _contract: Bytes20,
         _calldata: &[u8],
         _gas_left: Gas,
         _gas_req: Gas,
@@ -290,7 +300,7 @@ impl EvmApi for NoopEvmApi {
     fn create1(
         &mut self,
         _code: Vec<u8>,
-        _endowment: U256,
+        _endowment: Bytes32,
         _gas: Gas,
     ) -> eyre::Result<(CreateResponse, u32, Gas)> {
         unreachable!()
@@ -298,8 +308,8 @@ impl EvmApi for NoopEvmApi {
     fn create2(
         &mut self,
         _code: Vec<u8>,
-        _endowment: U256,
-        _salt: B256,
+        _endowment: Bytes32,
+        _salt: Bytes32,
         _gas: Gas,
     ) -> eyre::Result<(CreateResponse, u32, Gas)> {
         unreachable!()
@@ -313,18 +323,18 @@ impl EvmApi for NoopEvmApi {
     fn emit_log(&mut self, _data: Vec<u8>, _topics: u32) -> eyre::Result<()> {
         unreachable!()
     }
-    fn account_balance(&mut self, _address: Address) -> eyre::Result<(U256, Gas)> {
+    fn account_balance(&mut self, _address: Bytes20) -> eyre::Result<(Bytes32, Gas)> {
         unreachable!()
     }
     fn account_code(
         &mut self,
         _arbos_version: u64,
-        _address: Address,
+        _address: Bytes20,
         _gas_left: Gas,
     ) -> eyre::Result<(Vec<u8>, Gas)> {
         unreachable!()
     }
-    fn account_codehash(&mut self, _address: Address) -> eyre::Result<(B256, Gas)> {
+    fn account_codehash(&mut self, _address: Bytes20) -> eyre::Result<(Bytes32, Gas)> {
         unreachable!()
     }
     fn capture_hostio(

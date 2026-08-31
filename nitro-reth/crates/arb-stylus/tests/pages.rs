@@ -44,7 +44,13 @@ fn memory_model_reuses_ever_high_water_mark_when_reopening() {
 
 #[test]
 fn set_pages_seeds_open_and_ever_for_subcall() {
-    let env = PageTracker::new(3, 7, 2, 1_000, 0);
+    let env = PageTracker {
+        open: 3,
+        ever: 7,
+        free_pages: 2,
+        page_gas: 1_000,
+        page_limit: 0,
+    };
     assert_eq!(env.open, 3);
     assert_eq!(env.ever, 7);
     assert_eq!(env.free_pages, 2);
@@ -53,7 +59,13 @@ fn set_pages_seeds_open_and_ever_for_subcall() {
 
 #[test]
 fn page_charge_advances_open_and_ever_for_fresh_env() {
-    let mut env = PageTracker::new(0, 0, 0, 100, 0);
+    let mut env = PageTracker {
+        open: 0,
+        ever: 0,
+        free_pages: 0,
+        page_gas: 100,
+        page_limit: 0,
+    };
     let arbos_version = 0;
     env.charge(5, arbos_version);
     assert_eq!(env.open, 5);
@@ -62,7 +74,13 @@ fn page_charge_advances_open_and_ever_for_fresh_env() {
 
 #[test]
 fn page_charge_accumulates_open() {
-    let mut env = PageTracker::new(0, 0, 0, 100, 0);
+    let mut env = PageTracker {
+        open: 0,
+        ever: 0,
+        free_pages: 0,
+        page_gas: 100,
+        page_limit: 0,
+    };
     let arbos_version = 0;
     env.charge(5, arbos_version);
     env.charge(3, arbos_version);
@@ -72,7 +90,13 @@ fn page_charge_accumulates_open() {
 
 #[test]
 fn page_charge_saturates_on_overflow() {
-    let mut env = PageTracker::new(u16::MAX - 5, u16::MAX - 5, 0, 0, 0);
+    let mut env = PageTracker {
+        open: u16::MAX - 5,
+        ever: u16::MAX - 5,
+        free_pages: 0,
+        page_gas: 0,
+        page_limit: 0,
+    };
     let arbos_version = 0;
     env.charge(100, arbos_version);
     assert_eq!(env.open, u16::MAX);
@@ -81,7 +105,13 @@ fn page_charge_saturates_on_overflow() {
 
 #[test]
 fn pages_ever_is_high_water_mark_after_freeing() {
-    let mut env = PageTracker::new(0, 0, 0, 100, 0);
+    let mut env = PageTracker {
+        open: 0,
+        ever: 0,
+        free_pages: 0,
+        page_gas: 100,
+        page_limit: 0,
+    };
     let arbos_version = 0;
     env.charge(10, arbos_version);
     // Simulate a sub-call freeing memory by writing the lower open count back.
@@ -95,7 +125,13 @@ fn pages_ever_is_high_water_mark_after_freeing() {
 
 #[test]
 fn page_charge_below_free_pages_is_free() {
-    let mut env = PageTracker::new(0, 0, 4, 500, 0);
+    let mut env = PageTracker {
+        open: 0,
+        ever: 0,
+        free_pages: 4,
+        page_gas: 500,
+        page_limit: 0,
+    };
     let arbos_version = 0;
     let cost = env.charge(3, arbos_version); // still within free window
     assert_eq!(cost, 0);
@@ -105,7 +141,13 @@ fn page_charge_below_free_pages_is_free() {
 
 #[test]
 fn page_charge_matches_memory_model_for_paid_pages() {
-    let mut env = PageTracker::new(0, 0, 2, 1_000, 0);
+    let mut env = PageTracker {
+        open: 0,
+        ever: 0,
+        free_pages: 2,
+        page_gas: 1_000,
+        page_limit: 0,
+    };
     let arbos_version = 0;
     let cost = env.charge(5, arbos_version);
     let expected = MemoryModel::new(2, 1_000).gas_cost(5, 0, 0);
@@ -140,7 +182,13 @@ fn page_limit_gate_boundary_is_strict() {
 
 #[test]
 fn page_charge_saturates_over_limit_at_v60() {
-    let mut env = PageTracker::new(1, 1, 0, 100, 4);
+    let mut env = PageTracker {
+        open: 1,
+        ever: 1,
+        free_pages: 0,
+        page_gas: 100,
+        page_limit: 4,
+    };
     let arbos_version = 60;
     assert_eq!(env.charge(8, arbos_version), u64::MAX);
     assert_eq!(env.open, 9);
@@ -148,7 +196,13 @@ fn page_charge_saturates_over_limit_at_v60() {
 
 #[test]
 fn page_charge_finite_over_limit_at_v58() {
-    let mut env = PageTracker::new(1, 1, 0, 100, 4);
+    let mut env = PageTracker {
+        open: 1,
+        ever: 1,
+        free_pages: 0,
+        page_gas: 100,
+        page_limit: 4,
+    };
     let arbos_version = 58;
     assert_ne!(env.charge(8, arbos_version), u64::MAX);
     assert_eq!(env.open, 9);
@@ -156,7 +210,13 @@ fn page_charge_finite_over_limit_at_v58() {
 
 #[test]
 fn page_charge_finite_under_limit_at_v60() {
-    let mut env = PageTracker::new(1, 1, 0, 100, 128);
+    let mut env = PageTracker {
+        open: 1,
+        ever: 1,
+        free_pages: 0,
+        page_gas: 100,
+        page_limit: 128,
+    };
     let arbos_version = 60;
     let cost = env.charge(8, arbos_version);
     assert_ne!(cost, u64::MAX);

@@ -1554,13 +1554,13 @@ where
         }
     };
     let mut evm_api = evm_api;
-    evm_api.set_pages(arb_stylus::evm_api_impl::PageTracker::new(
-        start_open,
-        start_ever,
-        params.free_pages,
-        params.page_gas,
-        params.page_limit,
-    ));
+    evm_api.set_pages(arb_stylus::evm_api_impl::PageTracker {
+        open: start_open,
+        ever: start_ever,
+        free_pages: params.free_pages,
+        page_gas: params.page_gas,
+        page_limit: params.page_limit,
+    });
     let env = arb_stylus::env::WasmEnv::new(compile, Some(stylus_config), evm_api, evm_data);
     let mut instance = match arb_stylus::NativeInstance::from_module(module, store, env) {
         Ok(inst) => inst,
