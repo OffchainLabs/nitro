@@ -28,8 +28,6 @@ jobs:
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
           toolchain: nightly
           components: rustfmt
-          build-deps: "false"
-          cache: "false"
       # Plain fmt (not --all): --all would also format the path-based deps,
       # i.e. crates/{prover,arbutil,brotli} and the vendored wasmer.
       - run: cargo +nightly fmt --check
@@ -64,7 +62,6 @@ jobs:
           client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
           targets: wasm32-wasip1
-          build-deps: "false"
       - run: cargo wasm-check
 
   docs:

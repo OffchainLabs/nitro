@@ -19,15 +19,9 @@ inputs:
   targets:
     description: Extra compilation targets (comma-separated)
     default: ""
-  build-deps:
-    description: Install the C build dependencies (clang, cmake, ...)
-    default: "true"
   brotli:
     description: Build the prebuilt brotli static libs (needed by jobs that link)
     default: "false"
-  cache:
-    description: Use the shared rust-cache
-    default: "true"
   cache-shared-key:
     description: rust-cache shared-key (empty means per-job default keys)
     default: ""
@@ -40,7 +34,6 @@ runs:
         client-id: ${{ inputs.client-id }}
         app-private-key: ${{ inputs.app-private-key }}
     - name: Install build deps
-      if: inputs.build-deps == 'true'
       shell: bash
       run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
     - name: Build brotli static libs
@@ -53,7 +46,6 @@ runs:
         components: ${{ inputs.components }}
         targets: ${{ inputs.targets }}
     - uses: Swatinem/rust-cache@v2
-      if: inputs.cache == 'true'
       with:
         workspaces: nitro-reth
         shared-key: ${{ inputs.cache-shared-key }}

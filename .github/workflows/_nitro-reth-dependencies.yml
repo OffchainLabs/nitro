@@ -24,8 +24,6 @@ jobs:
         with:
           client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
-          build-deps: "false"
-          cache: "false"
       - uses: taiki-e/install-action@0abfcd587b70a713fdaa7fb502c885e2112acb15  # v2.75.7
         with:
           tool: cargo-deny,cargo-audit
