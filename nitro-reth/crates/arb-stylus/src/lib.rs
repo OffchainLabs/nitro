@@ -7,7 +7,6 @@ pub mod cache;
 pub mod config;
 pub mod env;
 pub mod error;
-pub mod evm_api;
 pub mod evm_api_impl;
 #[allow(unused_mut)]
 pub mod host;
@@ -22,7 +21,6 @@ pub mod trace;
 pub use cache::InitCache;
 pub use config::{CompileConfig, StylusConfig};
 pub use error::{MaybeEscape, StylusError};
-pub use evm_api::EvmApi;
 pub use evm_api_impl::StylusEvmApi;
 pub use meter::{MachineMeter, MeteredMachine, STYLUS_ENTRY_POINT};
 pub use native::{NativeInstance, compile_module};
