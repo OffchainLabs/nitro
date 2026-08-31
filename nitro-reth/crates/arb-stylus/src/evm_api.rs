@@ -98,6 +98,8 @@ pub trait EvmApi: Send + 'static {
     /// Get an account's code hash. Returns hash and access cost.
     fn account_codehash(&mut self, address: Address) -> eyre::Result<(B256, Gas)>;
 
+    fn add_pages(&mut self, pages: u16) -> eyre::Result<Gas>;
+
     /// Capture tracing information for host I/O calls.
     fn capture_hostio(
         &mut self,
