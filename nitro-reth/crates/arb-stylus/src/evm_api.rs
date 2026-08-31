@@ -33,8 +33,7 @@ pub trait EvmApi: Send + 'static {
     /// Write a transient storage slot.
     fn set_transient_bytes32(&mut self, key: B256, value: B256) -> eyre::Result<UserOutcomeKind>;
 
-    /// Execute a CALL. Returns return data length, gas cost, outcome, and the
-    /// updated page counters following the sub-call.
+    /// Execute a CALL. Returns return data length, gas cost, and outcome.
     fn contract_call(
         &mut self,
         contract: Address,
@@ -42,8 +41,7 @@ pub trait EvmApi: Send + 'static {
         gas_left: Gas,
         gas_req: Gas,
         value: U256,
-        pages: (u16, u16),
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))>;
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)>;
 
     /// Execute a DELEGATECALL.
     fn delegate_call(
@@ -52,8 +50,7 @@ pub trait EvmApi: Send + 'static {
         calldata: &[u8],
         gas_left: Gas,
         gas_req: Gas,
-        pages: (u16, u16),
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))>;
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)>;
 
     /// Execute a STATICCALL.
     fn static_call(
@@ -62,8 +59,7 @@ pub trait EvmApi: Send + 'static {
         calldata: &[u8],
         gas_left: Gas,
         gas_req: Gas,
-        pages: (u16, u16),
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))>;
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)>;
 
     /// Deploy via CREATE.
     fn create1(
@@ -71,8 +67,7 @@ pub trait EvmApi: Send + 'static {
         code: Vec<u8>,
         endowment: U256,
         gas: Gas,
-        pages: (u16, u16),
-    ) -> eyre::Result<(CreateResponse, u32, Gas, (u16, u16))>;
+    ) -> eyre::Result<(CreateResponse, u32, Gas)>;
 
     /// Deploy via CREATE2.
     fn create2(
@@ -81,8 +76,7 @@ pub trait EvmApi: Send + 'static {
         endowment: U256,
         salt: B256,
         gas: Gas,
-        pages: (u16, u16),
-    ) -> eyre::Result<(CreateResponse, u32, Gas, (u16, u16))>;
+    ) -> eyre::Result<(CreateResponse, u32, Gas)>;
 
     /// Get the return data from the last call.
     fn get_return_data(&self) -> Vec<u8>;
