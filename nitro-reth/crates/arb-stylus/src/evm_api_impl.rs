@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use alloy_primitives::{Address, B256, Log, U256};
-use arb_chainspec::arbos_version::ARBOS_VERSION_STYLUS_LAST_CODE_CACHE_FIX;
+use arb_chainspec::arbos_version::{ARBOS_VERSION_59, ARBOS_VERSION_STYLUS_LAST_CODE_CACHE_FIX};
 use arb_primitives::multigas::MultiGas;
+use arbos::programs::memory::MemoryModel;
 use nitro_arbutil::evm::user::UserOutcomeKind;
 use revm::Database;
 
@@ -308,6 +309,49 @@ pub struct StylusEvmApi {
     /// Gas forwarded to and consumed by sub-calls. Excluded from this frame's
     /// residual because the callee frame attributes its own dimensions.
     sub_call_gas: u64,
+    /// WASM memory-page accounting for this program run.
+    pages: PageTracker,
+}
+
+/// Consensus open-page cap (ArbOS >= 59): a non-zero `page_limit` that
+/// `new_open` exceeds makes the allocation unpayable.
+pub fn page_limit_exceeded(arbos_version: u64, page_limit: u16, new_open: u16) -> bool {
+    arbos_version >= ARBOS_VERSION_59 && page_limit > 0 && new_open > page_limit
+}
+
+/// WASM memory-page accounting: open/ever counters plus the memory-model parameters.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PageTracker {
+    pub open: u16,
+    pub ever: u16,
+    pub free_pages: u16,
+    pub page_gas: u16,
+    pub page_limit: u16,
+}
+
+impl PageTracker {
+    pub fn new(open: u16, ever: u16, free_pages: u16, page_gas: u16, page_limit: u16) -> Self {
+        Self {
+            open,
+            ever,
+            free_pages,
+            page_gas,
+            page_limit,
+        }
+    }
+
+    /// Charge for allocating `new_pages`, updating the open/ever counters and
+    /// returning the gas cost.
+    pub fn charge(&mut self, new_pages: u16, arbos_version: u64) -> u64 {
+        let model = MemoryModel::new(self.free_pages, self.page_gas);
+        let cost = model.gas_cost(new_pages, self.open, self.ever);
+        self.open = self.open.saturating_add(new_pages);
+        self.ever = self.ever.max(self.open);
+        if page_limit_exceeded(arbos_version, self.page_limit, self.open) {
+            return u64::MAX;
+        }
+        cost
+    }
 }
 
 // SAFETY: `wasmer::FunctionEnv::new<T>` requires `T: Send + 'static`, so
@@ -371,8 +415,19 @@ impl StylusEvmApi {
                 last_code: None,
                 multi_gas: MultiGas::zero(),
                 sub_call_gas: 0,
+                pages: PageTracker::default(),
             }
         }
+    }
+
+    /// Seed the page counters and memory-model parameters for this run.
+    pub fn set_pages(&mut self, pages: PageTracker) {
+        self.pages = pages;
+    }
+
+    /// High-water mark of open pages over this run.
+    pub fn pages_ever(&self) -> u16 {
+        self.pages.ever
     }
 
     /// Per-dimension gas attributed across this program's host calls.
