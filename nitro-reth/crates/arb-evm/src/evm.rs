@@ -474,7 +474,7 @@ fn stylus_call_gas_cost(
         cost = cost.saturating_add(program.init_gas(params));
     }
     let new_open = pages_open.saturating_add(program.footprint);
-    if arb_stylus::evm_api_impl::page_limit_exceeded(arbos_version, params.page_limit, new_open) {
+    if arb_stylus::pages::page_limit_exceeded(arbos_version, params.page_limit, new_open) {
         cost = cost.saturating_add(u64::MAX);
     }
     cost
@@ -1554,7 +1554,7 @@ where
         }
     };
     let mut evm_api = evm_api;
-    evm_api.set_pages(arb_stylus::evm_api_impl::PageTracker {
+    evm_api.set_pages(arb_stylus::pages::PageTracker {
         open: start_open,
         ever: start_ever,
         free_pages: params.free_pages,

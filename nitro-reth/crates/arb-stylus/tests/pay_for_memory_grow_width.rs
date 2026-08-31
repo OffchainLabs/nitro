@@ -18,9 +18,9 @@ use alloy_primitives::{Address, B256};
 use arb_stylus::{
     Gas, Ink,
     config::{CompileConfig, StylusConfig},
-    evm_api_impl::PageTracker,
     meter::{MachineMeter, MeteredMachine, STYLUS_INK_LEFT, STYLUS_INK_STATUS, STYLUS_STACK_LEFT},
     native::NativeInstance,
+    pages::PageTracker,
 };
 use arbos::programs::types::EvmData;
 use nitro_arbutil::{

@@ -14,6 +14,7 @@ pub mod meter;
 pub mod middleware;
 pub mod multi_gas;
 pub mod native;
+pub mod pages;
 pub use nitro_arbutil::pricing;
 pub mod run;
 pub mod trace;
