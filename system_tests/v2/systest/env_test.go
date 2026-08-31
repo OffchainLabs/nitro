@@ -161,6 +161,27 @@ func TestEnvGoReportsRealError(t *testing.T) {
 	}
 }
 
+func TestAssertionFailureCancelsCtx(t *testing.T) {
+	tb := &recordingT{}
+	e := newEnv(tb, context.Background(), Spec{})
+	e.Require(nil)
+	if e.Ctx.Err() != nil {
+		t.Fatalf("passing assertion must not cancel env.Ctx, got %v", e.Ctx.Err())
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		e.Require(errors.New("boom"))
+	}()
+	<-done
+	if !errors.Is(e.Ctx.Err(), context.Canceled) {
+		t.Fatalf("failed assertion must cancel env.Ctx, got %v", e.Ctx.Err())
+	}
+	if tb.errCount() != 1 {
+		t.Fatalf("want 1 recorded error, got %d", tb.errCount())
+	}
+}
+
 func TestAssertionDroppedAfterWait(t *testing.T) {
 	tb := &recordingT{}
 	e := &Env{t: tb}

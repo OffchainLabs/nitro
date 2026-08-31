@@ -300,6 +300,9 @@ func (e *Env) Go(fn func() error) {
 		defer func() {
 			if r := recover(); r != nil {
 				e.guarded(func() { e.t.Errorf("env.Go panic: %v\n%s", r, debug.Stack()) })
+				if e.cancel != nil {
+					e.cancel()
+				}
 			}
 		}()
 		err := fn()
@@ -312,6 +315,9 @@ func (e *Env) Go(fn func() error) {
 			return
 		}
 		e.guarded(func() { e.t.Errorf("env.Go: %v", err) })
+		if e.cancel != nil {
+			e.cancel()
+		}
 	})
 }
 
@@ -356,12 +362,14 @@ func (e *Env) guarded(fn func()) {
 		}
 		runtime.Goexit()
 	}
+	completed := false
 	defer func() {
-		if e.cancel != nil && e.t.Failed() {
+		if !completed && e.cancel != nil {
 			e.cancel()
 		}
 	}()
 	fn()
+	completed = true
 }
 
 // suppressedAtShutdown reports whether err is a ctx error to swallow because

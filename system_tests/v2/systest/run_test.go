@@ -35,7 +35,7 @@ func (r *recordingT) Context() context.Context {
 func (r *recordingT) Helper()              {}
 func (r *recordingT) Name() string         { return "recordingT" }
 func (r *recordingT) FailNow()             { runtime.Goexit() }
-func (r *recordingT) Failed() bool         { r.mu.Lock(); defer r.mu.Unlock(); return len(r.errors) > 0 }
+func (r *recordingT) Logf(string, ...any)  {}
 func (r *recordingT) Skip(...any)          { r.mu.Lock(); r.skipped = true; r.mu.Unlock() }
 func (r *recordingT) Skipf(string, ...any) { r.mu.Lock(); r.skipped = true; r.mu.Unlock() }
 
@@ -399,5 +399,31 @@ func TestPostHookErrorAndPanicIsolated(t *testing.T) {
 	}
 	if rt.errCount() != 2 {
 		t.Fatalf("want 2 recorded failures (error + panic), got %d", rt.errCount())
+	}
+}
+
+func TestPostHookCtxErrorSuppression(t *testing.T) {
+	tb := &recordingT{}
+	e := newEnv(tb, context.Background(), Spec{})
+	e.cancel()
+	runPostHook(tb, e, func(*Env) error { return fmt.Errorf("validation head: %w", context.Canceled) })
+	if tb.errCount() != 0 {
+		t.Fatalf("canceled hook error on a cancelled env.Ctx must be suppressed, got %d", tb.errCount())
+	}
+
+	tb2 := &recordingT{}
+	e2 := newEnv(tb2, context.Background(), Spec{})
+	runPostHook(tb2, e2, func(*Env) error { return fmt.Errorf("spurious: %w", context.Canceled) })
+	if tb2.errCount() != 1 {
+		t.Fatalf("canceled hook error on a live env.Ctx must be reported, got %d", tb2.errCount())
+	}
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	tb3 := &recordingT{}
+	e3 := newEnv(tb3, ctx, Spec{})
+	runPostHook(tb3, e3, func(*Env) error { return fmt.Errorf("stalled: %w", context.DeadlineExceeded) })
+	if tb3.errCount() != 1 {
+		t.Fatalf("deadline hook error must be reported, got %d", tb3.errCount())
 	}
 }
