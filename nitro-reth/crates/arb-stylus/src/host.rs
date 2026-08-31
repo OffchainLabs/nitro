@@ -296,20 +296,16 @@ pub fn call_contract<E: EvmApi>(
     if trace_on {
         crate::trace::enter_subcall();
     }
-    let pages_in = (info.env.pages_open, info.env.pages_ever);
     let result = info
         .env
         .evm_api
-        .contract_call(contract, &calldata, gas_left, gas_req, value, pages_in);
+        .contract_call(contract, &calldata, gas_left, gas_req, value);
     let steps = if trace_on {
         crate::trace::exit_subcall()
     } else {
         Vec::new()
     };
-    let (ret_len, gas_cost, status, pages_out) =
-        result.map_err(|e| StylusError::Internal(e.to_string()))?;
-    info.env.pages_open = pages_out.0;
-    info.env.pages_ever = pages_out.1;
+    let (ret_len, gas_cost, status) = result.map_err(|e| StylusError::Internal(e.to_string()))?;
     info.buy_gas(gas_cost)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
@@ -355,20 +351,16 @@ pub fn delegate_call_contract<E: EvmApi>(
     if trace_on {
         crate::trace::enter_subcall();
     }
-    let pages_in = (info.env.pages_open, info.env.pages_ever);
     let result = info
         .env
         .evm_api
-        .delegate_call(contract, &calldata, gas_left, gas_req, pages_in);
+        .delegate_call(contract, &calldata, gas_left, gas_req);
     let steps = if trace_on {
         crate::trace::exit_subcall()
     } else {
         Vec::new()
     };
-    let (ret_len, gas_cost, status, pages_out) =
-        result.map_err(|e| StylusError::Internal(e.to_string()))?;
-    info.env.pages_open = pages_out.0;
-    info.env.pages_ever = pages_out.1;
+    let (ret_len, gas_cost, status) = result.map_err(|e| StylusError::Internal(e.to_string()))?;
     info.buy_gas(gas_cost)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
@@ -413,20 +405,16 @@ pub fn static_call_contract<E: EvmApi>(
     if trace_on {
         crate::trace::enter_subcall();
     }
-    let pages_in = (info.env.pages_open, info.env.pages_ever);
     let result = info
         .env
         .evm_api
-        .static_call(contract, &calldata, gas_left, gas_req, pages_in);
+        .static_call(contract, &calldata, gas_left, gas_req);
     let steps = if trace_on {
         crate::trace::exit_subcall()
     } else {
         Vec::new()
     };
-    let (ret_len, gas_cost, status, pages_out) =
-        result.map_err(|e| StylusError::Internal(e.to_string()))?;
-    info.env.pages_open = pages_out.0;
-    info.env.pages_ever = pages_out.1;
+    let (ret_len, gas_cost, status) = result.map_err(|e| StylusError::Internal(e.to_string()))?;
     info.buy_gas(gas_cost)?;
     info.env.evm_return_data_len = ret_len;
     info.write_u32(ret_len_ptr, ret_len)?;
@@ -470,20 +458,13 @@ pub fn create1<E: EvmApi>(
     if trace_on {
         crate::trace::enter_subcall();
     }
-    let pages_in = (info.env.pages_open, info.env.pages_ever);
-    let result = info
-        .env
-        .evm_api
-        .create1(code.clone(), endowment, gas_left, pages_in);
+    let result = info.env.evm_api.create1(code.clone(), endowment, gas_left);
     let steps = if trace_on {
         crate::trace::exit_subcall()
     } else {
         Vec::new()
     };
-    let (response, ret_len, gas_cost, pages_out) =
-        result.map_err(|e| StylusError::Internal(e.to_string()))?;
-    info.env.pages_open = pages_out.0;
-    info.env.pages_ever = pages_out.1;
+    let (response, ret_len, gas_cost) = result.map_err(|e| StylusError::Internal(e.to_string()))?;
     let address = match response {
         crate::evm_api::CreateResponse::Success(addr) => addr,
         crate::evm_api::CreateResponse::Fail(reason) => return Err(StylusError::Internal(reason)),
@@ -533,20 +514,16 @@ pub fn create2<E: EvmApi>(
     if trace_on {
         crate::trace::enter_subcall();
     }
-    let pages_in = (info.env.pages_open, info.env.pages_ever);
     let result = info
         .env
         .evm_api
-        .create2(code.clone(), endowment, salt, gas_left, pages_in);
+        .create2(code.clone(), endowment, salt, gas_left);
     let steps = if trace_on {
         crate::trace::exit_subcall()
     } else {
         Vec::new()
     };
-    let (response, ret_len, gas_cost, pages_out) =
-        result.map_err(|e| StylusError::Internal(e.to_string()))?;
-    info.env.pages_open = pages_out.0;
-    info.env.pages_ever = pages_out.1;
+    let (response, ret_len, gas_cost) = result.map_err(|e| StylusError::Internal(e.to_string()))?;
     let address = match response {
         crate::evm_api::CreateResponse::Success(addr) => addr,
         crate::evm_api::CreateResponse::Fail(reason) => return Err(StylusError::Internal(reason)),
@@ -1372,8 +1349,12 @@ pub fn pay_for_memory_grow<E: EvmApi>(
         info.buy_ink(hio::PAY_FOR_MEMORY_GROW_BASE_INK)?;
         return Ok(());
     }
-    let gas_cost = info.env.add_pages_charge(pages);
-    info.buy_gas(Gas(gas_cost))?;
+    let gas_cost = info
+        .env
+        .evm_api
+        .add_pages(pages)
+        .map_err(|e| StylusError::Internal(e.to_string()))?;
+    info.buy_gas(gas_cost)?;
     Ok(())
 }
 
