@@ -18,13 +18,18 @@ use alloy_primitives::{Address, B256};
 use arb_stylus::{
     Gas, Ink,
     config::{CompileConfig, StylusConfig},
-    evm_api::{CreateResponse, EvmApi},
     evm_api_impl::PageTracker,
     meter::{MachineMeter, MeteredMachine, STYLUS_INK_LEFT, STYLUS_INK_STATUS, STYLUS_STACK_LEFT},
     native::NativeInstance,
 };
 use arbos::programs::types::EvmData;
-use nitro_arbutil::{Bytes20, Bytes32, evm::user::UserOutcomeKind};
+use nitro_arbutil::{
+    Bytes20, Bytes32,
+    evm::{
+        api::{CreateRespone, EvmApi, VecReader},
+        user::UserOutcomeKind,
+    },
+};
 use wasmer::{TypedFunction, Value};
 
 const ARBOS_60: u64 = 60;
@@ -245,7 +250,7 @@ impl NoopEvmApi {
     }
 }
 
-impl EvmApi for NoopEvmApi {
+impl EvmApi<VecReader> for NoopEvmApi {
     fn get_bytes32(&mut self, _key: Bytes32, _gas: Gas) -> eyre::Result<(Bytes32, Gas)> {
         unreachable!("page accounting must not touch the EVM bridge")
     }
@@ -302,7 +307,7 @@ impl EvmApi for NoopEvmApi {
         _code: Vec<u8>,
         _endowment: Bytes32,
         _gas: Gas,
-    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
+    ) -> eyre::Result<(CreateRespone, u32, Gas)> {
         unreachable!()
     }
     fn create2(
@@ -311,14 +316,14 @@ impl EvmApi for NoopEvmApi {
         _endowment: Bytes32,
         _salt: Bytes32,
         _gas: Gas,
-    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
+    ) -> eyre::Result<(CreateRespone, u32, Gas)> {
         unreachable!()
     }
     fn add_pages(&mut self, pages: u16) -> eyre::Result<Gas> {
         Ok(Gas(self.pages.charge(pages, self.arbos_version)))
     }
-    fn get_return_data(&self) -> Vec<u8> {
-        vec![]
+    fn get_return_data(&self) -> VecReader {
+        VecReader::new(vec![])
     }
     fn emit_log(&mut self, _data: Vec<u8>, _topics: u32) -> eyre::Result<()> {
         unreachable!()
@@ -331,7 +336,7 @@ impl EvmApi for NoopEvmApi {
         _arbos_version: u64,
         _address: Bytes20,
         _gas_left: Gas,
-    ) -> eyre::Result<(Vec<u8>, Gas)> {
+    ) -> eyre::Result<(VecReader, Gas)> {
         unreachable!()
     }
     fn account_codehash(&mut self, _address: Bytes20) -> eyre::Result<(Bytes32, Gas)> {

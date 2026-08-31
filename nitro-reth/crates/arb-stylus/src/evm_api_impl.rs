@@ -4,14 +4,16 @@ use alloy_primitives::{Address, B256, Log, U256};
 use arb_chainspec::arbos_version::{ARBOS_VERSION_59, ARBOS_VERSION_STYLUS_LAST_CODE_CACHE_FIX};
 use arb_primitives::multigas::MultiGas;
 use arbos::programs::memory::MemoryModel;
-use nitro_arbutil::{Bytes20, Bytes32, evm::user::UserOutcomeKind};
+use nitro_arbutil::{
+    Bytes20, Bytes32,
+    evm::{
+        api::{CreateRespone, EvmApi, VecReader},
+        user::UserOutcomeKind,
+    },
+};
 use revm::Database;
 
-use crate::{
-    Gas,
-    evm_api::{CreateResponse, EvmApi},
-    multi_gas,
-};
+use crate::{Gas, multi_gas};
 
 /// EIP-2929 gas costs for storage operations.
 const COLD_SLOAD_COST: u64 = 2100;
@@ -466,7 +468,7 @@ impl std::fmt::Debug for StylusEvmApi {
     }
 }
 
-impl EvmApi for StylusEvmApi {
+impl EvmApi<VecReader> for StylusEvmApi {
     fn get_bytes32(
         &mut self,
         key: Bytes32,
@@ -802,11 +804,11 @@ impl EvmApi for StylusEvmApi {
         code: Vec<u8>,
         endowment: Bytes32,
         gas: Gas,
-    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
+    ) -> eyre::Result<(CreateRespone, u32, Gas)> {
         let endowment = U256::from_be_bytes(endowment.0);
         if self.read_only {
             self.return_data = Vec::new();
-            return Ok((CreateResponse::Fail("write protection".into()), 0, Gas(0)));
+            return Ok((CreateRespone::Fail("write protection".into()), 0, Gas(0)));
         }
 
         let do_create = match self.do_create {
@@ -814,7 +816,7 @@ impl EvmApi for StylusEvmApi {
             None => {
                 self.return_data = b"creates not available".to_vec();
                 return Ok((
-                    CreateResponse::Fail("not available".into()),
+                    CreateRespone::Fail("not available".into()),
                     self.return_data.len() as u32,
                     Gas(0),
                 ));
@@ -824,7 +826,7 @@ impl EvmApi for StylusEvmApi {
         let base_cost: u64 = 32000;
         if gas.0 < base_cost {
             self.return_data = Vec::new();
-            return Ok((CreateResponse::Fail("out of gas".into()), 0, Gas(gas.0)));
+            return Ok((CreateRespone::Fail("out of gas".into()), 0, Gas(gas.0)));
         }
         let remaining = gas.0 - base_cost;
         let one_64th = remaining / 64;
@@ -847,8 +849,8 @@ impl EvmApi for StylusEvmApi {
         self.record_sub_call(MultiGas::computation_gas(base_cost), result.gas_cost);
 
         let response = match result.address {
-            Some(addr) => CreateResponse::Success(Bytes20::from(addr.into_array())),
-            None => CreateResponse::Success(Bytes20::default()),
+            Some(addr) => CreateRespone::Succes(Bytes20::from(addr.into_array())),
+            None => CreateRespone::Succes(Bytes20::default()),
         };
 
         Ok((response, self.return_data.len() as u32, Gas(cost)))
@@ -860,12 +862,12 @@ impl EvmApi for StylusEvmApi {
         endowment: Bytes32,
         salt: Bytes32,
         gas: Gas,
-    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
+    ) -> eyre::Result<(CreateRespone, u32, Gas)> {
         let endowment = U256::from_be_bytes(endowment.0);
         let salt = B256::from(salt.0);
         if self.read_only {
             self.return_data = Vec::new();
-            return Ok((CreateResponse::Fail("write protection".into()), 0, Gas(0)));
+            return Ok((CreateRespone::Fail("write protection".into()), 0, Gas(0)));
         }
 
         let do_create = match self.do_create {
@@ -873,7 +875,7 @@ impl EvmApi for StylusEvmApi {
             None => {
                 self.return_data = b"creates not available".to_vec();
                 return Ok((
-                    CreateResponse::Fail("not available".into()),
+                    CreateRespone::Fail("not available".into()),
                     self.return_data.len() as u32,
                     Gas(0),
                 ));
@@ -885,7 +887,7 @@ impl EvmApi for StylusEvmApi {
         let base_cost = 32000u64.saturating_add(keccak_cost);
         if gas.0 < base_cost {
             self.return_data = Vec::new();
-            return Ok((CreateResponse::Fail("out of gas".into()), 0, Gas(gas.0)));
+            return Ok((CreateRespone::Fail("out of gas".into()), 0, Gas(gas.0)));
         }
         let remaining = gas.0 - base_cost;
         let one_64th = remaining / 64;
@@ -908,15 +910,15 @@ impl EvmApi for StylusEvmApi {
         self.record_sub_call(MultiGas::computation_gas(base_cost), result.gas_cost);
 
         let response = match result.address {
-            Some(addr) => CreateResponse::Success(Bytes20::from(addr.into_array())),
-            None => CreateResponse::Success(Bytes20::default()),
+            Some(addr) => CreateRespone::Succes(Bytes20::from(addr.into_array())),
+            None => CreateRespone::Succes(Bytes20::default()),
         };
 
         Ok((response, self.return_data.len() as u32, Gas(cost)))
     }
 
-    fn get_return_data(&self) -> Vec<u8> {
-        self.return_data.clone()
+    fn get_return_data(&self) -> VecReader {
+        VecReader::new(self.return_data.clone())
     }
 
     fn emit_log(&mut self, data: Vec<u8>, topics: u32) -> eyre::Result<()> {
@@ -965,12 +967,12 @@ impl EvmApi for StylusEvmApi {
         _arbos_version: u64,
         address: Bytes20,
         gas_left: Gas,
-    ) -> eyre::Result<(Vec<u8>, Gas)> {
+    ) -> eyre::Result<(VecReader, Gas)> {
         let address = Address::from(address.0);
         if let Some((stored, data)) = self.last_code.as_ref()
             && *stored == address
         {
-            return Ok((data.clone(), Gas(0)));
+            return Ok((VecReader::new(data.clone()), Gas(0)));
         }
         let (code, is_cold) = self.journal().account_code(address)?;
         // WasmAccountTouchCost(withCode=true): extCodeCost + cold/warm access cost
@@ -983,12 +985,12 @@ impl EvmApi for StylusEvmApi {
         self.add_multi_gas(multi_gas::account_touch(is_cold, WASM_EXT_CODE_COST));
         // If insufficient gas, return empty code but still charge
         if gas_left.0 < gas_cost {
-            return Ok((Vec::new(), Gas(gas_cost)));
+            return Ok((VecReader::new(Vec::new()), Gas(gas_cost)));
         }
         if !code.is_empty() || self.arbos_version < ARBOS_VERSION_STYLUS_LAST_CODE_CACHE_FIX {
             self.last_code = Some((address, code.clone()));
         }
-        Ok((code, Gas(gas_cost)))
+        Ok((VecReader::new(code), Gas(gas_cost)))
     }
 
     fn account_codehash(&mut self, address: Bytes20) -> eyre::Result<(Bytes32, Gas)> {

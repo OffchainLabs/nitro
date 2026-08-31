@@ -1,10 +1,10 @@
 //! End-to-end test for the read-only `create1`/`create2` halt.
 //!
-//! A read-only `CreateResponse::Fail` returns `Err` before `buy_gas`, halting
+//! A read-only `CreateRespone::Fail` returns `Err` before `buy_gas`, halting
 //! the WASM frame (`Failure`) with the ink preserved.
 //!
 //! In a `STATICCALL` context the `EvmApi` returns
-//! `(CreateResponse::Fail("write protection"), 0, Gas(0), pages)`. These tests
+//! `(CreateRespone::Fail("write protection"), 0, Gas(0), pages)`. These tests
 //! drive the real `host::create1`/`create2` imports through `NativeInstance`
 //! against an `EvmApi` that returns that exact tuple and assert the entrypoint
 //! traps with the meter still ready (a frame `Failure`, not an out-of-ink and not
@@ -24,12 +24,17 @@ use alloy_primitives::{Address, B256, address};
 use arb_stylus::{
     Gas, Ink,
     config::{CompileConfig, StylusConfig},
-    evm_api::{CreateResponse, EvmApi},
     meter::{MachineMeter, MeteredMachine, STYLUS_INK_LEFT, STYLUS_INK_STATUS, STYLUS_STACK_LEFT},
     native::NativeInstance,
 };
 use arbos::programs::types::EvmData;
-use nitro_arbutil::{Bytes20, Bytes32, evm::user::UserOutcomeKind};
+use nitro_arbutil::{
+    Bytes20, Bytes32,
+    evm::{
+        api::{CreateRespone, EvmApi, VecReader},
+        user::UserOutcomeKind,
+    },
+};
 use wasmer::{TypedFunction, Value};
 
 const SEED_INK: i64 = i64::MAX;
@@ -240,24 +245,22 @@ struct ProbeEvmApi {
 }
 
 impl ProbeEvmApi {
-    fn create_response(&self) -> (CreateResponse, u32, Gas) {
+    fn create_response(&self) -> (CreateRespone, u32, Gas) {
         match self.outcome {
             CreateOutcome::ReadOnlyFail => {
-                (CreateResponse::Fail("write protection".into()), 0, Gas(0))
+                (CreateRespone::Fail("write protection".into()), 0, Gas(0))
             }
             CreateOutcome::Success => (
-                CreateResponse::Success(Bytes20::from(DEPLOYED.into_array())),
+                CreateRespone::Succes(Bytes20::from(DEPLOYED.into_array())),
                 0,
                 Gas(0),
             ),
-            CreateOutcome::NormalFailure => {
-                (CreateResponse::Success(Bytes20::default()), 0, Gas(0))
-            }
+            CreateOutcome::NormalFailure => (CreateRespone::Succes(Bytes20::default()), 0, Gas(0)),
         }
     }
 }
 
-impl EvmApi for ProbeEvmApi {
+impl EvmApi<VecReader> for ProbeEvmApi {
     fn get_bytes32(&mut self, _key: Bytes32, _gas: Gas) -> eyre::Result<(Bytes32, Gas)> {
         unreachable!()
     }
@@ -314,7 +317,7 @@ impl EvmApi for ProbeEvmApi {
         _code: Vec<u8>,
         _endowment: Bytes32,
         _gas: Gas,
-    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
+    ) -> eyre::Result<(CreateRespone, u32, Gas)> {
         Ok(self.create_response())
     }
     fn create2(
@@ -323,14 +326,14 @@ impl EvmApi for ProbeEvmApi {
         _endowment: Bytes32,
         _salt: Bytes32,
         _gas: Gas,
-    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
+    ) -> eyre::Result<(CreateRespone, u32, Gas)> {
         Ok(self.create_response())
     }
     fn add_pages(&mut self, _pages: u16) -> eyre::Result<Gas> {
         Ok(Gas(0))
     }
-    fn get_return_data(&self) -> Vec<u8> {
-        vec![]
+    fn get_return_data(&self) -> VecReader {
+        VecReader::new(vec![])
     }
     fn emit_log(&mut self, _data: Vec<u8>, _topics: u32) -> eyre::Result<()> {
         unreachable!()
@@ -343,7 +346,7 @@ impl EvmApi for ProbeEvmApi {
         _arbos_version: u64,
         _address: Bytes20,
         _gas_left: Gas,
-    ) -> eyre::Result<(Vec<u8>, Gas)> {
+    ) -> eyre::Result<(VecReader, Gas)> {
         unreachable!()
     }
     fn account_codehash(&mut self, _address: Bytes20) -> eyre::Result<(Bytes32, Gas)> {

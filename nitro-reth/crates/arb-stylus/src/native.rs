@@ -1,6 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use arbos::programs::types::EvmData;
+use nitro_arbutil::evm::api::{EvmApi, VecReader};
 use wasmer::{
     Function, FunctionEnv, Instance, Memory, Module, Store, TypedFunction, Value, imports,
 };
@@ -11,7 +12,6 @@ use crate::{
     config::{CompileConfig, PricingParams, StylusConfig},
     env::{MeterData, WasmEnv},
     error::StylusError,
-    evm_api::EvmApi,
     host,
     meter::{
         DepthCheckedMachine, GasMeteredMachine, MachineMeter, MeteredMachine, STYLUS_INK_LEFT,
@@ -21,13 +21,13 @@ use crate::{
 
 /// A native WASM instance ready for execution.
 #[derive(Debug)]
-pub struct NativeInstance<E: EvmApi> {
+pub struct NativeInstance<E: EvmApi<VecReader>> {
     pub instance: Instance,
     pub store: Store,
     pub env: FunctionEnv<WasmEnv<E>>,
 }
 
-impl<E: EvmApi> NativeInstance<E> {
+impl<E: EvmApi<VecReader>> NativeInstance<E> {
     pub fn new(instance: Instance, store: Store, env: FunctionEnv<WasmEnv<E>>) -> Self {
         let mut native = Self {
             instance,
@@ -291,20 +291,20 @@ impl<E: EvmApi> NativeInstance<E> {
     }
 }
 
-impl<E: EvmApi> Deref for NativeInstance<E> {
+impl<E: EvmApi<VecReader>> Deref for NativeInstance<E> {
     type Target = Instance;
     fn deref(&self) -> &Self::Target {
         &self.instance
     }
 }
 
-impl<E: EvmApi> DerefMut for NativeInstance<E> {
+impl<E: EvmApi<VecReader>> DerefMut for NativeInstance<E> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.instance
     }
 }
 
-impl<E: EvmApi> MeteredMachine for NativeInstance<E> {
+impl<E: EvmApi<VecReader>> MeteredMachine for NativeInstance<E> {
     fn ink_left(&self) -> MachineMeter {
         let vm = self.env().meter();
         match vm.status() {
@@ -320,7 +320,7 @@ impl<E: EvmApi> MeteredMachine for NativeInstance<E> {
     }
 }
 
-impl<E: EvmApi> GasMeteredMachine for NativeInstance<E> {
+impl<E: EvmApi<VecReader>> GasMeteredMachine for NativeInstance<E> {
     fn pricing(&self) -> PricingParams {
         self.env()
             .config
@@ -329,7 +329,7 @@ impl<E: EvmApi> GasMeteredMachine for NativeInstance<E> {
     }
 }
 
-impl<E: EvmApi> DepthCheckedMachine for NativeInstance<E> {
+impl<E: EvmApi<VecReader>> DepthCheckedMachine for NativeInstance<E> {
     fn stack_left(&mut self) -> u32 {
         self.get_global(STYLUS_STACK_LEFT).unwrap_or(0)
     }
