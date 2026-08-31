@@ -1,8 +1,7 @@
 use arbos::programs::types::UserOutcome;
-use nitro_arbutil::evm::api::{EvmApi, VecReader};
 
 use crate::{
-    Ink,
+    EvmApi, Ink,
     config::StylusConfig,
     error::StylusError,
     meter::{DepthCheckedMachine, MachineMeter, MeteredMachine, STYLUS_ENTRY_POINT},
@@ -19,7 +18,7 @@ pub trait RunProgram {
     ) -> Result<UserOutcome, StylusError>;
 }
 
-impl<E: EvmApi<VecReader>> RunProgram for NativeInstance<E> {
+impl<E: EvmApi> RunProgram for NativeInstance<E> {
     fn run_main(
         &mut self,
         args: &[u8],

@@ -4,7 +4,7 @@ use nitro_arbutil::{
     Bytes20, Bytes32,
     evm::{
         self as evm_gas,
-        api::{CreateResponse, DataReader, EvmApi, VecReader},
+        api::{CreateResponse, DataReader},
         storage::StorageCache,
         user::UserOutcomeKind,
     },
@@ -12,7 +12,7 @@ use nitro_arbutil::{
 use wasmer::FunctionEnvMut;
 
 use crate::{
-    Gas,
+    EvmApi, Gas,
     env::WasmEnv,
     error::{MaybeEscape, StylusError},
     meter::{GasMeteredMachine, MeteredMachine},
@@ -26,10 +26,7 @@ macro_rules! hostio {
 }
 
 /// Read the program's arguments into WASM memory.
-pub fn read_args<E: EvmApi<VecReader>>(
-    mut env: FunctionEnvMut<'_, WasmEnv<E>>,
-    ptr: u32,
-) -> MaybeEscape {
+pub fn read_args<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -52,7 +49,7 @@ pub fn read_args<E: EvmApi<VecReader>>(
 }
 
 /// Write the program's result from WASM memory.
-pub fn write_result<E: EvmApi<VecReader>>(
+pub fn write_result<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     ptr: u32,
     len: u32,
@@ -80,10 +77,7 @@ pub fn write_result<E: EvmApi<VecReader>>(
 }
 
 /// Exit the program early with a status code.
-pub fn exit_early<E: EvmApi<VecReader>>(
-    mut env: FunctionEnvMut<'_, WasmEnv<E>>,
-    status: u32,
-) -> MaybeEscape {
+pub fn exit_early<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, status: u32) -> MaybeEscape {
     if crate::trace::is_active() {
         crate::trace::record(
             "exit_early",
@@ -99,7 +93,7 @@ pub fn exit_early<E: EvmApi<VecReader>>(
 }
 
 /// Load a 32-byte storage value.
-pub fn storage_load_bytes32<E: EvmApi<VecReader>>(
+pub fn storage_load_bytes32<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     key_ptr: u32,
     dest_ptr: u32,
@@ -139,7 +133,7 @@ pub fn storage_load_bytes32<E: EvmApi<VecReader>>(
 }
 
 /// Cache a 32-byte storage value for later flushing.
-pub fn storage_cache_bytes32<E: EvmApi<VecReader>>(
+pub fn storage_cache_bytes32<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     key_ptr: u32,
     value_ptr: u32,
@@ -175,7 +169,7 @@ pub fn storage_cache_bytes32<E: EvmApi<VecReader>>(
 }
 
 /// Flush the storage cache.
-pub fn storage_flush_cache<E: EvmApi<VecReader>>(
+pub fn storage_flush_cache<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     clear: u32,
 ) -> MaybeEscape {
@@ -216,7 +210,7 @@ pub fn storage_flush_cache<E: EvmApi<VecReader>>(
 }
 
 /// Load a transient storage value.
-pub fn transient_load_bytes32<E: EvmApi<VecReader>>(
+pub fn transient_load_bytes32<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     key_ptr: u32,
     dest_ptr: u32,
@@ -248,7 +242,7 @@ pub fn transient_load_bytes32<E: EvmApi<VecReader>>(
 }
 
 /// Store a transient storage value.
-pub fn transient_store_bytes32<E: EvmApi<VecReader>>(
+pub fn transient_store_bytes32<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     key_ptr: u32,
     value_ptr: u32,
@@ -286,7 +280,7 @@ pub fn transient_store_bytes32<E: EvmApi<VecReader>>(
 }
 
 /// Execute a CALL.
-pub fn call_contract<E: EvmApi<VecReader>>(
+pub fn call_contract<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     contract_ptr: u32,
     calldata_ptr: u32,
@@ -346,7 +340,7 @@ pub fn call_contract<E: EvmApi<VecReader>>(
 }
 
 /// Execute a DELEGATECALL.
-pub fn delegate_call_contract<E: EvmApi<VecReader>>(
+pub fn delegate_call_contract<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     contract_ptr: u32,
     calldata_ptr: u32,
@@ -402,7 +396,7 @@ pub fn delegate_call_contract<E: EvmApi<VecReader>>(
 }
 
 /// Execute a STATICCALL.
-pub fn static_call_contract<E: EvmApi<VecReader>>(
+pub fn static_call_contract<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     contract_ptr: u32,
     calldata_ptr: u32,
@@ -458,7 +452,7 @@ pub fn static_call_contract<E: EvmApi<VecReader>>(
 }
 
 /// Deploy a contract via CREATE.
-pub fn create1<E: EvmApi<VecReader>>(
+pub fn create1<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     code_ptr: u32,
     code_len: u32,
@@ -516,7 +510,7 @@ pub fn create1<E: EvmApi<VecReader>>(
 }
 
 /// Deploy a contract via CREATE2.
-pub fn create2<E: EvmApi<VecReader>>(
+pub fn create2<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     code_ptr: u32,
     code_len: u32,
@@ -578,7 +572,7 @@ pub fn create2<E: EvmApi<VecReader>>(
 }
 
 /// Read return data into WASM memory.
-pub fn read_return_data<E: EvmApi<VecReader>>(
+pub fn read_return_data<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     dest_ptr: u32,
     offset: u32,
@@ -638,7 +632,7 @@ pub fn read_return_data<E: EvmApi<VecReader>>(
 }
 
 /// Get the size of the return data.
-pub fn return_data_size<E: EvmApi<VecReader>>(
+pub fn return_data_size<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
 ) -> Result<u32, StylusError> {
     let mut info = hostio!(&mut env);
@@ -661,7 +655,7 @@ pub fn return_data_size<E: EvmApi<VecReader>>(
 }
 
 /// Emit a log.
-pub fn emit_log<E: EvmApi<VecReader>>(
+pub fn emit_log<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     data_ptr: u32,
     data_len: u32,
@@ -699,7 +693,7 @@ pub fn emit_log<E: EvmApi<VecReader>>(
 }
 
 /// Get an account's balance.
-pub fn account_balance<E: EvmApi<VecReader>>(
+pub fn account_balance<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     addr_ptr: u32,
     dest_ptr: u32,
@@ -732,7 +726,7 @@ pub fn account_balance<E: EvmApi<VecReader>>(
 }
 
 /// Get an account's code.
-pub fn account_code<E: EvmApi<VecReader>>(
+pub fn account_code<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     addr_ptr: u32,
     offset: u32,
@@ -781,7 +775,7 @@ pub fn account_code<E: EvmApi<VecReader>>(
 }
 
 /// Get an account's code size.
-pub fn account_code_size<E: EvmApi<VecReader>>(
+pub fn account_code_size<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     addr_ptr: u32,
 ) -> Result<u32, StylusError> {
@@ -816,7 +810,7 @@ pub fn account_code_size<E: EvmApi<VecReader>>(
 }
 
 /// Get an account's code hash.
-pub fn account_codehash<E: EvmApi<VecReader>>(
+pub fn account_codehash<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     addr_ptr: u32,
     dest_ptr: u32,
@@ -849,7 +843,7 @@ pub fn account_codehash<E: EvmApi<VecReader>>(
 }
 
 /// Get remaining EVM gas.
-pub fn evm_gas_left<E: EvmApi<VecReader>>(
+pub fn evm_gas_left<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
 ) -> Result<u64, StylusError> {
     let mut info = hostio!(&mut env);
@@ -873,7 +867,7 @@ pub fn evm_gas_left<E: EvmApi<VecReader>>(
 }
 
 /// Get remaining ink.
-pub fn evm_ink_left<E: EvmApi<VecReader>>(
+pub fn evm_ink_left<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
 ) -> Result<u64, StylusError> {
     let mut info = hostio!(&mut env);
@@ -896,10 +890,7 @@ pub fn evm_ink_left<E: EvmApi<VecReader>>(
 }
 
 /// Write the block base fee.
-pub fn block_basefee<E: EvmApi<VecReader>>(
-    mut env: FunctionEnvMut<'_, WasmEnv<E>>,
-    ptr: u32,
-) -> MaybeEscape {
+pub fn block_basefee<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -921,9 +912,7 @@ pub fn block_basefee<E: EvmApi<VecReader>>(
 }
 
 /// Get the chain ID.
-pub fn chainid<E: EvmApi<VecReader>>(
-    mut env: FunctionEnvMut<'_, WasmEnv<E>>,
-) -> Result<u64, StylusError> {
+pub fn chainid<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> Result<u64, StylusError> {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -944,10 +933,7 @@ pub fn chainid<E: EvmApi<VecReader>>(
 }
 
 /// Write the block coinbase address.
-pub fn block_coinbase<E: EvmApi<VecReader>>(
-    mut env: FunctionEnvMut<'_, WasmEnv<E>>,
-    ptr: u32,
-) -> MaybeEscape {
+pub fn block_coinbase<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -969,7 +955,7 @@ pub fn block_coinbase<E: EvmApi<VecReader>>(
 }
 
 /// Get the block gas limit.
-pub fn block_gas_limit<E: EvmApi<VecReader>>(
+pub fn block_gas_limit<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
 ) -> Result<u64, StylusError> {
     let mut info = hostio!(&mut env);
@@ -992,7 +978,7 @@ pub fn block_gas_limit<E: EvmApi<VecReader>>(
 }
 
 /// Get the block number.
-pub fn block_number<E: EvmApi<VecReader>>(
+pub fn block_number<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
 ) -> Result<u64, StylusError> {
     let mut info = hostio!(&mut env);
@@ -1015,7 +1001,7 @@ pub fn block_number<E: EvmApi<VecReader>>(
 }
 
 /// Get the block timestamp.
-pub fn block_timestamp<E: EvmApi<VecReader>>(
+pub fn block_timestamp<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
 ) -> Result<u64, StylusError> {
     let mut info = hostio!(&mut env);
@@ -1038,7 +1024,7 @@ pub fn block_timestamp<E: EvmApi<VecReader>>(
 }
 
 /// Write the contract address.
-pub fn contract_address<E: EvmApi<VecReader>>(
+pub fn contract_address<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     ptr: u32,
 ) -> MaybeEscape {
@@ -1063,7 +1049,7 @@ pub fn contract_address<E: EvmApi<VecReader>>(
 }
 
 /// 256-bit division.
-pub fn math_div<E: EvmApi<VecReader>>(
+pub fn math_div<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     a_ptr: u32,
     b_ptr: u32,
@@ -1094,7 +1080,7 @@ pub fn math_div<E: EvmApi<VecReader>>(
 }
 
 /// 256-bit modulo.
-pub fn math_mod<E: EvmApi<VecReader>>(
+pub fn math_mod<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     a_ptr: u32,
     b_ptr: u32,
@@ -1125,7 +1111,7 @@ pub fn math_mod<E: EvmApi<VecReader>>(
 }
 
 /// 256-bit power.
-pub fn math_pow<E: EvmApi<VecReader>>(
+pub fn math_pow<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     base_ptr: u32,
     exp_ptr: u32,
@@ -1158,7 +1144,7 @@ pub fn math_pow<E: EvmApi<VecReader>>(
 }
 
 /// 256-bit addmod.
-pub fn math_add_mod<E: EvmApi<VecReader>>(
+pub fn math_add_mod<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     a_ptr: u32,
     b_ptr: u32,
@@ -1196,7 +1182,7 @@ pub fn math_add_mod<E: EvmApi<VecReader>>(
 }
 
 /// 256-bit mulmod.
-pub fn math_mul_mod<E: EvmApi<VecReader>>(
+pub fn math_mul_mod<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     a_ptr: u32,
     b_ptr: u32,
@@ -1234,7 +1220,7 @@ pub fn math_mul_mod<E: EvmApi<VecReader>>(
 }
 
 /// Get the reentrant counter.
-pub fn msg_reentrant<E: EvmApi<VecReader>>(
+pub fn msg_reentrant<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
 ) -> Result<u32, StylusError> {
     let mut info = hostio!(&mut env);
@@ -1257,10 +1243,7 @@ pub fn msg_reentrant<E: EvmApi<VecReader>>(
 }
 
 /// Write the message sender address.
-pub fn msg_sender<E: EvmApi<VecReader>>(
-    mut env: FunctionEnvMut<'_, WasmEnv<E>>,
-    ptr: u32,
-) -> MaybeEscape {
+pub fn msg_sender<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -1282,10 +1265,7 @@ pub fn msg_sender<E: EvmApi<VecReader>>(
 }
 
 /// Write the message value.
-pub fn msg_value<E: EvmApi<VecReader>>(
-    mut env: FunctionEnvMut<'_, WasmEnv<E>>,
-    ptr: u32,
-) -> MaybeEscape {
+pub fn msg_value<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -1307,10 +1287,7 @@ pub fn msg_value<E: EvmApi<VecReader>>(
 }
 
 /// Write the transaction gas price.
-pub fn tx_gas_price<E: EvmApi<VecReader>>(
-    mut env: FunctionEnvMut<'_, WasmEnv<E>>,
-    ptr: u32,
-) -> MaybeEscape {
+pub fn tx_gas_price<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -1332,7 +1309,7 @@ pub fn tx_gas_price<E: EvmApi<VecReader>>(
 }
 
 /// Get the ink price.
-pub fn tx_ink_price<E: EvmApi<VecReader>>(
+pub fn tx_ink_price<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
 ) -> Result<u32, StylusError> {
     let mut info = hostio!(&mut env);
@@ -1355,10 +1332,7 @@ pub fn tx_ink_price<E: EvmApi<VecReader>>(
 }
 
 /// Write the transaction origin address.
-pub fn tx_origin<E: EvmApi<VecReader>>(
-    mut env: FunctionEnvMut<'_, WasmEnv<E>>,
-    ptr: u32,
-) -> MaybeEscape {
+pub fn tx_origin<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>, ptr: u32) -> MaybeEscape {
     let mut info = hostio!(&mut env);
     let trace_on = crate::trace::is_active();
     let start_ink = if trace_on { info.ink_ready()?.0 } else { 0 };
@@ -1380,7 +1354,7 @@ pub fn tx_origin<E: EvmApi<VecReader>>(
 }
 
 /// Charge for WASM memory growth.
-pub fn pay_for_memory_grow<E: EvmApi<VecReader>>(
+pub fn pay_for_memory_grow<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     pages: u32,
 ) -> MaybeEscape {
@@ -1408,7 +1382,7 @@ pub fn pay_for_memory_grow<E: EvmApi<VecReader>>(
 }
 
 /// Compute keccak256 hash.
-pub fn native_keccak256<E: EvmApi<VecReader>>(
+pub fn native_keccak256<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     input_ptr: u32,
     input_len: u32,
@@ -1438,7 +1412,7 @@ pub fn native_keccak256<E: EvmApi<VecReader>>(
 // Debug functions
 
 /// Log text to console (debug only).
-pub fn console_log_text<E: EvmApi<VecReader>>(
+pub fn console_log_text<E: EvmApi>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     ptr: u32,
     len: u32,
@@ -1453,7 +1427,7 @@ pub fn console_log_text<E: EvmApi<VecReader>>(
 }
 
 /// Log a value to console (debug only).
-pub fn console_log<E: EvmApi<VecReader>, T: std::fmt::Display>(
+pub fn console_log<E: EvmApi, T: std::fmt::Display>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     value: T,
 ) -> MaybeEscape {
@@ -1464,7 +1438,7 @@ pub fn console_log<E: EvmApi<VecReader>, T: std::fmt::Display>(
 }
 
 /// Log and return a value (debug only).
-pub fn console_tee<E: EvmApi<VecReader>, T: Copy + std::fmt::Display>(
+pub fn console_tee<E: EvmApi, T: Copy + std::fmt::Display>(
     mut env: FunctionEnvMut<'_, WasmEnv<E>>,
     value: T,
 ) -> Result<T, StylusError> {
@@ -1475,23 +1449,21 @@ pub fn console_tee<E: EvmApi<VecReader>, T: Copy + std::fmt::Display>(
 }
 
 /// No-op host function (debug only).
-pub fn null_host<E: EvmApi<VecReader>>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> MaybeEscape {
+pub fn null_host<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> MaybeEscape {
     crate::trace::record_leaf("null_host", Default::default(), Default::default());
     let _info = hostio!(&mut env);
     Ok(())
 }
 
 /// Start a benchmark measurement (debug only).
-pub fn start_benchmark<E: EvmApi<VecReader>>(
-    mut env: FunctionEnvMut<'_, WasmEnv<E>>,
-) -> MaybeEscape {
+pub fn start_benchmark<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> MaybeEscape {
     crate::trace::record_leaf("start_benchmark", Default::default(), Default::default());
     let _info = hostio!(&mut env);
     Ok(())
 }
 
 /// End a benchmark measurement (debug only).
-pub fn end_benchmark<E: EvmApi<VecReader>>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> MaybeEscape {
+pub fn end_benchmark<E: EvmApi>(mut env: FunctionEnvMut<'_, WasmEnv<E>>) -> MaybeEscape {
     crate::trace::record_leaf("end_benchmark", Default::default(), Default::default());
     let _info = hostio!(&mut env);
     Ok(())

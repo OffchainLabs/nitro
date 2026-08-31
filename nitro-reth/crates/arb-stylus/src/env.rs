@@ -2,11 +2,10 @@ use std::marker::PhantomData;
 
 use arb_chainspec::arbos_version::ARBOS_VERSION_59;
 use arbos::programs::types::EvmData;
-use nitro_arbutil::evm::api::{EvmApi, VecReader};
 use wasmer::{FunctionEnvMut, Global, Memory, MemoryView, Pages, StoreMut, Value};
 
 use crate::{
-    Ink,
+    EvmApi, Ink,
     config::{CompileConfig, StylusConfig},
     error::StylusError,
     meter::{GasMeteredMachine, HOSTIO_INK, MachineMeter, MeteredMachine},
@@ -27,7 +26,7 @@ pub type WasmEnvMut<'a, E> = FunctionEnvMut<'a, WasmEnv<E>>;
 /// Contains all state needed during Stylus program execution,
 /// including the EVM API bridge, metering state, and I/O buffers.
 #[derive(Debug)]
-pub struct WasmEnv<E: EvmApi<VecReader>> {
+pub struct WasmEnv<E: EvmApi> {
     /// The instance's arguments.
     pub args: Vec<u8>,
     /// The instance's return data.
@@ -53,7 +52,7 @@ pub struct WasmEnv<E: EvmApi<VecReader>> {
     _phantom: PhantomData<E>,
 }
 
-impl<E: EvmApi<VecReader>> WasmEnv<E> {
+impl<E: EvmApi> WasmEnv<E> {
     pub fn new(
         compile: CompileConfig,
         config: Option<StylusConfig>,
@@ -150,14 +149,14 @@ impl MeterData {
 ///
 /// Bundles the WasmEnv, Memory, and Store together for convenient access
 /// in host function implementations.
-pub struct HostioInfo<'a, E: EvmApi<VecReader>> {
+pub struct HostioInfo<'a, E: EvmApi> {
     pub env: &'a mut WasmEnv<E>,
     pub memory: Memory,
     pub store: StoreMut<'a>,
     pub start_ink: Ink,
 }
 
-impl<E: EvmApi<VecReader>> HostioInfo<'_, E> {
+impl<E: EvmApi> HostioInfo<'_, E> {
     pub fn config(&self) -> StylusConfig {
         self.env.config.expect("no config")
     }
@@ -198,7 +197,7 @@ impl<E: EvmApi<VecReader>> HostioInfo<'_, E> {
     }
 }
 
-impl<E: EvmApi<VecReader>> MeteredMachine for HostioInfo<'_, E> {
+impl<E: EvmApi> MeteredMachine for HostioInfo<'_, E> {
     fn ink_left(&self) -> MachineMeter {
         let vm = self.env.meter();
         match vm.status() {
@@ -259,20 +258,20 @@ impl<E: EvmApi<VecReader>> MeteredMachine for HostioInfo<'_, E> {
     }
 }
 
-impl<E: EvmApi<VecReader>> GasMeteredMachine for HostioInfo<'_, E> {
+impl<E: EvmApi> GasMeteredMachine for HostioInfo<'_, E> {
     fn pricing(&self) -> crate::config::PricingParams {
         self.config().pricing
     }
 }
 
-impl<E: EvmApi<VecReader>> std::ops::Deref for HostioInfo<'_, E> {
+impl<E: EvmApi> std::ops::Deref for HostioInfo<'_, E> {
     type Target = WasmEnv<E>;
     fn deref(&self) -> &Self::Target {
         self.env
     }
 }
 
-impl<E: EvmApi<VecReader>> std::ops::DerefMut for HostioInfo<'_, E> {
+impl<E: EvmApi> std::ops::DerefMut for HostioInfo<'_, E> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.env
     }
