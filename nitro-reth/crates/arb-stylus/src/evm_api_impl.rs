@@ -330,16 +330,6 @@ pub struct PageTracker {
 }
 
 impl PageTracker {
-    pub fn new(open: u16, ever: u16, free_pages: u16, page_gas: u16, page_limit: u16) -> Self {
-        Self {
-            open,
-            ever,
-            free_pages,
-            page_gas,
-            page_limit,
-        }
-    }
-
     /// Charge for allocating `new_pages`, updating the open/ever counters and
     /// returning the gas cost.
     pub fn charge(&mut self, new_pages: u16, arbos_version: u64) -> u64 {
