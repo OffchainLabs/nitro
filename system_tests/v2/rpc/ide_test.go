@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // IDE entry points: one Test wrapper per scenario group.
-package smoketest
+package rpc
 
 import (
 	"testing"
@@ -14,10 +14,6 @@ func TestMain(m *testing.M) {
 	systest.RunTestMain(m)
 }
 
-func TestTransfers(t *testing.T) { systest.RunGroup(t, transferTests) }
+func TestSimulate(t *testing.T) { systest.RunGroup(t, simulateTests) }
 
-func TestDeployment(t *testing.T) { systest.RunGroup(t, deploymentTests) }
-
-func TestP256Verify(t *testing.T) { systest.RunGroup(t, p256VerifyTests) }
-
-func TestMultiNode(t *testing.T) { systest.RunGroup(t, multiNodeTests) }
+func TestRecreateState(t *testing.T) { systest.RunGroup(t, recreateStateTests) }
