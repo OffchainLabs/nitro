@@ -12,16 +12,18 @@ rust-version.workspace = true
 
 [[bin]]
 name = "replay-runner"
-path = "main.rs"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+arbutil = { workspace = true }
 bincode = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 replay-io = { workspace = true }
 rkyv = { workspace = true }
 serde_json = { workspace = true }
 sp1-core-executor = { workspace = true }
-sp1-sdk = { workspace = true }
+sp1-sdk = { workspace = true, features = ["blocking"] }
+tracing = { workspace = true }
 stylus-compiler-program = { workspace = true }
 validation = { workspace = true, features = ["rkyv", "std"] }
