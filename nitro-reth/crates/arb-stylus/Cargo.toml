@@ -22,8 +22,8 @@ tracing = { workspace = true }
 wasmparser = { workspace = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-nitro-brotli = { workspace = true, features = ["cc_brotli"] }
-nitro-prover = { workspace = true, features = ["cc_brotli"] }
+nitro-brotli = { workspace = true, features = ["link"] }
+nitro-prover = { workspace = true }
 wasmer = { workspace = true, features = ["sys", "cranelift"] }
 wasmer-compiler = { workspace = true }
 wasmer-types = { workspace = true }

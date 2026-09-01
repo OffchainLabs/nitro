@@ -22,16 +22,13 @@ jobs:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
-      - uses: ./.github/actions/init-submodules
+      - uses: ./.github/actions/nitro-reth-setup
         with:
           client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
+          toolchain: nightly
           components: miri
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: nitro-reth
+          brotli: "true"
       # The lifetime-bound Storage<'a, D> foundation and the per-block
       # ArbPrecompileCtx are the two types whose aliasing invariants are
       # load-bearing for the rest of the workspace.
