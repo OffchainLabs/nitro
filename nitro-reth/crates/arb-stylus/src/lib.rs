@@ -7,7 +7,6 @@ pub mod cache;
 pub mod config;
 pub mod env;
 pub mod error;
-pub mod evm_api;
 pub mod evm_api_impl;
 #[allow(unused_mut)]
 pub mod host;
@@ -15,6 +14,7 @@ pub mod meter;
 pub mod middleware;
 pub mod multi_gas;
 pub mod native;
+pub mod pages;
 pub use nitro_arbutil::pricing;
 pub mod run;
 pub mod trace;
@@ -22,8 +22,13 @@ pub mod trace;
 pub use cache::InitCache;
 pub use config::{CompileConfig, StylusConfig};
 pub use error::{MaybeEscape, StylusError};
-pub use evm_api::EvmApi;
 pub use evm_api_impl::StylusEvmApi;
+
+/// `arbutil`'s [`EvmApi`](nitro_arbutil::evm::api::EvmApi) instantiated with
+/// in-process, vec-backed return data — the only reader nitro-reth needs.
+/// Exists so bounds can say `E: EvmApi` without repeating the reader type.
+pub trait EvmApi: nitro_arbutil::evm::api::EvmApi<nitro_arbutil::evm::api::VecReader> {}
+impl<T: nitro_arbutil::evm::api::EvmApi<nitro_arbutil::evm::api::VecReader>> EvmApi for T {}
 pub use meter::{MachineMeter, MeteredMachine, STYLUS_ENTRY_POINT};
 pub use native::{NativeInstance, compile_module};
 pub use nitro_arbutil::evm::api::{Gas, Ink};

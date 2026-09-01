@@ -7,7 +7,7 @@ use arbutil::{
     Bytes20, Bytes32,
     evm::{
         EvmData,
-        api::{CreateRespone, EvmApi, Gas, Ink, VecReader},
+        api::{CreateResponse, EvmApi, Gas, Ink, VecReader},
         user::UserOutcomeKind,
     },
 };
@@ -159,7 +159,7 @@ impl EvmApi<VecReader> for TestEvmApi {
         _code: Vec<u8>,
         _endowment: Bytes32,
         _gas: Gas,
-    ) -> Result<(CreateRespone, u32, Gas)> {
+    ) -> Result<(CreateResponse, u32, Gas)> {
         unimplemented!("create1 not supported")
     }
 
@@ -169,7 +169,7 @@ impl EvmApi<VecReader> for TestEvmApi {
         _endowment: Bytes32,
         _salt: Bytes32,
         _gas: Gas,
-    ) -> Result<(CreateRespone, u32, Gas)> {
+    ) -> Result<(CreateResponse, u32, Gas)> {
         unimplemented!("create2 not supported")
     }
 
