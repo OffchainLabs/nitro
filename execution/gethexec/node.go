@@ -36,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
+	"github.com/offchainlabs/nitro/execution/gethexec/mevfeed"
 	executionrpcserver "github.com/offchainlabs/nitro/execution/rpcserver"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -215,6 +216,7 @@ type Config struct {
 	ConsensusRPCClient          rpcclient.ClientConfig     `koanf:"consensus-rpc-client" reload:"hot"`
 	DisableArbOwnerEthCall      bool                       `koanf:"disable-arbowner-ethcall"`
 	LegacyZeroBaseFeeUntil      uint64                     `koanf:"legacy-zero-base-fee-until"`
+	MEVFeed                     mevfeed.Config             `koanf:"mev-feed"`
 
 	forwardingTarget string
 }
@@ -249,6 +251,9 @@ func (c *Config) Validate() error {
 	if err := c.ConsensusRPCClient.Validate(); err != nil {
 		return fmt.Errorf("error validating ConsensusRPCClient config: %w", err)
 	}
+	if err := c.MEVFeed.Validate(); err != nil {
+		return fmt.Errorf("error validating MEV feed config: %w", err)
+	}
 	return nil
 }
 
@@ -275,6 +280,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	LiveTracingConfigAddOptions(prefix+".vmtrace", f)
 	rpcserver.ConfigAddOptions(prefix+".rpc-server", "execution", f)
 	rpcclient.RPCClientAddOptions(prefix+".consensus-rpc-client", f, &ConfigDefault.ConsensusRPCClient)
+	mevfeed.ConfigAddOptions(prefix+".mev-feed", f)
 }
 
 type LiveTracingConfig struct {
@@ -314,6 +320,7 @@ var ConfigDefault = Config{
 	ExposeMultiGas:              false,
 	DisableArbOwnerEthCall:      false,
 	LegacyZeroBaseFeeUntil:      0,
+	MEVFeed:                     mevfeed.DefaultConfig,
 
 	RPCServer: rpcserver.DefaultConfig,
 	ConsensusRPCClient: rpcclient.ClientConfig{
@@ -352,6 +359,7 @@ type ExecutionNode struct {
 	filteringReportRPCClient *FilteringReportRPCClient
 	AddressFilterService     *addressfilter.FilterService
 	EventFilter              *eventfilter.EventFilter
+	MEVFeed                  *mevfeed.Publisher
 }
 
 func CreateExecutionNode(
@@ -392,6 +400,15 @@ func CreateExecutionNode(
 	}
 
 	execEngine := NewExecutionEngine(l2BlockChain, syncTillBlock, config.ExposeMultiGas, config.TransactionFiltering.DisableDelayedSequencingFilter, addressChecker, filteringReportRPCClient)
+	mevFeedConfig := config.MEVFeed
+	if mevFeedConfig.ChainID == 0 && l2BlockChain.Config().ChainID != nil {
+		mevFeedConfig.ChainID = l2BlockChain.Config().ChainID.Uint64()
+	}
+	var mevFeedPublisher *mevfeed.Publisher
+	if mevFeedConfig.Enable {
+		mevFeedPublisher = mevfeed.NewPublisher(mevFeedConfig)
+		execEngine.SetCanonicalBlockObserver(mevFeedPublisher)
+	}
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
@@ -506,6 +523,7 @@ func CreateExecutionNode(
 		filteringReportRPCClient: filteringReportRPCClient,
 		AddressFilterService:     addressFilterService,
 		EventFilter:              eventFilter,
+		MEVFeed:                  mevFeedPublisher,
 	}
 
 	if config.ConsensusRPCClient.URL != "" {
@@ -639,6 +657,16 @@ func (n *ExecutionNode) Start(ctxIn context.Context) error {
 	if n.AddressFilterService != nil {
 		n.AddressFilterService.Start(ctx)
 	}
+	if n.MEVFeed != nil {
+		if err := n.MEVFeed.Start(ctx); err != nil {
+			if n.configFetcher.Get().MEVFeed.Required {
+				return fmt.Errorf("error starting required MEV feed: %w", err)
+			}
+			log.Error("disabling optional MEV feed after startup failure", "err", err)
+			n.ExecEngine.SetCanonicalBlockObserver(nil)
+			n.MEVFeed = nil
+		}
+	}
 
 	err = n.ExecEngine.Start(ctx)
 	if err != nil {
@@ -680,8 +708,16 @@ func (n *ExecutionNode) StopAndWait() {
 	if n.ParentChainReader != nil && n.ParentChainReader.Started() {
 		n.ParentChainReader.StopAndWait()
 	}
+	// Detach before stopping the execution engine so no block can enqueue new
+	// feed work while the engine is shutting down.
+	if n.MEVFeed != nil {
+		n.ExecEngine.SetCanonicalBlockObserver(nil)
+	}
 	if n.ExecEngine.Started() {
 		n.ExecEngine.StopAndWait()
+	}
+	if n.MEVFeed != nil {
+		n.MEVFeed.StopAndWait()
 	}
 	if n.consensusRPCClient != nil {
 		n.consensusRPCClient.StopAndWait()

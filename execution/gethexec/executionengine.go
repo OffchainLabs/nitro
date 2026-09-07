@@ -52,6 +52,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec/addressfilter"
 	"github.com/offchainlabs/nitro/execution/gethexec/eventfilter"
+	"github.com/offchainlabs/nitro/execution/gethexec/mevfeed"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
@@ -298,6 +299,13 @@ type ExecutionEngine struct {
 	transactionFiltererRPCClient   *TransactionFiltererRPCClient
 	filteringReportRPCClient       *FilteringReportRPCClient
 	disableDelayedSequencingFilter bool
+	canonicalBlockObserver         mevfeed.CanonicalBlockObserver
+}
+
+// SetCanonicalBlockObserver is an initialization/shutdown hook. It must not be
+// used to replace an observer while block creation is running.
+func (s *ExecutionEngine) SetCanonicalBlockObserver(observer mevfeed.CanonicalBlockObserver) {
+	s.canonicalBlockObserver = observer
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -1077,6 +1085,9 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 		if status == core.SideStatTy { // TODO: This check can be removed as this WriteStatus is never returned when setting head
 			return errors.New("geth rejected block as non-canonical")
 		}
+	}
+	if observer := s.canonicalBlockObserver; observer != nil {
+		observer.TryPublish(block, receipts)
 	}
 	blockWriteToDbTimer.Update(time.Since(startTime).Nanoseconds())
 	baseFeeGauge.Update(block.BaseFee().Int64())
