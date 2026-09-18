@@ -53,9 +53,10 @@ make init-submodules
 make check-submodules
 ```
 
-See [`docs/private-submodules.md`](./docs/private-submodules.md) for the
-full workflow, including branch switching, the pre-push guard hook, and
-the CI counterpart.
+See [`scripts/configure-private-submodules.sh`](./scripts/configure-private-submodules.sh),
+[`scripts/pre-push-private-check.sh`](./scripts/pre-push-private-check.sh), and
+[`scripts/ci-init-submodules.sh`](./scripts/ci-init-submodules.sh) for the
+full workflow (URL rewrites, pre-push guard, and CI init).
 
 ## License
 
