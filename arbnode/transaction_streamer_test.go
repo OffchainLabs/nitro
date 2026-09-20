@@ -355,3 +355,114 @@ func TestExecuteNextMsgResetsHandlerOnReadSuccess(t *testing.T) {
 		t.Fatal("expected ExecuteNextMsg's post-read-success Reset to clear FirstOccurrence")
 	}
 }
+
+func TestHandleExecEngineErrorTimeout(t *testing.T) {
+	fatalErrChan := make(chan error, 1)
+	cfg := DefaultTransactionStreamerConfig
+	cfg.StalledExecutionTimeout = 30 * time.Millisecond
+	streamer := &TransactionStreamer{
+		fatalErrChan: fatalErrChan,
+		config:       func() *TransactionStreamerConfig { return &cfg },
+	}
+
+	simErr := errors.New("simulated engine commit failure: missing trie node")
+	streamer.handleExecEngineError(42, simErr, nil, 42)
+
+	// First error should not trigger timeout
+	select {
+	case err := <-fatalErrChan:
+		t.Fatalf("unexpected fatal error on first occurrence: %v", err)
+	default:
+	}
+
+	if streamer.execStallConsecutiveErr != 1 {
+		t.Fatalf("expected execStallConsecutiveErr to be 1, got %d", streamer.execStallConsecutiveErr)
+	}
+
+	// Wait past the timeout and fire error again on the same message index
+	time.Sleep(40 * time.Millisecond)
+	streamer.handleExecEngineError(42, simErr, nil, 42)
+
+	select {
+	case err := <-fatalErrChan:
+		msg := err.Error()
+		for _, want := range []string{"execution stalled at message index 42", "consecutive errors: 2", "missing trie node"} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("fatal err missing %q; got: %v", want, err)
+			}
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected fatal error on fatalErrChan after timeout")
+	}
+}
+
+func TestHandleExecEngineErrorDisabled(t *testing.T) {
+	fatalErrChan := make(chan error, 1)
+	cfg := DefaultTransactionStreamerConfig
+	cfg.StalledExecutionTimeout = 0 // disabled
+	streamer := &TransactionStreamer{
+		fatalErrChan: fatalErrChan,
+		config:       func() *TransactionStreamerConfig { return &cfg },
+	}
+
+	simErr := errors.New("simulated transient error")
+	for range 5 {
+		streamer.handleExecEngineError(42, simErr, nil, 42)
+	}
+
+	select {
+	case err := <-fatalErrChan:
+		t.Fatalf("did not expect fatal error when timeout is 0: %v", err)
+	default:
+	}
+
+	if streamer.execStallConsecutiveErr != 5 {
+		t.Fatalf("expected execStallConsecutiveErr to be 5, got %d", streamer.execStallConsecutiveErr)
+	}
+}
+
+func TestHandleExecEngineErrorResetsOnNewMessage(t *testing.T) {
+	fatalErrChan := make(chan error, 1)
+	cfg := DefaultTransactionStreamerConfig
+	streamer := &TransactionStreamer{
+		fatalErrChan: fatalErrChan,
+		config:       func() *TransactionStreamerConfig { return &cfg },
+	}
+
+	simErr := errors.New("engine error")
+	streamer.handleExecEngineError(42, simErr, nil, 42)
+	streamer.handleExecEngineError(42, simErr, nil, 42)
+	if streamer.execStallConsecutiveErr != 2 {
+		t.Fatalf("expected consecutive errors 2, got %d", streamer.execStallConsecutiveErr)
+	}
+
+	// New message index should restart tracking
+	streamer.handleExecEngineError(43, simErr, nil, 43)
+	if streamer.execStallMsgIdx != 43 {
+		t.Fatalf("expected execStallMsgIdx 43, got %d", streamer.execStallMsgIdx)
+	}
+	if streamer.execStallConsecutiveErr != 1 {
+		t.Fatalf("expected consecutive errors reset to 1, got %d", streamer.execStallConsecutiveErr)
+	}
+}
+
+func TestResetExecEngineStallTracker(t *testing.T) {
+	streamer := &TransactionStreamer{
+		execStallFirstErrorTime: time.Now(),
+		execStallConsecutiveErr: 15,
+		execStallMsgIdx:         100,
+	}
+
+	streamer.resetExecEngineStallTracker()
+
+	if !streamer.execStallFirstErrorTime.IsZero() {
+		t.Errorf("expected execStallFirstErrorTime to be zero, got %v", streamer.execStallFirstErrorTime)
+	}
+	if streamer.execStallConsecutiveErr != 0 {
+		t.Errorf("expected execStallConsecutiveErr to be 0, got %d", streamer.execStallConsecutiveErr)
+	}
+	if streamer.execStallMsgIdx != 0 {
+		t.Errorf("expected execStallMsgIdx to be 0, got %d", streamer.execStallMsgIdx)
+	}
+}
+

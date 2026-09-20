@@ -92,6 +92,12 @@ type TransactionStreamer struct {
 	// (e.g. during sync, broadcast-feed lead, or inbox reorg windows). Single-goroutine
 	// access via the executeMessages loop, so no lock is needed.
 	accNotFoundErrHandler *util.EphemeralErrorHandler
+
+	// Tracks consecutive failures in execEngine to detect unrecoverable stalls.
+	// Single-goroutine access via the executeMessages loop, so no lock is needed.
+	execStallFirstErrorTime time.Time
+	execStallConsecutiveErr uint64
+	execStallMsgIdx         arbutil.MessageIndex
 }
 
 type TransactionStreamerConfig struct {
@@ -101,6 +107,7 @@ type TransactionStreamerConfig struct {
 	SyncTillBlock               uint64        `koanf:"sync-till-block"`
 	TrackBlockMetadataFrom      uint64        `koanf:"track-block-metadata-from"`
 	ShutdownOnBlockhashMismatch bool          `koanf:"shutdown-on-blockhash-mismatch"`
+	StalledExecutionTimeout     time.Duration `koanf:"stalled-execution-timeout" reload:"hot"`
 }
 
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
@@ -112,6 +119,7 @@ var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
 	SyncTillBlock:               0,
 	TrackBlockMetadataFrom:      0,
 	ShutdownOnBlockhashMismatch: true,
+	StalledExecutionTimeout:     0,
 }
 
 var TestTransactionStreamerConfig = TransactionStreamerConfig{
@@ -121,6 +129,7 @@ var TestTransactionStreamerConfig = TransactionStreamerConfig{
 	SyncTillBlock:               0,
 	TrackBlockMetadataFrom:      0,
 	ShutdownOnBlockhashMismatch: false,
+	StalledExecutionTimeout:     0,
 }
 
 func TransactionStreamerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -130,6 +139,7 @@ func TransactionStreamerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".sync-till-block", DefaultTransactionStreamerConfig.SyncTillBlock, "node will not sync past this block")
 	f.Uint64(prefix+".track-block-metadata-from", DefaultTransactionStreamerConfig.TrackBlockMetadataFrom, "block number to start saving blockmetadata, 0 to disable")
 	f.Bool(prefix+".shutdown-on-blockhash-mismatch", DefaultTransactionStreamerConfig.ShutdownOnBlockhashMismatch, "when true (default), on a feed-vs-local block hash mismatch the node refuses to process further messages and shuts down gracefully; set to false only if you trust local execution over the feed and want to keep processing")
+	f.Duration(prefix+".stalled-execution-timeout", DefaultTransactionStreamerConfig.StalledExecutionTimeout, "maximum duration execution can remain stalled on consecutive engine errors before shutting down gracefully (0 = disabled)")
 }
 
 func NewTransactionStreamer(
@@ -1520,11 +1530,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 	s.accNotFoundErrHandler.Reset()
 	msgResult, err := s.exec.DigestMessage(msgIdxToExecute, &msgAndBlockInfo.MessageWithMeta, msgForPrefetch).Await(ctx)
 	if err != nil {
-		logger := log.Warn
-		if (prevHeadMsgIdx == nil) || (*prevHeadMsgIdx < consensusHeadMsgIdx) {
-			logger = log.Debug
-		}
-		logger("ExecuteNextMsg failed to send message to execEngine", "err", err, "msgIdxToExecute", msgIdxToExecute)
+		s.handleExecEngineError(msgIdxToExecute, err, prevHeadMsgIdx, consensusHeadMsgIdx)
 		return false
 	}
 
@@ -1543,6 +1549,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		log.Error("ExecuteNextMsg failed to store result", "err", err)
 		return false
 	}
+	s.resetExecEngineStallTracker()
 
 	msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
 		MessageWithMeta: msgAndBlockInfo.MessageWithMeta,
@@ -1653,3 +1660,57 @@ func (s *TransactionStreamer) Start(ctxIn context.Context) error {
 	s.LaunchThread(s.backfillTrackersForMissingBlockMetadata)
 	return stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.executeMessages, s.newMessageNotifier)
 }
+
+// handleExecEngineError tracks consecutive execution engine failures on a message,
+// escalates log levels for prolonged stalls, and triggers graceful shutdown if
+// StalledExecutionTimeout is exceeded.
+func (s *TransactionStreamer) handleExecEngineError(
+	msgIdxToExecute arbutil.MessageIndex,
+	err error,
+	prevHeadMsgIdx *arbutil.MessageIndex,
+	consensusHeadMsgIdx arbutil.MessageIndex,
+) {
+	now := time.Now()
+	if s.execStallMsgIdx != msgIdxToExecute || s.execStallFirstErrorTime.IsZero() {
+		s.execStallMsgIdx = msgIdxToExecute
+		s.execStallFirstErrorTime = now
+		s.execStallConsecutiveErr = 1
+	} else {
+		s.execStallConsecutiveErr++
+	}
+	stalledDuration := now.Sub(s.execStallFirstErrorTime)
+
+	timeout := s.config().StalledExecutionTimeout
+	if timeout > 0 && stalledDuration >= timeout {
+		log.Error(
+			"Execution stalled on message due to repeated execEngine errors; shutting down",
+			"msgIdxToExecute", msgIdxToExecute,
+			"stalledDuration", stalledDuration,
+			"consecutiveErrors", s.execStallConsecutiveErr,
+			"err", err,
+		)
+		s.fatalErrChan <- fmt.Errorf("execution stalled at message index %d for %v (consecutive errors: %d): %w", msgIdxToExecute, stalledDuration, s.execStallConsecutiveErr, err)
+		return
+	}
+
+	logger := log.Warn
+	if stalledDuration >= time.Minute {
+		logger = log.Error
+	} else if (prevHeadMsgIdx == nil) || (*prevHeadMsgIdx < consensusHeadMsgIdx) {
+		logger = log.Debug
+	}
+	logger(
+		"ExecuteNextMsg failed to send message to execEngine",
+		"err", err,
+		"msgIdxToExecute", msgIdxToExecute,
+		"consecutiveErrors", s.execStallConsecutiveErr,
+		"stalledDuration", stalledDuration,
+	)
+}
+
+func (s *TransactionStreamer) resetExecEngineStallTracker() {
+	s.execStallFirstErrorTime = time.Time{}
+	s.execStallConsecutiveErr = 0
+	s.execStallMsgIdx = 0
+}
+
