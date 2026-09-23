@@ -1,2 +1,0 @@
-### Ignored
-- remove supported table
