@@ -1036,8 +1036,9 @@ func (p *TxProcessor) GasPriceOp(evm *vm.EVM) *big.Int {
 
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
 	receipt.GasUsedForL1 = p.posterGas
-	receipt.EffectiveGasPrice = p.GetPaidGasPrice()
-	// Matches Receipt.DeriveFields for signed txs. Messages built from RPC call arguments have no Tx.
+
+	receipt.EffectiveGasPrice = p.evm.Context.BaseFee
+	// Keep in sync with Receipt.DeriveFields. Messages built from RPC call arguments have no Tx.
 	if p.CollectTips() && p.msg.Tx != nil {
 		receipt.EffectiveGasPrice = p.msg.Tx.EffectiveGasPrice(p.evm.Context.BaseFee)
 	}
