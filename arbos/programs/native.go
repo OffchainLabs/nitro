@@ -212,12 +212,16 @@ func activateProgram(
 	burner burn.Burner,
 	runCtx *core.MessageRunContext,
 ) (*activationInfo, error) {
+	nodeConfig := GetStylusConfig(db)
+	if !runCtx.IsExecutedOnChain() && !nodeConfig.AllowOffchainActivation {
+		return nil, fmt.Errorf("%w: %w", ErrProgramActivation, ErrOffchainActivationNotAllowed)
+	}
+
 	moduleActivationMandatory := true
 	suppliedGas := burner.GasLeft()
 	gasLeft := suppliedGas
 	shouldAllowFallback := GetAllowFallback() && runCtx.IsExecutedOnChain()
 
-	nodeConfig := GetStylusConfig(db)
 	info, asmMap, err := activateProgramInternal(program, codehash, wasm, page_limit, stylusVersion, arbosVersionForGas, debug, &gasLeft, runCtx.WasmTargets(), moduleActivationMandatory, shouldAllowFallback, nodeConfig, runCtx)
 	if gasLeft < suppliedGas {
 		// Ignore the out-of-gas error because we want to return the error above

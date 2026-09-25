@@ -318,6 +318,7 @@ func ExecConfigDefaultNonSequencerTest(t *testing.T, stateScheme string) *gethex
 	config.Forwarder = DefaultTestForwarderConfig
 	config.ForwardingTarget = "null"
 	config.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessNone
+	config.StylusTarget.AllowOffchainActivation = true
 
 	Require(t, config.Validate())
 
@@ -333,6 +334,7 @@ func ExecConfigDefaultTest(t *testing.T, stateScheme string) *gethexec.Config {
 	config.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessNone
 	config.ExposeMultiGas = true
 	config.TransactionFiltering = gethexec.TestTransactionFilteringConfig
+	config.StylusTarget.AllowOffchainActivation = true
 
 	Require(t, config.Validate())
 
