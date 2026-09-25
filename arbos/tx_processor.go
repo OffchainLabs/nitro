@@ -1038,7 +1038,8 @@ func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
 	receipt.GasUsedForL1 = p.posterGas
 
 	receipt.EffectiveGasPrice = p.evm.Context.BaseFee
-	if p.CollectTips() {
+	// Keep in sync with Receipt.DeriveFields. Messages built from RPC call arguments have no Tx.
+	if p.CollectTips() && p.msg.Tx != nil {
 		receipt.EffectiveGasPrice = p.msg.Tx.EffectiveGasPrice(p.evm.Context.BaseFee)
 	}
 }
