@@ -31,11 +31,12 @@ type activationGasTest struct {
 
 // setupActivationGasTest spins up a node at ArbosVersion_59 and wires
 // up the ArbOwner / ArbWasm bindings used by the activation-gas test suite.
-func setupActivationGasTest(t *testing.T) activationGasTest {
+func setupActivationGasTest(t *testing.T, builderOpts ...func(*NodeBuilder)) activationGasTest {
 	t.Helper()
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithArbOSVersion(params.ArbosVersion_59)
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 

@@ -20,6 +20,7 @@ func compareArbNodeConfig(t *testing.T, want *StylusTargetConfig, got *StylusTar
 	require.Equal(t, want.Host, got.Host)
 	require.Equal(t, want.ExtraArchs, got.ExtraArchs)
 	require.Equal(t, want.AllowFallback, got.AllowFallback)
+	require.Equal(t, want.AllowOffchainActivation, got.AllowOffchainActivation)
 	require.Equal(t, want.MaxOpenPages, got.MaxOpenPages)
 	require.Equal(t, want.MaxStylusCallDepth, got.MaxStylusCallDepth)
 	require.Equal(t, want.NativeStackSize, got.NativeStackSize)

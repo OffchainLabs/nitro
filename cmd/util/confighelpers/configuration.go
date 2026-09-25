@@ -204,6 +204,7 @@ func devFlagArgs() []string {
 		"--persistent.chain", "/tmp/dev-test",
 		"--node.sequencer",
 		"--execution.sequencer.enable",
+		"--execution.stylus-target.allow-offchain-activation",
 		"--node.dangerous.no-sequencer-coordinator",
 		"--node.staker.enable=false",
 		"--init.empty=false",
