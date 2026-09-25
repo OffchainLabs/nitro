@@ -14,6 +14,9 @@ type HTTPError struct {
 }
 
 func (e *HTTPError) Error() string {
+	if e.Body == "" {
+		return fmt.Sprintf("HTTP %d", e.StatusCode)
+	}
 	return fmt.Sprintf("HTTP %d: %s", e.StatusCode, e.Body)
 }
 

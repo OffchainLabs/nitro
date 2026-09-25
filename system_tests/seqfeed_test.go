@@ -4,15 +4,23 @@
 package arbtest
 
 import (
+	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -24,6 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/broadcastclients"
 	"github.com/offchainlabs/nitro/broadcaster/backlog"
 	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/execution"
@@ -577,4 +586,181 @@ func createDummyBatchPostingReportTransaction() ([]byte, error) {
 	return util.PackInternalTxDataBatchPostingReport(
 		batchTimestamp, batchPosterAddr, batchNum, batchGas, l1BaseFee,
 	)
+}
+
+// restBackfillArchive is a minimal stand-in for arb-relay's REST backlog API, serving the chunks it
+// is given.
+type restBackfillArchive struct {
+	server    *httptest.Server
+	chainId   uint64
+	chunkSize uint64
+
+	mu     sync.Mutex
+	chunks map[uint64][]*message.BroadcastFeedMessage
+}
+
+func newRestBackfillArchive(t *testing.T, chainId, chunkSize uint64) *restBackfillArchive {
+	t.Helper()
+	a := &restBackfillArchive{
+		chainId:   chainId,
+		chunkSize: chunkSize,
+		chunks:    make(map[uint64][]*message.BroadcastFeedMessage),
+	}
+	a.server = httptest.NewServer(http.HandlerFunc(a.serve))
+	t.Cleanup(a.server.Close)
+	return a
+}
+
+func (a *restBackfillArchive) publish(start uint64, messages []*message.BroadcastFeedMessage) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.chunks[start] = messages
+}
+
+func (a *restBackfillArchive) serve(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/feed/v1/info" {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"chainId":%d,"feedVersion":1,"chunkSize":%d}`, a.chainId, a.chunkSize)
+		return
+	}
+	rawStart, ok := strings.CutPrefix(r.URL.Path, "/feed/v1/chunk/")
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	start, err := strconv.ParseUint(rawStart, 10, 64)
+	if err != nil || start%a.chunkSize != 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	a.mu.Lock()
+	messages, published := a.chunks[start]
+	a.mu.Unlock()
+	if !published {
+		// Not settled yet, as far as this client can tell.
+		w.Header().Set("Cache-Control", "public, max-age=1")
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	body, err := json.Marshal(message.BroadcastMessage{Version: 1, Messages: messages})
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Encoding", "gzip")
+	gz := gzip.NewWriter(w)
+	defer gz.Close()
+	_, _ = gz.Write(body)
+}
+
+// TestSequencerFeedRestBackfill covers the case the feature exists for: the feed serves only a
+// short catchup window, and the node fills everything below it from the REST backlog.
+func TestSequencerFeedRestBackfill(t *testing.T) {
+	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const chainId = uint64(412346)
+	const chunkSize = 4
+
+	backlogConfigFetcher := func() *backlog.Config { return &backlog.DefaultTestConfig }
+	wsBroadcastServer := wsbroadcastserver.NewWSBroadcastServer(
+		newBroadcasterConfigTest,
+		backlog.NewBacklog(backlogConfigFetcher),
+		chainId,
+		nil,
+	)
+	Require(t, wsBroadcastServer.Initialize())
+	Require(t, wsBroadcastServer.Start(ctx))
+	defer wsBroadcastServer.StopAndWait()
+	port := testhelpers.AddrTCPPort(wsBroadcastServer.ListenerAddr(), t)
+
+	archive := newRestBackfillArchive(t, chainId, chunkSize)
+
+	// No parent chain: this node only ever follows the feed, which also starts its feed clients
+	// immediately rather than waiting to catch up from L1.
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).DontParalellise().WithTakeOwnership(false)
+	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
+	builder.nodeConfig.Feed.Input.Rest = broadcastclient.RestConfig{
+		Enable:  true,
+		URL:     archive.server.URL,
+		Timeout: 5 * time.Second,
+	}
+	// A backfilled message below carries a wrong block hash; the node must log it, not stop.
+	builder.nodeConfig.TransactionStreamer.ShutdownOnBlockhashMismatch = false
+	cleanup := builder.Build(t)
+	defer cleanup()
+	testClient := builder.L2
+
+	userAccount := "User2"
+	builder.L2Info.GenerateAccount(userAccount)
+
+	// One transfer per feed message, indexed by sequence number; index 0 is the init message the
+	// node already has.
+	const transfer = int64(1e12)
+	const lastMsgIdx = 2 * chunkSize
+	txs := make([]*types.Transaction, lastMsgIdx+1)
+	feedMessages := make([]*message.BroadcastFeedMessage, lastMsgIdx+1)
+	for msgIdx := 1; msgIdx <= lastMsgIdx; msgIdx++ {
+		tx := builder.L2Info.PrepareTx("Owner", userAccount, builder.L2Info.TransferGas, big.NewInt(transfer), nil)
+		header := arbostypes.L1IncomingMessageHeader{
+			Kind:        arbostypes.L1MessageType_L2Message,
+			Poster:      l1pricing.BatchPosterAddress,
+			BlockNumber: 29,
+			Timestamp:   1715295980,
+		}
+		l1IncomingMsg, err := gethexec.MessageFromTxes(&header, []gethexec.TxResult{{Tx: tx}})
+		Require(t, err)
+		txs[msgIdx] = tx
+		feedMessages[msgIdx] = &message.BroadcastFeedMessage{
+			SequenceNumber: arbutil.MessageIndex(msgIdx), // #nosec G115
+			Message: arbostypes.MessageWithMetadata{
+				Message:             l1IncomingMsg,
+				DelayedMessagesRead: 1,
+			},
+		}
+	}
+
+	// The rest of the first chunk arrives over the feed as usual, leaving the node's head at the
+	// start of the second.
+	for _, msg := range feedMessages[1:chunkSize] {
+		wsBroadcastServer.Broadcast(&message.BroadcastMessage{
+			Version:  1,
+			Messages: []*message.BroadcastFeedMessage{msg},
+		})
+	}
+	_, err := WaitForTx(ctx, testClient.Client, txs[chunkSize-1].Hash(), time.Second*15)
+	Require(t, err)
+
+	// The second chunk is only in the REST backlog, as it would be once the feed has moved on. Its
+	// first message carries a wrong block hash, so backfilled messages must reach the same block
+	// hash check as live ones.
+	wrongHash := common.Hash{1}
+	feedMessages[chunkSize].BlockHash = &wrongHash
+	archive.publish(chunkSize, feedMessages[chunkSize:2*chunkSize])
+
+	// The message after it over the feed opens the gap the backfill has to close.
+	wsBroadcastServer.Broadcast(&message.BroadcastMessage{
+		Version:  1,
+		Messages: []*message.BroadcastFeedMessage{feedMessages[lastMsgIdx]},
+	})
+
+	// The last message can only execute once everything below it has been backfilled.
+	_, err = WaitForTx(ctx, testClient.Client, txs[lastMsgIdx].Hash(), time.Second*30)
+	Require(t, err)
+
+	balance, err := testClient.Client.BalanceAt(ctx, builder.L2Info.GetAddress(userAccount), nil)
+	Require(t, err)
+	if expected := big.NewInt(transfer * lastMsgIdx); balance.Cmp(expected) != 0 {
+		t.Fatal("Unexpected balance:", balance, "expected:", expected)
+	}
+
+	if !logHandler.WasLogged(broadcastclients.FeedGapLogMsg) {
+		t.Fatal("the feed gap was not detected")
+	}
+	if !logHandler.WasLogged(arbnode.BlockHashMismatchLogMsg) {
+		t.Fatal("the wrong block hash on a backfilled message was not checked")
+	}
 }
