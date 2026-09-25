@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -108,6 +110,7 @@ func TestBasicBroadcastClientSetup(t *testing.T) {
 		chainId,
 		0, // Start from sequence number 0
 		mockTxStreamer,
+		nil, // No backfill streamer
 		nil, // No confirmation listener
 		feedErrChan,
 		addressVerifier,
@@ -263,6 +266,7 @@ func TestPrimaryToSecondaryFailoverFlaky(t *testing.T) {
 		chainId,
 		0, // Start from sequence number 0
 		mockTxStreamer,
+		nil, // No backfill streamer
 		nil, // No confirmation listener
 		feedErrChan,
 		addressVerifier,
@@ -364,6 +368,107 @@ func TestPrimaryToSecondaryFailoverFlaky(t *testing.T) {
 		t.Logf("Feed error received (expected): %v", err)
 	default:
 	}
+}
+
+// countingBackfiller stands in for the Backfiller: it reports a fixed head and counts how often it
+// is asked to run.
+type countingBackfiller struct {
+	stopwaiter.StopWaiter
+	head     arbutil.MessageIndex
+	triggers atomic.Int32
+}
+
+func (b *countingBackfiller) Start(ctx context.Context)           { b.StopWaiter.Start(ctx, b) }
+func (b *countingBackfiller) Head() (arbutil.MessageIndex, error) { return b.head, nil }
+func (b *countingBackfiller) Trigger()                            { b.triggers.Add(1) }
+
+// newGapTestClients builds BroadcastClients with no feed clients, so messages can be pushed into
+// the primary router directly. The construction-time count is left at zero on purpose: a seeding
+// that fell back to it would fire on the first message.
+func newGapTestClients(streamer *MockTransactionStreamer, backfiller feedBackfiller) *BroadcastClients {
+	newRouter := func() *Router {
+		return &Router{
+			messageChan:                 make(chan message.BroadcastFeedMessage, ROUTER_QUEUE_SIZE),
+			confirmedSequenceNumberChan: make(chan arbutil.MessageIndex, ROUTER_QUEUE_SIZE),
+			forwardTxStreamer:           streamer,
+		}
+	}
+	return &BroadcastClients{
+		primaryRouter:   newRouter(),
+		secondaryRouter: newRouter(),
+		backfiller:      backfiller,
+	}
+}
+
+// deliverFeedMessage pushes a message through the router and waits for it to be forwarded, by
+// which point the gap check for it has run.
+func deliverFeedMessage(t *testing.T, bcs *BroadcastClients, streamer *MockTransactionStreamer, seqNum arbutil.MessageIndex) {
+	t.Helper()
+	bcs.primaryRouter.messageChan <- message.BroadcastFeedMessage{SequenceNumber: seqNum}
+	select {
+	case got := <-streamer.messageReceiver:
+		if got.SequenceNumber != seqNum {
+			t.Fatalf("routed message %v, expected %v", got.SequenceNumber, seqNum)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("message %v was not routed", seqNum)
+	}
+}
+
+// TestFeedGapDetection pins when a feed message starts a backfill: only when it opens a gap above
+// the message count read at Start, and only once per gap.
+func TestFeedGapDetection(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const seeded = arbutil.MessageIndex(100)
+	streamer := NewMockTransactionStreamer(1234, nil)
+	backfiller := &countingBackfiller{head: seeded}
+	bcs := newGapTestClients(streamer, backfiller)
+	bcs.Start(ctx)
+	defer bcs.StopAndWait()
+
+	expectTriggers := func(want int32, why string) {
+		t.Helper()
+		if got := backfiller.triggers.Load(); got != want {
+			t.Fatalf("%v: %v backfill triggers, expected %v", why, got, want)
+		}
+	}
+
+	deliverFeedMessage(t, bcs, streamer, seeded)
+	deliverFeedMessage(t, bcs, streamer, seeded+1)
+	expectTriggers(0, "messages contiguous with the message count")
+
+	deliverFeedMessage(t, bcs, streamer, seeded+10)
+	expectTriggers(1, "a message above what the node has")
+	deliverFeedMessage(t, bcs, streamer, seeded+11)
+	deliverFeedMessage(t, bcs, streamer, seeded+12)
+	expectTriggers(1, "messages contiguous with the one that opened the gap")
+
+	deliverFeedMessage(t, bcs, streamer, seeded+5)
+	expectTriggers(1, "a replay below what was already seen")
+	deliverFeedMessage(t, bcs, streamer, seeded+13)
+	expectTriggers(1, "the next message after a replay, which did not lower the expectation")
+
+	deliverFeedMessage(t, bcs, streamer, seeded+20)
+	expectTriggers(2, "a second gap")
+}
+
+// TestFeedGapDetectionWithoutBackfiller pins that a node without backfill routes a gap-opening
+// message as before.
+func TestFeedGapDetectionWithoutBackfiller(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	streamer := NewMockTransactionStreamer(1234, nil)
+	bcs := newGapTestClients(streamer, nil)
+	bcs.Start(ctx)
+	defer bcs.StopAndWait()
+
+	deliverFeedMessage(t, bcs, streamer, 100)
+	deliverFeedMessage(t, bcs, streamer, 250)
 }
 
 func Require(t *testing.T, err error, printables ...interface{}) {

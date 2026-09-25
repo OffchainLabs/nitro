@@ -53,6 +53,7 @@ func NewRelay(config *Config, feedErrChan chan error) (*Relay, error) {
 		config.Chain.ID,
 		0,
 		&q,
+		nil, // the relay rebroadcasts the feed, so it must never be served the capped catchup window
 		confirmedSequenceNumberListener,
 		feedErrChan,
 		nil,
@@ -193,6 +194,9 @@ func ParseRelay(_ context.Context, args []string) (*Config, error) {
 	var relayConfig Config
 	if err := confighelpers.EndCommonParse(k, &relayConfig); err != nil {
 		return nil, err
+	}
+	if relayConfig.Node.Feed.Input.Rest.Enable {
+		return nil, errors.New("--node.feed.input.rest.enable is not supported by the relay")
 	}
 
 	if relayConfig.Conf.Dump {

@@ -16,7 +16,10 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/offchainlabs/nitro/util/stopwaiter/stoppable"
 )
+
+const FeedGapLogMsg = "gap in sequencer feed, filling it from the REST backlog"
 
 const ROUTER_QUEUE_SIZE = 1024
 const RECENT_FEED_INITIAL_MAP_SIZE = 1024
@@ -40,6 +43,14 @@ func (r *Router) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessa
 	return nil
 }
 
+// feedBackfiller fills gaps between the node's messages and the live feed over the feed's REST
+// backlog API. Kept as an interface so tests can stand in for it.
+type feedBackfiller interface {
+	stoppable.StoppableChild
+	Head() (arbutil.MessageIndex, error)
+	Trigger()
+}
+
 type BroadcastClients struct {
 	stopwaiter.StopWaiter
 	primaryClients   []*broadcastclient.BroadcastClient
@@ -50,16 +61,21 @@ type BroadcastClients struct {
 	primaryRouter   *Router
 	secondaryRouter *Router
 
+	backfiller feedBackfiller
+
 	// Use atomic access
 	connected         atomic.Int32
 	latestSequenceNum atomic.Uint64
 }
 
+// NewBroadcastClients takes a nil backfillStreamer when this process cannot fill feed gaps from
+// the REST backlog, in which case it never advertises the capability to the feed.
 func NewBroadcastClients(
 	configFetcher broadcastclient.ConfigFetcher,
 	l2ChainId uint64,
 	currentMessageCount arbutil.MessageIndex,
 	txStreamer broadcastclient.TransactionStreamerInterface,
+	backfillStreamer broadcastclient.BackfillTransactionStreamerInterface,
 	confirmedSequenceNumberListener chan arbutil.MessageIndex,
 	fatalErrChan chan error,
 	addrVerifier contracts.AddressVerifierInterface,
@@ -84,6 +100,20 @@ func NewBroadcastClients(
 		secondaryURL:     config.SecondaryURL,
 	}
 	clients.latestSequenceNum.Store(uint64(currentMessageCount))
+
+	var backfiller *broadcastclient.Backfiller
+	if backfillStreamer != nil && config.Rest.Enable {
+		var err error
+		backfiller, err = broadcastclient.NewBackfiller(configFetcher, l2ChainId, backfillStreamer, addrVerifier, func() arbutil.MessageIndex {
+			return arbutil.MessageIndex(clients.latestSequenceNum.Load())
+		})
+		if err != nil {
+			log.Warn("feed backfill disabled", "err", err)
+		} else {
+			clients.backfiller = backfiller
+		}
+	}
+
 	clients.makeClient = func(url string, router *Router, seqNum arbutil.MessageIndex) (*broadcastclient.BroadcastClient, error) {
 		return broadcastclient.NewBroadcastClient(
 			configFetcher,
@@ -95,6 +125,7 @@ func NewBroadcastClients(
 			fatalErrChan,
 			addrVerifier,
 			func(delta int32) { clients.adjustCount(delta) },
+			backfiller != nil,
 		)
 	}
 
@@ -142,9 +173,23 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 	bcs.secondaryRouter.StopWaiter.Start(bcs.GetContext(), bcs.secondaryRouter)
 	bcs.TrackChild(bcs.secondaryRouter)
 
+	if bcs.backfiller != nil {
+		bcs.backfiller.Start(bcs.GetContext())
+		bcs.TrackChild(bcs.backfiller)
+	}
+
 	for _, client := range bcs.primaryClients {
 		client.Start(bcs.GetContext())
 		bcs.TrackChild(client)
+	}
+
+	nextExpectedSeqNum := arbutil.MessageIndex(bcs.latestSequenceNum.Load())
+	if bcs.backfiller != nil {
+		if head, err := bcs.backfiller.Head(); err != nil {
+			log.Warn("could not read the message count to seed feed gap detection", "err", err)
+		} else {
+			nextExpectedSeqNum = head
+		}
 	}
 
 	var lastConfirmed arbutil.MessageIndex
@@ -177,6 +222,14 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 					break
 				}
 				currentLatest = bcs.latestSequenceNum.Load()
+			}
+
+			if bcs.backfiller != nil && msg.SequenceNumber > nextExpectedSeqNum {
+				log.Info(FeedGapLogMsg, "expected", nextExpectedSeqNum, "received", msg.SequenceNumber)
+				bcs.backfiller.Trigger()
+			}
+			if msg.SequenceNumber >= nextExpectedSeqNum {
+				nextExpectedSeqNum = msg.SequenceNumber + 1
 			}
 
 			if err := router.forwardTxStreamer.AddBroadcastMessages([]*message.BroadcastFeedMessage{&msg}); err != nil {

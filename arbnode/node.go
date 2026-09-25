@@ -592,6 +592,7 @@ func getBroadcastClients(
 			l2ChainId,
 			currentMessageCount,
 			txStreamer,
+			txStreamer,
 			nil,
 			fatalErrChan,
 			bpVerifier,

@@ -47,6 +47,9 @@ type FeedConfig struct {
 }
 
 func (fc *FeedConfig) Validate() error {
+	if err := fc.Input.Validate(); err != nil {
+		return err
+	}
 	return fc.Output.Validate()
 }
 
@@ -74,10 +77,15 @@ type Config struct {
 	SecondaryURL            []string                 `koanf:"secondary-url"`
 	Verify                  signature.VerifierConfig `koanf:"verify"`
 	EnableCompression       bool                     `koanf:"enable-compression" reload:"hot"`
+	Rest                    RestConfig               `koanf:"rest" reload:"hot"`
 }
 
 func (c *Config) Enable() bool {
 	return len(c.URL) > 0 && c.URL[0] != ""
+}
+
+func (c *Config) Validate() error {
+	return c.Rest.Validate()
 }
 
 type ConfigFetcher func() *Config
@@ -92,6 +100,7 @@ func ConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.StringSlice(prefix+".secondary-url", DefaultConfig.SecondaryURL, "list of secondary URLs of sequencer feed source. Would be started in the order they appear in the list when primary feeds fails")
 	signature.FeedVerifierConfigAddOptions(prefix+".verify", f)
 	f.Bool(prefix+".enable-compression", DefaultConfig.EnableCompression, "enable per message deflate compression support")
+	RestConfigAddOptions(prefix+".rest", f)
 }
 
 var DefaultConfig = Config{
@@ -104,6 +113,7 @@ var DefaultConfig = Config{
 	SecondaryURL:            []string{},
 	Timeout:                 20 * time.Second,
 	EnableCompression:       true,
+	Rest:                    DefaultRestConfig,
 }
 
 var DefaultTestConfig = Config{
@@ -116,6 +126,7 @@ var DefaultTestConfig = Config{
 	SecondaryURL:            []string{},
 	Timeout:                 200 * time.Millisecond,
 	EnableCompression:       true,
+	Rest:                    RestConfig{Timeout: 2 * time.Second},
 }
 
 type TransactionStreamerInterface interface {
@@ -146,6 +157,7 @@ type BroadcastClient struct {
 	txStreamer                      TransactionStreamerInterface
 	fatalErrChan                    chan error
 	adjustCount                     func(int32)
+	advertiseBackfill               bool
 }
 
 var ErrIncorrectFeedServerVersion = errors.New("incorrect feed server version")
@@ -163,6 +175,7 @@ func NewBroadcastClient(
 	fatalErrChan chan error,
 	addrVerifier contracts.AddressVerifierInterface,
 	adjustCount func(int32),
+	advertiseBackfill bool,
 ) (*BroadcastClient, error) {
 	sigVerifier, err := signature.NewVerifier(&config().Verify, addrVerifier)
 	if err != nil {
@@ -179,6 +192,7 @@ func NewBroadcastClient(
 		sigVerifier:                     sigVerifier,
 		adjustCount:                     adjustCount,
 		firstReconnectAttempt:           true,
+		advertiseBackfill:               advertiseBackfill,
 	}, err
 }
 
@@ -228,10 +242,14 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 		return nil, nil
 	}
 
-	header := ws.HandshakeHeaderHTTP(http.Header{
+	httpHeader := http.Header{
 		wsbroadcastserver.HTTPHeaderFeedClientVersion:       []string{strconv.Itoa(wsbroadcastserver.FeedClientVersion)},
 		wsbroadcastserver.HTTPHeaderRequestedSequenceNumber: []string{strconv.FormatUint(uint64(nextSeqNum), 10)},
-	})
+	}
+	if bc.advertiseBackfill {
+		httpHeader[wsbroadcastserver.HTTPHeaderFeedBackfill] = []string{feedBackfillHeaderValue}
+	}
+	header := ws.HandshakeHeaderHTTP(httpHeader)
 
 	log.Info("connecting to arbitrum inbox message broadcaster", "url", bc.websocketUrl)
 	var foundChainId bool

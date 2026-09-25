@@ -699,19 +699,16 @@ func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
 	return arbutil.MessageIndex(firstMsgIdx + uint64(len(s.broadcasterQueuedMessages)))
 }
 
-func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessage) error {
-	if len(feedMessages) == 0 {
-		return nil
-	}
+func parseBroadcastFeedMessages(feedMessages []*message.BroadcastFeedMessage) (arbutil.MessageIndex, []arbostypes.MessageWithMetadataAndBlockInfo, error) {
 	broadcastFirstMsgIdx := feedMessages[0].SequenceNumber
 	messages := make([]arbostypes.MessageWithMetadataAndBlockInfo, 0, len(feedMessages))
 	expectedMsgIdx := broadcastFirstMsgIdx
 	for _, feedMessage := range feedMessages {
 		if expectedMsgIdx != feedMessage.SequenceNumber {
-			return fmt.Errorf("invalid sequence number %v, expected %v", feedMessage.SequenceNumber, expectedMsgIdx)
+			return 0, nil, fmt.Errorf("invalid sequence number %v, expected %v", feedMessage.SequenceNumber, expectedMsgIdx)
 		}
 		if feedMessage.Message.Message == nil || feedMessage.Message.Message.Header == nil {
-			return fmt.Errorf("invalid feed message at sequence number %v", feedMessage.SequenceNumber)
+			return 0, nil, fmt.Errorf("invalid feed message at sequence number %v", feedMessage.SequenceNumber)
 		}
 		msgWithBlockInfo := arbostypes.MessageWithMetadataAndBlockInfo{
 			MessageWithMeta: feedMessage.Message,
@@ -721,12 +718,91 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.Broad
 		messages = append(messages, msgWithBlockInfo)
 		expectedMsgIdx++
 	}
+	return broadcastFirstMsgIdx, messages, nil
+}
+
+func (s *TransactionStreamer) AddBroadcastBackfillMessages(feedMessages []*message.BroadcastFeedMessage) (int, error) {
+	if len(feedMessages) == 0 {
+		return 0, nil
+	}
+	firstMsgIdx, messages, err := parseBroadcastFeedMessages(feedMessages)
+	if err != nil {
+		return 0, err
+	}
 
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
-	var feedReorg bool
-	var err error
+	if s.broadcasterQueuedMessagesActiveReorg {
+		return 0, broadcastclient.ErrBackfillFeedReorgPending
+	}
+
+	msgCount, err := s.GetMessageCount()
+	if err != nil {
+		return 0, err
+	}
+	if firstMsgIdx > msgCount {
+		// Not contiguous with the database; the backfiller realigns from the message count.
+		return 0, nil
+	}
+
+	// Skip what the database already holds, and refuse a chunk that disagrees with it.
+	numberOfDuplicates, diverged, _, err := s.countDuplicateMessages(firstMsgIdx, messages, nil)
+	if err != nil {
+		return 0, err
+	}
+	if diverged {
+		return 0, fmt.Errorf("%w at message %v", broadcastclient.ErrBackfillDiverged, firstMsgIdx+arbutil.MessageIndex(numberOfDuplicates))
+	}
+	messages = messages[numberOfDuplicates:]
+	firstMsgIdx += arbutil.MessageIndex(numberOfDuplicates)
+	if len(messages) == 0 {
+		return 0, nil
+	}
+
+	// Where the chunk overlaps the queued live feed, the live feed wins: the write stops at the
+	// queue, and addMessagesAndEndBatchImpl splices the queue in from there.
+	if len(s.broadcasterQueuedMessages) > 0 {
+		queueStart := arbutil.MessageIndex(s.broadcasterQueuedMessagesFirstMsgIdx.Load())
+		if queueStart > firstMsgIdx && queueStart < firstMsgIdx+arbutil.MessageIndex(len(messages)) {
+			messages = messages[:queueStart-firstMsgIdx]
+		}
+	}
+
+	oldMessages, err := s.addMessagesAndEndBatchImpl(firstMsgIdx, false, messages, nil)
+	if err != nil {
+		return 0, fmt.Errorf("error adding backfilled broadcaster messages: %w", err)
+	}
+
+	s.resequenceReorgedMessages(oldMessages)
+
+	// Count only the given messages; the write may also have released queued live messages.
+	newCount, err := s.GetMessageCount()
+	if err != nil {
+		return 0, err
+	}
+	if end := firstMsgIdx + arbutil.MessageIndex(len(messages)); newCount > end {
+		newCount = end
+	}
+	if newCount <= firstMsgIdx {
+		return 0, nil
+	}
+	// #nosec G115
+	return int(newCount - firstMsgIdx), nil
+}
+
+func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessage) error {
+	if len(feedMessages) == 0 {
+		return nil
+	}
+	broadcastFirstMsgIdx, messages, err := parseBroadcastFeedMessages(feedMessages)
+	if err != nil {
+		return err
+	}
+
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
+
 	// Skip any messages already in the database
 	// prevDelayedRead set to 0 because it's only used to compute the output prevDelayedRead which is not used here
 	// Messages from feed are not confirmed, so confirmedMessageCount is 0 and confirmedReorg can be ignored
