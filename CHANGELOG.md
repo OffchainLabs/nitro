@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [v3.12.1](https://github.com/OffchainLabs/nitro/compare/v3.12.0...v3.12.1) - 2026-09-25
+
+### Configuration
+
+- Add `node.feed.input.rest.enable` (default false). [[commit]](https://github.com/OffchainLabs/nitro/commit/60b57c1d4135bf65b8f030e6d93f4737fe3d4313)
+- Add `node.feed.input.rest.url`, required when `node.feed.input.rest.enable` is set. [[commit]](https://github.com/OffchainLabs/nitro/commit/60b57c1d4135bf65b8f030e6d93f4737fe3d4313)
+- Add `node.feed.input.rest.timeout` (default 10s). [[commit]](https://github.com/OffchainLabs/nitro/commit/60b57c1d4135bf65b8f030e6d93f4737fe3d4313)
+- Add `execution.stylus-target.allow-offchain-activation`. [[commit]](https://github.com/OffchainLabs/nitro/commit/0cecce14a06058ba3439be15c34b8a5955d9d345)
+
+### Added
+
+- Feed clients can fill gaps from the feed's REST backlog instead of the websocket backlog. [[commit]](https://github.com/OffchainLabs/nitro/commit/60b57c1d4135bf65b8f030e6d93f4737fe3d4313)
+- Add `arb/feed/backfill/runs`. [[commit]](https://github.com/OffchainLabs/nitro/commit/60b57c1d4135bf65b8f030e6d93f4737fe3d4313)
+- Add `arb/feed/backfill/chunks`. [[commit]](https://github.com/OffchainLabs/nitro/commit/60b57c1d4135bf65b8f030e6d93f4737fe3d4313)
+- Add `arb/feed/backfill/messages`. [[commit]](https://github.com/OffchainLabs/nitro/commit/60b57c1d4135bf65b8f030e6d93f4737fe3d4313)
+- Add `arb/feed/backfill/chunks_missing`. [[commit]](https://github.com/OffchainLabs/nitro/commit/60b57c1d4135bf65b8f030e6d93f4737fe3d4313)
+- Add `arb/feed/backfill/errors`. [[commit]](https://github.com/OffchainLabs/nitro/commit/60b57c1d4135bf65b8f030e6d93f4737fe3d4313)
+- Add `arb/feed/backfill/permanent_errors`. [[commit]](https://github.com/OffchainLabs/nitro/commit/60b57c1d4135bf65b8f030e6d93f4737fe3d4313)
+
+### Changed
+
+- **Breaking:** Stylus activation is refused for `eth_call` and `eth_estimateGas` by default. [[commit]](https://github.com/OffchainLabs/nitro/commit/0cecce14a06058ba3439be15c34b8a5955d9d345)
+
+### Fixed
+
+- `debug_traceCall` and `eth_simulateV1` no longer crash on chains that collect tips. [[commit]](https://github.com/OffchainLabs/nitro/commit/3f5afac31f5283f6c386da2d9e02faacdb09fad3)
+
 ## [v3.12.0](https://github.com/OffchainLabs/nitro/compare/v3.11.4...v3.12.0) - 2026-09-22
 
 ### Configuration
