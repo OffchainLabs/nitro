@@ -9,9 +9,11 @@ import (
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/core/vm/program"
+	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -27,6 +29,7 @@ var tipCollectionTests = []systest.Scenario{
 	systest.Test(testRunTipCollectionDelayedInboxDropsTips, systest.WithArbOS(params.ArbosVersion_60), systest.WithL1()),
 	systest.Test(testRunTipCollectionGetPaidGasPrice, systest.WithArbOS(params.ArbosVersion_60)),
 	systest.Test(testRunTipCollectionPrecompileVersionGating, systest.WithArbOS(params.ArbosVersion_51)),
+	systest.Test(testRunTipCollectionCallTracing, systest.WithArbOS(params.ArbosVersion_60)),
 }
 
 // testRunTipCollectionDefault verifies that by default (collect=false), tips are dropped on v60.
@@ -178,6 +181,55 @@ func testRunTipCollectionPrecompileVersionGating(env *systest.Env) {
 	env.Require(err)
 	_, err = arbOwnerPublic.GetCollectTips(&bind.CallOpts{Context: env.Ctx})
 	env.NotNil(err, "GetCollectTips should revert on pre-v60")
+}
+
+// testRunTipCollectionCallTracing verifies that debug_traceCall and eth_simulateV1 succeed with tip
+// collection enabled, and that GASPRICE includes the tip. Both RPCs execute a message that has no Tx.
+func testRunTipCollectionCallTracing(env *systest.Env) {
+	setCollectTips(env, true)
+
+	header := env.L2.HeaderByNumber(nil)
+	tip := big.NewInt(10)
+	feeCap := new(big.Int).Mul(header.BaseFee, big.NewInt(2))
+	paidPrice := func(baseFee *big.Int) *big.Int {
+		return arbmath.BigMin(arbmath.BigAdd(baseFee, tip), feeCap)
+	}
+
+	gasPriceReader := common.HexToAddress("0xca11ca11ca11ca11ca11ca11ca11ca11ca11ca11")
+	overrides := map[string]any{gasPriceReader.Hex(): map[string]any{
+		"code": hexutil.Bytes(program.New().Op(vm.GASPRICE).Push(0).Op(vm.MSTORE).Return(0, 32).Bytes()),
+	}}
+	faucet := env.L2.Info.GetAddress("Faucet")
+	tipped := map[string]any{
+		"from":                 faucet,
+		"to":                   gasPriceReader,
+		"maxFeePerGas":         (*hexutil.Big)(feeCap),
+		"maxPriorityFeePerGas": (*hexutil.Big)(tip),
+	}
+	unpriced := map[string]any{"from": faucet, "to": gasPriceReader}
+	block := hexutil.EncodeBig(header.Number)
+	traceConfig := map[string]any{"stateOverrides": overrides}
+	l2rpc := env.L2.Client.Client()
+
+	var trace logger.ExecutionResult
+	env.Require(l2rpc.CallContext(env.Ctx, &trace, "debug_traceCall", tipped, block, traceConfig), "debug_traceCall")
+	env.EqualBig(paidPrice(header.BaseFee), new(big.Int).SetBytes(trace.ReturnValue), "debug_traceCall: GASPRICE")
+	env.Require(l2rpc.CallContext(env.Ctx, nil, "debug_traceCall", unpriced, block, traceConfig), "debug_traceCall without fees")
+
+	var simulated []struct {
+		BaseFeePerGas *hexutil.Big `json:"baseFeePerGas"`
+		Calls         []struct {
+			ReturnData hexutil.Bytes `json:"returnData"`
+		} `json:"calls"`
+	}
+	env.Require(l2rpc.CallContext(env.Ctx, &simulated, "eth_simulateV1", map[string]any{
+		"blockStateCalls": []map[string]any{{
+			"stateOverrides": overrides,
+			"calls":          []map[string]any{tipped, unpriced},
+		}},
+	}, block), "eth_simulateV1")
+	env.True(len(simulated) == 1 && len(simulated[0].Calls) == 2, "eth_simulateV1: unexpected result %+v", simulated)
+	env.EqualBig(paidPrice(simulated[0].BaseFeePerGas.ToInt()), new(big.Int).SetBytes(simulated[0].Calls[0].ReturnData), "eth_simulateV1: GASPRICE")
 }
 
 func chainBaseFee(env *systest.Env) *big.Int {
