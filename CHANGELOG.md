@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
-## [v3.12.1](https://github.com/OffchainLabs/nitro/compare/v3.12.0...v3.12.1) - 2026-09-25
+## [v3.12.1](https://github.com/OffchainLabs/nitro/compare/v3.12.0...v3.12.1) - 2026-09-29
 
 ### Configuration
 
@@ -12,6 +12,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Add `node.feed.input.rest.url`, required when `node.feed.input.rest.enable` is set. [[commit]](https://github.com/OffchainLabs/nitro/commit/60b57c1d4135bf65b8f030e6d93f4737fe3d4313)
 - Add `node.feed.input.rest.timeout` (default 10s). [[commit]](https://github.com/OffchainLabs/nitro/commit/60b57c1d4135bf65b8f030e6d93f4737fe3d4313)
 - Add `execution.stylus-target.allow-offchain-activation`. [[commit]](https://github.com/OffchainLabs/nitro/commit/0cecce14a06058ba3439be15c34b8a5955d9d345)
+- `node.feed.input.rest.url` is now optional. [[commit]](https://github.com/OffchainLabs/nitro/commit/70fa99a6e711f09eedd96a907290c3df0f3bcf7d)
 
 ### Added
 
@@ -26,10 +27,12 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Changed
 
 - **Breaking:** Stylus activation is refused for `eth_call` and `eth_estimateGas` by default. [[commit]](https://github.com/OffchainLabs/nitro/commit/0cecce14a06058ba3439be15c34b8a5955d9d345)
+- Feed REST backfill reads from the feed's host when no REST url is set. [[commit]](https://github.com/OffchainLabs/nitro/commit/70fa99a6e711f09eedd96a907290c3df0f3bcf7d)
 
 ### Fixed
 
 - `debug_traceCall` and `eth_simulateV1` no longer crash on chains that collect tips. [[commit]](https://github.com/OffchainLabs/nitro/commit/3f5afac31f5283f6c386da2d9e02faacdb09fad3)
+
 
 ## [v3.12.0](https://github.com/OffchainLabs/nitro/compare/v3.11.4...v3.12.0) - 2026-09-22
 
