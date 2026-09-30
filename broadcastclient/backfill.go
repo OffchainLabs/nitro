@@ -108,8 +108,8 @@ var DefaultRestConfig = RestConfig{
 }
 
 func RestConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultRestConfig.Enable, "backfill feed gaps from the feed's REST chunk API, and advertise that capability when connecting to the feed; requires "+prefix+".url")
-	f.String(prefix+".url", DefaultRestConfig.URL, "base URL of the REST API serving the feed backlog, e.g. https://archive.example:9642")
+	f.Bool(prefix+".enable", DefaultRestConfig.Enable, "backfill feed gaps from the feed's REST chunk API, and advertise that capability when connecting to the feed")
+	f.String(prefix+".url", DefaultRestConfig.URL, "base URL of the REST API serving the feed backlog, e.g. https://archive.example:9642; defaults to the host of the first feed url")
 	f.Duration(prefix+".timeout", DefaultRestConfig.Timeout, "per-request timeout for feed backfill requests")
 }
 
@@ -121,7 +121,7 @@ func (c *RestConfig) Validate() error {
 		return fmt.Errorf("invalid feed backfill timeout %v, must be positive", c.Timeout)
 	}
 	if c.URL == "" {
-		return errors.New("feed backfill is enabled but no url is set; point it at the REST API serving the feed backlog")
+		return nil
 	}
 	parsed, err := url.Parse(c.URL)
 	if err != nil {
@@ -131,6 +131,24 @@ func (c *RestConfig) Validate() error {
 		return fmt.Errorf("invalid feed backfill url %v: scheme must be http or https", c.URL)
 	}
 	return nil
+}
+
+func restBaseURL(config *Config) (*url.URL, error) {
+	if config.Rest.URL != "" {
+		return url.Parse(config.Rest.URL)
+	}
+	if len(config.URL) == 0 || config.URL[0] == "" {
+		return nil, errors.New("feed backfill needs a rest url or a feed url")
+	}
+	feedURL, err := url.Parse(config.URL[0])
+	if err != nil {
+		return nil, err
+	}
+	scheme, ok := map[string]string{"ws": "http", "wss": "https", "http": "http", "https": "https"}[feedURL.Scheme]
+	if !ok {
+		return nil, fmt.Errorf("cannot derive a feed backfill url from feed url %v", config.URL[0])
+	}
+	return &url.URL{Scheme: scheme, Host: feedURL.Host}, nil
 }
 
 // feedInfo is the /feed/v1/info body. It is static per process and advertises no range, so which
@@ -175,7 +193,7 @@ func NewBackfiller(
 	if err := config().Rest.Validate(); err != nil {
 		return nil, err
 	}
-	baseURL, err := url.Parse(config().Rest.URL)
+	baseURL, err := restBaseURL(config())
 	if err != nil {
 		return nil, err
 	}

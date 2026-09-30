@@ -36,10 +36,7 @@ func TestRestConfigValidate(t *testing.T) {
 	if err := enabled("http://archive.example", 0).Validate(); err == nil {
 		t.Error("a non-positive timeout should be rejected when backfill is enabled")
 	}
-	// The point of requiring the url: backfill cannot be on without somewhere to read from.
-	if err := enabled("", time.Second).Validate(); err == nil {
-		t.Error("an empty url should be rejected when backfill is enabled")
-	}
+	Require(t, enabled("", time.Second).Validate())
 	if err := enabled("ws://archive.example", time.Second).Validate(); err == nil {
 		t.Error("a websocket url should be rejected")
 	}
@@ -735,15 +732,18 @@ func TestBackfillerEndsRunOnStreamerVerdict(t *testing.T) {
 	}
 }
 
-// TestNewBackfillerRequiresURL pins that backfill is opt-in, and that opting in without an archive
-// to read from is the configuration error Validate reports rather than a silently disabled feature.
-func TestNewBackfillerRequiresURL(t *testing.T) {
+func TestRestBaseURL(t *testing.T) {
 	t.Parallel()
 	config := DefaultTestConfig
-	config.Rest.Enable = true
-	_, err := NewBackfiller(func() *Config { return &config }, 9742, &backfillStreamer{}, nil, func() arbutil.MessageIndex { return 0 })
-	if err == nil || !strings.Contains(err.Error(), "no url is set") {
-		t.Errorf("got %v, expected the missing url to be reported", err)
+	config.URL = []string{"wss://feed.example:9642/feed?x=1"}
+	got, err := restBaseURL(&config)
+	Require(t, err)
+	if got.String() != "https://feed.example:9642" {
+		t.Errorf("derived %v", got)
+	}
+	config.URL = []string{"tcp://feed.example"}
+	if _, err := restBaseURL(&config); err == nil {
+		t.Error("expected a feed url with an unknown scheme to be rejected")
 	}
 }
 
