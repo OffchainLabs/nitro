@@ -1,2 +1,0 @@
-### Ignored
-- Refactor `arbos.FinalizeBlock`
