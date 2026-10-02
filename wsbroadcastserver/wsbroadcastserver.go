@@ -376,9 +376,10 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		safeConn := writeDeadliner{conn, config.WriteTimeout}
 
 		client := NewClientConnection(safeConn, desc, s.clientManager.clientAction, requestedSeqNum, connectingIP, compressionAccepted, s.config().MaxSendQueue, s.config().ClientDelay, s.backlog)
-		client.Start(ctx)
 
-		// Subscribe to events about conn.
+		// Subscribe to events about conn. This must happen before the client is
+		// started, so that the client cannot be removed (closing desc) while the
+		// poller is still registering it.
 		err = s.poller.Start(desc, func(ev netpoll.Event) {
 			if ev&(netpoll.EventReadHup|netpoll.EventHup) != 0 {
 				// ReadHup or Hup received, means the client has close the connection
@@ -405,6 +406,8 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		if err != nil {
 			log.Warn("error starting client connection poller", "err", err)
 		}
+
+		client.Start(ctx)
 	}
 
 	// Create tcp server for relay connections

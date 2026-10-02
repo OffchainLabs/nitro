@@ -1,0 +1,2 @@
+### Fixed
+- Feed server now closes connections of clients that disconnect before being registered (during the client delay or while the backlog is being sent) instead of leaking the socket and poller descriptor, closes the duplicated poller descriptor on every disconnect so the peer sees the connection close immediately, and no longer decrements the `arb/feed/clients/current` gauge for connection-limited clients that were never counted.

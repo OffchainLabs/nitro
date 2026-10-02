@@ -78,6 +78,11 @@ func (cm *ClientManager) registerClient(_ctx context.Context, clientConnection *
 
 	// TODO:(clamb) the clientsTotalFailedRegisterCounter was deleted after backlog logic moved to ClientConnection. Should this metric be reintroduced or will it be ok to just delete completely given the behaviour has changed, ask Lee
 
+	if clientConnection.closed.Load() {
+		// The client hung up before its registration was processed.
+		return fmt.Errorf("Connection already closed %s", clientConnection.Name)
+	}
+
 	if cm.config().ConnectionLimits.Enable && !cm.connectionLimiter.Register(clientConnection.clientIp) {
 		return fmt.Errorf("Connection limited %s", clientConnection.clientIp)
 	}
@@ -100,18 +105,38 @@ func (cm *ClientManager) removeAll() {
 	}
 }
 
-func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
+// closeClient stops the ClientConnection, removes it from the poller and closes
+// the underlying connection. Only the first call has any effect, so it is safe
+// to call for a client that may already have been closed.
+func (cm *ClientManager) closeClient(clientConnection *ClientConnection) {
+	if !clientConnection.closed.CompareAndSwap(false, true) {
+		return
+	}
+
 	clientConnection.StopOnly()
 
 	err := cm.poller.Stop(clientConnection.desc)
 	if err != nil {
 		log.Warn("Failed to stop poller", "err", err)
 	}
+	// The poller descriptor holds a duplicate of the connection's file
+	// descriptor, so the socket is only really closed once both are closed.
+	err = clientConnection.desc.Close()
+	if err != nil {
+		log.Warn("Failed to close poller descriptor", "err", err)
+	}
 
 	err = clientConnection.conn.Close()
 	if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
 		log.Warn("Failed to close client connection", "err", err)
 	}
+}
+
+// removeClientImpl closes a registered client and updates the registered
+// client accounting. It must only be called for clients that were successfully
+// registered with registerClient.
+func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
+	cm.closeClient(clientConnection)
 
 	if cm.config().LogDisconnect {
 		log.Info("client removed", "client", clientConnection.Name, "age", clientConnection.Age())
@@ -125,6 +150,11 @@ func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
 
 func (cm *ClientManager) removeClient(clientConnection *ClientConnection) {
 	if !cm.clientPtrMap[clientConnection] {
+		// The client was never registered (it hung up during the client delay
+		// or while its backlog was being written) or has already been removed.
+		// Close the connection anyway so the socket and its poller descriptor
+		// are not leaked, but leave the registered client accounting alone.
+		cm.closeClient(clientConnection)
 		return
 	}
 
@@ -335,8 +365,10 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 				if clientAction.create {
 					err := cm.registerClient(ctx, clientAction.cc)
 					if err != nil {
-						// Log message already output in registerClient
-						cm.removeClientImpl(clientAction.cc)
+						// The client was not registered, so only close the
+						// connection without touching the registered client
+						// accounting.
+						cm.closeClient(clientAction.cc)
 					}
 					clientAction.cc.Registered()
 				} else {

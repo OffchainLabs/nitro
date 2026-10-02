@@ -53,6 +53,7 @@ type ClientConnection struct {
 	LastSentSeqNum  atomic.Uint64
 
 	lastHeardUnix atomic.Int64
+	closed        atomic.Bool // set by the ClientManager once the connection has been torn down
 	out           chan message
 	backlog       backlog.Backlog
 	registered    chan bool
@@ -282,9 +283,10 @@ func (cc *ClientConnection) Registered() {
 func (cc *ClientConnection) StopOnly() {
 	// Ignore errors from conn.Close since we are just shutting down
 	_ = cc.conn.Close()
-	if cc.Started() {
-		cc.StopWaiter.StopOnly()
-	}
+	// Also stop if not started yet: a later Start will then immediately cancel
+	// its context, so the client thread cannot outlive a connection that was
+	// already torn down.
+	cc.StopWaiter.StopOnly()
 }
 
 func (cc *ClientConnection) RequestedSeqNum() arbutil.MessageIndex {
