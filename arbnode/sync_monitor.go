@@ -185,7 +185,7 @@ func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 			}
 			if header != nil {
 				res["lastL1BlockNum"] = header.Number
-				res["lastl1BlockHash"] = header.Hash()
+				res["lastL1BlockHash"] = header.Hash()
 			}
 		}
 	}
