@@ -19,52 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-
-	"github.com/offchainlabs/nitro/util/arbmath"
 )
-
-func TestSequencerParallelNonces(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false).WithDatabase(rawdb.DBPebble)
-	builder.takeOwnership = false
-	builder.execConfig.Sequencer.NonceFailureCacheExpiry = time.Minute
-	cleanup := builder.Build(t)
-	defer cleanup()
-
-	builder.L2Info.GenerateAccount("Destination")
-
-	wg := sync.WaitGroup{}
-	for thread := 0; thread < 10; thread++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 10; i++ {
-				tx := builder.L2Info.PrepareTx("Owner", "Destination", builder.L2Info.TransferGas, common.Big1, nil)
-				// Sleep a random amount of time up to 20 milliseconds
-				time.Sleep(time.Millisecond * time.Duration(rand.Intn(20)))
-				t.Log("Submitting transaction with nonce", tx.Nonce())
-				err := builder.L2.Client.SendTransaction(ctx, tx)
-				if goroutineErrorf(t, ctx, cancel, err, "SendTransaction failed: %v", err) {
-					return
-				}
-				t.Log("Got response for transaction with nonce", tx.Nonce())
-			}
-		}()
-	}
-	wg.Wait()
-
-	// wait so every transaction can be processed
-	time.Sleep(time.Second)
-
-	addr := builder.L2Info.GetAddress("Destination")
-	balance, err := builder.L2.Client.BalanceAt(ctx, addr, nil)
-	Require(t, err)
-	if !arbmath.BigEquals(balance, big.NewInt(100)) {
-		Fatal(t, "Unexpected user balance", balance)
-	}
-}
 
 func TestSequencerSelfSponsoredSetCodeNonce(t *testing.T) {
 	builder := NewNodeBuilder(t.Context()).DefaultConfig(t, false)

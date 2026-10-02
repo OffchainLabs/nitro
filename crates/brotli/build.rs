@@ -18,16 +18,24 @@ fn main() {
 
 #[cfg(not(feature = "cc_brotli"))]
 fn link() {
-    let target_arch = std::env::var("TARGET").unwrap();
+    use std::path::PathBuf;
 
-    if target_arch.contains("wasm32") {
-        println!("cargo:rustc-link-search=target/lib-wasm/");
-    } else if target_arch.contains("riscv64") {
-        println!("cargo:rustc-link-search=../../target/lib-sp1/lib");
+    let target = std::env::var("TARGET").unwrap();
+    // Anchor the search path to this crate's location so it resolves from any
+    // consuming workspace (the root repo, nitro-reth, SP1), not just when cargo
+    // happens to run at the repo root. The libs come from `scripts/build-brotli.sh`.
+    let repo_root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("../..");
+    let lib_dir = if target.contains("wasm32") {
+        "target/lib-wasm"
+    } else if target.contains("riscv64") {
+        "target/lib-sp1/lib"
     } else {
-        println!("cargo:rustc-link-search=target/lib/");
-        println!("cargo:rustc-link-search=../../target/lib/");
-    }
+        "target/lib"
+    };
+    println!(
+        "cargo:rustc-link-search={}",
+        repo_root.join(lib_dir).display()
+    );
     println!("cargo:rustc-link-lib=static=brotlienc-static");
     println!("cargo:rustc-link-lib=static=brotlidec-static");
     println!("cargo:rustc-link-lib=static=brotlicommon-static");

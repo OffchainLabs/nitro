@@ -7,7 +7,7 @@ use super::api::{Gas, Ink};
 use crate::{
     Bytes20, Bytes32,
     evm::{
-        api::{CreateRespone, DataReader, EvmApi, EvmApiMethod, EvmApiStatus},
+        api::{CreateResponse, DataReader, EvmApi, EvmApiMethod, EvmApiStatus},
         storage::StorageCache,
         user::UserOutcomeKind,
     },
@@ -73,7 +73,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
         endowment: Bytes32,
         salt: Option<Bytes32>,
         gas: Gas,
-    ) -> Result<(CreateRespone, u32, Gas)> {
+    ) -> Result<(CreateResponse, u32, Gas)> {
         let mut request = Vec::with_capacity(8 + 2 * 32 + code.len());
         request.extend(gas.to_be_bytes());
         request.extend(endowment);
@@ -89,13 +89,13 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
             }
             let err_string =
                 String::from_utf8(res).unwrap_or("create_response_malformed".to_string());
-            return Ok((CreateRespone::Fail(err_string), 0, cost));
+            return Ok((CreateResponse::Fail(err_string), 0, cost));
         }
         res.remove(0);
         let address = res.try_into()?;
         let data_len = data.slice().len() as u32;
         self.last_return_data = Some(data);
-        Ok((CreateRespone::Succes(address), data_len, cost))
+        Ok((CreateResponse::Success(address), data_len, cost))
     }
 }
 
@@ -228,7 +228,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         code: Vec<u8>,
         endowment: Bytes32,
         gas: Gas,
-    ) -> Result<(CreateRespone, u32, Gas)> {
+    ) -> Result<(CreateResponse, u32, Gas)> {
         self.create_request(EvmApiMethod::Create1, code, endowment, None, gas)
     }
 
@@ -238,7 +238,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         endowment: Bytes32,
         salt: Bytes32,
         gas: Gas,
-    ) -> Result<(CreateRespone, u32, Gas)> {
+    ) -> Result<(CreateResponse, u32, Gas)> {
         self.create_request(EvmApiMethod::Create2, code, endowment, Some(salt), gas)
     }
 

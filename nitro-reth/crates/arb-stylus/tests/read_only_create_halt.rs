@@ -4,7 +4,7 @@
 //! the WASM frame (`Failure`) with the ink preserved.
 //!
 //! In a `STATICCALL` context the `EvmApi` returns
-//! `(CreateResponse::Fail("write protection"), 0, Gas(0), pages)`. These tests
+//! `(CreateResponse::Fail("write protection"), 0, Gas(0))`. These tests
 //! drive the real `host::create1`/`create2` imports through `NativeInstance`
 //! against an `EvmApi` that returns that exact tuple and assert the entrypoint
 //! traps with the meter still ready (a frame `Failure`, not an out-of-ink and not
@@ -20,21 +20,23 @@
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn __rust_probestack() {}
 
-use alloy_primitives::{Address, B256, U256, address};
+use alloy_primitives::{Address, B256, address};
 use arb_stylus::{
     Gas, Ink,
     config::{CompileConfig, StylusConfig},
-    evm_api::{CreateResponse, EvmApi, UserOutcomeKind},
     meter::{MachineMeter, MeteredMachine, STYLUS_INK_LEFT, STYLUS_INK_STATUS, STYLUS_STACK_LEFT},
     native::NativeInstance,
 };
 use arbos::programs::types::EvmData;
+use nitro_arbutil::{
+    Bytes20, Bytes32,
+    evm::{
+        api::{CreateResponse, EvmApi, VecReader},
+        user::UserOutcomeKind,
+    },
+};
 use wasmer::{TypedFunction, Value};
 
-const ARBOS_60: u64 = 60;
-
-const PAGE_GAS: u16 = 1_000;
-const PAGE_LIMIT: u16 = 128;
 const SEED_INK: i64 = i64::MAX;
 const DEPLOYED: Address = address!("00000000000000000000000000000000deadbeef");
 
@@ -109,18 +111,12 @@ fn run(wat: &str, outcome: CreateOutcome) -> Outcome {
         .expect("wat compiles")
         .into_owned();
 
-    let mut native = NativeInstance::from_bytes_with_pages(
+    let mut native = NativeInstance::from_bytes(
         &wasm,
         ProbeEvmApi { outcome },
         evm_data_stub(),
         &compile,
         config,
-        0,
-        0,
-        0,
-        PAGE_GAS,
-        PAGE_LIMIT,
-        ARBOS_60,
     )
     .expect("instantiate");
 
@@ -249,27 +245,28 @@ struct ProbeEvmApi {
 }
 
 impl ProbeEvmApi {
-    fn create_response(&self, pages: (u16, u16)) -> (CreateResponse, u32, Gas, (u16, u16)) {
+    fn create_response(&self) -> (CreateResponse, u32, Gas) {
         match self.outcome {
-            CreateOutcome::ReadOnlyFail => (
-                CreateResponse::Fail("write protection".into()),
+            CreateOutcome::ReadOnlyFail => {
+                (CreateResponse::Fail("write protection".into()), 0, Gas(0))
+            }
+            CreateOutcome::Success => (
+                CreateResponse::Success(Bytes20::from(DEPLOYED.into_array())),
                 0,
                 Gas(0),
-                pages,
             ),
-            CreateOutcome::Success => (CreateResponse::Success(DEPLOYED), 0, Gas(0), pages),
             CreateOutcome::NormalFailure => {
-                (CreateResponse::Success(Address::ZERO), 0, Gas(0), pages)
+                (CreateResponse::Success(Bytes20::default()), 0, Gas(0))
             }
         }
     }
 }
 
-impl EvmApi for ProbeEvmApi {
-    fn get_bytes32(&mut self, _key: B256, _gas: Gas) -> eyre::Result<(B256, Gas)> {
+impl EvmApi<VecReader> for ProbeEvmApi {
+    fn get_bytes32(&mut self, _key: Bytes32, _gas: Gas) -> eyre::Result<(Bytes32, Gas)> {
         unreachable!()
     }
-    fn cache_bytes32(&mut self, _key: B256, _value: B256) -> eyre::Result<Gas> {
+    fn cache_bytes32(&mut self, _key: Bytes32, _value: Bytes32) -> eyre::Result<Gas> {
         unreachable!()
     }
     fn flush_storage_cache(
@@ -279,80 +276,82 @@ impl EvmApi for ProbeEvmApi {
     ) -> eyre::Result<(Gas, UserOutcomeKind)> {
         unreachable!()
     }
-    fn get_transient_bytes32(&mut self, _key: B256) -> eyre::Result<B256> {
+    fn get_transient_bytes32(&mut self, _key: Bytes32) -> eyre::Result<Bytes32> {
         unreachable!()
     }
-    fn set_transient_bytes32(&mut self, _key: B256, _value: B256) -> eyre::Result<UserOutcomeKind> {
+    fn set_transient_bytes32(
+        &mut self,
+        _key: Bytes32,
+        _value: Bytes32,
+    ) -> eyre::Result<UserOutcomeKind> {
         unreachable!()
     }
     fn contract_call(
         &mut self,
-        _contract: Address,
+        _contract: Bytes20,
         _calldata: &[u8],
         _gas_left: Gas,
         _gas_req: Gas,
-        _value: U256,
-        _pages: (u16, u16),
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))> {
+        _value: Bytes32,
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
         unreachable!()
     }
     fn delegate_call(
         &mut self,
-        _contract: Address,
+        _contract: Bytes20,
         _calldata: &[u8],
         _gas_left: Gas,
         _gas_req: Gas,
-        _pages: (u16, u16),
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))> {
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
         unreachable!()
     }
     fn static_call(
         &mut self,
-        _contract: Address,
+        _contract: Bytes20,
         _calldata: &[u8],
         _gas_left: Gas,
         _gas_req: Gas,
-        _pages: (u16, u16),
-    ) -> eyre::Result<(u32, Gas, UserOutcomeKind, (u16, u16))> {
+    ) -> eyre::Result<(u32, Gas, UserOutcomeKind)> {
         unreachable!()
     }
     fn create1(
         &mut self,
         _code: Vec<u8>,
-        _endowment: U256,
+        _endowment: Bytes32,
         _gas: Gas,
-        pages: (u16, u16),
-    ) -> eyre::Result<(CreateResponse, u32, Gas, (u16, u16))> {
-        Ok(self.create_response(pages))
+    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
+        Ok(self.create_response())
     }
     fn create2(
         &mut self,
         _code: Vec<u8>,
-        _endowment: U256,
-        _salt: B256,
+        _endowment: Bytes32,
+        _salt: Bytes32,
         _gas: Gas,
-        pages: (u16, u16),
-    ) -> eyre::Result<(CreateResponse, u32, Gas, (u16, u16))> {
-        Ok(self.create_response(pages))
+    ) -> eyre::Result<(CreateResponse, u32, Gas)> {
+        Ok(self.create_response())
     }
-    fn get_return_data(&self) -> Vec<u8> {
-        vec![]
+    fn add_pages(&mut self, _pages: u16) -> eyre::Result<Gas> {
+        Ok(Gas(0))
+    }
+    fn get_return_data(&self) -> VecReader {
+        VecReader::new(vec![])
     }
     fn emit_log(&mut self, _data: Vec<u8>, _topics: u32) -> eyre::Result<()> {
         unreachable!()
     }
-    fn account_balance(&mut self, _address: Address) -> eyre::Result<(U256, Gas)> {
+    fn account_balance(&mut self, _address: Bytes20) -> eyre::Result<(Bytes32, Gas)> {
         unreachable!()
     }
     fn account_code(
         &mut self,
         _arbos_version: u64,
-        _address: Address,
+        _address: Bytes20,
         _gas_left: Gas,
-    ) -> eyre::Result<(Vec<u8>, Gas)> {
+    ) -> eyre::Result<(VecReader, Gas)> {
         unreachable!()
     }
-    fn account_codehash(&mut self, _address: Address) -> eyre::Result<(B256, Gas)> {
+    fn account_codehash(&mut self, _address: Bytes20) -> eyre::Result<(Bytes32, Gas)> {
         unreachable!()
     }
     fn capture_hostio(

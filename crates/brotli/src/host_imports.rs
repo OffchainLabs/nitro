@@ -67,6 +67,27 @@ pub fn compress(
     Ok(output)
 }
 
+/// Brotli decompresses a slice into a vec, through the host.
+///
+/// The host call needs the output buffer upfront, so the buffer is grown by
+/// doubling until the payload fits. Deterministic: the same input always takes
+/// the same retry sequence and yields the same bytes. Corrupt input costs the
+/// full retry ladder before failing; size-capped callers should prefer
+/// [`decompress_fixed`].
+pub fn decompress(input: &[u8], dictionary: Dictionary) -> Result<Vec<u8>, BrotliStatus> {
+    // Brotli caps the compression ratio near 4096:1, so 12 doublings of the initial guess always
+    // suffice for valid input.
+    let mut len = input.len().max(1024) * 4;
+    for _ in 0..12 {
+        let mut output = vec![MaybeUninit::uninit(); len];
+        if let Ok(data) = decompress_fixed(input, &mut output, dictionary) {
+            return Ok(data.to_vec());
+        }
+        len *= 2;
+    }
+    Err(BrotliStatus::Failure)
+}
+
 /// Brotli decompresses a slice into a buffer of limited capacity, through the host.
 pub fn decompress_fixed<'a>(
     input: &[u8],

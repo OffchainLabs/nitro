@@ -665,12 +665,12 @@ func (s *TransactionStreamer) GetHeadMessageIndex() (arbutil.MessageIndex, error
 	return msgCount - 1, nil
 }
 
-func (s *TransactionStreamer) GetProcessedMessageCount() (arbutil.MessageIndex, error) {
+func (s *TransactionStreamer) GetProcessedMessageCount(ctx context.Context) (arbutil.MessageIndex, error) {
 	msgCount, err := s.GetMessageCount()
 	if err != nil {
 		return 0, err
 	}
-	digestedHead, err := s.execClient.HeadMessageIndex().Await(s.GetContext())
+	digestedHead, err := s.execClient.HeadMessageIndex().Await(ctx)
 	if err != nil {
 		return 0, err
 	}

@@ -431,7 +431,7 @@ func ValidateBlockChain(blockChain *core.BlockChain, chainConfig *params.ChainCo
 
 func dirExists(path string) bool {
 	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
+	if err != nil {
 		return false
 	}
 	return info.IsDir()
@@ -455,16 +455,26 @@ func checkEmptyDatabaseDir(dir string, force bool) error {
 		if force {
 			return fmt.Errorf("trying to overwrite old database directory '%s' (delete the database directory and try again)", dir)
 		}
-		firstThreeFilenames := strings.Join(unexpectedFiles[:min(len(unexpectedFiles), 3)], ", ")
-		return fmt.Errorf("found %d unexpected files in database directory, including: %s", len(unexpectedFiles), firstThreeFilenames)
+		const maxListed = 10
+		listed := strings.Join(unexpectedFiles[:min(len(unexpectedFiles), maxListed)], ", ")
+		if len(unexpectedFiles) > maxListed {
+			listed += ", ..."
+		}
+		return fmt.Errorf("found %d unexpected files in database directory %s, including: %s", len(unexpectedFiles), dir, listed)
 	}
 	return nil
 }
 
-func databaseIsEmpty(db ethdb.Database) bool {
+// A transient I/O failure must not be misread as "no entries" by a caller about to
+// initialize a fresh chain over the database.
+func databaseIsEmpty(db ethdb.Database) (bool, error) {
 	it := db.NewIterator(nil, nil)
 	defer it.Release()
-	return !it.Next()
+	hasNext := it.Next()
+	if err := it.Error(); err != nil {
+		return false, err
+	}
+	return !hasNext, nil
 }
 
 // wavmPrefixHasEntries reports whether any WAVM-prefixed key exists.
@@ -585,7 +595,11 @@ func deleteWasmEntries(db ethdb.Database, prefixes [][]byte, checkKeyLength bool
 }
 
 func validateOrUpgradeWasmerSerializeVersion(db ethdb.Database) error {
-	if !databaseIsEmpty(db) {
+	empty, err := databaseIsEmpty(db)
+	if err != nil {
+		return fmt.Errorf("failed to check whether wasm database is empty: %w", err)
+	}
+	if !empty {
 		versionInDB, err := rawdb.ReadWasmerSerializeVersion(db)
 		if err != nil {
 			if rawdb.IsDbErrNotFound(err) {
@@ -682,7 +696,11 @@ func reconcileWavmSerializeVersion(db ethdb.Database) (purged bool, err error) {
 // if db is not empty, validates if wasm database schema version matches current version
 // otherwise persists current version
 func validateOrUpgradeWasmStoreSchemaVersion(db ethdb.Database) error {
-	if !databaseIsEmpty(db) {
+	empty, err := databaseIsEmpty(db)
+	if err != nil {
+		return fmt.Errorf("failed to check whether wasm database is empty: %w", err)
+	}
+	if !empty {
 		version, err := rawdb.ReadWasmSchemaVersion(db)
 		if err != nil {
 			if rawdb.IsDbErrNotFound(err) {
@@ -1241,28 +1259,53 @@ func openExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *c
 
 func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, *core.BlockChain, *params.ChainConfig, error) {
 	if !config.Init.Force {
-		if readOnlyDb, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{AncientsDirectory: config.Persistent.Ancient, MetricsNamespace: "l2chaindata/", ReadOnly: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("l2chaindata")}); err == nil {
-			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
-				readOnlyDb.Close()
-				opened, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
-				if err != nil {
-					return nil, nil, nil, chainConfig, err
-				}
-
-				l2BlockChain, err := gethexec.GetBlockChain(opened.executionDB, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer, config.Execution.ExposeMultiGas)
-				if err != nil {
-					return nil, nil, nil, chainConfig, err
-				}
-
-				return opened.executionDB, opened.wasmDB, l2BlockChain, chainConfig, nil
+		dbPath := filepath.Join(stack.InstanceDir(), "l2chaindata")
+		// A read-only open with the freezer attached fails when any chain freezer table's
+		// files are missing, which is how a store written before a table was added upstream
+		// looks. This probe only has to answer whether a key-value store is there, so it
+		// skips the freezer; the chain config is read further down, from the read-write
+		// handle, because ReadCanonicalHash(0) needs the ancients on a chain whose genesis
+		// block number is not 0.
+		readOnlyDb, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{MetricsNamespace: "l2chaindata/", ReadOnly: true, NoFreezer: true, PebbleExtraOptions: persistentConfig.Pebble.ExtraOptions("l2chaindata")})
+		if err != nil {
+			if !dbutil.IsNotExistError(err) {
+				return nil, nil, nil, nil, fmt.Errorf("failed to open database: %w", err)
 			}
-			readOnlyDb.Close()
-		} else if !dbutil.IsNotExistError(err) {
-			// we only want to continue if the database does not exist
-			return nil, nil, nil, nil, fmt.Errorf("failed to open database: %w", err)
-		} else {
-			log.Debug("failed to open l2chaindata", "err", err)
+			log.Info("no existing l2chaindata database found, a new one will be initialized", "path", dbPath, "err", err)
+			return nil, nil, nil, nil, nil
 		}
+		// Decided before the read-write open below, which creates freezer tables, stamps wasm
+		// versions and can purge WAVM entries: a database this function goes on to decline
+		// must not be mutated on the way to declining it.
+		empty, err := databaseIsEmpty(readOnlyDb)
+		readOnlyDb.Close()
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("cannot tell whether l2chaindata at %s holds data, refusing to initialize a fresh chain over it: %w", dbPath, err)
+		}
+		if empty {
+			log.Info("existing l2chaindata is empty, a new database will be initialized", "path", dbPath)
+			return nil, nil, nil, nil, nil
+		}
+
+		// Reopening read-write creates a freezer table the store predates, and attaches the
+		// ancients that the chain config read below needs.
+		opened, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+
+		chainConfig := gethexec.TryReadStoredChainConfig(opened.executionDB)
+		if chainConfig == nil {
+			opened.executionDB.Close()
+			return nil, nil, nil, nil, fmt.Errorf("l2chaindata at %s holds data but no stored chain config, refusing to initialize a fresh chain over it (restore it from a backup or a complete snapshot, or delete the directory to discard it and start over)", dbPath)
+		}
+
+		l2BlockChain, err := gethexec.GetBlockChain(opened.executionDB, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer, config.Execution.ExposeMultiGas)
+		if err != nil {
+			opened.executionDB.Close()
+			return nil, nil, nil, chainConfig, err
+		}
+		return opened.executionDB, opened.wasmDB, l2BlockChain, chainConfig, nil
 	}
 
 	return nil, nil, nil, nil, nil
