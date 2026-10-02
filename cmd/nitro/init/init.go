@@ -1258,14 +1258,50 @@ func OpenExistingExecutionDB(stack *node.Node, config *config.NodeConfig, cacheC
 			}
 			readOnlyDb.Close()
 		} else if !dbutil.IsNotExistError(err) {
-			// we only want to continue if the database does not exist
-			return nil, nil, nil, nil, fmt.Errorf("failed to open database: %w", err)
+			// A read-only open can't repair an ancient (freezer) table left torn by
+			// a write that failed under disk or inode exhaustion: repair/truncation
+			// of dangling data is only performed when the table is opened read-write
+			// (see freezerTable.repair in go-ethereum). Retry read-write instead of
+			// treating this as a fatal, unrecoverable error.
+			log.Warn("failed to open l2chaindata read-only, retrying read-write so a torn ancient table can be repaired", "err", err)
+			return openExistingExecutionDBReadWrite(stack, config, chainId, cacheConfig, tracer, persistentConfig)
 		} else {
 			log.Debug("failed to open l2chaindata", "err", err)
 		}
 	}
 
 	return nil, nil, nil, nil, nil
+}
+
+// openExistingExecutionDBReadWrite opens l2chaindata (and the wasm store) directly
+// in read-write mode and reads the chain config from it. It is used as a fallback
+// when the cheaper read-only probe in OpenExistingExecutionDB fails for a reason
+// other than the database not existing, since only a read-write open lets the
+// ancient store repair a torn table left behind by a previous failed write.
+func openExistingExecutionDBReadWrite(stack *node.Node, config *config.NodeConfig, chainId *big.Int, cacheConfig *core.BlockChainConfig, tracer *tracing.Hooks, persistentConfig *conf.PersistentConfig) (ethdb.Database, ethdb.Database, *core.BlockChain, *params.ChainConfig, error) {
+	executionDB, wasmDB, err := openExecutionDB(stack, config, cacheConfig, persistentConfig)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to open database: %w", err)
+	}
+	chainConfig := gethexec.TryReadStoredChainConfig(executionDB)
+	if chainConfig == nil {
+		// No chain config was ever stored; treat this the same as a missing
+		// database rather than as an existing, initialized one.
+		if err := executionDB.Close(); err != nil {
+			return nil, nil, nil, nil, err
+		}
+		return nil, nil, nil, nil, nil
+	}
+	if !arbmath.BigEquals(chainConfig.ChainID, chainId) {
+		return nil, nil, nil, chainConfig, fmt.Errorf("database has chain ID %v but config has chain ID %v (are you sure this database is for the right chain?)", chainConfig.ChainID, chainId)
+	}
+
+	l2BlockChain, err := gethexec.GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer, config.Execution.ExposeMultiGas)
+	if err != nil {
+		return nil, nil, nil, chainConfig, err
+	}
+
+	return executionDB, wasmDB, l2BlockChain, chainConfig, nil
 }
 
 func GetConsensusParsedInitMsg(ctx context.Context, parentChainReaderEnabled bool, chainId *big.Int, l1Client *ethclient.Client, rollupAddrs *chaininfo.RollupAddresses, chainConfig *params.ChainConfig) (*arbostypes.ParsedInitMessage, error) {
