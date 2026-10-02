@@ -166,10 +166,9 @@ func runOneWith(t testing.TB, item scheduledTest, build buildFunc) {
 		scenarioOk bool
 	)
 	// Teardown defers, registered before buildNode so a construction panic fails
-	// only this test, not the worker binary. Executed LIFO: scenario-recover →
-	// post-hooks (ctx live) → cancel/env.wait/cleanup. The cleanup defer is
-	// registered first (runs last) so a post-hook Goexit (fatal sugar) can't skip
-	// node teardown.
+	// only this test, not the worker binary. LIFO: scenario-recover -> post-hooks
+	// (ctx live unless a failure cancelled it) -> cancel/env.wait/cleanup; cleanup
+	// runs last so a post-hook Goexit (fatal sugar) can't skip node teardown.
 	defer func() {
 		defer recoverAndReport(t, "teardown for %q", item.Spec.Name)
 		cancel()
@@ -204,6 +203,10 @@ func runOneWith(t testing.TB, item scheduledTest, build buildFunc) {
 func runPostHook(t testing.TB, env *Env, h Hook) {
 	defer recoverAndReport(t, "post-hook")
 	if err := h(env); err != nil {
+		if errors.Is(err, context.Canceled) && errors.Is(env.Ctx.Err(), context.Canceled) {
+			t.Logf("post-hook suppressed (env.Ctx cancelled by an earlier failure): %v", err)
+			return
+		}
 		t.Errorf("post-hook: %v", err)
 	}
 }

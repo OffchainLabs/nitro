@@ -111,7 +111,7 @@ func expandMatrix(base *builder, sp scheduleParams) []scheduledTest {
 			Scenario:   base.scenario,
 			PostHooks:  clone.postHooks,
 			SkipReason: clone.shouldSkip(sp),
-			overrides:  overrides{Node: clone.nodeOverrides, Exec: clone.execOverrides, Stack: clone.stackOverrides, InitData: clone.initDataOverrides, ChainConfig: clone.chainConfigOverrides},
+			overrides:  overrides{Node: clone.nodeOverrides, Exec: clone.execOverrides, Stack: clone.stackOverrides, InitData: clone.initDataOverrides, ChainConfig: clone.chainConfigOverrides, FollowerExec: clone.followerExecOverrides},
 		})
 	}
 	return out

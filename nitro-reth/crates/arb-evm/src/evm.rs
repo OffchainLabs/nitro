@@ -474,7 +474,7 @@ fn stylus_call_gas_cost(
         cost = cost.saturating_add(program.init_gas(params));
     }
     let new_open = pages_open.saturating_add(program.footprint);
-    if arb_stylus::env::page_limit_exceeded(arbos_version, params.page_limit, new_open) {
+    if arb_stylus::pages::page_limit_exceeded(arbos_version, params.page_limit, new_open) {
         cost = cost.saturating_add(u64::MAX);
     }
     cost
@@ -1553,15 +1553,15 @@ where
             return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
         }
     };
-    let mut env = arb_stylus::env::WasmEnv::new(compile, Some(stylus_config), evm_api, evm_data);
-    env.set_pages(
-        start_open,
-        start_ever,
-        params.free_pages,
-        params.page_gas,
-        params.page_limit,
-        arbos_version,
-    );
+    let mut evm_api = evm_api;
+    evm_api.set_pages(arb_stylus::pages::PageTracker {
+        open: start_open,
+        ever: start_ever,
+        free_pages: params.free_pages,
+        page_gas: params.page_gas,
+        page_limit: params.page_limit,
+    });
+    let env = arb_stylus::env::WasmEnv::new(compile, Some(stylus_config), evm_api, evm_data);
     let mut instance = match arb_stylus::NativeInstance::from_module(module, store, env) {
         Ok(inst) => inst,
         Err(e) => {
@@ -1581,13 +1581,13 @@ where
         Ok(outcome) => outcome,
         Err(e) => {
             tracing::warn!(target: "stylus", codehash = %code_hash, err = %e, "WASM execution failed");
-            let final_ever = instance.env().pages_ever.max(start_ever);
+            let final_ever = instance.env().evm_api.pages_ever().max(start_ever);
             write_pages(parent_open, final_ever);
             return InterpreterResult::new(InstructionResult::Revert, Bytes::new(), zero_gas());
         }
     };
 
-    let final_ever = instance.env().pages_ever.max(start_ever);
+    let final_ever = instance.env().evm_api.pages_ever().max(start_ever);
     write_pages(parent_open, final_ever);
 
     let ink_left = match instance.ink_left() {

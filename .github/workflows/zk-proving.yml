@@ -102,6 +102,12 @@ jobs:
             grep -q "Validation MOCKED with hash $EXPECTED" run.log
           done
 
+      - name: Prove SP1 validation of a block (MOCKED)
+        run: |
+          set -o pipefail
+          RUST_LOG=info make -C crates/sp1 run BLOCK=transfer MODE=prove 2>&1 | tee prove.log
+          grep -q "proof generated and verified successfully" prove.log
+
       # Ground-truth check: every recorded block must validate under JIT.
       # Once the SP1 runner is ported, it joins this loop and its hash is
       # compared against JIT's.

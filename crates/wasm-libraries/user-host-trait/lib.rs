@@ -9,7 +9,7 @@ use arbutil::{
     crypto,
     evm::{
         self, ARBOS_VERSION_STYLUS_CHARGING_FIXES, EvmData,
-        api::{CreateRespone, DataReader, EvmApi, Gas, Ink},
+        api::{CreateResponse, DataReader, EvmApi, Gas, Ink},
         storage::StorageCache,
         user::UserOutcomeKind,
     },
@@ -483,8 +483,8 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         let (response, ret_len, gas_cost) = api.create1(code, endowment, gas)?;
 
         let address = match response {
-            CreateRespone::Fail(reason) => return Err(eyre!(reason).into()),
-            CreateRespone::Succes(addr) => addr,
+            CreateResponse::Fail(reason) => return Err(eyre!(reason).into()),
+            CreateResponse::Success(addr) => addr,
         };
 
         self.buy_gas(gas_cost)?;
@@ -540,8 +540,8 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         let (response, ret_len, gas_cost) = api.create2(code, endowment, salt, gas)?;
 
         let address = match response {
-            CreateRespone::Fail(reason) => return Err(eyre!(reason).into()),
-            CreateRespone::Succes(addr) => addr,
+            CreateResponse::Fail(reason) => return Err(eyre!(reason).into()),
+            CreateResponse::Success(addr) => addr,
         };
 
         self.buy_gas(gas_cost)?;

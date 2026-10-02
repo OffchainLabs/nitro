@@ -22,12 +22,11 @@ jobs:
       - uses: actions/checkout@v6
       # Any cargo invocation (fmt included) loads the manifests of the whole
       # local path-dep closure, which includes the wasmer submodule.
-      - uses: ./.github/actions/init-submodules
+      - uses: ./.github/actions/nitro-reth-setup
         with:
           client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
+          toolchain: nightly
           components: rustfmt
       # Plain fmt (not --all): --all would also format the path-based deps,
       # i.e. crates/{prover,arbutil,brotli} and the vendored wasmer.
@@ -42,18 +41,11 @@ jobs:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
-      - uses: ./.github/actions/init-submodules
+      - uses: ./.github/actions/nitro-reth-setup
         with:
           client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
-      - name: Install build deps
-        run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
-      - uses: dtolnay/rust-toolchain@1.93
-        with:
           components: clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: nitro-reth
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   wasm-check:
@@ -65,17 +57,26 @@ jobs:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
-      - uses: ./.github/actions/init-submodules
+      - uses: ./.github/actions/nitro-reth-setup
         with:
           client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
-      - uses: dtolnay/rust-toolchain@1.93
-        with:
           targets: wasm32-wasip1
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: nitro-reth
       - run: cargo wasm-check
+      # The macOS-lies guard: a local `cargo check` can pass a wasm tree that still
+      # contains C (clang headers mask the missing WASI sysroot), so require the
+      # dependency tree of every listed crate to be free of -sys crates.
+      - name: No C dependencies in the wasm trees
+        run: |
+          set -euo pipefail
+          bad=0
+          for c in $(grep -oE '"-p", "[a-z0-9-]+"' .cargo/config.toml | cut -d'"' -f4); do
+            if cargo tree -p "$c" -e normal --target wasm32-wasip1 | grep -E -- '-sys v'; then
+              echo "::error::$c pulls a -sys crate into its wasm dependency tree"
+              bad=1
+            fi
+          done
+          exit $bad
 
   docs:
     name: docs
@@ -88,16 +89,10 @@ jobs:
         working-directory: nitro-reth
     steps:
       - uses: actions/checkout@v6
-      - uses: ./.github/actions/init-submodules
+      - uses: ./.github/actions/nitro-reth-setup
         with:
           client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
           app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
-      - name: Install build deps
-        run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
-      - uses: dtolnay/rust-toolchain@1.93
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: nitro-reth
       - run: cargo doc --workspace --no-deps
 
   guardrails:

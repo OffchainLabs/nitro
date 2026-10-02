@@ -12,9 +12,15 @@ import (
 	"strings"
 	"testing"
 
+	_ "github.com/offchainlabs/nitro/system_tests/v2/arbos"
 	_ "github.com/offchainlabs/nitro/system_tests/v2/blocks"
+	_ "github.com/offchainlabs/nitro/system_tests/v2/gas"
+	_ "github.com/offchainlabs/nitro/system_tests/v2/messaging"
+	_ "github.com/offchainlabs/nitro/system_tests/v2/rpc"
+	_ "github.com/offchainlabs/nitro/system_tests/v2/sequencer"
 	_ "github.com/offchainlabs/nitro/system_tests/v2/smoketest"
 	"github.com/offchainlabs/nitro/system_tests/v2/systest"
+	_ "github.com/offchainlabs/nitro/system_tests/v2/validation"
 )
 
 func TestMain(m *testing.M) {

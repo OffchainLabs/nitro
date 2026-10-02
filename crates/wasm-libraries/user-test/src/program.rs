@@ -8,7 +8,7 @@ use arbutil::{
     benchmark::Benchmark,
     evm::{
         EvmData,
-        api::{CreateRespone, EvmApi, Gas, Ink, VecReader},
+        api::{CreateResponse, EvmApi, Gas, Ink, VecReader},
         user::UserOutcomeKind,
     },
 };
@@ -182,7 +182,7 @@ impl EvmApi<VecReader> for MockEvmApi {
         _code: Vec<u8>,
         _endowment: Bytes32,
         _gas: Gas,
-    ) -> Result<(CreateRespone, u32, Gas)> {
+    ) -> Result<(CreateResponse, u32, Gas)> {
         unimplemented!()
     }
 
@@ -192,7 +192,7 @@ impl EvmApi<VecReader> for MockEvmApi {
         _endowment: Bytes32,
         _salt: Bytes32,
         _gas: Gas,
-    ) -> Result<(CreateRespone, u32, Gas)> {
+    ) -> Result<(CreateResponse, u32, Gas)> {
         unimplemented!()
     }
 
