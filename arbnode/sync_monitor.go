@@ -29,12 +29,14 @@ type SyncMonitor struct {
 	config              func() *SyncMonitorConfig
 	txStreamer          *TransactionStreamer
 	coordinator         *SeqCoordinator
+	feedInputEnabled    bool
 	initialized         bool
 	syncProgressFetcher MessageSyncProgressFetcher
 
-	syncTargetLock sync.Mutex
-	nextSyncTarget arbutil.MessageIndex
-	syncTarget     arbutil.MessageIndex
+	syncTargetLock          sync.Mutex
+	nextSyncTarget          arbutil.MessageIndex
+	syncTarget              arbutil.MessageIndex
+	seenExternalSyncTarget  bool
 }
 
 func NewSyncMonitor(config func() *SyncMonitorConfig) *SyncMonitor {
@@ -59,17 +61,62 @@ func SyncMonitorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".msg-lag", DefaultSyncMonitorConfig.MsgLag, "allowed msg lag while still considered in sync")
 }
 
-func (s *SyncMonitor) Initialize(syncProgressFetcher MessageSyncProgressFetcher, txStreamer *TransactionStreamer, coordinator *SeqCoordinator) {
+func (s *SyncMonitor) Initialize(
+	syncProgressFetcher MessageSyncProgressFetcher,
+	txStreamer *TransactionStreamer,
+	coordinator *SeqCoordinator,
+	feedInputEnabled bool,
+) {
 	s.syncProgressFetcher = syncProgressFetcher
 	s.txStreamer = txStreamer
 	s.coordinator = coordinator
+	s.feedInputEnabled = feedInputEnabled
 	s.initialized = true
+}
+
+func (s *SyncMonitor) requiresExternalSyncTarget() bool {
+	return s.coordinator != nil || s.feedInputEnabled
+}
+
+func (s *SyncMonitor) observeExternalSyncTarget() {
+	if s.seenExternalSyncTarget {
+		return
+	}
+
+	localCount, err := s.txStreamer.GetMessageCount()
+	if err != nil {
+		return
+	}
+
+	localMax := localCount
+	if s.syncProgressFetcher != nil {
+		fetched, err := s.syncProgressFetcher.GetMsgCount()
+		if err != nil {
+			return
+		}
+		if fetched > localMax {
+			localMax = fetched
+		}
+	}
+
+	if s.txStreamer.FeedPendingMessageCount() > 0 {
+		s.seenExternalSyncTarget = true
+		return
+	}
+
+	if s.coordinator != nil {
+		coordinatorMessageCount, err := s.coordinator.GetRemoteMsgCount()
+		if err == nil && coordinatorMessageCount > localMax {
+			s.seenExternalSyncTarget = true
+		}
+	}
 }
 
 func (s *SyncMonitor) updateSyncTarget(ctx context.Context) time.Duration {
 	nextSyncTarget, err := s.maxMessageCount()
 	s.syncTargetLock.Lock()
 	defer s.syncTargetLock.Unlock()
+	s.observeExternalSyncTarget()
 	if err == nil {
 		s.syncTarget = s.nextSyncTarget
 		s.nextSyncTarget = nextSyncTarget
@@ -220,6 +267,13 @@ func (s *SyncMonitor) Synced() bool {
 		return false
 	}
 	if !s.initialized {
+		return false
+	}
+	s.syncTargetLock.Lock()
+	requiresExternal := s.requiresExternalSyncTarget()
+	seenExternal := s.seenExternalSyncTarget
+	s.syncTargetLock.Unlock()
+	if requiresExternal && !seenExternal {
 		return false
 	}
 	syncTarget := s.SyncTargetMessageCount()

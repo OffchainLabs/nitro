@@ -1970,7 +1970,7 @@ func (n *Node) Start(ctx context.Context) error {
 	} else if n.InboxReader != nil {
 		syncFetcher = n.InboxReader
 	}
-	n.SyncMonitor.Initialize(syncFetcher, n.TxStreamer, n.SeqCoordinator)
+	n.SyncMonitor.Initialize(syncFetcher, n.TxStreamer, n.SeqCoordinator, n.BroadcastClients != nil)
 	n.SyncMonitor.Start(ctx)
 	if n.ConsensusExecutionSyncer != nil {
 		n.ConsensusExecutionSyncer.Start(ctx)
