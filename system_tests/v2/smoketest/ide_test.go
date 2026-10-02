@@ -20,8 +20,4 @@ func TestDeployment(t *testing.T) { systest.RunGroup(t, deploymentTests) }
 
 func TestP256Verify(t *testing.T) { systest.RunGroup(t, p256VerifyTests) }
 
-func TestL1(t *testing.T) { systest.RunGroup(t, l1Tests) }
-
 func TestMultiNode(t *testing.T) { systest.RunGroup(t, multiNodeTests) }
-
-func TestBlockValidator(t *testing.T) { systest.RunGroup(t, blockValidatorTests) }

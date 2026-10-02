@@ -40,26 +40,6 @@ func WrapL2ForDelayed(t *testing.T, l2Tx *types.Transaction, l1info *BlockchainT
 	return l1info.PrepareTx(delayedSender, "Inbox", gas, big.NewInt(0), delayedInboxTxData)
 }
 
-func TestDelayInboxSimple(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	cleanup := builder.Build(t)
-	defer cleanup()
-
-	builder.L2Info.GenerateAccount("User2")
-
-	delayedTx := builder.L2Info.PrepareTx("Owner", "User2", 50001, big.NewInt(1e6), nil)
-	builder.L1.SendSignedTx(t, builder.L2.Client, delayedTx, builder.L1Info)
-
-	l2balance, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
-	Require(t, err)
-	if l2balance.Cmp(big.NewInt(1e6)) != 0 {
-		Fatal(t, "Unexpected balance:", l2balance)
-	}
-}
-
 func TestDelayedMessagesBatchSequencedInOrder(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -533,7 +533,7 @@ func (s *Staker) getLatestStakedState(ctx context.Context, stakerAddress common.
 	}
 
 	globalState := stakedInfo.AfterState().GlobalState
-	caughtUp, count, err := staker.GlobalStateToMsgCount(s.inboxTracker, s.txStreamer, globalState)
+	caughtUp, count, err := staker.GlobalStateToMsgCount(ctx, s.inboxTracker, s.txStreamer, globalState)
 	if err != nil {
 		if errors.Is(err, staker.ErrGlobalStateNotInChain) && s.fatalErr != nil {
 			fatal := fmt.Errorf("latest assertion of %v (%v) not in chain: %w", stakerAddress, latestStaked, err)
@@ -547,7 +547,7 @@ func (s *Staker) getLatestStakedState(ctx context.Context, stakerAddress common.
 		return latestStaked, 0, nil, nil
 	}
 
-	processedCount, err := s.txStreamer.GetProcessedMessageCount()
+	processedCount, err := s.txStreamer.GetProcessedMessageCount(ctx)
 	if err != nil {
 		return 0, 0, nil, err
 	}

@@ -471,7 +471,7 @@ func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbuti
 	if err != nil {
 		return 0, nil, fmt.Errorf("error getting latest %s: %w", assertionType, err)
 	}
-	caughtUp, count, err := staker.GlobalStateToMsgCount(b.inboxTracker, b.inboxStreamer, validator.GoGlobalState(globalState))
+	caughtUp, count, err := staker.GlobalStateToMsgCount(ctx, b.inboxTracker, b.inboxStreamer, validator.GoGlobalState(globalState))
 	if err != nil {
 		if errors.Is(err, staker.ErrGlobalStateNotInChain) {
 			return 0, nil, fmt.Errorf("latest %s assertion of %v not yet in our node: %w", assertionType, globalState, err)
@@ -485,7 +485,7 @@ func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbuti
 		return 0, nil, nil
 	}
 
-	processedCount, err := b.inboxStreamer.GetProcessedMessageCount()
+	processedCount, err := b.inboxStreamer.GetProcessedMessageCount(ctx)
 	if err != nil {
 		log.Error("error getting processed message count", "err", err)
 		return 0, nil, nil

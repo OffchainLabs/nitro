@@ -36,6 +36,7 @@ tracing = { version = "0.1.44" }
 wasm-encoder = { version = "0.245.0" }
 wasmparser = { version = "0.245.0" }
 
+arbutil = { path = "../arbutil" }
 prover = { path = "../prover", default-features = false }
 replay-io = { path = "replay-io" }
 validation = { path = "../validation", default-features = false }

@@ -296,6 +296,12 @@ func WithExecConfigOverride(f func(*gethexec.Config)) TestOption {
 	return func(b *builder) { b.execOverrides = append(b.execOverrides, f) }
 }
 
+// WithFollowerExecConfigOverride mutates the execution config of the follower
+// node only. Same contract as WithExecConfigOverride.
+func WithFollowerExecConfigOverride(f func(*gethexec.Config)) TestOption {
+	return func(b *builder) { b.followerExecOverrides = append(b.followerExecOverrides, f) }
+}
+
 // WithNodeConfigOverride mutates the consensus (arbnode) config of every L2
 // node built. Same contract as WithExecConfigOverride.
 func WithNodeConfigOverride(f func(*arbnode.Config)) TestOption {

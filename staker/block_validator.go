@@ -527,7 +527,7 @@ var ErrGlobalStateNotInChain = errors.New("globalstate not in chain")
 
 // false if chain not caught up to globalstate
 // error is ErrGlobalStateNotInChain if globalstate not in chain (and chain caught up)
-func GlobalStateToMsgCount(tracker InboxTrackerInterface, streamer TransactionStreamerInterface, gs validator.GoGlobalState) (bool, arbutil.MessageIndex, error) {
+func GlobalStateToMsgCount(ctx context.Context, tracker InboxTrackerInterface, streamer TransactionStreamerInterface, gs validator.GoGlobalState) (bool, arbutil.MessageIndex, error) {
 	batchCount, err := tracker.GetBatchCount()
 	if err != nil {
 		return false, 0, err
@@ -557,7 +557,7 @@ func GlobalStateToMsgCount(tracker InboxTrackerInterface, streamer TransactionSt
 			return false, 0, fmt.Errorf("%w: batch %d posInBatch %d, maxPosInBatch %d", ErrGlobalStateNotInChain, gs.Batch, gs.PosInBatch, curBatchMsgCount-prevBatchMsgCount)
 		}
 	}
-	processed, err := streamer.GetProcessedMessageCount()
+	processed, err := streamer.GetProcessedMessageCount(ctx)
 	if err != nil {
 		return false, 0, err
 	}
@@ -642,7 +642,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		log.Trace("create validation entry: nothing to do", "pos", pos, "validated", v.validated())
 		return false, nil
 	}
-	streamerMsgCount, err := v.streamer.GetProcessedMessageCount()
+	streamerMsgCount, err := v.streamer.GetProcessedMessageCount(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -736,8 +736,8 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 
 func (v *BlockValidator) iterativeValidationEntryCreator(ctx context.Context, ignored struct{}) time.Duration {
 	moreWork, err := v.createNextValidationEntry(ctx)
-	if err != nil {
-		processed, processedErr := v.streamer.GetProcessedMessageCount()
+	if err != nil && ctx.Err() == nil {
+		processed, processedErr := v.streamer.GetProcessedMessageCount(ctx)
 		log.Error("error trying to create validation node", "err", err, "created", v.created()+1, "processed", processed, "processedErr", processedErr)
 	}
 	if moreWork {
@@ -1436,7 +1436,7 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 	return nil
 }
 
-func (v *BlockValidator) checkLegacyValid() error {
+func (v *BlockValidator) checkLegacyValid(ctx context.Context) error {
 	v.reorgMutex.Lock()
 	defer v.reorgMutex.Unlock()
 	if v.legacyValidInfo == nil {
@@ -1462,7 +1462,7 @@ func (v *BlockValidator) checkLegacyValid() error {
 		}
 	}
 	msgCount += arbutil.MessageIndex(v.legacyValidInfo.AfterPosition.PosInBatch)
-	processedCount, err := v.streamer.GetProcessedMessageCount()
+	processedCount, err := v.streamer.GetProcessedMessageCount(ctx)
 	if err != nil {
 		return err
 	}
@@ -1506,7 +1506,7 @@ func (v *BlockValidator) checkLegacyValid() error {
 }
 
 // checks that the chain caught up to lastValidGS, used in startup
-func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
+func (v *BlockValidator) checkValidatedGSCaughtUp(ctx context.Context) (bool, error) {
 	v.reorgMutex.Lock()
 	defer v.reorgMutex.Unlock()
 	if v.chainCaughtUp {
@@ -1518,7 +1518,7 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 	if v.lastValidGS.Batch == 0 {
 		return false, errors.New("lastValid not initialized. cannot validate genesis")
 	}
-	caughtUp, count, err := GlobalStateToMsgCount(v.inboxTracker, v.streamer, v.lastValidGS)
+	caughtUp, count, err := GlobalStateToMsgCount(ctx, v.inboxTracker, v.streamer, v.lastValidGS)
 	if err != nil {
 		return false, err
 	}
@@ -1538,8 +1538,11 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 				batchMsgCount = 0
 			}
 		}
-		processedMsgCount, err := v.streamer.GetProcessedMessageCount()
+		processedMsgCount, err := v.streamer.GetProcessedMessageCount(ctx)
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return false, ctxErr
+			}
 			log.Error("failed reading processedMsgCount", "err", err)
 			processedMsgCount = 0
 		}
@@ -1565,12 +1568,12 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 
 func (v *BlockValidator) LaunchWorkthreadsWhenCaughtUp(ctx context.Context) {
 	for {
-		err := v.checkLegacyValid()
-		if err != nil {
+		err := v.checkLegacyValid(ctx)
+		if err != nil && ctx.Err() == nil {
 			log.Error("validator got error updating legacy validated info. Consider restarting with dangerous.reset-block-validation", "err", err)
 		}
-		caughtUp, err := v.checkValidatedGSCaughtUp()
-		if err != nil {
+		caughtUp, err := v.checkValidatedGSCaughtUp(ctx)
+		if err != nil && ctx.Err() == nil {
 			log.Error("validator got error waiting for chain to catch up. Consider restarting with dangerous.reset-block-validation", "err", err)
 		}
 		if caughtUp {
