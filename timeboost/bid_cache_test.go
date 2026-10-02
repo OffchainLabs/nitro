@@ -423,6 +423,39 @@ func TestBidCacheTiebreakerDeterminism(t *testing.T) {
 	}
 }
 
+// A tie for first place must not let a strictly lower bid take second place.
+// The winner pays the second place amount, so demoting the tied bid in favour
+// of a smaller one undercharges the winner and shorts the auction beneficiary.
+func TestTopTwoBidsTieForFirstWithLowerThirdBid(t *testing.T) {
+	t.Parallel()
+	domainSep := [32]byte{}
+
+	tiedA := &ValidatedBid{Bidder: common.HexToAddress("0xA"), Amount: big.NewInt(100), ExpressLaneController: common.HexToAddress("0xA"), ChainId: big.NewInt(1), Round: 1}
+	tiedB := &ValidatedBid{Bidder: common.HexToAddress("0xB"), Amount: big.NewInt(100), ExpressLaneController: common.HexToAddress("0xB"), ChainId: big.NewInt(1), Round: 1}
+	lower := &ValidatedBid{Bidder: common.HexToAddress("0xC"), Amount: big.NewInt(50), ExpressLaneController: common.HexToAddress("0xC"), ChainId: big.NewInt(1), Round: 1}
+
+	// Whichever of the tied bids loses the hash tiebreak is still the second
+	// highest bid, ahead of the strictly lower one.
+	wantFirst, wantSecond := tiedA, tiedB
+	if tiedB.BigIntHash(domainSep).Cmp(tiedA.BigIntHash(domainSep)) > 0 {
+		wantFirst, wantSecond = tiedB, tiedA
+	}
+
+	// Repeated because the bids are held in a map, so the iteration order
+	// differs between runs.
+	for i := 0; i < 200; i++ {
+		bc := newBidCache(domainSep)
+		bc.add(tiedA)
+		bc.add(tiedB)
+		bc.add(lower)
+
+		result := bc.topTwoBids()
+		require.Equal(t, wantFirst.Bidder, result.firstPlace.Bidder, "iteration %d", i)
+		require.Equal(t, wantSecond.Bidder, result.secondPlace.Bidder, "iteration %d", i)
+		require.Equal(t, 0, result.secondPlace.Amount.Cmp(big.NewInt(100)), "iteration %d", i)
+	}
+}
+
 func BenchmarkBidValidation(b *testing.B) {
 	b.StopTimer()
 	ctx, cancel := context.WithCancel(context.Background())

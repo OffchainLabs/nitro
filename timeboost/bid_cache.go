@@ -67,39 +67,30 @@ func (bc *bidCache) topTwoBidsAndClear() *auctionResult {
 	return result
 }
 
-// computeTopTwo returns the highest and second-highest bids. When amounts are
-// equal, ties are broken by comparing BigIntHash (a deterministic hash of the
-// bid) — the higher hash wins, ensuring fair tiebreaking independent of map
-// iteration order.
+// beats reports whether bid a should be ordered ahead of bid b: the higher
+// amount wins, and equal amounts are broken by the higher BigIntHash. This is
+// the same total order the auction contract enforces in resolveMultiBidAuction,
+// which reverts with TieBidsWrongOrder when two equal bids are submitted with
+// the lower hash first.
+func (bc *bidCache) beats(a, b *ValidatedBid) bool {
+	if c := a.Amount.Cmp(b.Amount); c != 0 {
+		return c > 0
+	}
+	return a.BigIntHash(bc.auctionContractDomainSeparator).Cmp(b.BigIntHash(bc.auctionContractDomainSeparator)) > 0
+}
+
+// computeTopTwo returns the highest and second-highest bids under that order,
+// independently of the map iteration order.
 func (bc *bidCache) computeTopTwo() *auctionResult {
 	result := &auctionResult{}
-
-	// hashBeats returns true if a's BigIntHash is greater than b's.
-	hashBeats := func(a, b *ValidatedBid) bool {
-		return a.BigIntHash(bc.auctionContractDomainSeparator).Cmp(b.BigIntHash(bc.auctionContractDomainSeparator)) > 0
-	}
-
 	for _, bid := range bc.bidsByBidder {
-		if result.firstPlace == nil {
-			result.firstPlace = bid
-		} else if bid.Amount.Cmp(result.firstPlace.Amount) > 0 {
+		switch {
+		case result.firstPlace == nil || bc.beats(bid, result.firstPlace):
 			result.secondPlace = result.firstPlace
 			result.firstPlace = bid
-		} else if bid.Amount.Cmp(result.firstPlace.Amount) == 0 {
-			if hashBeats(bid, result.firstPlace) {
-				result.secondPlace = result.firstPlace
-				result.firstPlace = bid
-			} else if result.secondPlace == nil || hashBeats(bid, result.secondPlace) {
-				result.secondPlace = bid
-			}
-		} else if result.secondPlace == nil || bid.Amount.Cmp(result.secondPlace.Amount) > 0 {
+		case result.secondPlace == nil || bc.beats(bid, result.secondPlace):
 			result.secondPlace = bid
-		} else if bid.Amount.Cmp(result.secondPlace.Amount) == 0 {
-			if hashBeats(bid, result.secondPlace) {
-				result.secondPlace = bid
-			}
 		}
 	}
-
 	return result
 }
