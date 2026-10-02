@@ -14,3 +14,5 @@ func TestMain(m *testing.M) {
 }
 
 func TestPending(t *testing.T) { systest.RunGroup(t, pendingBlockTests) }
+
+func TestHistoricalBlockHash(t *testing.T) { systest.RunGroup(t, historicalBlockHashTests) }

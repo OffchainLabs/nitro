@@ -9,6 +9,18 @@ env:
 phases:
   pre_build:
     commands:
+      # CODEBUILD_CLONE_REF checks out the source action's BranchName, not the
+      # revision the execution resolved, so pin the tree before anything reads git.
+      - |
+        set -euo pipefail
+        REF=${SOURCE_REF:-auto}
+        if [ "$REF" = auto ]; then REF=$CODEBUILD_RESOLVED_SOURCE_VERSION; fi
+        if ! git rev-parse --verify --quiet "${REF}^{commit}" >/dev/null; then
+          echo "ERROR: $REF is not in the clone. CodeBuild does not leave usable credentials on origin, so it cannot be fetched." >&2
+          echo "local refs:" >&2; git for-each-ref --format='  %(refname)' >&2
+          exit 1
+        fi
+        git checkout --force --detach "$REF"
       - |
         set -euo pipefail
         if [ -n "${GITHUB_APP_KEY:-}" ]; then
@@ -47,7 +59,7 @@ phases:
       - NITRO_MODIFIED="false"
       - echo ${IMAGE_TAG} > ./.nitro-tag.txt
       - >-
-        BUILD_ARGS="--build-arg tag=$NITRO_TAG
+        export BUILD_ARGS="--build-arg tag=$NITRO_TAG
         --build-arg branch=$NITRO_BRANCH
         --build-arg commit=$NITRO_COMMIT
         --build-arg datetime=$NITRO_DATETIME
@@ -58,10 +70,6 @@ phases:
       - echo Building the Docker image ${IMAGE_TAG}...
       - |
         set -euo pipefail
-        # CodeBuild does not propagate env between phases (only IMAGE_TAG is
-        # in exported-variables), and installation tokens expire in ~10 min.
-        # Re-mint here so the docker builds can forward a fresh token to
-        # BuildKit as the gh_token secret consumed by scripts/download-machine.sh.
         build_secret_arg=""
         if [ -n "${GITHUB_APP_KEY:-}" ]; then
           trap 'rm -f /tmp/github-app-key.pem; unset GITHUB_TOKEN' EXIT
@@ -85,13 +93,26 @@ phases:
           rm -f /tmp/github-app-key.pem
           build_secret_arg="--secret id=gh_token,env=GITHUB_TOKEN"
         fi
-        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-slim --target nitro-node-slim ${BUILD_ARGS:-} $build_secret_arg
-        DOCKER_BUILDKIT=1 docker build . --tag nitro-node --target nitro-node ${BUILD_ARGS:-} $build_secret_arg
-        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-dev --target nitro-node-dev ${BUILD_ARGS:-} $build_secret_arg
-        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-validator --target nitro-node-validator ${BUILD_ARGS:-} $build_secret_arg
-        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-rust-validator --target nitro-node-rust-validator ${BUILD_ARGS:-} $build_secret_arg
-        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-slim-stripped --target nitro-node-slim-stripped ${BUILD_ARGS:-} $build_secret_arg
-        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-stripped --target nitro-node-stripped ${BUILD_ARGS:-} $build_secret_arg
+        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-slim --target nitro-node-slim $BUILD_ARGS $build_secret_arg
+
+        # Docker only warns when a build arg is not declared, so a rename
+        # silently ships an unstamped binary. An empty value would match
+        # anything, so reject it rather than pass vacuously.
+        stamped=$(docker run --rm --entrypoint /usr/local/bin/nitro nitro-node-slim --version)
+        for want in "${NITRO_TAG:-$NITRO_BRANCH}" "$NITRO_COMMIT"; do
+          [ -n "$want" ] || { echo "ERROR: provenance value is empty" >&2; exit 1; }
+          case $stamped in
+            *"$want"*) ;;
+            *) echo "ERROR: nitro-node-slim stamped '$stamped', expected '$want'" >&2; exit 1 ;;
+          esac
+        done
+        DOCKER_BUILDKIT=1 docker build . --tag nitro-node --target nitro-node $BUILD_ARGS $build_secret_arg
+        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-dev --target nitro-node-dev $BUILD_ARGS $build_secret_arg
+        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-validator --target nitro-node-validator $BUILD_ARGS $build_secret_arg
+        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-rust-validator --target nitro-node-rust-validator $BUILD_ARGS $build_secret_arg
+        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-slim-stripped --target nitro-node-slim-stripped $BUILD_ARGS $build_secret_arg
+        DOCKER_BUILDKIT=1 docker build . --tag nitro-node-stripped --target nitro-node-stripped $BUILD_ARGS $build_secret_arg
+
       - docker tag nitro-node:latest $REPOSITORY_URI:$IMAGE_TAG-$ARCH_TAG
       - docker tag nitro-node-slim:latest $REPOSITORY_URI:$IMAGE_TAG-slim-$ARCH_TAG
       - docker tag nitro-node-dev:latest $REPOSITORY_URI:$IMAGE_TAG-dev-$ARCH_TAG

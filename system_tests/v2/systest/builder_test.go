@@ -168,6 +168,7 @@ func TestOverridesRegisterOnBuilder(t *testing.T) {
 	WithNodeConfigOverride(func(*arbnode.Config) {})(b)
 	WithStackConfigOverride(func(*node.Config) {})(b)
 	WithChainConfigOverride(func(*params.ChainConfig) {})(b)
+	WithFollowerExecConfigOverride(func(*gethexec.Config) {})(b)
 	if got := len(b.execOverrides); got != 1 {
 		t.Errorf("execOverrides: got %d, want 1", got)
 	}
@@ -179,6 +180,9 @@ func TestOverridesRegisterOnBuilder(t *testing.T) {
 	}
 	if got := len(b.chainConfigOverrides); got != 1 {
 		t.Errorf("chainConfigOverrides: got %d, want 1", got)
+	}
+	if got := len(b.followerExecOverrides); got != 1 {
+		t.Errorf("followerExecOverrides: got %d, want 1", got)
 	}
 }
 

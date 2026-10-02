@@ -15,7 +15,7 @@ import (
 )
 
 var p256VerifyTests = []systest.Scenario{
-	systest.Test(testRunP256Verify, systest.MatrixArbOS(params.ArbosVersion_20, params.ArbosVersion_30)),
+	systest.Test(testRunP256Verify, systest.SkipOnRace(), systest.MatrixArbOS(params.ArbosVersion_20, params.ArbosVersion_30)),
 }
 
 func testRunP256Verify(env *systest.Env) {

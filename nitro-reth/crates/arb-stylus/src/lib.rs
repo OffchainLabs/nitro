@@ -3,30 +3,50 @@
 //! Provides the execution pipeline for Stylus programs: WASM compilation
 //! and caching, ink metering, host I/O functions, and EVM interop.
 
-pub mod cache;
 pub mod config;
-pub mod env;
 pub mod error;
-pub mod evm_api;
 pub mod evm_api_impl;
-#[allow(unused_mut)]
-pub mod host;
 pub mod meter;
-pub mod middleware;
 pub mod multi_gas;
-pub mod native;
-pub use nitro_arbutil::pricing;
-pub mod run;
+pub mod pages;
 pub mod trace;
 
+pub use nitro_arbutil::pricing;
+
+// The wasmer-backed execution engine only exists natively. On wasm targets the
+// crate exposes the target-independent surface above plus stubs for the
+// activation entrypoint; real execution is delegated to the runner via the
+// `programs` host module.
+#[cfg(not(target_family = "wasm"))]
+pub mod cache;
+#[cfg(not(target_family = "wasm"))]
+pub mod env;
+#[cfg(not(target_family = "wasm"))]
+#[allow(unused_mut)]
+pub mod host;
+#[cfg(not(target_family = "wasm"))]
+pub mod middleware;
+#[cfg(not(target_family = "wasm"))]
+pub mod native;
+#[cfg(not(target_family = "wasm"))]
+pub mod run;
+
+#[cfg(not(target_family = "wasm"))]
 pub use cache::InitCache;
 pub use config::{CompileConfig, StylusConfig};
 pub use error::{MaybeEscape, StylusError};
-pub use evm_api::EvmApi;
 pub use evm_api_impl::StylusEvmApi;
+
+/// `arbutil`'s [`EvmApi`](nitro_arbutil::evm::api::EvmApi) instantiated with
+/// in-process, vec-backed return data — the only reader nitro-reth needs.
+/// Exists so bounds can say `E: EvmApi` without repeating the reader type.
+pub trait EvmApi: nitro_arbutil::evm::api::EvmApi<nitro_arbutil::evm::api::VecReader> {}
+impl<T: nitro_arbutil::evm::api::EvmApi<nitro_arbutil::evm::api::VecReader>> EvmApi for T {}
 pub use meter::{MachineMeter, MeteredMachine, STYLUS_ENTRY_POINT};
+#[cfg(not(target_family = "wasm"))]
 pub use native::{NativeInstance, compile_module};
 pub use nitro_arbutil::evm::api::{Gas, Ink};
+#[cfg(not(target_family = "wasm"))]
 pub use run::RunProgram;
 
 /// Prefix bytes that identify a Stylus WASM program in contract bytecode.
@@ -266,8 +286,10 @@ pub fn fragment_read_gas(warm: bool, code_size: u64) -> u64 {
 /// `gas` is decremented by the activation cost.
 /// Cap on wavm ops when building a module during activation. Mirrors Go's non-configurable
 /// `DefaultStylusTargetConfig.MaxWavmOps` (`arbos/programs/node_config.go`).
+#[cfg(not(target_family = "wasm"))]
 const MAX_WAVM_OPS: usize = 1 << 23;
 
+#[cfg(not(target_family = "wasm"))]
 pub fn activate_program(
     wasm: &[u8],
     codehash: &[u8; 32],
@@ -297,6 +319,23 @@ pub fn activate_program(
         asm_estimate: stylus_data.asm_estimate,
         footprint: stylus_data.footprint,
     })
+}
+
+/// Activate a Stylus program (wasm stub).
+///
+/// Under wasm, activation is the runner's job: it will be reached through the
+/// `programs` host module (`activate_v2`), which is not wired up yet.
+#[cfg(target_family = "wasm")]
+pub fn activate_program(
+    _wasm: &[u8],
+    _codehash: &[u8; 32],
+    _stylus_version: u16,
+    _arbos_version: u64,
+    _page_limit: u16,
+    _debug: bool,
+    _gas: &mut u64,
+) -> Result<arbos::programs::types::ActivationResult, StylusError> {
+    unimplemented!("stylus activation on wasm requires the `programs` host module")
 }
 
 #[cfg(test)]

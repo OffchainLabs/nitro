@@ -30,13 +30,16 @@ import (
 
 // newEnv seeds the runtime Env for a node build.
 func newEnv(t testing.TB, ctx context.Context, spec Spec) *Env {
-	return &Env{t: t, Ctx: ctx, Spec: spec}
+	ctx, cancel := context.WithCancel(ctx)
+	return &Env{t: t, Ctx: ctx, cancel: cancel, Spec: spec}
 }
 
 // Env is the runtime handle passed to a Scenario.
 type Env struct {
 	t   testing.TB
 	Ctx context.Context
+	// cancel aborts Ctx on the first recorded failure so sibling goroutines and WaitFor stop.
+	cancel context.CancelFunc
 	// L2 is the sequencer handle. Always populated.
 	L2 *L2Handle
 	// L2Followers are the non-sequencer follower handles. Empty unless
@@ -162,7 +165,7 @@ func (e *Env) waitFollowersSynced() error {
 		var lastErr, sendErr error
 		var lastGot uint64
 		werr := waitFor(e.Ctx, "follower to execute sequencer message count", func() bool {
-			got, err := f.Consensus.TxStreamer.GetProcessedMessageCount()
+			got, err := f.Consensus.TxStreamer.GetProcessedMessageCount(e.Ctx)
 			lastErr = err
 			lastGot = uint64(got)
 			if err != nil {
@@ -287,7 +290,7 @@ func (e *Env) l2MessageBatchData(txes types.Transactions) []byte {
 	return l2Message
 }
 
-// Go spawns fn in a goroutine. Errors and panics surface via t.Errorf;
+// Go spawns fn in a goroutine. Errors and panics surface via t.Errorf and cancel env.Ctx;
 // context.Canceled / DeadlineExceeded are ignored once env.Ctx is done. Joined
 // by the runner via wait() after env.Ctx is cancelled, so fn must observe ctx to exit.
 func (e *Env) Go(fn func() error) {
@@ -297,6 +300,9 @@ func (e *Env) Go(fn func() error) {
 		defer func() {
 			if r := recover(); r != nil {
 				e.guarded(func() { e.t.Errorf("env.Go panic: %v\n%s", r, debug.Stack()) })
+				if e.cancel != nil {
+					e.cancel()
+				}
 			}
 		}()
 		err := fn()
@@ -309,6 +315,9 @@ func (e *Env) Go(fn func() error) {
 			return
 		}
 		e.guarded(func() { e.t.Errorf("env.Go: %v", err) })
+		if e.cancel != nil {
+			e.cancel()
+		}
 	})
 }
 
@@ -353,7 +362,14 @@ func (e *Env) guarded(fn func()) {
 		}
 		runtime.Goexit()
 	}
+	completed := false
+	defer func() {
+		if !completed && e.cancel != nil {
+			e.cancel()
+		}
+	}()
 	fn()
+	completed = true
 }
 
 // suppressedAtShutdown reports whether err is a ctx error to swallow because

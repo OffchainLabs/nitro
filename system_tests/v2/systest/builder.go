@@ -51,11 +51,12 @@ type builder struct {
 	postHooks []Hook
 	dims      map[axis][]axisVariant
 
-	nodeOverrides        []func(*arbnode.Config)
-	execOverrides        []func(*gethexec.Config)
-	stackOverrides       []func(*node.Config)
-	initDataOverrides    []func(*statetransfer.ArbosInitializationInfo)
-	chainConfigOverrides []func(*params.ChainConfig)
+	nodeOverrides         []func(*arbnode.Config)
+	execOverrides         []func(*gethexec.Config)
+	stackOverrides        []func(*node.Config)
+	initDataOverrides     []func(*statetransfer.ArbosInitializationInfo)
+	chainConfigOverrides  []func(*params.ChainConfig)
+	followerExecOverrides []func(*gethexec.Config)
 }
 
 func newBuilder() *builder {
@@ -86,6 +87,9 @@ func (b *builder) clone() *builder {
 	if len(b.chainConfigOverrides) > 0 {
 		out.chainConfigOverrides = append([]func(*params.ChainConfig){}, b.chainConfigOverrides...)
 	}
+	if len(b.followerExecOverrides) > 0 {
+		out.followerExecOverrides = append([]func(*gethexec.Config){}, b.followerExecOverrides...)
+	}
 	out.dims = map[axis][]axisVariant{}
 	return &out
 }
@@ -101,6 +105,9 @@ func (b *builder) validate() {
 	}
 	if b.validates() && b.stateScheme.IsSome() && b.stateScheme.Unwrap() != validationScheme {
 		panic(fmt.Sprintf("systest: validation requires %s state scheme; conflicts with WithStateScheme(%s)", validationScheme, b.stateScheme.Unwrap()))
+	}
+	if len(b.followerExecOverrides) > 0 && b.topology != TopologyMultiNode && b.topology != TopologyStakingValidation {
+		panic("systest: WithFollowerExecConfigOverride requires a topology with a follower node")
 	}
 }
 

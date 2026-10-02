@@ -224,6 +224,15 @@ type OurStakerInfo struct {
 	*StakerInfo
 }
 
+func (v *L1Validator) currentGlobalStatePosition(ctx context.Context) (staker.GlobalStatePosition, bool) {
+	head, err := v.txStreamer.GetProcessedMessageCount(ctx)
+	if err != nil {
+		return staker.GlobalStatePosition{}, false
+	}
+	_, current, err := staker.GlobalStatePositionsAtMessageCount(v.inboxTracker, head)
+	return current, err == nil
+}
+
 func (v *L1Validator) generateNodeAction(
 	ctx context.Context,
 	stakerInfo *OurStakerInfo,
@@ -265,7 +274,7 @@ func (v *L1Validator) generateNodeAction(
 		return nil, false, nil
 	}
 
-	caughtUp, startCount, err := staker.GlobalStateToMsgCount(v.inboxTracker, v.txStreamer, startState.GlobalState)
+	caughtUp, startCount, err := staker.GlobalStateToMsgCount(ctx, v.inboxTracker, v.txStreamer, startState.GlobalState)
 	if err != nil {
 		return nil, false, fmt.Errorf("start state not in chain: %w", err)
 	}
@@ -274,15 +283,10 @@ func (v *L1Validator) generateNodeAction(
 			BatchNumber: startState.GlobalState.Batch,
 			PosInBatch:  startState.GlobalState.PosInBatch,
 		}
-		var current staker.GlobalStatePosition
-		head, err := v.txStreamer.GetProcessedMessageCount()
-		if err != nil {
-			_, current, err = v.blockValidator.GlobalStatePositionsAtCount(head)
-		}
-		if err != nil {
-			log.Info("catching up to chain messages", "target", target)
-		} else {
+		if current, ok := v.currentGlobalStatePosition(ctx); ok {
 			log.Info("catching up to chain blocks", "target", target, "current", current)
+		} else {
+			log.Info("catching up to chain messages", "target", target)
 		}
 		return nil, false, nil
 	}
@@ -296,7 +300,7 @@ func (v *L1Validator) generateNodeAction(
 		}
 		validatedGlobalState = valInfo.GlobalState
 		caughtUp, validatedCount, err = staker.GlobalStateToMsgCount(
-			v.inboxTracker, v.txStreamer, valInfo.GlobalState,
+			ctx, v.inboxTracker, v.txStreamer, valInfo.GlobalState,
 		)
 		if err != nil {
 			return nil, false, fmt.Errorf("%w: not found validated block in blockchain", err)
@@ -328,7 +332,7 @@ func (v *L1Validator) generateNodeAction(
 			log.Warn("wasmroot doesn't match rollup", "rollup", v.lastWasmModuleRoot, "blockValidator", valInfo.WasmRoots)
 		}
 	} else {
-		validatedCount, err = v.txStreamer.GetProcessedMessageCount()
+		validatedCount, err = v.txStreamer.GetProcessedMessageCount(ctx)
 		if err != nil || validatedCount == 0 {
 			return nil, false, err
 		}
@@ -428,7 +432,7 @@ func (v *L1Validator) generateNodeAction(
 			log.Error("Found incorrect assertion: Machine status not finished", "node", nd.NodeNum, "machineStatus", nd.Assertion.AfterState.MachineStatus)
 			continue
 		}
-		caughtUp, nodeMsgCount, err := staker.GlobalStateToMsgCount(v.inboxTracker, v.txStreamer, afterGS)
+		caughtUp, nodeMsgCount, err := staker.GlobalStateToMsgCount(ctx, v.inboxTracker, v.txStreamer, afterGS)
 		if errors.Is(err, staker.ErrGlobalStateNotInChain) {
 			wrongNodesExist = true
 			log.Error("Found incorrect assertion", "node", nd.NodeNum, "afterGS", afterGS, "err", err)
