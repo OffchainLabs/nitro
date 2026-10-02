@@ -54,6 +54,14 @@ func TestParseStream(t *testing.T) {
 				Await:           6.75,
 			}},
 		},
+		{
+			name: "numeric device name is dropped",
+			input: `
+				Device r/s w/s await
+				99.99 1.25 2.50 3.75
+			`,
+			want: nil,
+		},
 	}
 
 	for _, tt := range tests {
