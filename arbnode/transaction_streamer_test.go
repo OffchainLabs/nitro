@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,6 +25,91 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
+
+type blockingHeadExecutionClient struct {
+	execution.ExecutionClient
+	headRequestStarted chan struct{}
+	headRequestStopped chan struct{}
+	headRequestRelease chan struct{}
+	startedOnce        sync.Once
+	stoppedOnce        sync.Once
+	releaseOnce        sync.Once
+}
+
+func (c *blockingHeadExecutionClient) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (arbutil.MessageIndex, error) {
+		c.startedOnce.Do(func() { close(c.headRequestStarted) })
+		defer c.stoppedOnce.Do(func() { close(c.headRequestStopped) })
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case <-c.headRequestRelease:
+			return 0, errors.New("blocking head request released by test")
+		}
+	})
+}
+
+func (c *blockingHeadExecutionClient) releaseHeadRequest() {
+	c.releaseOnce.Do(func() { close(c.headRequestRelease) })
+}
+
+const processedMessageCountTestTimeout = 5 * time.Second
+
+func waitForProcessedMessageCountSignal(t *testing.T, signal <-chan struct{}, description string) {
+	t.Helper()
+	select {
+	case <-signal:
+	case <-time.After(processedMessageCountTestTimeout):
+		t.Fatalf("timed out waiting for %s", description)
+	}
+}
+
+func TestGetProcessedMessageCountReturnsWhenCallerStops(t *testing.T) {
+	execClient := &blockingHeadExecutionClient{
+		headRequestStarted: make(chan struct{}),
+		headRequestStopped: make(chan struct{}),
+		headRequestRelease: make(chan struct{}),
+	}
+	streamer := &TransactionStreamer{
+		db:         rawdb.NewMemoryDatabase(),
+		execClient: execClient,
+	}
+	Require(t, streamer.db.Put(schema.MessageCountKey, []byte{1}))
+	streamer.StopWaiter.Start(t.Context(), streamer)
+	t.Cleanup(func() {
+		execClient.releaseHeadRequest()
+		streamer.StopAndWait()
+	})
+
+	callerCtx, stopCaller := context.WithCancel(t.Context())
+	defer stopCaller()
+	result := make(chan error, 1)
+	go func() {
+		_, err := streamer.GetProcessedMessageCount(callerCtx)
+		result <- err
+	}()
+	waitForProcessedMessageCountSignal(t, execClient.headRequestStarted, "execution head request to start")
+	stopCaller()
+
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected caller cancellation, got %v", err)
+		}
+	case <-time.After(processedMessageCountTestTimeout):
+		execClient.releaseHeadRequest()
+		select {
+		case <-result:
+		case <-time.After(processedMessageCountTestTimeout):
+		}
+		t.Fatal("GetProcessedMessageCount remained blocked after its caller stopped")
+	}
+
+	waitForProcessedMessageCountSignal(t, execClient.headRequestStopped, "execution head request to stop")
+	if streamer.Stopped() {
+		t.Fatal("transaction streamer stopped while canceling only the caller")
+	}
+}
 
 // stubBatchDataProvider returns getErr from the GetSequencerMessageBytes* methods
 // (the only ones exercised by these tests). All other methods return zero values

@@ -28,6 +28,7 @@ import (
 	nitroinit "github.com/offchainlabs/nitro/cmd/nitro/init"
 	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	_ "github.com/offchainlabs/nitro/execution/nodeinterface"
 	"github.com/offchainlabs/nitro/execution_consensus"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/statetransfer"
@@ -44,11 +45,12 @@ import (
 // the L2 node is built. Populated by WithExecConfigOverride etc. and carried
 // schedule→buildNode. Each slice runs in registration order.
 type overrides struct {
-	Node        []func(*arbnode.Config)
-	Exec        []func(*gethexec.Config)
-	Stack       []func(*node.Config)
-	InitData    []func(*statetransfer.ArbosInitializationInfo)
-	ChainConfig []func(*params.ChainConfig)
+	Node         []func(*arbnode.Config)
+	Exec         []func(*gethexec.Config)
+	Stack        []func(*node.Config)
+	InitData     []func(*statetransfer.ArbosInitializationInfo)
+	ChainConfig  []func(*params.ChainConfig)
+	FollowerExec []func(*gethexec.Config)
 }
 
 // buildNode constructs the node layout selected by spec.Topology and returns the

@@ -35,6 +35,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/programs"
@@ -45,6 +46,7 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
@@ -432,7 +434,12 @@ func TestEmptyDatabaseDir(t *testing.T) {
 		{
 			name:    "fail with unexpected files",
 			files:   []string{"LOCK", "a", "b", "c", "d"},
-			wantErr: "found 4 unexpected files in database directory, including: a, b, c",
+			wantErr: "found 4 unexpected files in database directory",
+		},
+		{
+			name:    "truncate a long list of unexpected files",
+			files:   []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"},
+			wantErr: "including: a, b, c, d, e, f, g, h, i, j, ...",
 		},
 		{
 			name:    "fail with unexpected files when forcing",
@@ -1593,6 +1600,332 @@ func TestCheckDBDirReturnsErrorOnl2chaindataWrongDir(t *testing.T) {
 	err = checkDBDir(stack, &nodeConfig)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "have you placed the database in the wrong directory?")
+}
+
+// os.Stat failing for any reason other than the path not existing used to leave info nil
+// and panic on info.IsDir().
+func TestDirExists(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "dir")
+	Require(t, os.MkdirAll(dir, 0700))
+	regularFile := filepath.Join(parent, "file")
+	Require(t, os.WriteFile(regularFile, []byte{1}, 0600))
+
+	require.True(t, dirExists(dir))
+	require.False(t, dirExists(filepath.Join(parent, "missing")))
+	require.False(t, dirExists(regularFile))
+	require.False(t, dirExists(filepath.Join(regularFile, "under-a-file")))
+}
+
+func TestCheckDBDirNamesUnexpectedFiles(t *testing.T) {
+	t.Parallel()
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+	defer stack.Close()
+
+	for _, dir := range []string{"l2chaindata", "arbitrumdata", "nodes"} {
+		Require(t, os.MkdirAll(filepath.Join(stack.InstanceDir(), dir), 0700))
+	}
+
+	nodeConfig := config.NodeConfigDefault
+
+	err = checkDBDir(stack, &nodeConfig)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "found 2 unexpected files in database directory")
+	require.ErrorContains(t, err, stack.InstanceDir())
+	require.ErrorContains(t, err, "arbitrumdata, nodes")
+}
+
+func TestOpenExistingExecutionDBRefusesDataWithoutChainConfig(t *testing.T) {
+	t.Parallel()
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+	defer stack.Close()
+
+	// A database that holds data but never had its chain config written, as an init that
+	// died between extracting a snapshot and writing genesis would leave behind.
+	db, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{NoFreezer: true})
+	Require(t, err)
+	Require(t, db.Put([]byte("key"), []byte("value")))
+	Require(t, db.Close())
+
+	nodeConfig := config.NodeConfigDefault
+	_, _, _, _, err = OpenExistingExecutionDB(
+		stack,
+		&nodeConfig,
+		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
+		nil,
+		&nodeConfig.Persistent,
+	)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "holds data but no stored chain config")
+}
+
+// A node that opened its databases and shut down before writing genesis must still be able
+// to initialize on the next boot, so the open must leave l2chaindata empty for the
+// no-chain-config path to keep telling that apart from a database holding data.
+func TestOpenExistingExecutionDBAllowsDatabaseOpenedButNeverInitialized(t *testing.T) {
+	t.Parallel()
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+
+	nodeConfig := config.NodeConfigDefault
+	cacheConfig := gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching)
+
+	opened, err := openExecutionDB(stack, &nodeConfig, cacheConfig, &nodeConfig.Persistent)
+	Require(t, err)
+	empty, err := databaseIsEmpty(opened.executionDB)
+	Require(t, err)
+	require.True(t, empty, "opening l2chaindata must not write to it")
+	Require(t, opened.executionDB.Close())
+	Require(t, opened.wasmDB.Close())
+	stack.Close()
+
+	reopenedStack, err := node.New(stackConfig)
+	Require(t, err)
+	defer reopenedStack.Close()
+
+	executionDB, _, _, chainConfig, err := OpenExistingExecutionDB(
+		reopenedStack,
+		&nodeConfig,
+		cacheConfig,
+		nil,
+		&nodeConfig.Persistent,
+	)
+	Require(t, err)
+	require.Nil(t, executionDB, "a database opened but never initialized must fall through to initialization")
+	require.Nil(t, chainConfig)
+}
+
+// An unreadable database must not be mistaken for an empty one, because the caller responds
+// to empty by initializing a fresh chain in its place.
+func TestOpenExistingExecutionDBRefusesUnreadableDatabase(t *testing.T) {
+	t.Parallel()
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+
+	db, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{NoFreezer: true})
+	Require(t, err)
+	batch := db.NewBatch()
+	for i := 0; i < 20000; i++ {
+		Require(t, batch.Put([]byte{byte(i >> 8), byte(i)}, make([]byte, 200)))
+	}
+	Require(t, batch.Write())
+	Require(t, db.Compact(nil, nil))
+	Require(t, db.Close())
+	dbDir := filepath.Join(stack.InstanceDir(), "l2chaindata")
+	stack.Close()
+
+	entries, err := os.ReadDir(dbDir)
+	Require(t, err)
+	corrupted := 0
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".sst") {
+			continue
+		}
+		path := filepath.Join(dbDir, entry.Name())
+		data, err := os.ReadFile(path)
+		Require(t, err)
+		// Flipping bytes in place keeps the file size, which pebble checks on open, so the
+		// failure surfaces from the iterator rather than from the open.
+		for i := 100; i < len(data)/2; i++ {
+			data[i] ^= 0xff
+		}
+		Require(t, os.WriteFile(path, data, 0600))
+		corrupted++
+	}
+	require.NotZero(t, corrupted, "found no sstables to corrupt, the database layout might have changed")
+
+	reopenedStack, err := node.New(stackConfig)
+	Require(t, err)
+	defer reopenedStack.Close()
+
+	nodeConfig := config.NodeConfigDefault
+	_, _, _, _, err = OpenExistingExecutionDB(
+		reopenedStack,
+		&nodeConfig,
+		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
+		nil,
+		&nodeConfig.Persistent,
+	)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "cannot tell whether l2chaindata")
+}
+
+// An interrupted database conversion leaves the canary next to partial data and no chain
+// config, so it must be diagnosed as such rather than as a database missing its config.
+func TestOpenExistingExecutionDBReportsUnfinishedConversion(t *testing.T) {
+	t.Parallel()
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+	defer stack.Close()
+
+	db, err := stack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{NoFreezer: true})
+	Require(t, err)
+	Require(t, db.Put([]byte("key"), []byte("value")))
+	Require(t, dbutil.PutUnfinishedConversionCanary(db))
+	Require(t, db.Close())
+
+	nodeConfig := config.NodeConfigDefault
+	_, _, _, _, err = OpenExistingExecutionDB(
+		stack,
+		&nodeConfig,
+		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
+		nil,
+		&nodeConfig.Persistent,
+	)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "unfinished database conversion")
+	require.NotContains(t, err.Error(), "holds data but no stored chain config")
+}
+
+// On a chain whose genesis block number is not 0, such as Arbitrum One, blocks below it are
+// classic blocks that live only in the ancient store, and the stored chain config is keyed
+// by the hash of block 0. Reading the config therefore needs the ancients attached, which a
+// probe cannot do while also tolerating a freezer table the store predates.
+func TestOpenExistingExecutionDBReadsChainConfigKeyedByAncientBlockZero(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+
+	nodeConfig := config.NodeConfigDefault
+	nodeConfig.Chain.ID = 42161
+	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
+	nodeConfig.Init.DevInit = true
+	nodeConfig.Init.DevInitAddress = "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	nodeConfig.Init.ValidateGenesisAssertion = false
+	cacheConfig := gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching)
+
+	l1Client := ethclient.NewClient(stack.Attach())
+	executionDB, wasmDB, blockchain, _, err := OpenInitializeExecutionDB(
+		ctx, stack, &nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID),
+		cacheConfig, nil, &nodeConfig.Persistent, l1Client, chaininfo.RollupAddresses{},
+	)
+	Require(t, err)
+	genesis := blockchain.Genesis()
+	blockchain.Stop()
+
+	// Move block 0 into the ancient store and drop its key-value canonical hash, which is
+	// the shape Arbitrum One's imported classic segment has on disk.
+	emptyReceipts, err := rlp.EncodeToBytes([]*types.Receipt{})
+	Require(t, err)
+	_, err = rawdb.WriteAncientBlocks(executionDB, []*types.Block{genesis}, []rlp.RawValue{emptyReceipts})
+	Require(t, err)
+	Require(t, executionDB.SyncAncient())
+	rawdb.DeleteCanonicalHash(executionDB, 0)
+	Require(t, executionDB.Close())
+	Require(t, wasmDB.Close())
+	stack.Close()
+
+	reopenedStack, err := node.New(stackConfig)
+	Require(t, err)
+	defer reopenedStack.Close()
+
+	probe, err := reopenedStack.OpenDatabaseWithOptions("l2chaindata", node.DatabaseOptions{ReadOnly: true, NoFreezer: true})
+	Require(t, err)
+	require.Nil(t, gethexec.TryReadStoredChainConfig(probe),
+		"a probe without the freezer cannot reach block 0, so it must not be the handle the chain config is read from")
+	Require(t, probe.Close())
+
+	reopenedDB, _, reopenedBlockchain, chainConfig, err := OpenExistingExecutionDB(
+		reopenedStack, &nodeConfig, cacheConfig, nil, &nodeConfig.Persistent,
+	)
+	Require(t, err)
+	require.NotNil(t, chainConfig, "a database whose block 0 is in the ancient store was not recognized as initialized")
+	require.Equal(t, nodeConfig.Chain.ID, chainConfig.ChainID.Uint64())
+	require.NotNil(t, reopenedBlockchain)
+	reopenedBlockchain.Stop()
+	Require(t, reopenedDB.Close())
+}
+
+func TestOpenExistingExecutionDBWithMissingFreezerTable(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+
+	nodeConfig := config.NodeConfigDefault
+	nodeConfig.Chain.ID = 42161
+	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
+	nodeConfig.Init.DevInit = true
+	nodeConfig.Init.DevInitAddress = "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	nodeConfig.Init.ValidateGenesisAssertion = false
+
+	l1Client := ethclient.NewClient(stack.Attach())
+	executionDB, _, blockchain, _, err := OpenInitializeExecutionDB(
+		ctx,
+		stack,
+		&nodeConfig,
+		new(big.Int).SetUint64(nodeConfig.Chain.ID),
+		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
+		nil,
+		&nodeConfig.Persistent,
+		l1Client,
+		chaininfo.RollupAddresses{},
+	)
+	Require(t, err)
+	blockchain.Stop()
+	Require(t, executionDB.Close())
+	ancientDir := filepath.Join(stack.InstanceDir(), "l2chaindata", "ancient", "chain")
+	stack.Close()
+
+	// A store written before a chain freezer table was added upstream has no files for it.
+	entries, err := os.ReadDir(ancientDir)
+	Require(t, err)
+	removed := 0
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), rawdb.ChainFreezerBALTable+".") {
+			Require(t, os.Remove(filepath.Join(ancientDir, entry.Name())))
+			removed++
+		}
+	}
+	require.NotZero(t, removed, "expected files for the %q freezer table", rawdb.ChainFreezerBALTable)
+
+	reopenedStack, err := node.New(stackConfig)
+	Require(t, err)
+	defer reopenedStack.Close()
+
+	reopenedDB, _, reopenedBlockchain, chainConfig, err := OpenExistingExecutionDB(
+		reopenedStack,
+		&nodeConfig,
+		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
+		nil,
+		&nodeConfig.Persistent,
+	)
+	Require(t, err)
+	require.NotNil(t, chainConfig, "existing database was not recognized as initialized")
+	require.Equal(t, nodeConfig.Chain.ID, chainConfig.ChainID.Uint64())
+	require.NotNil(t, reopenedDB)
+	reopenedBlockchain.Stop()
+	Require(t, reopenedDB.Close())
 }
 
 func TestCheckAndDownloadDBNoSnapshot(t *testing.T) {
