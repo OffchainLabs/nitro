@@ -244,23 +244,29 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 					continue
 				}
 
-				expSeqNum := cc.LastSentSeqNum.Load() + 1
-				if !cc.backlogSent && msg.sequenceNumber != nil && uint64(*msg.sequenceNumber) > expSeqNum {
-					catchupSeqNum := uint64(*msg.sequenceNumber) - 1
-					bm, err := cc.backlog.Get(expSeqNum, catchupSeqNum)
-					if err != nil {
-						logWarn(err, fmt.Sprintf("error reading messages %d to %d from backlog", expSeqNum, catchupSeqNum))
-						return
-					}
+				// A message without a sequence number (a confirmed sequence
+				// number message) says nothing about which feed messages the
+				// client has received, so it must not end the catch-up phase.
+				if msg.sequenceNumber != nil {
+					expSeqNum := cc.LastSentSeqNum.Load() + 1
+					if !cc.backlogSent && uint64(*msg.sequenceNumber) > expSeqNum {
+						catchupSeqNum := uint64(*msg.sequenceNumber) - 1
+						bm, err := cc.backlog.Get(expSeqNum, catchupSeqNum)
+						if err != nil {
+							logWarn(err, fmt.Sprintf("error reading messages %d to %d from backlog", expSeqNum, catchupSeqNum))
+							cc.Remove()
+							return
+						}
 
-					err = cc.writeBroadcastMessage(bm)
-					if err != nil {
-						logWarn(err, fmt.Sprintf("error writing messages %d to %d from backlog", expSeqNum, catchupSeqNum))
-						cc.Remove()
-						return
+						err = cc.writeBroadcastMessage(bm)
+						if err != nil {
+							logWarn(err, fmt.Sprintf("error writing messages %d to %d from backlog", expSeqNum, catchupSeqNum))
+							cc.Remove()
+							return
+						}
 					}
+					cc.backlogSent = true
 				}
-				cc.backlogSent = true
 
 				err := cc.writeRaw(msg.data)
 				if err != nil {

@@ -353,8 +353,13 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 					if i == 0 {
 						m.ConfirmedSequenceNumberMessage = bm.ConfirmedSequenceNumberMessage
 					}
-					clientDeleteList, err = cm.doBroadcast(m)
+					// Accumulate across messages: a client that could not be
+					// sent an earlier message must be disconnected even if
+					// later messages of this broadcast could be sent to it.
+					var deleteList []*ClientConnection
+					deleteList, err = cm.doBroadcast(m)
 					logError(err, "failed to do broadcast")
+					clientDeleteList = append(clientDeleteList, deleteList...)
 				}
 
 				// A message with ConfirmedSequenceNumberMessage could be sent without any messages
