@@ -1,0 +1,76 @@
+version: "2"
+linters:
+  enable:
+    - asciicheck
+    - errorlint
+    - gocritic
+    - gosec
+    - nilerr
+    - misspell
+  settings:
+    errcheck:
+      check-type-assertions: true
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+        - assignOp
+        - unlambda
+        - exitAfterDefer
+      disabled-tags:
+        - experimental
+        - opinionated
+    gosec:
+      excludes:
+        - G404
+    govet:
+      disable:
+        - shadow
+        - fieldalignment
+      enable-all: true
+    staticcheck:
+      checks:
+        - all
+        - '-QF1001' # Apply De Morgan's law
+        - '-QF1003' # Tagged switch instead of if/else blocks
+        - '-QF1006' # Lift break into loop condition
+        - '-QF1008' # Remove embedded fields
+        - '-ST1005' # Errors shouldn't end in punctuation or start with capitals
+        - '-ST1012' # Errors should be named errFoo or ErrFoo
+        - '-ST1003' # Variable naming rules (e.g. underscores in packages, and abbreviations)
+        - '-ST1016' # Methods on the same type should have the same receiver name
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - staticcheck
+        path: _test\.go
+    paths:
+      - go-ethereum
+      - fastcache
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gci
+    - gofmt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/ethereum/go-ethereum)
+        - prefix(github.com/offchainlabs)
+  exclusions:
+    generated: lax
+    paths:
+      - go-ethereum
+      - fastcache
+      - third_party$
+      - builtin$
+      - examples$

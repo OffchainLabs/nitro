@@ -1,0 +1,255 @@
+// Copyright 2021-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
+package daprovider
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/blobs"
+	"github.com/offchainlabs/nitro/util/containers"
+)
+
+// CertificateValidationError represents an error in certificate validation
+type CertificateValidationError struct {
+	Reason string
+}
+
+func (e *CertificateValidationError) Error() string {
+	return e.Reason
+}
+
+// IsCertificateValidationError checks if an error is a certificate validation error
+func IsCertificateValidationError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "certificate validation failed")
+}
+
+// FallbackDACertReader is a DA certificate reader registered on nodes without a
+// real custom DA provider. It rejects all certificates as invalid, causing batches
+// with the DACert header byte (0x01) to be treated as empty. This matches the
+// WASM replay behavior where invalid certificates also produce empty batches.
+type FallbackDACertReader struct{}
+
+func (r *FallbackDACertReader) RecoverPayload(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[PayloadResult] {
+	return containers.NewReadyPromise(PayloadResult{},
+		&CertificateValidationError{
+			Reason: "certificate validation failed: no custom DA provider configured",
+		})
+}
+
+func (r *FallbackDACertReader) CollectPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[PreimagesResult] {
+	return containers.NewReadyPromise(PreimagesResult{},
+		&CertificateValidationError{
+			Reason: "certificate validation failed: no custom DA provider configured",
+		})
+}
+
+func (r *FallbackDACertReader) RecoverPayloadAndPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[PayloadAndPreimagesResult] {
+	return containers.NewReadyPromise(PayloadAndPreimagesResult{},
+		&CertificateValidationError{
+			Reason: "certificate validation failed: no custom DA provider configured",
+		})
+}
+
+var ErrAnyTrustRequiresFallback = errors.New("AnyTrust DA committee required but unavailable")
+
+type AnyTrustRequiresFallbackError struct {
+	BatchNum uint64
+}
+
+func (e *AnyTrustRequiresFallbackError) Error() string {
+	return fmt.Sprintf("dangerous always-fallback-to-parent-chain-da is set but batch %d requires the AnyTrust DA committee", e.BatchNum)
+}
+
+func (e *AnyTrustRequiresFallbackError) Is(target error) bool {
+	return target == ErrAnyTrustRequiresFallback
+}
+
+// DangerousAlwaysFallbackReader rejects every AnyTrust batch with AnyTrustRequiresFallbackError.
+type DangerousAlwaysFallbackReader struct{}
+
+func (r *DangerousAlwaysFallbackReader) RecoverPayload(
+	batchNum uint64,
+	_ common.Hash,
+	_ []byte,
+) containers.PromiseInterface[PayloadResult] {
+	return containers.NewReadyPromise(PayloadResult{}, &AnyTrustRequiresFallbackError{BatchNum: batchNum})
+}
+
+func (r *DangerousAlwaysFallbackReader) CollectPreimages(
+	batchNum uint64,
+	_ common.Hash,
+	_ []byte,
+) containers.PromiseInterface[PreimagesResult] {
+	return containers.NewReadyPromise(PreimagesResult{}, &AnyTrustRequiresFallbackError{BatchNum: batchNum})
+}
+
+func (r *DangerousAlwaysFallbackReader) RecoverPayloadAndPreimages(
+	batchNum uint64,
+	_ common.Hash,
+	_ []byte,
+) containers.PromiseInterface[PayloadAndPreimagesResult] {
+	return containers.NewReadyPromise(PayloadAndPreimagesResult{}, &AnyTrustRequiresFallbackError{BatchNum: batchNum})
+}
+
+// PayloadResult contains the recovered payload data
+type PayloadResult struct {
+	Payload []byte
+}
+
+// PreimagesResult contains the collected preimages
+type PreimagesResult struct {
+	Preimages PreimagesMap
+}
+
+// PayloadAndPreimagesResult contains both the recovered payload and collected preimages
+type PayloadAndPreimagesResult struct {
+	Payload   []byte
+	Preimages PreimagesMap
+}
+
+type Reader interface {
+	// RecoverPayload fetches the underlying payload from the DA provider given the batch header information
+	RecoverPayload(
+		batchNum uint64,
+		batchBlockHash common.Hash,
+		sequencerMsg []byte,
+	) containers.PromiseInterface[PayloadResult]
+
+	// CollectPreimages collects preimages from the DA provider given the batch header information
+	CollectPreimages(
+		batchNum uint64,
+		batchBlockHash common.Hash,
+		sequencerMsg []byte,
+	) containers.PromiseInterface[PreimagesResult]
+
+	// RecoverPayloadAndPreimages fetches the underlying payload and collects preimages from the DA provider given the batch header information
+	RecoverPayloadAndPreimages(
+		batchNum uint64,
+		batchBlockHash common.Hash,
+		sequencerMsg []byte,
+	) containers.PromiseInterface[PayloadAndPreimagesResult]
+}
+
+// NewReaderForBlobReader is generally meant to be only used by nitro.
+// DA Providers should implement methods in the Reader interface independently
+func NewReaderForBlobReader(blobReader BlobReader) *readerForBlobReader {
+	return &readerForBlobReader{blobReader: blobReader}
+}
+
+type readerForBlobReader struct {
+	blobReader BlobReader
+}
+
+// recoverInternal is the shared implementation for both RecoverPayload and CollectPreimages
+func (b *readerForBlobReader) recoverInternal(
+	ctx context.Context,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+	needPayload bool,
+	needPreimages bool,
+) ([]byte, PreimagesMap, error) {
+	if len(sequencerMsg) < 41 {
+		return nil, nil, fmt.Errorf("sequencerMsg too short: expected at least 41 bytes, got %d", len(sequencerMsg))
+	}
+	blobHashes := sequencerMsg[41:]
+	if len(blobHashes)%len(common.Hash{}) != 0 {
+		return nil, nil, ErrInvalidBlobDataFormat
+	}
+	versionedHashes := make([]common.Hash, len(blobHashes)/len(common.Hash{}))
+	for i := 0; i*32 < len(blobHashes); i += 1 {
+		copy(versionedHashes[i][:], blobHashes[i*32:(i+1)*32])
+	}
+	kzgBlobs, err := b.blobReader.GetBlobs(ctx, batchBlockHash, versionedHashes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get blobs: %w", err)
+	}
+
+	var preimages PreimagesMap
+	if needPreimages {
+		preimages = make(PreimagesMap)
+		preimageRecorder := RecordPreimagesTo(preimages)
+		for i, blob := range kzgBlobs {
+			// Prevent aliasing `blob` when slicing it, as for range loops overwrite the same variable
+			// Won't be necessary after Go 1.22 with https://go.dev/blog/loopvar-preview
+			b := blob
+			preimageRecorder(versionedHashes[i], b[:], arbutil.EthVersionedHashPreimageType)
+		}
+	}
+
+	var payload []byte
+	if needPayload {
+		payload, err = blobs.DecodeBlobs(kzgBlobs)
+		if err != nil {
+			// Blob decode failures are treated as empty batches rather than propagating
+			// the error. The KZG commitment proves the blob data was posted correctly to
+			// L1, but doesn't guarantee the content is valid batch data. A malicious or
+			// buggy sequencer could post data that passes KZG verification but fails RLP
+			// decoding. Propagating this error would halt chain processing, creating a
+			// denial-of-service vector. Instead, we log the failure and return an empty
+			// batch, allowing the chain to continue.
+			log.Error("Failed to decode blobs", "batchBlockHash", batchBlockHash, "versionedHashes", versionedHashes, "err", err)
+			return nil, nil, nil
+		}
+	}
+
+	return payload, preimages, nil
+}
+
+// RecoverPayload fetches the underlying payload from the DA provider
+func (b *readerForBlobReader) RecoverPayload(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[PayloadResult] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (PayloadResult, error) {
+		payload, _, err := b.recoverInternal(ctx, batchBlockHash, sequencerMsg, true, false)
+		return PayloadResult{Payload: payload}, err
+	})
+}
+
+// CollectPreimages collects preimages from the DA provider
+func (b *readerForBlobReader) CollectPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[PreimagesResult] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (PreimagesResult, error) {
+		_, preimages, err := b.recoverInternal(ctx, batchBlockHash, sequencerMsg, false, true)
+		return PreimagesResult{Preimages: preimages}, err
+	})
+}
+
+// RecoverPayloadAndPreimages fetches the underlying payload and collects preimages from the DA provider given the batch header information
+func (b *readerForBlobReader) RecoverPayloadAndPreimages(
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+) containers.PromiseInterface[PayloadAndPreimagesResult] {
+	return containers.DoPromise(context.Background(), func(ctx context.Context) (PayloadAndPreimagesResult, error) {
+		payload, preimages, err := b.recoverInternal(ctx, batchBlockHash, sequencerMsg, true, true)
+		return PayloadAndPreimagesResult{
+			Payload:   payload,
+			Preimages: preimages,
+		}, err
+	})
+}

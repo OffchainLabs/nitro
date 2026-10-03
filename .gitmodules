@@ -1,0 +1,43 @@
+[submodule "go-ethereum"]
+	path = go-ethereum
+	url = https://github.com/OffchainLabs/go-ethereum.git
+[submodule "crates/wasm-libraries/soft-float/SoftFloat"]
+	path = crates/wasm-libraries/soft-float/SoftFloat
+	url = https://github.com/OffchainLabs/SoftFloat.git
+[submodule "brotli"]
+	path = brotli
+	url = https://github.com/google/brotli.git
+[submodule "contracts"]
+	path = contracts
+	url = https://github.com/OffchainLabs/nitro-contracts.git
+	branch = develop
+[submodule "crates/wasm-testsuite/testsuite"]
+	path = crates/wasm-testsuite/testsuite
+	url = https://github.com/WebAssembly/testsuite.git
+[submodule "crates/tools/wasmer"]
+	path = crates/tools/wasmer
+	url = https://github.com/OffchainLabs/wasmer.git
+[submodule "nitro-testnode"]
+	path = nitro-testnode
+	url = https://github.com/OffchainLabs/nitro-testnode.git
+[submodule "crates/langs/rust"]
+	path = crates/langs/rust
+	url = https://github.com/OffchainLabs/stylus-sdk-rs.git
+[submodule "crates/langs/c"]
+	path = crates/langs/c
+	url = https://github.com/OffchainLabs/stylus-sdk-c.git
+[submodule "crates/langs/bf"]
+	path = crates/langs/bf
+	url = https://github.com/OffchainLabs/stylus-sdk-bf.git
+[submodule "safe-smart-account"]
+	path = safe-smart-account
+	url = https://github.com/safe-global/safe-smart-account.git
+[submodule "contracts-legacy"]
+	path = contracts-legacy
+	url = https://github.com/OffchainLabs/nitro-contracts.git
+[submodule "contracts-local/lib/openzeppelin-contracts"]
+	path = contracts-local/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "contracts-local/src/precompiles"]
+	path = contracts-local/src/precompiles
+	url = https://github.com/OffchainLabs/nitro-precompile-interfaces.git

@@ -1,0 +1,764 @@
+# Copyright 2021-2026, Offchain Labs, Inc.
+# For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
+# Docker builds mess up file timestamps. Then again, in docker builds we never
+# have to update an existing file. So - for docker, convert all dependencies
+# to order-only dependencies (timestamps ignored).
+# WARNING: when using this trick, you cannot use the $< automatic variable
+
+ifeq ($(origin NITRO_BUILD_IGNORE_TIMESTAMPS),undefined)
+ DEP_PREDICATE:=
+ ORDER_ONLY_PREDICATE:=|
+else
+ DEP_PREDICATE:=|
+ ORDER_ONLY_PREDICATE:=
+endif
+
+
+ifneq ($(origin NITRO_VERSION),undefined)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.version=$(NITRO_VERSION)
+endif
+
+ifneq ($(origin NITRO_DATETIME),undefined)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.datetime=$(NITRO_DATETIME)
+endif
+
+ifneq ($(origin NITRO_MODIFIED),undefined)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.modified=$(NITRO_MODIFIED)
+endif
+
+# Stripped-binary build (STRIP=1): adds -s -w to Go ldflags, -trimpath to go
+# build, and switches cargo to the stripped profile (strip = symbols).
+# Used by the nitro-node-*-stripped Docker targets.
+CARGO_PROFILE = release
+ifeq ($(STRIP),1)
+ GOLANG_LDFLAGS += -s -w
+ CARGO_PROFILE = stripped
+endif
+
+ifneq ($(origin GOLANG_LDFLAGS),undefined)
+ GOLANG_PARAMS = -ldflags="-extldflags '-ldl' $(GOLANG_LDFLAGS)"
+endif
+ifeq ($(STRIP),1)
+ GOLANG_PARAMS += -trimpath
+endif
+
+UNAME_S := $(shell uname -s)
+
+# In Mac OSX, there are a lot of warnings emitted if these environment variables aren't set.
+ifeq ($(UNAME_S), Darwin)
+  export MACOSX_DEPLOYMENT_TARGET := $(shell sw_vers -productVersion)
+  export CGO_LDFLAGS := -Wl,-no_warn_duplicate_libraries
+endif
+
+precompile_names = AddressTable Aggregator BLS Debug FunctionTable GasInfo Info osTest Owner RetryableTx Statistics Sys
+precompiles = $(patsubst %,./solgen/generated/%.go, $(precompile_names))
+
+output_root=target
+output_latest=$(output_root)/machines/latest
+
+repo_dirs = arbos arbcompress arbnode arbutil arbstate cmd das precompiles solgen system_tests util validator wavmio
+go_source.go = $(wildcard $(patsubst %,%/*.go, $(repo_dirs)) $(patsubst %,%/*/*.go, $(repo_dirs)))
+go_source.s  = $(wildcard $(patsubst %,%/*.s, $(repo_dirs)) $(patsubst %,%/*/*.s, $(repo_dirs)))
+go_source = $(go_source.go) $(go_source.s)
+
+color_pink = "\e[38;5;161;1m"
+color_reset = "\e[0;0m"
+
+done = "%bdone!%b\n" $(color_pink) $(color_reset)
+
+replay_wasm=$(output_latest)/replay.wasm
+unified_replay_wasm=$(output_latest)/unified_replay.wasm
+
+arb_brotli_files = $(wildcard crates/brotli/src/*.* crates/brotli/src/*/*.* crates/brotli/*.toml crates/brotli/*.rs) .make/cbrotli-lib .make/cbrotli-wasm
+
+arbitrator_generated_header=$(output_root)/include/arbitrator.h
+arbitrator_wasm_libs=$(patsubst %, $(output_root)/machines/latest/%.wasm, forward wasi_stub host_io soft-float arbcompress arbcrypto user_host program_exec)
+arbitrator_stylus_lib=$(output_root)/lib/libstylus.a
+prover_bin=$(output_root)/bin/prover
+arbitrator_jit=$(output_root)/bin/jit
+validation_server=$(output_root)/bin/validator
+
+arbitrator_cases=crates/prover/test-cases
+
+arbitrator_tests_wat=$(wildcard $(arbitrator_cases)/*.wat)
+arbitrator_tests_rust=$(wildcard $(arbitrator_cases)/rust/src/bin/*.rs)
+
+arbitrator_test_wasms=$(patsubst %.wat,%.wasm, $(arbitrator_tests_wat)) $(patsubst $(arbitrator_cases)/rust/src/bin/%.rs,$(arbitrator_cases)/rust/target/wasm32-wasip1/release/%.wasm, $(arbitrator_tests_rust)) $(arbitrator_cases)/go/testcase.wasm
+
+arbitrator_tests_link_info = $(shell cat $(arbitrator_cases)/link.txt | xargs)
+arbitrator_tests_link_deps = $(patsubst %,$(arbitrator_cases)/%.wasm, $(arbitrator_tests_link_info))
+
+arbitrator_tests_forward_wats = $(wildcard $(arbitrator_cases)/forward/*.wat)
+arbitrator_tests_forward_deps = $(arbitrator_tests_forward_wats:wat=wasm)
+
+WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
+
+arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
+
+rust_arbutil_files = $(wildcard crates/arbutil/src/*.* crates/arbutil/src/*/*.* crates/arbutil/*.toml crates/caller-env/src/*.* crates/caller-env/src/*/*.* crates/caller-env/*.toml) .make/cbrotli-lib
+
+prover_direct_includes = $(patsubst %,$(output_latest)/%.wasm, forward forward_stub)
+prover_dir = crates/prover/
+prover_ffi_dir = crates/prover-ffi/
+rust_prover_files = $(wildcard $(prover_dir)/src/*.* $(prover_dir)/src/*/*.* $(prover_dir)/*.toml $(prover_dir)/*.rs) $(wildcard $(prover_ffi_dir)/src/*.rs $(prover_ffi_dir)/*.toml) $(rust_arbutil_files) $(prover_direct_includes) $(arb_brotli_files)
+
+wasm_lib = crates/wasm-libraries
+wasm_lib_cargo = $(wasm_lib)/.cargo/config.toml
+wasm_lib_deps = $(wildcard $(wasm_lib)/$(1)/*.toml $(wasm_lib)/$(1)/src/*.rs $(wasm_lib)/$(1)/*.rs) $(wasm_lib_cargo) $(rust_arbutil_files) $(arb_brotli_files) .make/machines
+wasm_lib_go_abi = $(call wasm_lib_deps,go-abi)
+wasm_lib_forward = $(call wasm_lib_deps,forward)
+wasm_lib_user_host_trait = $(call wasm_lib_deps,user-host-trait)
+wasm_lib_user_host = $(call wasm_lib_deps,user-host) $(wasm_lib_user_host_trait)
+
+forward_dir = $(wasm_lib)/forward
+
+stylus_files = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(wasm_lib_user_host_trait) $(rust_prover_files)
+
+jit_dir = crates/jit
+jit_files = $(wildcard $(jit_dir)/*.toml $(jit_dir)/*.rs $(jit_dir)/src/*.rs $(jit_dir)/src/*/*.rs) $(stylus_files)
+
+validation_crate_dir = crates/validation
+validation_files = $(wildcard $(validation_crate_dir)/*.toml $(validation_crate_dir)/src/*.rs $(validation_crate_dir)/src/*/*.rs) $(rust_arbutil_files)
+
+validator_dir = crates/validator
+validator_files = $(wildcard $(validator_dir)/*.toml $(validator_dir)/src/*.rs $(validator_dir)/src/*/*.rs) $(jit_files) $(validation_files)
+
+wasm32_wasi = target/wasm32-wasip1/release
+wasm32_unknown = target/wasm32-unknown-unknown/release
+
+stylus_dir = crates/stylus
+stylus_test_dir = crates/stylus/tests
+stylus_cargo = crates/stylus/tests/.cargo/config.toml
+
+rust_sdk = crates/langs/rust
+c_sdk = crates/langs/c
+stylus_lang_rust = $(wildcard $(rust_sdk)/*/src/*.rs $(rust_sdk)/*/src/*/*.rs $(rust_sdk)/*/*.toml)
+stylus_lang_c    = $(wildcard $(c_sdk)/*/*.c $(c_sdk)/*/*.h)
+stylus_lang_bf   = $(wildcard crates/langs/bf/src/*.* crates/langs/bf/src/*.toml)
+
+get_stylus_test_wasm = $(stylus_test_dir)/$(wasm32_unknown)/$(1).wasm
+get_stylus_test_rust = $(wildcard $(stylus_test_dir)/$(1)/*.toml $(stylus_test_dir)/$(1)/src/*.rs) $(stylus_cargo) $(stylus_lang_rust)
+get_stylus_test_c    = $(wildcard $(c_sdk)/examples/$(1)/*.c $(c_sdk)/examples/$(1)/*.h) $(stylus_lang_c)
+stylus_test_bfs      = $(wildcard $(stylus_test_dir)/bf/*.b)
+
+stylus_test_keccak_wasm           = $(call get_stylus_test_wasm,keccak)
+stylus_test_keccak_src            = $(call get_stylus_test_rust,keccak)
+stylus_test_keccak-100_wasm       = $(call get_stylus_test_wasm,keccak-100)
+stylus_test_keccak-100_src        = $(call get_stylus_test_rust,keccak-100)
+stylus_test_fallible_wasm         = $(call get_stylus_test_wasm,fallible)
+stylus_test_fallible_src          = $(call get_stylus_test_rust,fallible)
+stylus_test_storage_wasm          = $(call get_stylus_test_wasm,storage)
+stylus_test_storage_src           = $(call get_stylus_test_rust,storage)
+stylus_test_multicall_wasm        = $(call get_stylus_test_wasm,multicall)
+stylus_test_multicall_src         = $(call get_stylus_test_rust,multicall)
+stylus_test_log_wasm              = $(call get_stylus_test_wasm,log)
+stylus_test_log_src               = $(call get_stylus_test_rust,log)
+stylus_test_create_wasm           = $(call get_stylus_test_wasm,create)
+stylus_test_create_src            = $(call get_stylus_test_rust,create)
+stylus_test_math_wasm             = $(call get_stylus_test_wasm,math)
+stylus_test_math_src              = $(call get_stylus_test_rust,math)
+stylus_test_evm-data_wasm         = $(call get_stylus_test_wasm,evm-data)
+stylus_test_evm-data_src          = $(call get_stylus_test_rust,evm-data)
+stylus_test_sdk-storage_wasm      = $(call get_stylus_test_wasm,sdk-storage)
+stylus_test_sdk-storage_src       = $(call get_stylus_test_rust,sdk-storage)
+stylus_test_erc20_wasm            = $(call get_stylus_test_wasm,erc20)
+stylus_test_erc20_src             = $(call get_stylus_test_rust,erc20)
+stylus_test_read-return-data_wasm = $(call get_stylus_test_wasm,read-return-data)
+stylus_test_read-return-data_src  = $(call get_stylus_test_rust,read-return-data)
+stylus_test_hostio-test_wasm      = $(call get_stylus_test_wasm,hostio-test)
+stylus_test_hostio-test_src       = $(call get_stylus_test_rust,hostio-test)
+
+stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_multicall_wasm) $(stylus_test_log_wasm) $(stylus_test_create_wasm) $(stylus_test_math_wasm) $(stylus_test_sdk-storage_wasm) $(stylus_test_erc20_wasm) $(stylus_test_read-return-data_wasm) $(stylus_test_evm-data_wasm) $(stylus_test_hostio-test_wasm) $(stylus_test_bfs:.b=.wasm)
+stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
+
+CBROTLI_WASM_BUILD_ARGS ?=-d
+
+# user targets
+
+##@ Setup
+
+.PHONY: init-submodules ## Initialize private submodules.
+init-submodules:
+	scripts/configure-private-submodules.sh
+	scripts/submodule-update-private.sh
+	scripts/configure-private-submodules.sh
+
+.PHONY: check-submodules ## Verify submodule configuration.
+check-submodules:
+	@scripts/check-submodules.sh
+
+##@ Help
+
+.PHONY: help ## Display this help.
+help:
+	@awk 'BEGIN { printf "Usage:\n  make \033[36m<target>\033[0m\n" } /^##@ / { section = substr($$0, 5); printed = 0; next } /^\.PHONY:/ { desc = ""; line = $$0; if (index(line, "##")) { desc = line; sub(/^.*##[[:space:]]*/, "", desc); sub(/[[:space:]]+$$/, "", desc); sub(/[[:space:]]*##.*$$/, "", line) } sub(/^\.PHONY:[[:space:]]*/, "", line); if (!printed && section != "") { printf "\n\033[1m%s\033[0m\n", section; printed = 1 } targets_len = split(line, targets, /[[:space:]]+/); for (i = 1; i <= targets_len; i++) if (targets[i] != "") printf "  \033[36m%-28s\033[0m %s\n", targets[i], desc }' $(MAKEFILE_LIST)
+
+##@ Workflow
+
+.PHONY: push ## Run lint, Go tests, and formatting checks before pushing.
+push: lint test-go .make/fmt
+	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
+	@printf "%bready for push!%b\n" $(color_pink) $(color_reset)
+
+##@ Build
+
+.PHONY: all ## Build primary artifacts and generated proofs.
+all: build build-replay-env test-gen-proofs
+	@touch .make/all
+
+.PHONY: build ## Build Nitro binaries.
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daprovider anytrustserver autonomous-auctioneer bidder-client anytrusttool blobtool el-proxy mockexternalsigner seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv genesis-generator transaction-filterer filtering-report stylus-raw-deploycode)
+	@printf $(done)
+
+.PHONY: build-node-deps ## Build dependencies needed by Nitro node binaries.
+build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .make/solgen .make/cbrotli-lib
+
+.PHONY: test-go-deps ## Build dependencies required by Go tests.
+test-go-deps: \
+	build-replay-env \
+	build-unified-replay-env \
+	build-validation-server \
+	$(stylus_test_wasms) \
+	$(arbitrator_stylus_lib) \
+	$(arbitrator_generated_header) \
+	$(patsubst %,$(arbitrator_cases)/%.wasm, global-state read-inboxmsg-10 global-state-wrapper const)
+
+.PHONY: build-prover-header ## Build the prover generated header.
+build-prover-header: $(arbitrator_generated_header)
+
+.PHONY: build-prover-lib ## Build the prover Stylus library.
+build-prover-lib: $(arbitrator_stylus_lib)
+
+.PHONY: build-prover-bin ## Build the prover binary.
+build-prover-bin: $(prover_bin)
+
+.PHONY: build-jit ## Build the arbitrator JIT binary.
+build-jit: $(arbitrator_jit)
+
+.PHONY: build-validation-server ## Build the validation server.
+build-validation-server: $(validation_server)
+
+.PHONY: build-replay-env ## Build the replay environment.
+build-replay-env: $(prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_latest)/machine.v2.wavm.br
+
+.PHONY: build-unified-replay-env ## Build the unified replay environment.
+build-unified-replay-env: $(unified_replay_wasm) $(output_latest)/unified_machine.wavm.br
+
+.PHONY: build-unified-wasm-bin ## Build the unified replay WASM binary.
+build-unified-wasm-bin: $(unified_replay_wasm)
+
+.PHONY: build-wasm-libs ## Build arbitrator WASM libraries.
+build-wasm-libs: $(arbitrator_wasm_libs)
+
+.PHONY: build-wasm-bin ## Build the replay WASM binary.
+build-wasm-bin: $(replay_wasm)
+
+.PHONY: build-solidity ## Build Solidity contracts.
+build-solidity: .make/solidity
+
+.PHONY: contracts ## Generate Go bindings for contracts.
+contracts: .make/solgen
+	@printf $(done)
+
+##@ Lint
+
+.PHONY: format ## Format source files.
+.PHONY: fmt ## Alias for format.
+format: .make/fmt
+	@printf $(done)
+fmt: format
+
+.PHONY: lint ## Run linters.
+lint: .make/lint
+	@printf $(done)
+
+##@ Test
+
+.PHONY: stylus-benchmarks ## Run Stylus benchmarks.
+stylus-benchmarks: $(stylus_benchmarks)
+	cargo test --manifest-path $< --release --features benchmark benchmark_ -- --nocapture
+	@printf $(done)
+
+.PHONY: test-go ## Run Go tests.
+test-go: .make/test-go
+	@printf $(done)
+
+.PHONY: test-go-challenge ## Run Go challenge tests.
+test-go-challenge: test-go-deps
+	.github/workflows/gotestsum.sh --timeout 120m --run TestChallenge --tags challengetest --nolog
+	@printf $(done)
+
+.PHONY: test-go-stylus ## Run Go Stylus tests.
+test-go-stylus: test-go-deps
+	.github/workflows/gotestsum.sh --timeout 120m --run TestProgramArbitrator --tags stylustest --nolog
+	@printf $(done)
+
+.PHONY: test-go-redis ## Run Go Redis tests.
+test-go-redis: test-go-deps
+	.github/workflows/gotestsum.sh --timeout 120m --run TestRedis --nolog -- --test_redis=redis://localhost:6379/0
+	@printf $(done)
+
+.PHONY: test-gen-proofs ## Generate prover test proofs.
+test-gen-proofs: \
+        $(arbitrator_test_wasms) \
+	$(patsubst $(arbitrator_cases)/%.wat,contracts/test/prover/proofs/%.json, $(arbitrator_tests_wat)) \
+	$(patsubst $(arbitrator_cases)/rust/src/bin/%.rs,contracts/test/prover/proofs/rust-%.json, $(arbitrator_tests_rust)) \
+	contracts/test/prover/proofs/go.json
+	@printf $(done)
+
+.PHONY: test-rust ## Run Rust tests.
+test-rust: .make/test-rust
+	@printf $(done)
+
+# Runs the fastest and most reliable and high-value tests.
+.PHONY: tests ## Run the fastest and most reliable tests.
+tests: test-go test-rust
+	@printf $(done)
+
+# Runs all tests, including slow and unreliable tests.
+#  Currently, NOT including:
+#  - test-go-redis (These testts require additional setup and are not as reliable)
+.PHONY: tests-all ## Run all tests, including slow and unreliable tests.
+tests-all: tests test-go-challenge test-go-stylus test-gen-proofs
+	@printf $(done)
+
+.PHONY: wasm-ci-build ## Build WASM artifacts used by CI tests.
+wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms) $(stylus_test_wasms) $(output_latest)/user_test.wasm
+	@printf $(done)
+
+##@ Maintenance
+
+.PHONY: clean ## Remove build outputs, generated files, and test caches.
+clean:
+	go clean -testcache
+	rm -rf $(arbitrator_cases)/rust/target
+	rm -f $(arbitrator_cases)/*.wasm $(arbitrator_cases)/go/testcase.wasm
+	rm -rf crates/wasm-testsuite/tests
+	rm -rf $(output_root)
+	rm -f contracts/test/prover/proofs/*.json contracts/test/prover/spec-proofs/*.json
+	rm -f contracts-legacy/test/prover/proofs/*.json contracts-legacy/test/prover/spec-proofs/*.json
+	rm -f crates/wasm-libraries/soft-float/soft-float.wasm
+	rm -f crates/wasm-libraries/soft-float/*.o
+	rm -f crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o
+	rm -f crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.a
+	rm -f crates/wasm-libraries/forward/*.wat
+	rm -rf crates/stylus/tests/target/ crates/stylus/tests/*/*.wasm
+	rm -rf brotli/buildfiles
+	@rm -rf contracts/build contracts/cache solgen/go/
+	@rm -rf contracts-legacy/build contracts-legacy/cache
+	@rm -rf contracts-local/out contracts-local/forge-cache
+	@rm -f .make/*
+
+define resolve_gh_token_and_secret
+TOKEN="$${GITHUB_TOKEN:-$$(gh auth token 2>/dev/null)}"; \
+if [ -z "$$TOKEN" ] && git config --get remote.origin.url 2>/dev/null | grep -q nitro-private; then \
+	echo "ERROR: in nitro-private without GitHub token; run 'gh auth login' or set GITHUB_TOKEN" >&2; exit 1; \
+fi; \
+SECRET=""; if [ -n "$$TOKEN" ]; then SECRET="--secret id=gh_token,env=GITHUB_TOKEN"; export GITHUB_TOKEN="$$TOKEN"; fi
+endef
+
+##@ Docker
+
+.PHONY: docker ## Build Nitro Docker images.
+docker:
+	@$(resolve_gh_token_and_secret); \
+	for t in nitro-node-slim nitro-node nitro-node-dev; do \
+		echo "+ docker build $$SECRET -t $$t --target $$t ."; \
+		docker build $$SECRET -t "$$t" --target "$$t" . || exit 1; \
+	done
+
+.PHONY: docker-machine-versions ## Build Docker image for machine versions.
+docker-machine-versions:
+	@$(resolve_gh_token_and_secret); \
+	for t in machine-versions; do \
+		echo "+ docker build $$SECRET -t nitro-$$t --target $$t ."; \
+		docker build $$SECRET -t "nitro-$$t" --target "$$t" . || exit 1; \
+	done
+
+##@ Checks
+
+.PHONY: check-license-headers ## Check source license headers.
+check-license-headers:
+	@go run ./scripts/licenser.go
+
+# regular build rules
+
+$(output_root)/bin/nitro: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/nitro"
+
+$(output_root)/bin/deploy: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/deploy"
+
+$(output_root)/bin/relay: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/relay"
+
+$(output_root)/bin/daprovider: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/daprovider"
+
+$(output_root)/bin/anytrustserver: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/anytrustserver"
+
+$(output_root)/bin/autonomous-auctioneer: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/autonomous-auctioneer"
+
+$(output_root)/bin/bidder-client: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/bidder-client"
+
+$(output_root)/bin/el-proxy: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/el-proxy"
+
+$(output_root)/bin/anytrusttool: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/anytrusttool"
+
+$(output_root)/bin/blobtool: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/blobtool"
+
+$(output_root)/bin/genesis-generator: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/genesis-generator"
+
+$(output_root)/bin/mockexternalsigner: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/mockexternalsigner"
+
+$(output_root)/bin/seq-coordinator-invalidate: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/seq-coordinator-invalidate"
+
+$(output_root)/bin/nitro-val: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/nitro-val"
+
+$(output_root)/bin/seq-coordinator-manager: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/seq-coordinator-manager"
+
+$(output_root)/bin/dbconv: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/dbconv"
+
+$(output_root)/bin/transaction-filterer: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/transaction-filterer"
+
+$(output_root)/bin/filtering-report: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/filtering-report"
+
+$(output_root)/bin/stylus-raw-deploycode: $(DEP_PREDICATE) build-node-deps
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/stylus-raw-deploycode"
+
+# recompile wasm, but don't change timestamp unless files differ
+$(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
+	mkdir -p `dirname $(replay_wasm)`
+	GOOS=wasip1 GOARCH=wasm go build -o $@ ./cmd/replay/...
+	./scripts/remove_reference_types.sh $@
+
+$(unified_replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
+	mkdir -p `dirname $(unified_replay_wasm)`
+	GOOS=wasip1 GOARCH=wasm go build -o $@ ./cmd/unified-replay/...
+	./scripts/remove_reference_types.sh $@
+
+$(prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
+	mkdir -p `dirname $(prover_bin)`
+	cargo build --profile $(CARGO_PROFILE) --bin prover ${CARGOFLAGS}
+	install target/$(CARGO_PROFILE)/prover $@
+
+$(arbitrator_stylus_lib): $(DEP_PREDICATE) $(stylus_files)
+	mkdir -p `dirname $(arbitrator_stylus_lib)`
+	cargo build --profile $(CARGO_PROFILE) --lib -p stylus ${CARGOFLAGS}
+	install target/$(CARGO_PROFILE)/libstylus.a $@
+
+$(arbitrator_jit): $(DEP_PREDICATE) $(jit_files)
+	mkdir -p `dirname $(arbitrator_jit)`
+	cargo build --profile $(CARGO_PROFILE) -p jit ${CARGOFLAGS}
+	install target/$(CARGO_PROFILE)/jit $@
+
+$(validation_server): $(DEP_PREDICATE) $(validator_files)
+	mkdir -p `dirname $(validation_server)`
+	cargo build --profile $(CARGO_PROFILE) -p validator ${CARGOFLAGS}
+	install target/$(CARGO_PROFILE)/validator $@
+
+$(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs $(arbitrator_cases)/rust/.cargo/config.toml
+	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasip1 --config $(arbitrator_cases)/rust/.cargo/config.toml --bin $(patsubst $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm,%, $@)
+	./scripts/remove_reference_types.sh $@
+
+$(arbitrator_cases)/go/testcase.wasm: $(arbitrator_cases)/go/*.go .make/solgen
+	cd $(arbitrator_cases)/go && GOOS=wasip1 GOARCH=wasm go build -o testcase.wasm
+
+$(arbitrator_generated_header): $(DEP_PREDICATE) $(stylus_files)
+	@echo creating ${PWD}/$(arbitrator_generated_header)
+	mkdir -p `dirname $(arbitrator_generated_header)`
+	cd crates/stylus && cbindgen --config cbindgen.toml --crate stylus --output ../../$(arbitrator_generated_header)
+	@touch -c $@ # cargo might decide to not rebuild the header
+
+$(output_latest)/wasi_stub.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,wasi-stub)
+	cargo build --release --target wasm32-unknown-unknown --config $(wasm_lib_cargo) --package wasi-stub
+	install $(wasm32_unknown)/wasi_stub.wasm $@
+	./scripts/remove_reference_types.sh $@
+
+crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a: $(DEP_PREDICATE) \
+		crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/Makefile \
+		crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/platform.h \
+		crates/wasm-libraries/soft-float/SoftFloat/source/*.c \
+		crates/wasm-libraries/soft-float/SoftFloat/source/include/*.h \
+		crates/wasm-libraries/soft-float/SoftFloat/source/8086/*.c \
+		crates/wasm-libraries/soft-float/SoftFloat/source/8086/*.h
+	cd crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang && make $(MAKEFLAGS)
+
+crates/wasm-libraries/soft-float/bindings32.o: $(DEP_PREDICATE) crates/wasm-libraries/soft-float/bindings32.c
+	clang crates/wasm-libraries/soft-float/bindings32.c --sysroot $(WASI_SYSROOT) -I crates/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasip1 -Wconversion -c -o $@
+
+crates/wasm-libraries/soft-float/bindings64.o: $(DEP_PREDICATE) crates/wasm-libraries/soft-float/bindings64.c
+	clang crates/wasm-libraries/soft-float/bindings64.c --sysroot $(WASI_SYSROOT) -I crates/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasip1 -Wconversion -c -o $@
+
+$(output_latest)/soft-float.wasm: $(DEP_PREDICATE) \
+		crates/wasm-libraries/soft-float/bindings32.o \
+		crates/wasm-libraries/soft-float/bindings64.o \
+		crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a \
+		.make/wasm-lib .make/machines
+	wasm-ld \
+		crates/wasm-libraries/soft-float/bindings32.o \
+		crates/wasm-libraries/soft-float/bindings64.o \
+		crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o \
+		--no-entry -o $@ \
+		$(patsubst %,--export wavm__f32_%, abs neg ceil floor trunc nearest sqrt add sub mul div min max) \
+		$(patsubst %,--export wavm__f32_%, copysign eq ne lt le gt ge) \
+		$(patsubst %,--export wavm__f64_%, abs neg ceil floor trunc nearest sqrt add sub mul div min max) \
+		$(patsubst %,--export wavm__f64_%, copysign eq ne lt le gt ge) \
+		$(patsubst %,--export wavm__i32_trunc_%,     f32_s f32_u f64_s f64_u) \
+		$(patsubst %,--export wavm__i32_trunc_sat_%, f32_s f32_u f64_s f64_u) \
+		$(patsubst %,--export wavm__i64_trunc_%,     f32_s f32_u f64_s f64_u) \
+		$(patsubst %,--export wavm__i64_trunc_sat_%, f32_s f32_u f64_s f64_u) \
+		$(patsubst %,--export wavm__f32_convert_%, i32_s i32_u i64_s i64_u) \
+		$(patsubst %,--export wavm__f64_convert_%, i32_s i32_u i64_s i64_u) \
+		--export wavm__f32_demote_f64 \
+		--export wavm__f64_promote_f32
+
+$(output_latest)/host_io.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,host-io) $(wasm_lib_go_abi)
+	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package host-io
+	install $(wasm32_wasi)/host_io.wasm $@
+	./scripts/remove_reference_types.sh $@
+
+$(output_latest)/user_host.wasm: $(DEP_PREDICATE) $(wasm_lib_user_host) $(rust_prover_files) $(output_latest)/forward_stub.wasm .make/machines
+	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package user-host
+	install $(wasm32_wasi)/user_host.wasm $@
+	./scripts/remove_reference_types.sh $@
+
+$(output_latest)/program_exec.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,program-exec) $(rust_prover_files) .make/machines
+	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package program-exec
+	install $(wasm32_wasi)/program_exec.wasm $@
+	./scripts/remove_reference_types.sh $@
+
+$(output_latest)/user_test.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,user-test) $(rust_prover_files) .make/machines
+	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package user-test
+	install $(wasm32_wasi)/user_test.wasm $@
+	./scripts/remove_reference_types.sh $@
+
+$(output_latest)/arbcompress.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli) $(wasm_lib_go_abi)
+	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbcompress
+	install $(wasm32_wasi)/arbcompress.wasm $@
+	./scripts/remove_reference_types.sh $@
+
+$(output_latest)/arbcrypto.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps) $(wasm_lib_go_abi)
+	cargo build --release --target wasm32-wasip1 --config $(wasm_lib_cargo) --package arbcrypto
+	install $(wasm32_wasi)/arbcrypto.wasm $@
+	./scripts/remove_reference_types.sh $@
+
+$(output_latest)/forward.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/machines
+	cargo run --release --package forward -- --path $(forward_dir)/forward.wat
+	wat2wasm $(wasm_lib)/forward/forward.wat -o $@
+
+$(output_latest)/forward_stub.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/machines
+	cargo run --release --package forward -- --path $(forward_dir)/forward_stub.wat --stub
+	wat2wasm $(wasm_lib)/forward/forward_stub.wat -o $@
+
+$(output_latest)/machine.v2.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
+	$(prover_bin) $(replay_wasm) --generate-binaries $(output_latest) \
+	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host arbcompress arbcrypto program_exec)
+
+$(output_latest)/unified_machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(unified_replay_wasm)
+	$(prover_bin) $(unified_replay_wasm) --generate-binaries $(output_latest) --until-hostio-bin-filename="unified-until-host-io-state.bin" --brotli-wavm-machine-filename="unified_machine.wavm.br" --module-root-filename="unified-module-root.txt" \
+	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host arbcompress arbcrypto program_exec)
+
+$(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
+	wat2wasm $< -o $@
+
+$(stylus_test_dir)/%.wasm: $(stylus_test_dir)/%.b $(stylus_lang_bf)
+	cargo run --manifest-path crates/langs/bf/Cargo.toml $< -o $@
+
+$(stylus_test_keccak_wasm): $(stylus_test_keccak_src)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_keccak-100_wasm): $(stylus_test_keccak-100_src)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_fallible_wasm): $(stylus_test_fallible_src)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_storage_wasm): $(stylus_test_storage_src)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_multicall_wasm): $(stylus_test_multicall_src)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_log_wasm): $(stylus_test_log_src)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_create_wasm): $(stylus_test_create_src)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_math_wasm): $(stylus_test_math_src)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_evm-data_wasm): $(stylus_test_evm-data_src)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_read-return-data_wasm): $(stylus_test_read-return-data_src)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_sdk-storage_wasm): $(stylus_test_sdk-storage_src)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_erc20_wasm): $(stylus_test_erc20_src)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_hostio-test_wasm): $(stylus_test_hostio-test_src)
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
+	./scripts/remove_reference_types.sh $@
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+contracts/test/prover/proofs/float%.json: $(arbitrator_cases)/float%.wasm $(prover_bin) $(output_latest)/soft-float.wasm
+	$(prover_bin) $< -l $(output_latest)/soft-float.wasm -o $@ -b --allow-hostapi --require-success
+
+contracts/test/prover/proofs/no-stack-pollution.json: $(arbitrator_cases)/no-stack-pollution.wasm $(prover_bin)
+	$(prover_bin) $< -o $@ --allow-hostapi --require-success
+
+target/testdata/preimages.bin:
+	mkdir -p `dirname $@`
+	python3 scripts/create-test-preimages.py $@
+
+contracts/test/prover/proofs/rust-%.json: $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm $(prover_bin) $(arbitrator_wasm_libs) target/testdata/preimages.bin
+	$(prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -b --allow-hostapi --require-success --inbox-add-stub-headers --inbox $(arbitrator_cases)/rust/data/msg0.bin --inbox $(arbitrator_cases)/rust/data/msg1.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg0.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg1.bin --preimages target/testdata/preimages.bin
+
+contracts/test/prover/proofs/go.json: $(arbitrator_cases)/go/testcase.wasm $(prover_bin) $(arbitrator_wasm_libs) target/testdata/preimages.bin $(arbitrator_tests_link_deps) $(arbitrator_cases)/user.wasm
+	$(prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -b --require-success --preimages target/testdata/preimages.bin  --stylus-modules $(arbitrator_cases)/user.wasm
+
+# avoid testing user.wasm in onestepproofs. It can only run as stylus program.
+contracts/test/prover/proofs/user.json:
+	echo "[]" > $@
+
+# avoid testing read-inboxmsg-10 in onestepproofs. It's used for go challenge testing.
+contracts/test/prover/proofs/read-inboxmsg-10.json:
+	echo "[]" > $@
+
+contracts/test/prover/proofs/global-state.json:
+	echo "[]" > $@
+
+contracts/test/prover/proofs/forward-test.json: $(arbitrator_cases)/forward-test.wasm $(arbitrator_tests_forward_deps) $(prover_bin)
+	$(prover_bin) $< -o $@ --allow-hostapi $(patsubst %,-l %, $(arbitrator_tests_forward_deps))
+
+contracts/test/prover/proofs/link.json: $(arbitrator_cases)/link.wasm $(arbitrator_tests_link_deps) $(prover_bin)
+	$(prover_bin) $< -o $@ --allow-hostapi --stylus-modules $(arbitrator_tests_link_deps) --require-success
+
+contracts/test/prover/proofs/dynamic.json: $(patsubst %,$(arbitrator_cases)/%.wasm, dynamic user) $(prover_bin)
+	$(prover_bin) $< -o $@ --allow-hostapi --stylus-modules $(arbitrator_cases)/user.wasm --require-success
+
+contracts/test/prover/proofs/bulk-memory.json: $(patsubst %,$(arbitrator_cases)/%.wasm, bulk-memory) $(prover_bin)
+	$(prover_bin) $< -o $@ --allow-hostapi --stylus-modules $(arbitrator_cases)/user.wasm -b
+
+contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
+	$(prover_bin) $< -o $@ --allow-hostapi
+
+# strategic rules to minimize dependency building
+
+.make/lint: $(DEP_PREDICATE) build-node-deps $(ORDER_ONLY_PREDICATE) .make
+	go run ./linters ./...
+	golangci-lint run --fix
+	yarn --cwd contracts solhint
+	@touch $@
+
+.make/fmt: $(DEP_PREDICATE) build-node-deps .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
+	golangci-lint fmt
+	cargo +nightly fmt -- --check
+	cargo +nightly fmt --manifest-path crates/wasm-testsuite/Cargo.toml -- --check
+	forge fmt --root contracts-local
+	@touch $@
+
+.make/test-go: $(DEP_PREDICATE) $(go_source) build-node-deps test-go-deps $(ORDER_ONLY_PREDICATE) .make
+	.github/workflows/gotestsum.sh --timeout 120m --nolog
+	@touch $@
+
+.make/test-rust: $(DEP_PREDICATE) wasm-ci-build $(ORDER_ONLY_PREDICATE) .make
+	cargo test --release
+	@touch $@
+
+.make/solgen: $(DEP_PREDICATE) solgen/gen.go .make/solidity $(ORDER_ONLY_PREDICATE) .make
+	mkdir -p solgen/go/
+	go run solgen/gen.go
+	@touch $@
+
+.make/solidity: $(DEP_PREDICATE) safe-smart-account/contracts/*/*.sol safe-smart-account/contracts/*.sol contracts/src/*/*.sol contracts-legacy/src/*/*.sol contracts-local/src/*/*.sol .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
+	npm --prefix safe-smart-account run build
+	yarn --cwd contracts build
+	yarn --cwd contracts build:forge:yul
+	yarn --cwd contracts-legacy build
+	yarn --cwd contracts-legacy build:forge:yul
+	+make -C contracts-local build
+	@touch $@
+
+.make/yarndeps: $(DEP_PREDICATE) */package.json */yarn.lock $(ORDER_ONLY_PREDICATE) .make
+	npm --prefix safe-smart-account install
+	yarn --cwd contracts install
+	yarn --cwd contracts-legacy install
+	+make -C contracts-local install
+	@touch $@
+
+.make/cbrotli-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
+	test -f target/include/brotli/encode.h || ./scripts/build-brotli.sh -l
+	test -f target/include/brotli/decode.h || ./scripts/build-brotli.sh -l
+	test -f target/lib/libbrotlicommon-static.a || ./scripts/build-brotli.sh -l
+	test -f target/lib/libbrotlienc-static.a || ./scripts/build-brotli.sh -l
+	test -f target/lib/libbrotlidec-static.a || ./scripts/build-brotli.sh -l
+	@touch $@
+
+.make/cbrotli-wasm: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
+	test -f target/lib-wasm/libbrotlicommon-static.a || ./scripts/build-brotli.sh -w $(CBROTLI_WASM_BUILD_ARGS)
+	test -f target/lib-wasm/libbrotlienc-static.a || ./scripts/build-brotli.sh -w $(CBROTLI_WASM_BUILD_ARGS)
+	test -f target/lib-wasm/libbrotlidec-static.a || ./scripts/build-brotli.sh -w $(CBROTLI_WASM_BUILD_ARGS)
+	@touch $@
+
+.make/wasm-lib: $(DEP_PREDICATE) crates/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a  $(ORDER_ONLY_PREDICATE) .make
+	test -f crates/wasm-libraries/soft-float/bindings32.o || ./scripts/build-brotli.sh -f -d -t ..
+	test -f crates/wasm-libraries/soft-float/bindings64.o || ./scripts/build-brotli.sh -f -d -t ..
+	@touch $@
+
+.make/machines: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
+	mkdir -p $(output_latest)
+	touch $@
+
+.make:
+	mkdir .make
+
+
+# Makefile settings
+
+always:              # use this to force other rules to always build
+.DELETE_ON_ERROR:    # causes a failure to delete its target

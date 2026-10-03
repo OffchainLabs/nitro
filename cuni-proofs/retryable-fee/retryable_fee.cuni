@@ -1,0 +1,162 @@
+# retryable_fee.cuni — CuNi statement of Arbitrum retryable submission pricing
+#
+# Source: OffchainLabs/nitro v3.11.4 (git tag v3.11.4, commit 7d5ac27).
+# This law states, once, the pure fee computations ArbOS performs when a
+# retryable ticket is submitted (arbos/tx_processor.go, the
+# ArbitrumSubmitRetryableTx case). Every arithmetic step below cites the
+# exact nitro source lines it restates. State-dependent checks (does the
+# sender's balance cover the max fee?) are comparisons, not math, and are
+# out of scope; what is priced, in exact wei, is in scope.
+#
+# What "retryable pricing" is: submitting a retryable ticket on Arbitrum
+# costs two things — a submission fee that prices the L1 calldata the
+# ticket commits to, and L2 gas for the ticket's execution. Both are
+# charged in wei as exact integers. There is no division anywhere in this
+# law, so there is no rounding behavior to dispute.
+#
+# The five functions:
+#   submission_fee        L1-calldata component: l1BaseFee * (1400 + 6*len)
+#   submission_refund     excess of maxSubmissionFee over the fee, capped
+#                         by what the deposit actually holds
+#   l2_gas_cost           execution gas: effectiveBaseFee * gasLimit
+#   infra_fee_cost        ArbOS v11+ infra split: min(gasCost,
+#                         min(minBaseFee, baseFee) * gasLimit)
+#   gas_price_refund      excess of gasFeeCap over the base fee, capped by
+#                         what the deposit actually holds
+#
+# The kinks (where fee bugs live): submission_fee has a fixed 1400-weight
+# ticket overhead, so calldata_len = 0 still costs 1400 * l1BaseFee —
+# the zero boundary is priced, not free. infra_fee_cost kinks where
+# minBaseFee crosses the effective base fee. Both refunds kink where the
+# deposit cap binds. The vector battery hits every kink from both sides.
+#
+# Cross-seat domain: every intermediate must fit in 53 bits so the
+# JavaScript seat (f64 numbers) stays exact. The Go seat wraps int64
+# silently and Python is unbounded — rather than let seats disagree, the
+# law refuses inputs whose fee would exceed 2^53 - 1. Realistic mainnet
+# values (L1 base fee far under a million gwei, calldata under 128 KiB)
+# sit deep inside the domain; the bound is documented, not hidden.
+
+def submission_fee(calldata_len: int, l1_base_fee_wei: int) -> int ? do
+    # nitro arbos/retryables/retryable.go:394-398
+    #   func RetryableSubmissionFee(calldataLengthInBytes int, l1BaseFee *big.Int) *big.Int {
+    #       return arbmath.BigMulByUint(l1BaseFee, 1400+6*uint64(calldataLengthInBytes))
+    #   }
+    # arbmath.BigMulByUint is exact big-int multiplication (no rounding).
+    if calldata_len < 0 do
+        fail `FEE_NEG_CALLDATA`
+    end
+    if l1_base_fee_wei < 0 do
+        fail `FEE_NEG_BASEFEE`
+    end
+    let factor = 1400 + 6 * calldata_len
+    # factor >= 1400 always, so the division below is safe.
+    # Refuse rather than overflow any seat (2^53 - 1 = 9007199254740991).
+    if l1_base_fee_wei > 9007199254740991 / factor do
+        fail `FEE_OUT_OF_DOMAIN`
+    end
+    ret l1_base_fee_wei * factor
+end
+
+def submission_refund(available_refund_wei: int, max_submission_fee_wei: int,
+                      submission_fee_wei: int) -> int ? do
+    # nitro arbos/tx_processor.go:374,377
+    #   withheldSubmissionFee := takeFunds(availableRefund, submissionFee)
+    #   submissionFeeRefund   := takeFunds(availableRefund, arbmath.BigSub(tx.MaxSubmissionFee, submissionFee))
+    # takeFunds(pool, take) [tx_processor.go:102-113]: panics if take < 0;
+    # otherwise it returns min(pool, take) and deducts it from pool.
+    # The take here is non-negative only because tx_processor.go:357 checks
+    # maxSubmissionFee >= submissionFee first; the law enforces the same.
+    if available_refund_wei < 0 do
+        fail `REFUND_NEG_AVAILABLE`
+    end
+    if max_submission_fee_wei < submission_fee_wei do
+        fail `REFUND_MAX_BELOW_FEE`
+    end
+    let excess = max_submission_fee_wei - submission_fee_wei
+    if available_refund_wei < excess do
+        ret available_refund_wei
+    end
+    ret excess
+end
+
+def l2_gas_cost(effective_base_fee_wei: int, gas_limit: int) -> int ? do
+    # nitro arbos/tx_processor.go:454
+    #   gascost := arbmath.BigMulByUint(effectiveBaseFee, usergas)
+    # where usergas = p.msg.GasLimit (tx_processor.go:437).
+    if effective_base_fee_wei < 0 do
+        fail `GAS_NEG_BASEFEE`
+    end
+    if gas_limit < 0 do
+        fail `GAS_NEG_LIMIT`
+    end
+    if effective_base_fee_wei > 9007199254740991 / (gas_limit + 1) do
+        fail `GAS_OUT_OF_DOMAIN`
+    end
+    ret effective_base_fee_wei * gas_limit
+end
+
+def infra_fee_cost(network_cost_wei: int, min_base_fee_wei: int,
+                   effective_base_fee_wei: int, gas_limit: int) -> int ? do
+    # nitro arbos/tx_processor.go:462-464 (ArbOS version >= 11 only)
+    #   infraFee   := arbmath.BigMin(minBaseFee, effectiveBaseFee)   // :462
+    #   infraCost  := arbmath.BigMulByUint(infraFee, usergas)        // :463
+    #   infraCost   = takeFunds(networkCost, infraCost)              // :464
+    # with networkCost = gascost from l2_gas_cost above (:455).
+    # takeFunds returns min(pool, take); the law states exactly that.
+    # The kink: which side of min() wins flips at minBaseFee == baseFee.
+    if network_cost_wei < 0 do
+        fail `INFRA_NEG_COST`
+    end
+    if min_base_fee_wei < 0 do
+        fail `INFRA_NEG_MINFEE`
+    end
+    if effective_base_fee_wei < 0 do
+        fail `INFRA_NEG_BASEFEE`
+    end
+    if gas_limit < 0 do
+        fail `INFRA_NEG_LIMIT`
+    end
+    mut fee = min_base_fee_wei
+    if effective_base_fee_wei < fee do
+        fee = effective_base_fee_wei
+    end
+    if fee > 9007199254740991 / (gas_limit + 1) do
+        fail `INFRA_OUT_OF_DOMAIN`
+    end
+    let take = fee * gas_limit
+    if network_cost_wei < take do
+        ret network_cost_wei
+    end
+    ret take
+end
+
+def gas_price_refund(available_refund_wei: int, gas_fee_cap_wei: int,
+                     effective_base_fee_wei: int, gas_charged: int) -> int ? do
+    # nitro arbos/tx_processor.go:480,485
+    #   gasPriceRefund := arbmath.BigMulByUint(arbmath.BigSub(tx.GasFeeCap, effectiveBaseFee), tx.Gas)
+    #   ...
+    #   gasPriceRefund = takeFunds(availableRefund, gasPriceRefund)
+    # tx_processor.go:440-441 requires gasFeeCap >= effectiveBaseFee before
+    # this line (else the submission takes the no-auto-redeem path); the
+    # negative branch at :481-484 exists only for gas estimation mode.
+    # The law states the non-estimation path and refuses the other.
+    if available_refund_wei < 0 do
+        fail `GREFUND_NEG_AVAILABLE`
+    end
+    if gas_fee_cap_wei < effective_base_fee_wei do
+        fail `GREFUND_CAP_BELOW_BASEFEE`
+    end
+    if gas_charged < 0 do
+        fail `GREFUND_NEG_GAS`
+    end
+    let diff = gas_fee_cap_wei - effective_base_fee_wei
+    if diff > 9007199254740991 / (gas_charged + 1) do
+        fail `GREFUND_OUT_OF_DOMAIN`
+    end
+    let want = diff * gas_charged
+    if available_refund_wei < want do
+        ret available_refund_wei
+    end
+    ret want
+end

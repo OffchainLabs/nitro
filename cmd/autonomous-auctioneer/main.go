@@ -1,0 +1,184 @@
+// Copyright 2024-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
+
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/util"
+	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/timeboost"
+)
+
+func printSampleUsage(name string) {
+	fmt.Printf("Sample usage: %s --help \n", name)
+}
+
+func main() {
+	os.Exit(mainImpl())
+}
+
+func mainImpl() int {
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	defer cancelFunc()
+
+	args := os.Args[1:]
+	nodeConfig, err := parseAuctioneerArgs(ctx, args)
+	if err != nil {
+		confighelpers.PrintErrorAndExit(err, printSampleUsage)
+		panic(err)
+	}
+	stackConf := DefaultAuctioneerStackConfig
+	stackConf.DataDir = "" // ephemeral
+	nodeConfig.HTTP.Apply(&stackConf)
+	nodeConfig.WS.Apply(&stackConf)
+	nodeConfig.IPC.Apply(&stackConf)
+	stackConf.P2P.ListenAddr = ""
+	stackConf.P2P.NoDial = true
+	stackConf.P2P.NoDiscovery = true
+	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
+	stackConf.Version = strippedRevision
+
+	err = genericconf.InitLog(nodeConfig.LogType, nodeConfig.LogLevel, &nodeConfig.FileLogging, genericconf.DefaultPathResolver(nodeConfig.Persistent.LogDir))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
+		return 1
+	}
+	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
+		filename := genericconf.DefaultPathResolver(nodeConfig.Persistent.GlobalConfig)("jwtsecret")
+		if err := genericconf.TryCreatingJWTSecret(filename); err != nil {
+			log.Error("Failed to prepare jwt secret file", "err", err)
+			return 1
+		}
+		stackConf.JWTSecret = filename
+	}
+
+	liveNodeConfig := genericconf.NewLiveConfig[*AutonomousAuctioneerConfig](args, nodeConfig, parseAuctioneerArgs)
+	liveNodeConfig.SetOnReloadHook(func(oldCfg *AutonomousAuctioneerConfig, newCfg *AutonomousAuctioneerConfig) error {
+
+		return genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, genericconf.DefaultPathResolver(nodeConfig.Persistent.LogDir))
+	})
+
+	timeboost.EnsureBidValidatorExposedViaRPC(&stackConf)
+
+	if err := util.StartMetrics(nodeConfig.Metrics, nodeConfig.PProf, &nodeConfig.MetricsServer, &nodeConfig.PprofCfg); err != nil {
+		log.Error("Error starting metrics", "error", err)
+		return 1
+	}
+
+	fatalErrChan := make(chan error, 10)
+
+	if nodeConfig.AuctioneerServer.Enable && nodeConfig.BidValidator.Enable {
+		log.Crit("Both auctioneer and bid validator are enabled, only one can be enabled at a time")
+		return 1
+	}
+
+	if nodeConfig.AuctioneerServer.Enable {
+		log.Info("Running Arbitrum express lane auctioneer", "revision", vcsRevision, "vcs.time", vcsTime)
+		auctioneer, err := timeboost.NewAuctioneerServer(
+			ctx,
+			func() *timeboost.AuctioneerServerConfig { return &liveNodeConfig.Get().AuctioneerServer },
+		)
+		if err != nil {
+			log.Error("Error creating new auctioneer", "error", err)
+			return 1
+		}
+		auctioneer.Start(ctx)
+	} else if nodeConfig.BidValidator.Enable {
+		log.Info("Running Arbitrum express lane bid validator", "revision", vcsRevision, "vcs.time", vcsTime)
+		stack, err := node.New(&stackConf)
+		if err != nil {
+			pflag.Usage()
+			log.Crit("failed to initialize geth stack", "err", err)
+		}
+		bidValidator, err := timeboost.NewBidValidator(
+			ctx,
+			stack,
+			func() *timeboost.BidValidatorConfig { return &liveNodeConfig.Get().BidValidator },
+		)
+		if err != nil {
+			log.Error("Error creating new bid validator", "error", err)
+			return 1
+		}
+		if err = bidValidator.Initialize(ctx); err != nil {
+			log.Error("error initializing bid validator", "err", err)
+			return 1
+		}
+		err = stack.Start()
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error starting stack: %w", err)
+		}
+		defer stack.Close()
+		bidValidator.Start(ctx)
+	}
+
+	liveNodeConfig.Start(ctx)
+	defer liveNodeConfig.StopAndWait()
+
+	sigint := make(chan os.Signal, 1)
+	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
+
+	exitCode := 0
+	select {
+	case err := <-fatalErrChan:
+		log.Error("shutting down due to fatal error", "err", err)
+		defer log.Error("shut down due to fatal error", "err", err)
+		exitCode = 1
+	case <-sigint:
+		log.Info("shutting down because of sigint")
+	}
+	// cause future ctrl+c's to panic
+	close(sigint)
+	return exitCode
+}
+
+func parseAuctioneerArgs(ctx context.Context, args []string) (*AutonomousAuctioneerConfig, error) {
+	f := pflag.NewFlagSet("", pflag.ContinueOnError)
+
+	AuctioneerConfigAddOptions(f)
+
+	k, err := confighelpers.BeginCommonParse(f, args)
+	if err != nil {
+		return nil, err
+	}
+
+	err = confighelpers.ApplyOverrides(f, k)
+	if err != nil {
+		return nil, err
+	}
+
+	var cfg AutonomousAuctioneerConfig
+	if err := confighelpers.EndCommonParse(k, &cfg); err != nil {
+		return nil, err
+	}
+
+	// Don't print wallet passwords
+	if cfg.Conf.Dump {
+		err = confighelpers.DumpConfig(k, map[string]interface{}{
+			"l1.wallet.password":        "",
+			"l1.wallet.private-key":     "",
+			"l2.dev-wallet.password":    "",
+			"l2.dev-wallet.private-key": "",
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Don't pass around wallet contents with normal configuration
+	err = cfg.Validate()
+	if err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}

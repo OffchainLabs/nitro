@@ -1,0 +1,460 @@
+// Copyright 2025-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+package melextraction
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"math/big"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/arbnode/mel"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/daprovider"
+)
+
+func TestExtractMessages(t *testing.T) {
+	ctx := context.Background()
+	prevParentBlockHash := common.HexToHash("0x1234")
+
+	tests := []struct {
+		name                 string
+		melStateParentHash   common.Hash
+		useExtractMessages   bool // If true, use ExtractMessages instead of extractMessagesImpl
+		lookupBatches        func(context.Context, *types.Header, TransactionFetcher, LogsFetcher, EventUnpacker) ([]*mel.SequencerInboxBatch, []*types.Transaction, error)
+		lookupDelayedMsgs    func(context.Context, *mel.State, *types.Header, TransactionFetcher, LogsFetcher) ([]*mel.DelayedInboxMessage, error)
+		serializer           func(context.Context, *mel.SequencerInboxBatch, *types.Transaction, LogsFetcher) ([]byte, error)
+		parseReport          func(io.Reader) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error)
+		parseSequencerMsg    func(context.Context, uint64, common.Hash, []byte, arbstate.DapReaderSource, daprovider.KeysetValidationMode, *params.ChainConfig) (*arbstate.SequencerMessage, error)
+		extractBatchMessages func(context.Context, *mel.State, *arbstate.SequencerMessage, DelayedMessageDatabase) ([]*arbostypes.MessageWithMetadata, error)
+		expectedError        string
+		expectedMsgCount     uint64
+		expectedDelayedSeen  uint64
+		expectedMessages     int
+		expectedDelayedMsgs  int
+	}{
+		{
+			name:               "parent chain block hash mismatch",
+			melStateParentHash: common.HexToHash("0x5678"), // Different from block's parent hash
+			useExtractMessages: true,
+			expectedError:      "parent chain block hash in MEL state does not match",
+		},
+		{
+			name:               "looking up batches fails",
+			melStateParentHash: prevParentBlockHash,
+			lookupBatches:      failingLookupBatches,
+			lookupDelayedMsgs:  successfulLookupDelayedMsgs,
+			expectedError:      "failed to lookup batches",
+		},
+		{
+			name:               "looking up delayed messages fails",
+			melStateParentHash: prevParentBlockHash,
+			lookupBatches:      emptyLookupBatches,
+			lookupDelayedMsgs:  failingLookupDelayedMsgs,
+			expectedError:      "failed to lookup delayed messages",
+		},
+		{
+			name:               "number of batch posting reports higher than batches",
+			melStateParentHash: prevParentBlockHash,
+			lookupBatches:      emptyLookupBatches,          // 0 batches
+			lookupDelayedMsgs:  successfulLookupDelayedMsgs, // 1 batch posting report
+			expectedError:      "number of batch posting reports 1 higher than the number of batches 0",
+		},
+		{
+			name:               "batch serialization fails",
+			melStateParentHash: prevParentBlockHash,
+			lookupBatches:      successfulLookupBatches,
+			lookupDelayedMsgs:  successfulLookupDelayedMsgs,
+			serializer:         failingSerializer,
+			expectedError:      "serialization error",
+		},
+		{
+			name:               "parsing batch posting report fails",
+			melStateParentHash: prevParentBlockHash,
+			lookupBatches:      successfulLookupBatches,
+			lookupDelayedMsgs:  successfulLookupDelayedMsgs,
+			serializer:         emptySerializer,
+			parseReport:        failingParseReport,
+			expectedError:      "batch posting report parsing error",
+		},
+		{
+			name:               "mismatched batch posting report batch hash and actual batch hash",
+			melStateParentHash: prevParentBlockHash,
+			lookupBatches:      successfulLookupBatches,
+			lookupDelayedMsgs:  successfulLookupDelayedMsgs,
+			serializer:         emptySerializer,  // Returns nil, hash will be different from parseReport
+			parseReport:        emptyParseReport, // Returns empty hash
+			expectedError:      "not all batch posting reports processed.",
+		},
+		{
+			name:               "parse sequencer message fails",
+			melStateParentHash: prevParentBlockHash,
+			lookupBatches:      successfulLookupBatches,
+			lookupDelayedMsgs:  successfulLookupDelayedMsgs,
+			serializer:         successfulSerializer,
+			parseReport:        successfulParseReport,
+			parseSequencerMsg:  failingParseSequencerMsg,
+			expectedError:      "failed to parse sequencer message",
+		},
+		{
+			name:                 "extracting batch messages fails",
+			melStateParentHash:   prevParentBlockHash,
+			lookupBatches:        successfulLookupBatches,
+			lookupDelayedMsgs:    successfulLookupDelayedMsgs,
+			serializer:           successfulSerializer,
+			parseReport:          successfulParseReport,
+			parseSequencerMsg:    successfulParseSequencerMsg,
+			extractBatchMessages: failingExtractBatchMessages,
+			expectedError:        "failed to extract batch messages",
+		},
+		{
+			name:                 "OK",
+			melStateParentHash:   prevParentBlockHash,
+			lookupBatches:        successfulLookupBatches,
+			lookupDelayedMsgs:    successfulLookupDelayedMsgs,
+			serializer:           successfulSerializer,
+			parseReport:          successfulParseReport,
+			parseSequencerMsg:    successfulParseSequencerMsg,
+			extractBatchMessages: successfulExtractBatchMessages,
+			expectedMsgCount:     2,
+			expectedDelayedSeen:  1,
+			expectedMessages:     2,
+			expectedDelayedMsgs:  1,
+		},
+		{
+			// 3 batches, 1 batch posting report whose hash matches only the 2nd batch.
+			// Exercises the continue path where batch 0's hash doesn't match the report,
+			// batch 1's hash does match, and batch 2 has no report to check.
+			name:               "OK - multiple batches with subset of reports",
+			melStateParentHash: prevParentBlockHash,
+			lookupBatches:      threeBatchLookup,
+			lookupDelayedMsgs:  delayedMsgsWithOneReportForSecondBatch,
+			serializer:         indexedSerializer(),
+			parseReport:        parseReportForSecondBatch,
+			parseSequencerMsg:  successfulParseSequencerMsg,
+			extractBatchMessages: func(ctx context.Context, melState *mel.State, seqMsg *arbstate.SequencerMessage, delayedMsgDB DelayedMessageDatabase) ([]*arbostypes.MessageWithMetadata, error) {
+				return []*arbostypes.MessageWithMetadata{
+					{
+						Message: &arbostypes.L1IncomingMessage{
+							L2msg:  []byte("msg"),
+							Header: &arbostypes.L1IncomingMessageHeader{Kind: arbostypes.L1MessageType_L2Message},
+						},
+					},
+				}, nil
+			},
+			expectedMsgCount:    3, // 1 message per batch * 3 batches
+			expectedDelayedSeen: 1,
+			expectedMessages:    3,
+			expectedDelayedMsgs: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			header := createBlockHeader(prevParentBlockHash)
+			melState := createMelState(tt.melStateParentHash)
+			blockLogsFetcher := &mockBlockLogsFetcher{}
+			txFetcher := &mockTxFetcher{}
+
+			var postState *mel.State
+			var messages []*arbostypes.MessageWithMetadata
+			var delayedMessages []*mel.DelayedInboxMessage
+			var batchMetas []*mel.BatchMetadata
+			var err error
+
+			if tt.useExtractMessages {
+				// Test the public ExtractMessages function
+				postState, messages, delayedMessages, batchMetas, err = ExtractMessages(
+					ctx,
+					melState,
+					header,
+					nil,
+					nil,
+					txFetcher,
+					blockLogsFetcher,
+					chaininfo.ArbitrumDevTestChainConfig(),
+				)
+			} else {
+				// Test the internal extractMessagesImpl function
+				postState, messages, delayedMessages, batchMetas, err = extractMessagesImpl(
+					ctx,
+					melState,
+					header,
+					chaininfo.ArbitrumDevTestChainConfig(),
+					nil,
+					nil,
+					txFetcher,
+					blockLogsFetcher,
+					nil,
+					tt.lookupBatches,
+					tt.lookupDelayedMsgs,
+					tt.serializer,
+					tt.extractBatchMessages,
+					tt.parseSequencerMsg,
+					tt.parseReport,
+				)
+			}
+
+			if tt.expectedError != "" {
+				require.ErrorContains(t, err, tt.expectedError)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tt.expectedMsgCount, postState.MsgCount)
+			require.Equal(t, tt.expectedDelayedSeen, postState.DelayedMessagesSeen)
+			require.Len(t, messages, tt.expectedMessages)
+			require.Len(t, delayedMessages, tt.expectedDelayedMsgs)
+			require.Len(t, batchMetas, int(postState.BatchCount-melState.BatchCount)) // #nosec G115
+		})
+	}
+}
+
+func createMelState(parentHash common.Hash) *mel.State {
+	melState := &mel.State{
+		ParentChainBlockHash: parentHash,
+	}
+	return melState
+}
+
+func createBlockHeader(parentHash common.Hash) *types.Header {
+	return &types.Header{
+		ParentHash: parentHash,
+		Number:     big.NewInt(0),
+	}
+}
+
+// Mock functions
+func successfulLookupBatches(
+	ctx context.Context,
+	parentChainBlock *types.Header,
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
+	eventUnpacker EventUnpacker,
+) ([]*mel.SequencerInboxBatch, []*types.Transaction, error) {
+	batches := []*mel.SequencerInboxBatch{{}}
+	txs := []*types.Transaction{{}}
+	return batches, txs, nil
+}
+
+func emptyLookupBatches(
+	ctx context.Context,
+	parentChainBlock *types.Header,
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
+	eventUnpacker EventUnpacker,
+) ([]*mel.SequencerInboxBatch, []*types.Transaction, error) {
+	return nil, nil, nil
+}
+
+func failingLookupBatches(
+	ctx context.Context,
+	parentChainBlock *types.Header,
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
+	eventUnpacker EventUnpacker,
+) ([]*mel.SequencerInboxBatch, []*types.Transaction, error) {
+	return nil, nil, errors.New("failed to lookup batches")
+}
+
+func successfulLookupDelayedMsgs(
+	ctx context.Context,
+	melState *mel.State,
+	parentChainBlock *types.Header,
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
+) ([]*mel.DelayedInboxMessage, error) {
+	hash := common.MaxHash
+	delayedMsgs := []*mel.DelayedInboxMessage{
+		{
+			Message: &arbostypes.L1IncomingMessage{
+				L2msg: []byte("foobar"),
+				Header: &arbostypes.L1IncomingMessageHeader{
+					Kind:      arbostypes.L1MessageType_BatchPostingReport,
+					RequestId: &hash,
+					L1BaseFee: common.Big0,
+				},
+			},
+		},
+	}
+	return delayedMsgs, nil
+}
+
+func failingLookupDelayedMsgs(
+	ctx context.Context,
+	melState *mel.State,
+	parentChainBlock *types.Header,
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
+) ([]*mel.DelayedInboxMessage, error) {
+	return nil, errors.New("failed to lookup delayed messages")
+}
+
+func successfulSerializer(ctx context.Context,
+	batch *mel.SequencerInboxBatch,
+	tx *types.Transaction,
+	logsFetcher LogsFetcher,
+) ([]byte, error) {
+	return []byte("foobar"), nil
+}
+
+func emptySerializer(ctx context.Context,
+	batch *mel.SequencerInboxBatch,
+	tx *types.Transaction,
+	logsFetcher LogsFetcher,
+) ([]byte, error) {
+	return nil, nil
+}
+
+func failingSerializer(ctx context.Context,
+	batch *mel.SequencerInboxBatch,
+	tx *types.Transaction,
+	logsFetcher LogsFetcher,
+) ([]byte, error) {
+	return nil, errors.New("serialization error")
+}
+
+func successfulParseReport(
+	rd io.Reader,
+) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error) {
+	return nil, common.Address{}, crypto.Keccak256Hash([]byte("foobar")), 0, nil, 0, nil
+}
+
+func emptyParseReport(
+	rd io.Reader,
+) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error) {
+	return nil, common.Address{}, common.Hash{}, 0, nil, 0, nil
+}
+
+func failingParseReport(
+	rd io.Reader,
+) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error) {
+	return nil, common.Address{}, common.Hash{}, 0, nil, 0, errors.New("batch posting report parsing error")
+}
+
+func successfulParseSequencerMsg(
+	ctx context.Context,
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	data []byte,
+	dapReaders arbstate.DapReaderSource,
+	keysetValidationMode daprovider.KeysetValidationMode,
+	chainConfig *params.ChainConfig,
+) (*arbstate.SequencerMessage, error) {
+	return nil, nil
+}
+
+func failingParseSequencerMsg(
+	ctx context.Context,
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	data []byte,
+	dapReaders arbstate.DapReaderSource,
+	keysetValidationMode daprovider.KeysetValidationMode,
+	chainConfig *params.ChainConfig,
+) (*arbstate.SequencerMessage, error) {
+	return nil, errors.New("failed to parse sequencer message")
+}
+
+func successfulExtractBatchMessages(
+	ctx context.Context,
+	melState *mel.State,
+	seqMsg *arbstate.SequencerMessage,
+	delayedMsgDB DelayedMessageDatabase,
+) ([]*arbostypes.MessageWithMetadata, error) {
+	return []*arbostypes.MessageWithMetadata{
+		{
+			Message: &arbostypes.L1IncomingMessage{
+				L2msg: []byte("foobar"),
+				Header: &arbostypes.L1IncomingMessageHeader{
+					Kind: arbostypes.L1MessageType_L2Message,
+				},
+			},
+		},
+		{
+			Message: &arbostypes.L1IncomingMessage{
+				L2msg: []byte("nyancat"),
+				Header: &arbostypes.L1IncomingMessageHeader{
+					Kind: arbostypes.L1MessageType_L2Message,
+				},
+			},
+		},
+	}, nil
+}
+
+func failingExtractBatchMessages(
+	ctx context.Context,
+	melState *mel.State,
+	seqMsg *arbstate.SequencerMessage,
+	delayedMsgDB DelayedMessageDatabase,
+) ([]*arbostypes.MessageWithMetadata, error) {
+	return nil, errors.New("failed to extract batch messages")
+}
+
+// threeBatchLookup returns 3 batches and 3 transactions.
+func threeBatchLookup(
+	ctx context.Context,
+	parentChainBlock *types.Header,
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
+	eventUnpacker EventUnpacker,
+) ([]*mel.SequencerInboxBatch, []*types.Transaction, error) {
+	batches := []*mel.SequencerInboxBatch{{SequenceNumber: 0}, {SequenceNumber: 1}, {SequenceNumber: 2}}
+	txs := []*types.Transaction{{}, {}, {}}
+	return batches, txs, nil
+}
+
+// delayedMsgsWithOneReportForSecondBatch returns 1 delayed message that is a
+// batch posting report whose hash will match the 2nd batch (index 1) produced
+// by indexedSerializer.
+func delayedMsgsWithOneReportForSecondBatch(
+	ctx context.Context,
+	melState *mel.State,
+	parentChainBlock *types.Header,
+	txFetcher TransactionFetcher,
+	logsFetcher LogsFetcher,
+) ([]*mel.DelayedInboxMessage, error) {
+	hash := common.MaxHash
+	return []*mel.DelayedInboxMessage{
+		{
+			Message: &arbostypes.L1IncomingMessage{
+				L2msg: []byte("report-for-batch1"),
+				Header: &arbostypes.L1IncomingMessageHeader{
+					Kind:      arbostypes.L1MessageType_BatchPostingReport,
+					RequestId: &hash,
+					L1BaseFee: common.Big0,
+				},
+			},
+		},
+	}, nil
+}
+
+// indexedSerializer returns a serializer that produces different bytes for each
+// successive call: "batch0", "batch1", "batch2", …
+func indexedSerializer() func(context.Context, *mel.SequencerInboxBatch, *types.Transaction, LogsFetcher) ([]byte, error) {
+	callIndex := 0
+	return func(ctx context.Context, batch *mel.SequencerInboxBatch, tx *types.Transaction, logsFetcher LogsFetcher) ([]byte, error) {
+		data := []byte(fmt.Sprintf("batch%d", callIndex))
+		callIndex++
+		return data, nil
+	}
+}
+
+// parseReportForSecondBatch returns a hash that matches the serialized bytes
+// of the 2nd batch ("batch1") from indexedSerializer.
+func parseReportForSecondBatch(
+	rd io.Reader,
+) (*big.Int, common.Address, common.Hash, uint64, *big.Int, uint64, error) {
+	return nil, common.Address{}, crypto.Keccak256Hash([]byte("batch1")), 0, nil, 0, nil
+}

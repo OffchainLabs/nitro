@@ -1,0 +1,48 @@
+[workspace]
+resolver = "2"
+members = [
+    "create",
+    "erc20",
+    "evm-data",
+    "fallible",
+    "hostio-test",
+    "keccak",
+    "keccak-100",
+    "log",
+    "math",
+    "multicall",
+    "read-return-data",
+    "sdk-storage",
+    "storage",
+]
+
+[workspace.package]
+authors = ["Offchain Labs"]
+edition = "2024"
+homepage = "https://arbitrum.io"
+license = "BSL"
+publish = false
+repository = "https://github.com/OffchainLabs/nitro.git"
+rust-version = "1.93"
+
+[workspace.dependencies]
+stylus-sdk = { path = "../../langs/rust/stylus-sdk" }
+alloy-primitives = { version = "1.0.1" }
+alloy-sol-types = { version = "1.0.1" }
+hex = { version = "0.4.3" }
+sha3 = { version = "0.10.5" }
+
+[profile.release]
+codegen-units = 1
+strip = true
+lto = true
+panic = "abort"
+
+[profile.release.package.erc20]
+opt-level = "s"
+
+[profile.release.package.hostio-test]
+opt-level = "s"
+
+[profile.release.package.sdk-storage]
+opt-level = "s"

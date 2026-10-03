@@ -1,0 +1,80 @@
+[profile.default]
+src = 'src'
+out = 'out/src'
+libs = ['node_modules', 'lib']
+test = 'test'
+cache_path = 'forge-cache/sol'
+via_ir = false
+remappings = ['ds-test/=lib/forge-std/lib/ds-test/src/',
+              'forge-std/=lib/forge-std/src/',
+              'openzeppelin-contracts/=lib/openzeppelin-contracts/contracts/',
+              '@nitro-contracts/=../contracts/src/']
+fs_permissions = [{ access = "read", path = "./"}]
+solc = '0.8.17'
+optimizer = true
+optimizer_runs = 2000
+evm_version = 'paris'
+
+[profile.solc824]
+src = 'src'
+out = 'out/src'
+libs = ['node_modules', 'lib']
+test = 'test'
+cache_path = 'forge-cache/sol'
+via_ir = false
+remappings = ['ds-test/=lib/forge-std/lib/ds-test/src/',
+              'forge-std/=lib/forge-std/src/',
+              'openzeppelin-contracts/=lib/openzeppelin-contracts/contracts/',
+              '@nitro-contracts/=../contracts/src/']
+fs_permissions = [{ access = "read", path = "./"}]
+solc = '0.8.24'
+optimizer = true
+optimizer_runs = 100
+evm_version = 'cancun'
+
+[profile.gas-dimensions]
+src = 'gas-dimensions/src'
+test = 'gas-dimensions/test'
+script = 'gas-dimeinsions/script'
+out = 'out/gas-dimensions'
+libs = ['lib']
+cache_path = 'forge-cache/gas-dimensions'
+optimizer = false
+yul_optimizer = false
+via_ir = false
+evm_version = 'cancun'
+remappings = ['ds-test/=lib/forge-std/lib/ds-test/src/',
+              'forge-std/=lib/forge-std/src/']
+fs_permissions = [{ access = "read", path = "./"}]
+include_paths = ['gas-dimensions/src/', 'gas-dimensions/scripts']
+auto_detect_remappings = false
+solc = '0.8.30'
+
+[profile.gas-dimensions-yul]
+src = 'gas-dimensions/yul'
+out = 'out/gas-dimensions-yul'
+libs = []
+cache_path  = 'forge-cache/gas-dimensions-yul'
+remappings = []
+auto_detect_remappings = false
+
+[fmt]
+line_length = 100
+tab_width = 4
+bracket_spacing = false
+int_types = "long"
+multiline_func_header = "params_first"
+quote_style = "double"
+number_underscore = "preserve"
+hex_underscore = "remove"
+single_line_statement_blocks = "preserve"
+override_spacing = false
+wrap_comments = false
+ignore = []
+contract_new_lines = false
+sort_imports = false
+
+[fuzz]
+runs = 1000
+
+# See more config options https://github.com/foundry-rs/foundry/tree/master/crates/config

@@ -1,0 +1,186 @@
+// Copyright 2021-2026, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
+
+package testhelpers
+
+import (
+	"context"
+	crypto "crypto/rand"
+	"log/slog"
+	"math/big"
+	"math/rand"
+	"os"
+	"regexp"
+	"runtime/debug"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/offchainlabs/nitro/util/colors"
+)
+
+// Fail a test should an error occur
+func RequireImpl(t testing.TB, err error, printables ...interface{}) {
+	t.Helper()
+	if err != nil {
+		t.Log(string(debug.Stack()))
+		t.Fatal(colors.Red, printables, err, colors.Clear)
+	}
+}
+
+func FailImpl(t *testing.T, printables ...interface{}) {
+	t.Helper()
+	t.Fatal(colors.Red, printables, colors.Clear)
+}
+
+func RandomizeSlice(slice []byte) []byte {
+	_, err := crypto.Read(slice)
+	if err != nil {
+		panic(err)
+	}
+	return slice
+}
+
+func RandomSlice(size uint64) []byte {
+	return RandomizeSlice(make([]byte, size))
+}
+
+func RandomHash() common.Hash {
+	var hash common.Hash
+	RandomizeSlice(hash[:])
+	return hash
+}
+
+func RandomAddress() common.Address {
+	var address common.Address
+	RandomizeSlice(address[:])
+	return address
+}
+
+func RandomCallValue(limit int64) *big.Int {
+	return big.NewInt(rand.Int63n(limit))
+}
+
+// Computes a pseudo-random uint64 on the interval [min, max]
+func RandomUint32(min, max uint32) uint32 {
+	//#nosec G115
+	return uint32(RandomUint64(uint64(min), uint64(max)))
+}
+
+// Computes a pseudo-random uint64 on the interval [min, max]
+func RandomUint64(min, max uint64) uint64 {
+	return uint64(rand.Uint64()%(max-min+1) + min)
+}
+
+func RandomBool() bool {
+	return rand.Int31n(2) == 0
+}
+
+type LogHandler struct {
+	mutex           sync.Mutex
+	t               *testing.T
+	records         []slog.Record
+	terminalHandler *log.TerminalHandler
+}
+
+func (h *LogHandler) Enabled(_ context.Context, level slog.Level) bool {
+	return h.terminalHandler.Enabled(context.Background(), level)
+}
+func (h *LogHandler) WithGroup(name string) slog.Handler {
+	return h.terminalHandler.WithGroup(name)
+}
+func (h *LogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return h.terminalHandler.WithAttrs(attrs)
+}
+
+func (h *LogHandler) Handle(_ context.Context, record slog.Record) error {
+	if err := h.terminalHandler.Handle(context.Background(), record); err != nil {
+		return err
+	}
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	h.records = append(h.records, record)
+	return nil
+}
+
+func (h *LogHandler) WasLogged(pattern string) bool {
+	return h.wasLoggedWithFilter(pattern, nil)
+}
+
+// Clear removes all recorded log entries.
+func (h *LogHandler) Clear() {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	h.records = h.records[:0]
+}
+
+func (h *LogHandler) WasLoggedAtLevel(pattern string, lvl slog.Level) bool {
+	return h.wasLoggedWithFilter(pattern, &lvl)
+}
+
+func (h *LogHandler) wasLoggedWithFilter(pattern string, lvl *slog.Level) bool {
+	re, err := regexp.Compile(pattern)
+	RequireImpl(h.t, err)
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	for _, record := range h.records {
+		if lvl != nil && record.Level != *lvl {
+			continue
+		}
+		if re.MatchString(record.Message) {
+			return true
+		}
+	}
+	return false
+}
+
+// WasLoggedWithAttr checks whether a log record matching msgPattern has an
+// attribute whose key equals attrKey and whose string value contains attrSubstr.
+func (h *LogHandler) WasLoggedWithAttr(msgPattern, attrKey, attrSubstr string) bool {
+	msgRe, err := regexp.Compile(msgPattern)
+	RequireImpl(h.t, err)
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	for _, record := range h.records {
+		if !msgRe.MatchString(record.Message) {
+			continue
+		}
+		found := false
+		record.Attrs(func(a slog.Attr) bool {
+			if a.Key == attrKey && strings.Contains(a.Value.String(), attrSubstr) {
+				found = true
+				return false
+			}
+			return true
+		})
+		if found {
+			return true
+		}
+	}
+	return false
+}
+
+func newLogHandler(t *testing.T) *LogHandler {
+	return &LogHandler{
+		t:               t,
+		terminalHandler: log.NewTerminalHandler(os.Stderr, false),
+	}
+}
+
+var initTestLogMu sync.Mutex
+
+func InitTestLog(t *testing.T, level slog.Level) *LogHandler {
+	t.Helper()
+	if !initTestLogMu.TryLock() {
+		t.Fatal("InitTestLog called concurrently - this test must not run in parallel")
+	}
+	t.Cleanup(initTestLogMu.Unlock)
+	handler := newLogHandler(t)
+	glogger := log.NewGlogHandler(handler)
+	glogger.Verbosity(level)
+	log.SetDefault(log.NewLogger(glogger))
+	return handler
+}

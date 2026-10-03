@@ -1,0 +1,54 @@
+# Multi-Dimensional (MultiGas) Gas Metering with Resource Kinds
+
+## Context and Problem Statement
+
+As part of the implementation of a constraint-based gas pricing model, Ethereum’s traditional single-dimensional gas accounting (`uint64`) is being replaced by a multi-dimensional system in which gas is tracked separately for distinct resource categories. The objective is to isolate and measure consumption across orthogonal resource axes, such as computation, state access, state growth, and historical data appendage. This separation enables fine-grained pricing adjustments per resource in response to network load or policy considerations.
+
+## Decision Outcome
+
+A multi-dimensional gas metering approach is adopted, introducing distinct `ResourceKind` categories. Each opcode’s dynamic gas cost is mapped to one or more resource kinds. The following resource kinds have been identified:
+
+- ResourceKindComputation. Represents pure computational effort, CPU-bound operations that do not mutate global state: 
+    - Opcode execution
+    - Memory expansion
+    - Call gas forwarding (EIP-150)
+    - Value transfers (unless to empty accounts, then it's StorageGrowth)
+    - Contract init code execution (CREATE, CREATE2)
+    - Hashing
+    - Bloom filter updates
+
+- ResourceKindStorageAccessRead. Represents read access to the global state:
+    - Storage slot reads (SLOAD, SSTORE cold slot load)
+    - Account lookups (BALANCE, EXTCODESIZE, EXTCODEHASH, EXTCODECOPY)
+    - CALL/DELEGATECALL/STATICCALL cold account access and target resolution
+    - SELFDESTRUCT cold beneficiary access
+    - Access list intrinsic gas (EIP-2929/2930)
+    - Verkle/EIP-4762 witness reads and code chunk reads
+    - WASM state loads and cold access
+
+- ResourceKindStorageAccessWrite. Represents write access to the global state:
+    - SSTORE write costs (EIP-2200, EIP-1283, Verkle, WASM)
+    - SELFDESTRUCT base cost (EIP-150) and deletion
+    - Verkle/EIP-4762 witness writes and value transfers
+
+- ResourceKindStorageGrowth. Includes operations that increase the persistent state size:
+    - New account creation
+    - Storage slot writes (zero → nonzero)
+    - Merkle/Verkle trie growth (EIP-4762)
+    - Contract deployment deposit cost
+
+- ResourceKindHistoryGrowth. Represents writes to the append-only event log history:
+    - Event logs (LOG0–LOG4)
+
+- ResourceKindSingleDim. Represents single-dimensional gas charges that don't map to a specific machine resource:
+    - L1 batch posting calldata costs
+    - Gas donated to a retryable attempt during redeem
+    - For more information, see `0003-multi-dimensional-gas-refunds.md`.
+
+- ResourceKindL2Calldata. Represents the cost of L2 calldata processing:
+    - L2 transaction calldata
+    - Precompile argument data
+
+- ResourceKindWasmComputation. Represents Stylus WASM execution costs:
+    - WASM/Stylus program execution
+    - Stylus contract calls

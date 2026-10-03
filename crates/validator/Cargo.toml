@@ -1,0 +1,35 @@
+[package]
+name = "validator"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+alloy-rpc-types-engine = { workspace = true }
+anyhow = { workspace = true }
+arbutil = { workspace = true }
+axum = { workspace = true }
+axum-extra = { workspace = true, features = ["typed-header"] }
+clap = { workspace = true, features = ["derive"] }
+jit = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "net", "io-util", "process", "signal"] }
+tower-http = { workspace = true, features = ["trace"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = [
+    "fmt",
+    "json",
+    "env-filter",
+] }
+validation = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true, default-features = true }
+reqwest = { workspace = true }
+tempfile = { workspace = true }

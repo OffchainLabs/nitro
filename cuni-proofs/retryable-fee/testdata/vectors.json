@@ -1,0 +1,336 @@
+[
+  {
+    "fn": "submission_fee",
+    "args": [
+      "0",
+      "0"
+    ],
+    "want": "0",
+    "note": "zero len, zero fee -\u003e 0"
+  },
+  {
+    "fn": "submission_fee",
+    "args": [
+      "0",
+      "1"
+    ],
+    "want": "1400",
+    "note": "zero len: fixed 1400 overhead only"
+  },
+  {
+    "fn": "submission_fee",
+    "args": [
+      "0",
+      "15000000000"
+    ],
+    "want": "21000000000000",
+    "note": "zero len at 15 gwei"
+  },
+  {
+    "fn": "submission_fee",
+    "args": [
+      "1",
+      "1"
+    ],
+    "want": "1406",
+    "note": "one byte: 1406 * 1"
+  },
+  {
+    "fn": "submission_fee",
+    "args": [
+      "2",
+      "1"
+    ],
+    "want": "1412",
+    "note": "two bytes"
+  },
+  {
+    "fn": "submission_fee",
+    "args": [
+      "100",
+      "1000000000"
+    ],
+    "want": "2000000000000",
+    "note": "100 bytes at 1 gwei"
+  },
+  {
+    "fn": "submission_fee",
+    "args": [
+      "1024",
+      "100000000000"
+    ],
+    "want": "754400000000000",
+    "note": "1KiB at 100 gwei"
+  },
+  {
+    "fn": "submission_fee",
+    "args": [
+      "32768",
+      "20000000000"
+    ],
+    "want": "3960160000000000",
+    "note": "32KiB at 20 gwei"
+  },
+  {
+    "fn": "submission_fee",
+    "args": [
+      "131072",
+      "10000000000"
+    ],
+    "want": "7878320000000000",
+    "note": "128KiB at 10 gwei (large len, moderate fee)"
+  },
+  {
+    "fn": "submission_fee",
+    "args": [
+      "100000",
+      "10000000000"
+    ],
+    "want": "6014000000000000",
+    "note": "100KB at 10 gwei (large fee, moderate len)"
+  },
+  {
+    "fn": "submission_fee",
+    "args": [
+      "0",
+      "6433713753386"
+    ],
+    "want": "9007199254740400",
+    "note": "max fee at zero len: floor((2^53-1)/1400), domain edge accepted"
+  },
+  {
+    "fn": "submission_refund",
+    "args": [
+      "1000",
+      "1000",
+      "700"
+    ],
+    "want": "300",
+    "note": "avail covers excess exactly at kink"
+  },
+  {
+    "fn": "submission_refund",
+    "args": [
+      "200",
+      "1000",
+      "700"
+    ],
+    "want": "200",
+    "note": "avail binds: refund capped by deposit"
+  },
+  {
+    "fn": "submission_refund",
+    "args": [
+      "5000",
+      "1000",
+      "700"
+    ],
+    "want": "300",
+    "note": "avail ample: refund = maxFee - fee"
+  },
+  {
+    "fn": "submission_refund",
+    "args": [
+      "0",
+      "1000",
+      "700"
+    ],
+    "want": "0",
+    "note": "zero avail -\u003e zero refund"
+  },
+  {
+    "fn": "submission_refund",
+    "args": [
+      "1000",
+      "700",
+      "700"
+    ],
+    "want": "0",
+    "note": "maxFee == fee -\u003e zero refund"
+  },
+  {
+    "fn": "submission_refund",
+    "args": [
+      "1",
+      "1000000",
+      "1"
+    ],
+    "want": "1",
+    "note": "dust avail, large excess"
+  },
+  {
+    "fn": "l2_gas_cost",
+    "args": [
+      "0",
+      "21000"
+    ],
+    "want": "0",
+    "note": "zero base fee"
+  },
+  {
+    "fn": "l2_gas_cost",
+    "args": [
+      "1",
+      "21000"
+    ],
+    "want": "21000",
+    "note": "1 wei base fee at TxGas"
+  },
+  {
+    "fn": "l2_gas_cost",
+    "args": [
+      "1000000000",
+      "21000"
+    ],
+    "want": "21000000000000",
+    "note": "1 gwei at TxGas"
+  },
+  {
+    "fn": "l2_gas_cost",
+    "args": [
+      "100000000000",
+      "90000"
+    ],
+    "want": "9000000000000000",
+    "note": "100 gwei, 90k gas (domain edge)"
+  },
+  {
+    "fn": "l2_gas_cost",
+    "args": [
+      "90000000000",
+      "100000"
+    ],
+    "want": "9000000000000000",
+    "note": "90 gwei, 100k gas (domain edge: floor((2^53-1)/100001))"
+  },
+  {
+    "fn": "l2_gas_cost",
+    "args": [
+      "0",
+      "0"
+    ],
+    "want": "0",
+    "note": "zero gas"
+  },
+  {
+    "fn": "infra_fee_cost",
+    "args": [
+      "21000000",
+      "1000000000",
+      "2000000000",
+      "21000"
+    ],
+    "want": "21000000",
+    "note": "minFee \u003c baseFee: infra takes minFee*gas"
+  },
+  {
+    "fn": "infra_fee_cost",
+    "args": [
+      "42000000",
+      "5000000000",
+      "2000000000",
+      "21000"
+    ],
+    "want": "42000000",
+    "note": "minFee \u003e baseFee: infra takes baseFee*gas"
+  },
+  {
+    "fn": "infra_fee_cost",
+    "args": [
+      "21000000",
+      "1000000000",
+      "1000000000",
+      "21000"
+    ],
+    "want": "21000000",
+    "note": "kink: minFee == baseFee"
+  },
+  {
+    "fn": "infra_fee_cost",
+    "args": [
+      "1000",
+      "1000000000",
+      "1000000000",
+      "21000"
+    ],
+    "want": "1000",
+    "note": "netCost binds: infra capped by gascost"
+  },
+  {
+    "fn": "infra_fee_cost",
+    "args": [
+      "0",
+      "1000000000",
+      "1000000000",
+      "21000"
+    ],
+    "want": "0",
+    "note": "zero netCost -\u003e zero"
+  },
+  {
+    "fn": "infra_fee_cost",
+    "args": [
+      "21000000",
+      "0",
+      "1000000000",
+      "21000"
+    ],
+    "want": "0",
+    "note": "zero minFee -\u003e zero take"
+  },
+  {
+    "fn": "gas_price_refund",
+    "args": [
+      "1000000",
+      "2000000000",
+      "1000000000",
+      "21000"
+    ],
+    "want": "1000000",
+    "note": "cap 2x baseFee, ample avail"
+  },
+  {
+    "fn": "gas_price_refund",
+    "args": [
+      "100",
+      "2000000000",
+      "1000000000",
+      "21000"
+    ],
+    "want": "100",
+    "note": "avail binds"
+  },
+  {
+    "fn": "gas_price_refund",
+    "args": [
+      "1000000",
+      "1000000000",
+      "1000000000",
+      "21000"
+    ],
+    "want": "0",
+    "note": "kink: cap == baseFee -\u003e zero"
+  },
+  {
+    "fn": "gas_price_refund",
+    "args": [
+      "0",
+      "2000000000",
+      "1000000000",
+      "21000"
+    ],
+    "want": "0",
+    "note": "zero avail -\u003e zero"
+  },
+  {
+    "fn": "gas_price_refund",
+    "args": [
+      "1000000",
+      "3000000000",
+      "1000000000",
+      "0"
+    ],
+    "want": "0",
+    "note": "zero gas -\u003e zero"
+  }
+]
