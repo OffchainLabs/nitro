@@ -90,8 +90,8 @@ All crates integrate with the reth ecosystem through its standard traits and can
 ## Contributing
 
 ```bash
-git clone --recurse-submodules https://github.com/OffchainLabs/arbitrum-reth.git
-cd arbitrum-reth
+git clone --recurse-submodules https://github.com/OffchainLabs/nitro.git
+cd nitro/nitro-reth
 cargo check
 cargo test
 ```

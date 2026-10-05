@@ -5,8 +5,8 @@ Thanks for your interest in contributing to Arbitrum Reth.
 ## Getting Started
 
 ```bash
-git clone https://github.com/0xBloctopus/arbitrum-reth.git
-cd arbitrum-reth
+git clone --recurse-submodules https://github.com/OffchainLabs/nitro.git
+cd nitro/nitro-reth
 cargo check
 cargo test
 ```
