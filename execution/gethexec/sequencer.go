@@ -1865,7 +1865,6 @@ func (s *Sequencer) sequenceDelayedMessage(config *SequencerConfig) (sequencedMs
 	defer func() {
 		if panicErr := recover(); panicErr != nil {
 			log.Error("delayed message sequencing panicked", "panic", panicErr, "backtrace", string(debug.Stack()))
-			sequencedMsg = nil
 			throttleDelayedSequencingFor = delayedSequencingPanicThrottle
 		}
 	}()
