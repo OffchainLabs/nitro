@@ -25,9 +25,7 @@ type sequencingState struct {
 	regularSequencingThrottledUntil time.Time
 	// delayedSequencingThrottledUntil is the earliest time a delayed message
 	// may be sequenced again. It is set only when a delayed turn fails to produce
-	// a block: MaxBlockSpeed into the future when the head message is halted on a
-	// filtered tx, so a stuck delayed message is retried at most once per
-	// MaxBlockSpeed instead of every iteration, or a longer backoff after a panic.
+	// a block.
 	delayedSequencingThrottledUntil time.Time
 }
 
