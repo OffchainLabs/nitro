@@ -287,7 +287,7 @@ func TestChallengeToTimeout(t *testing.T) {
 	runChallengeTest(t, machine, IncorrectMachine, false, true, 0)
 }
 
-func TestChallengeToTooFar(t *testing.T) {
+func TestChallengeToTooFarFlaky(t *testing.T) {
 	machine := createBaseMachine(t, "read-inboxmsg-10.wasm", []string{"global-state-wrapper.wasm"})
 	Require(t, machine.SetGlobalState(validator.GoGlobalState{PosInBatch: 10}))
 	incorrectMachine := machine.Clone()

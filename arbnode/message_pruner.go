@@ -92,7 +92,7 @@ func (m *MessagePruner) UpdateLatestConfirmed(count arbutil.MessageIndex, global
 	}
 }
 
-func (m *MessagePruner) prune(ctx context.Context, count arbutil.MessageIndex, globalState validator.GoGlobalState) error {
+func (m *MessagePruner) prune(ctx context.Context, _count arbutil.MessageIndex, globalState validator.GoGlobalState) error {
 	trimBatchCount := globalState.Batch
 	minBatchesLeft := m.config().MinBatchesLeft
 	batchCount, err := m.batchMetaFetcher.GetBatchCount()

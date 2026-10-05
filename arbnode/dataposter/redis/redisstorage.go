@@ -129,6 +129,10 @@ func (s *Storage) Prune(ctx context.Context, until uint64) error {
 	return nil
 }
 
+func (s *Storage) PruneAll(ctx context.Context) error {
+	return s.client.Del(ctx, s.key).Err()
+}
+
 // normalizeDecoding decodes data (regardless of what encoding it used), and
 // encodes it according to current encoding for storage.
 // As a result, encoded data is transformed to currently used encoding.

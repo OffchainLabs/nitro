@@ -178,8 +178,8 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 
 func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, backend *ethclient.Client) {
 	t.Helper()
-	// With SimulatedBeacon running in on-demand block production mode, the
-	// finalized block is considered to be be the nearest multiple of 32 less
+	// With the test L1's on-demand block production, the finalized block is
+	// considered to be the nearest multiple of 32 less
 	// than or equal to the block number.
 	for i := 0; i < 32; i++ {
 		SendWaitTestTransactions(t, ctx, backend, []*types.Transaction{
@@ -238,7 +238,9 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithPreBoldDeployment().DontParalellise().WithTakeOwnership(false)
 	builder.nodeConfig.MessageExtraction.Enable = false
-	initialBalance := new(big.Int).Lsh(big.NewInt(1), 200)
+	// Large, but small enough that the external L1's dev faucet (~10^45 wei)
+	// can fund four such accounts.
+	initialBalance := new(big.Int).Lsh(big.NewInt(1), 130)
 	l1Info := builder.L1Info
 	l1Info.GenerateGenesisAccount("deployer", initialBalance)
 	l1Info.GenerateGenesisAccount("asserter", initialBalance)
@@ -343,6 +345,18 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	if asserterGenesis.Hash() != challengerGenesis.Hash() {
 		Fatal(t, "asserter and challenger have different genesis hashes")
 	}
+	// makeBatch only feeds the consensus-side inbox tracker; execution digests
+	// the messages asynchronously (over JSON-RPC in some test configs). The
+	// challenge below is defined by each chain's head block, so both execution
+	// nodes must fully catch up first or the challenge covers a truncated range
+	// on which both parties genuinely agree.
+	expectedBlockNum := asserterGenesis.NumberU64() + uint64(makeBatch_MsgsPerBatch)*3
+	pollUntil(t, ctx, time.Minute, 100*time.Millisecond, "asserter execution to catch up to batches", func() bool {
+		return asserterExec.ArbInterface.BlockChain().CurrentBlock().Number.Uint64() >= expectedBlockNum
+	})
+	pollUntil(t, ctx, time.Minute, 100*time.Millisecond, "challenger execution to catch up to batches", func() bool {
+		return challengerExec.ArbInterface.BlockChain().CurrentBlock().Number.Uint64() >= expectedBlockNum
+	})
 	asserterLatestBlock := asserterExec.ArbInterface.BlockChain().CurrentBlock()
 	challengerLatestBlock := challengerExec.ArbInterface.BlockChain().CurrentBlock()
 	if asserterLatestBlock.Hash() == challengerLatestBlock.Hash() {

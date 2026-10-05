@@ -22,6 +22,12 @@ func TestConstants(t *testing.T) {
 	}
 }
 
+func TestSinglepassOutputLimit(t *testing.T) {
+	if err := testSinglepassOutputLimit(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // normal test will not write anything to disk
 // to test cross-compilation:
 // * run test with -test_compile=STORE on one machine
@@ -64,6 +70,12 @@ func TestNativeStackSize(t *testing.T) {
 	}
 }
 
+func TestStylusCallSystemError(t *testing.T) {
+	if err := testStylusCallSystemError(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNativeStackSizeMaxCap(t *testing.T) {
 	defer SetInitialNativeStackSize(1024 * 1024)
 	err := testNativeStackSizeMaxCap()
@@ -76,6 +88,12 @@ func TestHandleNativeStackOverflow(t *testing.T) {
 	defer SetInitialNativeStackSize(1024 * 1024)
 	err := testHandleNativeStackOverflow()
 	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCraneliftRetryReplacesCachedSinglepass(t *testing.T) {
+	if err := testCraneliftRetryReplacesCachedSinglepass(); err != nil {
 		t.Fatal(err)
 	}
 }

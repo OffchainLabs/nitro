@@ -15,6 +15,7 @@ bincode = { workspace = true }
 bitvec = { workspace = true, features = ["serde"] }
 brotli = { workspace = true }
 c-kzg = { workspace = true, optional = true }
+clap = { workspace = true, optional = true, features = ["derive"] }
 derivative = { workspace = true }
 digest = { workspace = true }
 enum-iterator = { workspace = true }
@@ -35,7 +36,6 @@ serde_json = { workspace = true }
 serde_with = { workspace = true, features = ["base64"] }
 sha2 = { workspace = true }
 smallvec = { workspace = true, features = ["serde"] }
-structopt = { workspace = true, optional = true }
 tiny-keccak = { workspace = true, features = ["keccak"] }
 validation = { workspace = true, features = ["std"] }
 wasmer = { workspace = true, optional = true }
@@ -60,10 +60,11 @@ name = "prover"
 crate-type = ["lib"]
 
 [features]
-default = ["native", "rayon", "singlepass_rayon", "dep:structopt"]
+default = ["native", "rayon", "kzg", "dep:clap"]
+cc_brotli = ["brotli/cc_brotli"]
 counters = []
+kzg = ["dep:c-kzg"]
 libc = ["dep:libc"]
-native = ["dep:wasmer", "dep:wasmer-compiler-singlepass", "brotli/wasmer_traits", "dep:c-kzg"]
+native = ["dep:wasmer", "dep:wasmer-compiler-singlepass", "brotli/wasmer_traits"]
 singlepass_rayon = ["wasmer-compiler-singlepass?/rayon"]
 rayon = ["dep:rayon"]
-cc_brotli = ["brotli/cc_brotli"]

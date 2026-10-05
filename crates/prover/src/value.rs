@@ -16,6 +16,8 @@ use wasmparser::{FuncType, RefType, ValType};
 
 use crate::binary::FloatType;
 
+// Wire-format: bincode-reachable via `Function.local_types` and
+// `FunctionType.inputs/outputs` in `*.wavm.br` replay binaries. Append-only
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum ArbValueType {
@@ -31,6 +33,19 @@ pub enum ArbValueType {
 impl ArbValueType {
     pub fn serialize(self) -> u8 {
         self as u8
+    }
+
+    pub fn from_u8(b: u8) -> Result<Self> {
+        Ok(match b {
+            0 => Self::I32,
+            1 => Self::I64,
+            2 => Self::F32,
+            3 => Self::F64,
+            4 => Self::RefNull,
+            5 => Self::FuncRef,
+            6 => Self::InternalRef,
+            other => bail!("unknown ArbValueType byte {other}"),
+        })
     }
 }
 
@@ -110,6 +125,8 @@ impl From<FloatType> for ArbValueType {
     }
 }
 
+// Wire-format: bincode-reachable as the width parameter of `Opcode::IRelOp`,
+// `IUnOp`, `IBinOp` (and other integer-width variants) in `*.wavm.br`. Append-only.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 pub enum IntegerValType {
     I32,
@@ -188,6 +205,8 @@ impl Display for ProgramCounter {
     }
 }
 
+// Wire-format: bincode-reachable via `Module.globals: Vec<Value>` in
+// `*.wavm.br`. Append-only.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Value {
     I32(u32),

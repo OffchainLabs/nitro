@@ -39,6 +39,7 @@ pub mod start;
 
 pub const STYLUS_ENTRY_POINT: &str = "user_entrypoint";
 pub const STYLUS_VERSION_DISABLE_MULTIVALUE: u16 = 3;
+pub const DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT: usize = 10 * 1024 * 1024;
 
 pub trait ModuleMod {
     fn add_global(&mut self, name: &str, ty: Type, init: GlobalInit) -> Result<GlobalIndex>;
@@ -454,6 +455,7 @@ impl Module {
         page_limit: u16,
         debug: bool,
         gas: &mut u64,
+        op_limit: usize,
     ) -> Result<(Self, StylusData)> {
         let compile = CompileConfig::version(stylus_version, debug);
         let (bin, stylus_data) = WasmBinary::parse_user(
@@ -519,6 +521,7 @@ impl Module {
             compile.debug.debug_funcs,
             Some(stylus_data),
             compile.version,
+            op_limit,
         )
         .wrap_err("failed to build user module")?;
 

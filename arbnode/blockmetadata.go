@@ -147,7 +147,7 @@ func (b *BlockMetadataFetcher) fetch(ctx context.Context, fromBlock, toBlock uin
 	return result, nil
 }
 
-func (b *BlockMetadataFetcher) persistBlockMetadata(ctx context.Context, query []uint64, result []gethexec.NumberAndBlockMetadata) error {
+func (b *BlockMetadataFetcher) persistBlockMetadata(_ctx context.Context, query []uint64, result []gethexec.NumberAndBlockMetadata) error {
 	batch := b.db.NewBatch()
 	queryMap := util.ArrayToSet(query)
 	for _, elem := range result {

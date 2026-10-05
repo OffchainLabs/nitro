@@ -20,6 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_arb"
 )
 
+// implements subset of methods required by ValidationClient
 type ValidationServerAPI struct {
 	spawner validator.ValidationSpawner
 }
@@ -63,9 +64,9 @@ type execRunEntry struct {
 	accessed time.Time
 }
 
-type ExecServerAPI struct {
+// ExecServer manages execution runs.
+type ExecServer struct {
 	stopwaiter.StopWaiter
-	ValidationServerAPI
 	execSpawner validator.ExecutionSpawner
 
 	config server_arb.ArbitratorSpawnerConfigFetcher
@@ -75,19 +76,18 @@ type ExecServerAPI struct {
 	runs      map[uint64]*execRunEntry
 }
 
-func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution validator.ExecutionSpawner, config server_arb.ArbitratorSpawnerConfigFetcher) *ExecServerAPI {
-	return &ExecServerAPI{
-		ValidationServerAPI: *NewValidationServerAPI(valSpawner),
-		execSpawner:         execution,
-		nextId:              rand.Uint64(), // good-enough to avoid reusing ids after reboot
-		runs:                make(map[uint64]*execRunEntry),
-		config:              config,
+func NewExecServer(execution validator.ExecutionSpawner, config server_arb.ArbitratorSpawnerConfigFetcher) *ExecServer {
+	return &ExecServer{
+		execSpawner: execution,
+		nextId:      rand.Uint64(), // good-enough to avoid reusing ids after reboot
+		runs:        make(map[uint64]*execRunEntry),
+		config:      config,
 	}
 }
 
-func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *server_api.InputJSON, useBoldMachineOptional *bool) (uint64, error) {
-	if a.Stopped() {
-		return 0, errors.New("ExecServerAPI is stopped")
+func (s *ExecServer) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *server_api.InputJSON, useBoldMachineOptional *bool) (uint64, error) {
+	if s.Stopped() {
+		return 0, errors.New("ExecServer is stopped")
 	}
 	input, err := server_api.ValidationInputFromJson(jsonInput)
 	if err != nil {
@@ -97,54 +97,54 @@ func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot c
 	if useBoldMachineOptional != nil {
 		useBoldMachine = *useBoldMachineOptional
 	}
-	execRun, err := a.execSpawner.CreateExecutionRun(wasmModuleRoot, input, useBoldMachine).Await(ctx)
+	execRun, err := s.execSpawner.CreateExecutionRun(wasmModuleRoot, input, useBoldMachine).Await(ctx)
 	if err != nil {
 		return 0, err
 	}
-	a.runIdLock.Lock()
-	defer a.runIdLock.Unlock()
-	newId := a.nextId
-	a.nextId++
-	a.runs[newId] = &execRunEntry{execRun, time.Now()}
+	s.runIdLock.Lock()
+	defer s.runIdLock.Unlock()
+	newId := s.nextId
+	s.nextId++
+	s.runs[newId] = &execRunEntry{execRun, time.Now()}
 	return newId, nil
 }
 
-func (a *ExecServerAPI) removeOldRuns(ctx context.Context) time.Duration {
-	oldestKept := time.Now().Add(-1 * a.config().ExecutionRunTimeout)
-	a.runIdLock.Lock()
-	defer a.runIdLock.Unlock()
-	for id, entry := range a.runs {
+func (s *ExecServer) removeOldRuns(ctx context.Context) time.Duration {
+	oldestKept := time.Now().Add(-1 * s.config().ExecutionRunTimeout)
+	s.runIdLock.Lock()
+	defer s.runIdLock.Unlock()
+	for id, entry := range s.runs {
 		if entry.accessed.Before(oldestKept) {
 			entry.run.Close()
-			delete(a.runs, id)
+			delete(s.runs, id)
 		}
 	}
-	return a.config().ExecutionRunTimeout / 5
+	return s.config().ExecutionRunTimeout / 5
 }
 
-func (a *ExecServerAPI) Start(ctx_in context.Context) {
-	a.StopWaiter.Start(ctx_in, a)
-	a.CallIteratively(a.removeOldRuns)
+func (s *ExecServer) Start(ctx_in context.Context) {
+	s.StopWaiter.Start(ctx_in, s)
+	s.CallIteratively(s.removeOldRuns)
 }
 
-func (a *ExecServerAPI) StopAndWait() {
-	a.StopWaiter.StopAndWait()
-	a.runIdLock.Lock()
-	defer a.runIdLock.Unlock()
-	for _, entry := range a.runs {
+func (s *ExecServer) StopAndWait() {
+	s.StopWaiter.StopAndWait()
+	s.runIdLock.Lock()
+	defer s.runIdLock.Unlock()
+	for _, entry := range s.runs {
 		entry.run.Close()
 	}
 }
 
 var errRunNotFound error = errors.New("run not found")
 
-func (a *ExecServerAPI) getRun(id uint64) (validator.ExecutionRun, error) {
-	if a.Stopped() {
+func (s *ExecServer) getRun(id uint64) (validator.ExecutionRun, error) {
+	if s.Stopped() {
 		return nil, errRunNotFound
 	}
-	a.runIdLock.Lock()
-	defer a.runIdLock.Unlock()
-	entry := a.runs[id]
+	s.runIdLock.Lock()
+	defer s.runIdLock.Unlock()
+	entry := s.runs[id]
 	if entry == nil {
 		return nil, errRunNotFound
 	}
@@ -152,8 +152,8 @@ func (a *ExecServerAPI) getRun(id uint64) (validator.ExecutionRun, error) {
 	return entry.run, nil
 }
 
-func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position uint64) (*server_api.MachineStepResultJson, error) {
-	run, err := a.getRun(execid)
+func (s *ExecServer) GetStepAt(ctx context.Context, execid uint64, position uint64) (*server_api.MachineStepResultJson, error) {
+	run, err := s.getRun(execid)
 	if err != nil {
 		return nil, err
 	}
@@ -165,8 +165,8 @@ func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position u
 	return server_api.MachineStepResultToJson(res), nil
 }
 
-func (a *ExecServerAPI) GetMachineHashesWithStepSize(ctx context.Context, execid, fromStep, stepSize, maxIterations uint64) ([]common.Hash, error) {
-	run, err := a.getRun(execid)
+func (s *ExecServer) GetMachineHashesWithStepSize(ctx context.Context, execid, fromStep, stepSize, maxIterations uint64) ([]common.Hash, error) {
+	run, err := s.getRun(execid)
 	if err != nil {
 		return nil, err
 	}
@@ -178,8 +178,8 @@ func (a *ExecServerAPI) GetMachineHashesWithStepSize(ctx context.Context, execid
 	return res, nil
 }
 
-func (a *ExecServerAPI) GetProofAt(ctx context.Context, execid uint64, position uint64) (string, error) {
-	run, err := a.getRun(execid)
+func (s *ExecServer) GetProofAt(ctx context.Context, execid uint64, position uint64) (string, error) {
+	run, err := s.getRun(execid)
 	if err != nil {
 		return "", err
 	}
@@ -191,8 +191,8 @@ func (a *ExecServerAPI) GetProofAt(ctx context.Context, execid uint64, position 
 	return base64.StdEncoding.EncodeToString(res), nil
 }
 
-func (a *ExecServerAPI) PrepareRange(ctx context.Context, execid uint64, start, end uint64) error {
-	run, err := a.getRun(execid)
+func (s *ExecServer) PrepareRange(ctx context.Context, execid uint64, start, end uint64) error {
+	run, err := s.getRun(execid)
 	if err != nil {
 		return err
 	}
@@ -200,33 +200,101 @@ func (a *ExecServerAPI) PrepareRange(ctx context.Context, execid uint64, start, 
 	return err
 }
 
-func (a *ExecServerAPI) ExecKeepAlive(ctx context.Context, execid uint64) error {
-	_, err := a.getRun(execid)
+func (s *ExecServer) ExecKeepAlive(ctx context.Context, execid uint64) error {
+	_, err := s.getRun(execid)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (a *ExecServerAPI) CheckAlive(ctx context.Context, execid uint64) error {
-	run, err := a.getRun(execid)
+func (s *ExecServer) CheckAlive(ctx context.Context, execid uint64) error {
+	run, err := s.getRun(execid)
 	if err != nil {
 		return err
 	}
 	return run.CheckAlive(ctx)
 }
 
-func (a *ExecServerAPI) CloseExec(execid uint64) {
+func (s *ExecServer) CloseExec(execid uint64) {
 	// Protect map access with runIdLock to avoid concurrent map read/write.
 	// Call Close() outside the lock to avoid holding the mutex during a potentially long operation.
-	a.runIdLock.Lock()
-	entry := a.runs[execid]
+	s.runIdLock.Lock()
+	entry := s.runs[execid]
 	if entry != nil {
-		delete(a.runs, execid)
+		delete(s.runs, execid)
 	}
-	a.runIdLock.Unlock()
+	s.runIdLock.Unlock()
 
 	if entry != nil {
 		entry.run.Close()
 	}
+}
+
+type ExecServerAPI struct {
+	valServerAPI *ValidationServerAPI
+	execServer   *ExecServer
+}
+
+func NewExecServerAPI(valSpawner validator.ValidationSpawner, execServer *ExecServer) *ExecServerAPI {
+	return &ExecServerAPI{
+		valServerAPI: NewValidationServerAPI(valSpawner),
+		execServer:   execServer,
+	}
+}
+
+func (a *ExecServerAPI) Name() string {
+	return a.valServerAPI.Name()
+}
+
+func (a *ExecServerAPI) Capacity() int {
+	return a.valServerAPI.Capacity()
+}
+
+func (a *ExecServerAPI) Room() int {
+	return a.valServerAPI.Room()
+}
+
+func (a *ExecServerAPI) Validate(ctx context.Context, entry *server_api.InputJSON, moduleRoot common.Hash) (validator.GoGlobalState, error) {
+	return a.valServerAPI.Validate(ctx, entry, moduleRoot)
+}
+
+func (a *ExecServerAPI) WasmModuleRoots() ([]common.Hash, error) {
+	return a.valServerAPI.WasmModuleRoots()
+}
+
+func (a *ExecServerAPI) StylusArchs() ([]rawdb.WasmTarget, error) {
+	return a.valServerAPI.StylusArchs()
+}
+
+func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *server_api.InputJSON, useBoldMachineOptional *bool) (uint64, error) {
+	return a.execServer.CreateExecutionRun(ctx, wasmModuleRoot, jsonInput, useBoldMachineOptional)
+}
+
+func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position uint64) (*server_api.MachineStepResultJson, error) {
+	return a.execServer.GetStepAt(ctx, execid, position)
+}
+
+func (a *ExecServerAPI) GetMachineHashesWithStepSize(ctx context.Context, execid, fromStep, stepSize, maxIterations uint64) ([]common.Hash, error) {
+	return a.execServer.GetMachineHashesWithStepSize(ctx, execid, fromStep, stepSize, maxIterations)
+}
+
+func (a *ExecServerAPI) GetProofAt(ctx context.Context, execid uint64, position uint64) (string, error) {
+	return a.execServer.GetProofAt(ctx, execid, position)
+}
+
+func (a *ExecServerAPI) PrepareRange(ctx context.Context, execid uint64, start, end uint64) error {
+	return a.execServer.PrepareRange(ctx, execid, start, end)
+}
+
+func (a *ExecServerAPI) ExecKeepAlive(ctx context.Context, execid uint64) error {
+	return a.execServer.ExecKeepAlive(ctx, execid)
+}
+
+func (a *ExecServerAPI) CheckAlive(ctx context.Context, execid uint64) error {
+	return a.execServer.CheckAlive(ctx, execid)
+}
+
+func (a *ExecServerAPI) CloseExec(execid uint64) {
+	a.execServer.CloseExec(execid)
 }

@@ -219,7 +219,7 @@ func main() {
 }
 
 // updatePriorityList updates the list by changing the position of seq present at `index` to target
-func (sm *manager) updatePriorityList(ctx context.Context, index int, target int) {
+func (sm *manager) updatePriorityList(_ctx context.Context, index int, target int) {
 	for i := index - 1; i >= target; i-- {
 		sm.priorityList[i], sm.priorityList[i+1] = sm.priorityList[i+1], sm.priorityList[i]
 	}

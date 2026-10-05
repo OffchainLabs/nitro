@@ -1,0 +1,23 @@
+{
+  "name": "address_table_indexes_are_sequential",
+  "description": "Three registrations get indexes 0, 1, 2",
+  "setup": {"arbos_version": 30, "chain_id": 412346},
+  "actions": [
+    {"type": "address_table_register", "address": "0xAAAA000000000000000000000000000000000000"},
+    {"type": "address_table_register", "address": "0xBBBB000000000000000000000000000000000000"},
+    {"type": "address_table_register", "address": "0xCCCC000000000000000000000000000000000000"}
+  ],
+  "assertions": {
+    "address_table": {
+      "size": 3,
+      "address_at_index": {
+        "index": 1,
+        "expected": "0xBBBB000000000000000000000000000000000000"
+      },
+      "index_for_address": {
+        "address": "0xCCCC000000000000000000000000000000000000",
+        "expected_index": 2
+      }
+    }
+  }
+}

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -136,7 +137,7 @@ func assertStateExistForBlockRange(t *testing.T, bc *core.BlockChain, from, offs
 	t.Helper()
 	for i := from; i <= from+offset; i++ {
 		header := bc.GetHeaderByNumber(i)
-		_, err := bc.StateAt(header.Root)
+		_, err := bc.StateAt(header)
 		Require(t, err)
 	}
 }
@@ -146,7 +147,7 @@ func assertMissingStateForBlockRange(t *testing.T, bc *core.BlockChain, from, of
 	expectedErr := &trie.MissingNodeError{}
 	for blockNum := from; blockNum <= from+offset; blockNum++ {
 		header := bc.GetHeaderByNumber(blockNum)
-		_, err := bc.StateAt(header.Root)
+		_, err := bc.StateAt(header)
 		if err == nil {
 			Fatal(t, "expeted StateAt to fail for blockNumber:", header.Number)
 		}
@@ -156,7 +157,7 @@ func assertMissingStateForBlockRange(t *testing.T, bc *core.BlockChain, from, of
 	}
 }
 
-func TestBlocksReExecutorCommitState(t *testing.T) {
+func TestBlocksReExecutorCommitStateFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -181,7 +182,7 @@ func TestBlocksReExecutorCommitState(t *testing.T) {
 	maxRecreateStateDepth := int64(100 * 1000 * 1000)
 
 	builder.execConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
-	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxBlockSpeed = 5 * time.Millisecond
 	builder.execConfig.Sequencer.MaxTxDataSize = 150
 
 	cleanup := builder.Build(t)

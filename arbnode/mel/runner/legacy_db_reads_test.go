@@ -375,7 +375,7 @@ func TestCreateInitialMELStateFromLegacyDB(t *testing.T) {
 	parentChainId := uint64(1)
 	blockHash := common.HexToHash("0x1234")
 	parentHash := common.HexToHash("0x5678")
-	fetchBlock := func(blockNum uint64) (common.Hash, common.Hash, error) {
+	fetchBlock := func(_blockNum uint64) (common.Hash, common.Hash, error) {
 		return blockHash, parentHash, nil
 	}
 

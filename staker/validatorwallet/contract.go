@@ -23,6 +23,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/floatmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -315,7 +316,7 @@ func gasForTxData(ctx context.Context, l1Reader *headerreader.HeaderReader, from
 		return 0, fmt.Errorf("getting suggested gas tip cap: %w", err)
 	}
 	gasFeeCap.Add(gasFeeCap, gasTipCap)
-	g, err := l1Reader.Client().EstimateGas(
+	g, err := util.CheckedGasEstimate(l1Reader.Client().EstimateGas(
 		ctx,
 		ethereum.CallMsg{
 			From:      from,
@@ -325,7 +326,7 @@ func gasForTxData(ctx context.Context, l1Reader *headerreader.HeaderReader, from
 			GasFeeCap: gasFeeCap,
 			GasTipCap: gasTipCap,
 		},
-	)
+	))
 	if err != nil {
 		return 0, fmt.Errorf("estimating gas: %w", err)
 	}

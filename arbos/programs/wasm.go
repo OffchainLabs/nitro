@@ -202,8 +202,8 @@ func callProgram(
 	_ Program,
 ) ([]byte, error) {
 	reqHandler := newApiClosures(evm, tracingInfo, scope, memoryModel, runCtx, stylusParams)
-	gasLeft, retData, err := CallProgramLoop(moduleHash, calldata, scope.Contract.Gas, evmData, progParams, reqHandler)
-	scope.Contract.Gas = gasLeft
+	gasLeft, retData, err := CallProgramLoop(moduleHash, calldata, scope.Contract.Gas.RegularGas, evmData, progParams, reqHandler)
+	scope.Contract.Gas.RegularGas = gasLeft
 	return retData, err
 }
 
@@ -239,6 +239,9 @@ func CallProgramLoop(
 			status := userStatus(reqTypeId)
 			gasLeft := arbmath.BytesToUint(reqData[:8])
 			data, msg, err := status.toResult(reqData[8:], debug)
+			if status == userSystemError {
+				panic(fmt.Sprintf("Stylus system error not resolved (module=%v, status=%d): %s", moduleHash, status, msg))
+			}
 			if status == userFailure && debug {
 				log.Warn("program failure", "err", err, "msg", msg, "moduleHash", moduleHash)
 			}

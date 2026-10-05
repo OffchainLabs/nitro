@@ -14,7 +14,7 @@ use arbutil::{
 use caller_env::{GuestPtr, MemAccess, static_caller::StaticMem};
 use prover::{machine::Module, programs::config::StylusConfig};
 
-use crate::program::Program;
+use crate::program::{Program, current_requester};
 
 // these hostio methods allow the replay machine to modify itself
 #[link(wasm_import_module = "hostio")]
@@ -74,6 +74,7 @@ pub unsafe extern "C" fn programs__activate_v2(
             page_limit,
             debug,
             gas_left,
+            0,
         ) {
             Ok((module, data)) => {
                 StaticMem.write_u64(gas_ptr, *gas_left);
@@ -172,7 +173,7 @@ pub unsafe extern "C" fn programs__program_prepare(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: GuestPtr) -> u32 {
     unsafe {
-        let (req_type, len) = Program::current().request_handler().get_request_meta(id);
+        let (req_type, len) = current_requester().get_request_meta(id);
         if len_ptr != GuestPtr::new(0) {
             StaticMem.write_u32(len_ptr, len as u32);
         }
@@ -189,7 +190,7 @@ pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: GuestPtr) -> u3
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn programs__get_request_data(id: u32, data_ptr: GuestPtr) {
     unsafe {
-        let (_, data) = Program::current().request_handler().take_request(id);
+        let (_, data) = current_requester().take_request(id);
         StaticMem.write_slice(data_ptr, &data);
     }
 }
@@ -207,8 +208,7 @@ pub unsafe extern "C" fn programs__set_response(
     raw_data_len: usize,
 ) {
     unsafe {
-        let program = Program::current();
-        program.request_handler().set_response(
+        current_requester().set_response(
             id,
             StaticMem.read_slice(result_ptr, result_len),
             StaticMem.read_slice(raw_data_ptr, raw_data_len),
@@ -272,9 +272,7 @@ pub unsafe extern "C" fn program_internal__set_done(mut status: UserOutcomeKind)
         let mut output = Vec::with_capacity(8 + outs.len());
         output.extend(gas_left.to_be_bytes());
         output.extend(outs);
-        program
-            .request_handler()
-            .set_request(status as u32, &output)
+        current_requester().set_request(status as u32, &output)
     }
 }
 
@@ -310,6 +308,48 @@ pub unsafe extern "C" fn programs__create_evm_data_v2(
     reentrant: u32,
 ) -> u64 {
     unsafe {
+        programs__create_evm_data_v3(
+            arbos_version,
+            block_basefee_ptr,
+            chainid,
+            block_coinbase_ptr,
+            block_gas_limit,
+            block_number,
+            block_timestamp,
+            contract_address_ptr,
+            module_hash_ptr,
+            msg_sender_ptr,
+            msg_value_ptr,
+            tx_gas_price_ptr,
+            tx_origin_ptr,
+            cached,
+            reentrant,
+            0,
+        )
+    }
+}
+
+/// Creates an `EvmData` handler with a per-program storage cache limit.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn programs__create_evm_data_v3(
+    arbos_version: u64,
+    block_basefee_ptr: GuestPtr,
+    chainid: u64,
+    block_coinbase_ptr: GuestPtr,
+    block_gas_limit: u64,
+    block_number: u64,
+    block_timestamp: u64,
+    contract_address_ptr: GuestPtr,
+    module_hash_ptr: GuestPtr,
+    msg_sender_ptr: GuestPtr,
+    msg_value_ptr: GuestPtr,
+    tx_gas_price_ptr: GuestPtr,
+    tx_origin_ptr: GuestPtr,
+    cached: u32,
+    reentrant: u32,
+    storage_cache_limit: u32,
+) -> u64 {
+    unsafe {
         let evm_data = EvmData {
             arbos_version,
             block_basefee: read_bytes32(block_basefee_ptr),
@@ -327,6 +367,7 @@ pub unsafe extern "C" fn programs__create_evm_data_v2(
             tx_origin: read_bytes20(tx_origin_ptr),
             reentrant,
             return_data_len: 0,
+            storage_cache_limit,
             tracing: false,
         };
         heapify(evm_data) as u64

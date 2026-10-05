@@ -264,7 +264,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testin
 		roundInfo: containers.NewLruCache[uint64, *expressLaneRoundInfo](8),
 		tracker:   tr,
 	}
-	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*ExpressLaneSubmission)})
+	els.roundInfo.Add(0, &expressLaneRoundInfo{sequence: 1, msgBySequenceNumber: make(map[uint64]*ExpressLaneSubmission), arrivalTimeBySequenceNumber: make(map[uint64]time.Time)})
 	els.StopWaiter.Start(ctx, els)
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
@@ -291,7 +291,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	els.redisCoordinator, err = NewRedisCoordinator(redisUrl, &timingInfo, 50)
 	require.NoError(t, err)
 	els.redisCoordinator.Start(ctx)
-	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*ExpressLaneSubmission)})
+	els.roundInfo.Add(0, &expressLaneRoundInfo{sequence: 1, msgBySequenceNumber: make(map[uint64]*ExpressLaneSubmission), arrivalTimeBySequenceNumber: make(map[uint64]time.Time)})
 	els.StopWaiter.Start(ctx, els)
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
@@ -301,11 +301,11 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	var wg sync.WaitGroup
 	wg.Add(2) // We expect only one of the two txs below to return with an error here
 	var err1, err2 error
-	go func(w *sync.WaitGroup) {
+	go func(_w *sync.WaitGroup) {
 		err1 = els.SequenceExpressLaneSubmission(msg1)
 		wg.Done()
 	}(&wg)
-	go func(w *sync.WaitGroup) {
+	go func(_w *sync.WaitGroup) {
 		err2 = els.SequenceExpressLaneSubmission(msg2)
 		wg.Done()
 	}(&wg)
@@ -338,7 +338,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	els.redisCoordinator, err = NewRedisCoordinator(redisUrl, &timingInfo, 50)
 	require.NoError(t, err)
 	els.redisCoordinator.Start(ctx)
-	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*ExpressLaneSubmission)})
+	els.roundInfo.Add(0, &expressLaneRoundInfo{sequence: 1, msgBySequenceNumber: make(map[uint64]*ExpressLaneSubmission), arrivalTimeBySequenceNumber: make(map[uint64]time.Time)})
 	els.StopWaiter.Start(ctx, els)
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
@@ -399,7 +399,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	els.redisCoordinator, err = NewRedisCoordinator(redisUrl, &timingInfo, 50)
 	require.NoError(t, err)
 	els.redisCoordinator.Start(ctx)
-	els.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*ExpressLaneSubmission)})
+	els.roundInfo.Add(0, &expressLaneRoundInfo{sequence: 1, msgBySequenceNumber: make(map[uint64]*ExpressLaneSubmission), arrivalTimeBySequenceNumber: make(map[uint64]time.Time)})
 	els.StopWaiter.Start(ctx, els)
 	stubPublisher := makeStubPublisher(els)
 	els.transactionPublisher = stubPublisher
@@ -443,7 +443,7 @@ func Test_expressLaneService_syncFromRedis(t *testing.T) {
 	require.NoError(t, err)
 	els1.redisCoordinator.Start(ctx)
 
-	els1.roundInfo.Add(0, &expressLaneRoundInfo{1, make(map[uint64]*ExpressLaneSubmission)})
+	els1.roundInfo.Add(0, &expressLaneRoundInfo{sequence: 1, msgBySequenceNumber: make(map[uint64]*ExpressLaneSubmission), arrivalTimeBySequenceNumber: make(map[uint64]time.Time)})
 	els1.StopWaiter.Start(ctx, els1)
 	stubPublisher1 := makeStubPublisher(els1)
 	els1.transactionPublisher = stubPublisher1
@@ -637,7 +637,7 @@ func Test_expressLaneService_mixedSequenceNumbersDontCareFirst(t *testing.T) {
 		},
 	}
 
-	els.roundInfo.Add(0, &expressLaneRoundInfo{0, make(map[uint64]*ExpressLaneSubmission)})
+	els.roundInfo.Add(0, &expressLaneRoundInfo{sequence: 0, msgBySequenceNumber: make(map[uint64]*ExpressLaneSubmission), arrivalTimeBySequenceNumber: make(map[uint64]time.Time)})
 	els.StopWaiter.Start(ctx, els)
 
 	// First send transactions with DontCareSequence numbers
@@ -708,7 +708,7 @@ func Test_expressLaneService_mixedSequenceNumbersNormalFirst(t *testing.T) {
 		},
 	}
 
-	els.roundInfo.Add(0, &expressLaneRoundInfo{0, make(map[uint64]*ExpressLaneSubmission)})
+	els.roundInfo.Add(0, &expressLaneRoundInfo{sequence: 0, msgBySequenceNumber: make(map[uint64]*ExpressLaneSubmission), arrivalTimeBySequenceNumber: make(map[uint64]time.Time)})
 	els.StopWaiter.Start(ctx, els)
 
 	// First send transactions with normal sequence numbers
@@ -779,7 +779,7 @@ func Test_expressLaneService_mixedSequenceNumbersIntermixed(t *testing.T) {
 		},
 	}
 
-	els.roundInfo.Add(0, &expressLaneRoundInfo{0, make(map[uint64]*ExpressLaneSubmission)})
+	els.roundInfo.Add(0, &expressLaneRoundInfo{sequence: 0, msgBySequenceNumber: make(map[uint64]*ExpressLaneSubmission), arrivalTimeBySequenceNumber: make(map[uint64]time.Time)})
 	els.StopWaiter.Start(ctx, els)
 
 	// Create transactions with mixed sequence numbers
@@ -854,7 +854,7 @@ func Test_expressLaneService_dontCareWithQueuedTransactions(t *testing.T) {
 		},
 	}
 
-	els.roundInfo.Add(0, &expressLaneRoundInfo{0, make(map[uint64]*ExpressLaneSubmission)})
+	els.roundInfo.Add(0, &expressLaneRoundInfo{sequence: 0, msgBySequenceNumber: make(map[uint64]*ExpressLaneSubmission), arrivalTimeBySequenceNumber: make(map[uint64]time.Time)})
 	els.StopWaiter.Start(ctx, els)
 
 	// Create some transactions with gaps in sequence numbers

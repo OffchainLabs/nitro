@@ -50,21 +50,48 @@ type BlockRecorder struct {
 }
 
 type BlockRecorderConfig struct {
-	TrieDirtyCache int `koanf:"trie-dirty-cache"`
-	TrieCleanCache int `koanf:"trie-clean-cache"`
-	MaxPrepared    int `koanf:"max-prepared"`
+	Mode           string `koanf:"mode"`
+	TrieDirtyCache int    `koanf:"trie-dirty-cache"`
+	TrieCleanCache int    `koanf:"trie-clean-cache"`
+	MaxPrepared    int    `koanf:"max-prepared"`
 }
 
+const (
+	BlockRecorderModeOff      = "off"
+	BlockRecorderModeLegacy   = "legacy"
+	BlockRecorderModeChainTip = "chain-tip"
+)
+
 var DefaultBlockRecorderConfig = BlockRecorderConfig{
+	Mode:           BlockRecorderModeLegacy,
 	TrieDirtyCache: 1024,
 	TrieCleanCache: 16,
 	MaxPrepared:    1000,
 }
 
 func BlockRecorderConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.String(prefix+".mode", DefaultBlockRecorderConfig.Mode, "block recorder mode for validation inputs (off, legacy, or chain-tip)")
 	f.Int(prefix+".trie-dirty-cache", DefaultBlockRecorderConfig.TrieDirtyCache, "like trie-dirty-cache for the separate, recording database (used for validation)")
 	f.Int(prefix+".trie-clean-cache", DefaultBlockRecorderConfig.TrieCleanCache, "like trie-clean-cache for the separate, recording database (used for validation)")
 	f.Int(prefix+".max-prepared", DefaultBlockRecorderConfig.MaxPrepared, "max references to store in the recording database")
+}
+
+func (c *BlockRecorderConfig) Validate() error {
+	switch c.Mode {
+	case BlockRecorderModeOff, BlockRecorderModeLegacy, BlockRecorderModeChainTip:
+		return nil
+	default:
+		return fmt.Errorf("unknown block recorder mode %q", c.Mode)
+	}
+}
+
+type ExecutionBlockRecorder interface {
+	RecordBlockCreation(ctx context.Context, pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, wasmTargets []rawdb.WasmTarget) (*execution.RecordResult, error)
+	PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error
+	MarkValid(pos arbutil.MessageIndex, blockHash common.Hash)
+	PruneRecordingsBefore(pos arbutil.MessageIndex) error
+	OrderlyShutdown()
+	Close() error
 }
 
 func NewBlockRecorder(config *BlockRecorderConfig, execEngine *ExecutionEngine, ethDb ethdb.Database) *BlockRecorder {
@@ -100,7 +127,6 @@ func stateLogFunc(targetHeader *types.Header) arbitrum.StateBuildingLogFunction 
 }
 
 // If msg is nil, this will record block creation up to the point where message would be accessed (for a "too far" proof)
-// If keepreference == true, reference to state of prevHeader is added (no reference added if an error is returned)
 func (r *BlockRecorder) RecordBlockCreation(
 	ctx context.Context,
 	pos arbutil.MessageIndex,
@@ -376,6 +402,15 @@ func (r *BlockRecorder) WriteValidStateToDb() error {
 	err := r.recordingDatabase.WriteStateToDatabase(r.validHdr)
 	r.recordingDatabase.Dereference(r.validHdr)
 	return err
+}
+
+func (r *BlockRecorder) Close() error {
+	return nil
+}
+
+// The legacy recorder re-executes blocks on demand and stores nothing to prune.
+func (r *BlockRecorder) PruneRecordingsBefore(arbutil.MessageIndex) error {
+	return nil
 }
 
 func (r *BlockRecorder) OrderlyShutdown() {

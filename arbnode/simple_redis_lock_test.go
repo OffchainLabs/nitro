@@ -117,7 +117,7 @@ func TestRedisLock7(t *testing.T) {
 	simpleRedisLockTest(t, "7", 7, false)
 }
 
-func TestRedisLockAny(t *testing.T) {
+func TestRedisLockAnyFlaky(t *testing.T) {
 	simpleRedisLockTest(t, "a", -1, false)
 }
 

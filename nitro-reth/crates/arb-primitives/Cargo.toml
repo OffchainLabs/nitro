@@ -1,0 +1,31 @@
+[package]
+name = "arb-primitives"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+alloy-consensus = { workspace = true, features = ["std"] }
+alloy-eips = { workspace = true, features = ["std"] }
+alloy-primitives = { workspace = true, features = ["std", "rlp", "serde"] }
+alloy-rlp = { workspace = true, features = ["derive"] }
+arb-alloy-consensus = { workspace = true }
+arb-alloy-predeploys = { workspace = true }
+bytes = { workspace = true }
+reth-primitives-traits = { workspace = true, features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
+
+# reth database storage encodings (Compact/Compress) are node-only; keeping these
+# deps off the wasm target keeps zstd (C) out of the replay dependency tree.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+reth-codecs = { workspace = true }
+reth-db-api = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[lints]
+workspace = true

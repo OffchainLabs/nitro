@@ -194,7 +194,7 @@ func createBroadcaster(t *testing.T, name string, chainId uint64, privateKey *ec
 }
 
 // Test the failover from primary to secondary broadcaster
-func TestPrimaryToSecondaryFailover(t *testing.T) {
+func TestPrimaryToSecondaryFailoverFlaky(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"runtime/debug"
 	"sync"
 
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -99,12 +101,15 @@ func InitLog(logType string, logLevel string, fileLoggingConfig *FileLoggingConf
 		return fmt.Errorf("failed to close file writer: %w", err)
 	}
 	var output io.Writer
+	var crashFile string
 	if fileLoggingConfig.Enable {
+		filename := pathResolver(fileLoggingConfig.File)
 		output = io.MultiWriter(
 			io.Writer(os.Stderr),
 			// on overflow writeStartPing are dropped silently
-			globalFileLoggerFactory.newFileWriter(fileLoggingConfig, pathResolver(fileLoggingConfig.File)),
+			globalFileLoggerFactory.newFileWriter(fileLoggingConfig, filename),
 		)
+		crashFile = filename + ".crash"
 	} else {
 		output = io.Writer(os.Stderr)
 	}
@@ -119,8 +124,35 @@ func InitLog(logType string, logLevel string, fileLoggingConfig *FileLoggingConf
 		return fmt.Errorf("error parsing log level: %w", err)
 	}
 
+	// Arm crash output only after the fallible parsing above, so a parse error
+	// can't leave the crash fd changed while the logger stays unconfigured. It
+	// gets its own .crash file: a dup'd fd to the rotated log would be orphaned.
+	if crashFile != "" {
+		if err := setCrashOutputFile(crashFile); err != nil {
+			return fmt.Errorf("failed to set crash output file: %w", err)
+		}
+	} else if err := debug.SetCrashOutput(nil, debug.CrashOptions{}); err != nil {
+		return fmt.Errorf("failed to clear crash output file: %w", err)
+	}
+
 	glogger = log.NewGlogHandler(handler)
 	glogger.Verbosity(slogLevel)
 	log.SetDefault(log.NewLogger(glogger))
+	if crashFile != "" {
+		log.Info("writing crash output to file", "file", crashFile)
+	}
 	return nil
+}
+
+func setCrashOutputFile(filename string) error {
+	if err := os.MkdirAll(filepath.Dir(filename), 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+	// SetCrashOutput duplicates the fd, so f can be closed right away.
+	defer f.Close()
+	return debug.SetCrashOutput(f, debug.CrashOptions{})
 }

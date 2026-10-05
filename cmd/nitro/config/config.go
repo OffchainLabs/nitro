@@ -5,6 +5,7 @@ package config
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -29,6 +30,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/daprovider/anytrust"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/nitroversion"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
@@ -201,7 +203,7 @@ func NodeConfigAddOptions(f *pflag.FlagSet) {
 	f.String("log-level", NodeConfigDefault.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", NodeConfigDefault.LogType, "log type (plaintext or json)")
 	genericconf.FileLoggingConfigAddOptions("file-logging", f)
-	conf.PersistentConfigAddOptions("persistent", f)
+	conf.PersistentConfigAddOptions("persistent", f, NodeConfigDefault.Persistent)
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
@@ -220,11 +222,18 @@ func NodeConfigAddOptions(f *pflag.FlagSet) {
 }
 
 func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, error) {
+	return ParseNodeWithVersion(ctx, args, nitroversion.Current())
+}
+
+// ParseNodeWithVersion parses a node configuration against an explicitly
+// supplied Nitro version. Tests can use this without mutating process-global
+// version state.
+func ParseNodeWithVersion(ctx context.Context, args []string, version nitroversion.Version) (*NodeConfig, *genericconf.WalletConfig, error) {
 	f := pflag.NewFlagSet("", pflag.ContinueOnError)
 
 	NodeConfigAddOptions(f)
 
-	k, err := confighelpers.BeginCommonParse(f, args)
+	k, err := confighelpers.BeginCommonParseWithVersion(f, args, version)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -233,9 +242,8 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	l2ChainName := k.String("chain.name")
 	l2ChainInfoFiles := k.Strings("chain.info-files")
 	l2ChainInfoJson := k.String("chain.info-json")
-	l2GenesisJsonFile := k.String("init.genesis-json-file")
 	// #nosec G115
-	err = applyChainParameters(k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2GenesisJsonFile)
+	resolvedGenesisJsonFile, err := applyChainParameters(k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -256,10 +264,15 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		return nil, nil, err
 	}
 
+	if err = fixInlineGenesisParsing("init.genesis-json", k); err != nil {
+		return nil, nil, err
+	}
+
 	var nodeConfig NodeConfig
 	if err := confighelpers.EndCommonParse(k, &nodeConfig); err != nil {
 		return nil, nil, err
 	}
+	nodeConfig.Init.SetResolvedGenesisJsonFile(resolvedGenesisJsonFile)
 
 	// Migrate deprecated --node.data-availability.* to --node.da.anytrust.*
 	nodeConfig.Node.MigrateDeprecatedConfig()
@@ -301,10 +314,9 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		nodeConfig.Execution.TxIndexer.Enable = true
 		nodeConfig.Execution.TxIndexer.TxLookupLimit = 0
 	}
-	if err := resolveGenesisJsonFileDirectory(&nodeConfig); err != nil {
+	if err = nodeConfig.Persistent.Pebble.ResolveWithStateScheme(nodeConfig.Execution.Caching.StateScheme); err != nil {
 		return nil, nil, err
 	}
-
 	err = nodeConfig.Validate()
 	if err != nil {
 		return nil, nil, err
@@ -312,33 +324,100 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l2DevWallet, nil
 }
 
-func resolveGenesisJsonFileDirectory(nodeConfig *NodeConfig) error {
-	if nodeConfig.Init.GenesisJsonFile != "" || nodeConfig.Chain.ID == 0 || nodeConfig.Init.GenesisJsonFileDirectory == "" {
+// inlineGenesisConfigured reports whether the raw config value at
+// init.genesis-json holds a genesis document: a non-empty string or a nested
+// json object. Key existence alone is not enough - the flag default loads an
+// empty string into the config tree on every parse, and counting that would
+// permanently suppress the init.empty chain default.
+func inlineGenesisConfigured(raw interface{}) bool {
+	switch v := raw.(type) {
+	case string:
+		return v != ""
+	case map[string]interface{}:
+		return true
+	}
+	return false
+}
+
+// fixInlineGenesisParsing lets a config file hold the inline genesis as a
+// nested json object (so genesis file contents can be pasted verbatim) while
+// the config struct stores it as a string: a map found at the key is
+// re-serialized and put back as its json string. A string (flag, env var,
+// conf.string) is used as-is.
+func fixInlineGenesisParsing(path string, k *koanf.Koanf) error {
+	raw := k.Get(path)
+	genesisMap, ok := raw.(map[string]interface{})
+	if !ok {
 		return nil
 	}
-	files, err := os.ReadDir(nodeConfig.Init.GenesisJsonFileDirectory)
+	genesisJson, err := json.Marshal(genesisMap)
 	if err != nil {
-		return fmt.Errorf("error reading genesis json file directory %s: %w", nodeConfig.Init.GenesisJsonFileDirectory, err)
+		return fmt.Errorf("error re-encoding %s: %w", path, err)
 	}
-	requiredFileName := fmt.Sprintf("%d.json", nodeConfig.Chain.ID)
+	return k.Load(confmap.Provider(map[string]interface{}{path: string(genesisJson)}, "."), nil)
+}
+
+// resolveGenesisJsonFileFromDirectory looks up the genesis json file for the
+// chain id in init.genesis-json-file-directory, when the directory is the
+// genesis source: either forced by init.genesis-mode, or - with the mode unset
+// - when no higher-precedence source (init.genesis-json, init.genesis-json-file)
+// is configured. Works on the raw config values so it can run before the chain
+// defaults are computed, which need to know whether a genesis is configured.
+func resolveGenesisJsonFileFromDirectory(k *koanf.Koanf, chainId uint64) (string, error) {
+	genesisMode := strings.ToLower(k.String("init.genesis-mode"))
+	genesisJsonFile := k.String("init.genesis-json-file")
+	genesisJsonFileDirectory := k.String("init.genesis-json-file-directory")
+	switch genesisMode {
+	case conf.GenesisModeInline, conf.GenesisModeFile:
+		// an explicitly selected source disables the directory lookup
+		return "", nil
+	case conf.GenesisModeDirectory:
+		// forced lookup; an empty genesis-json-file-directory is rejected by Validate
+		if genesisJsonFileDirectory == "" {
+			return "", nil
+		}
+		if genesisJsonFile != "" {
+			log.Warn("init.genesis-mode is \"directory\", ignoring configured init.genesis-json-file", "ignored", genesisJsonFile)
+		}
+	default:
+		if genesisJsonFile != "" || inlineGenesisConfigured(k.Get("init.genesis-json")) || genesisJsonFileDirectory == "" {
+			return "", nil
+		}
+	}
+	files, err := os.ReadDir(genesisJsonFileDirectory)
+	if err != nil {
+		return "", fmt.Errorf("error reading genesis json file directory %s: %w", genesisJsonFileDirectory, err)
+	}
+	requiredFileName := fmt.Sprintf("%d.json", chainId)
 	for _, file := range files {
 		if file.IsDir() || file.Name() != requiredFileName {
 			continue
 		}
-		fullPath := filepath.Join(nodeConfig.Init.GenesisJsonFileDirectory, file.Name())
-		nodeConfig.Init.GenesisJsonFile = fullPath
-		nodeConfig.Init.Empty = false
-		log.Info("found genesis json file for chain id from genesis json file directory", "file", fullPath, "chainId", nodeConfig.Chain.ID)
-		break
+		fullPath := filepath.Join(genesisJsonFileDirectory, file.Name())
+		log.Info("found genesis json file for chain id from genesis json file directory", "file", fullPath, "chainId", chainId)
+		return fullPath, nil
 	}
-	return nil
+	if genesisMode == conf.GenesisModeDirectory {
+		return "", fmt.Errorf("init.genesis-mode is %q but no genesis json file for chain id %d was found in directory %s", conf.GenesisModeDirectory, chainId, genesisJsonFileDirectory)
+	}
+	return "", nil
 }
 
-func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2GenesisJsonFile string) error {
+// applyChainParameters loads the chain-info-derived defaults into the config
+// tree. Returns the genesis json file resolved from
+// init.genesis-json-file-directory, if any - the lookup must happen here, both
+// because the authoritative chain id is only known from the chain info and
+// because the init.empty default depends on whether a genesis is configured.
+func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string) (string, error) {
 	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
-		return err
+		return "", err
 	}
+	resolvedGenesisJsonFile, err := resolveGenesisJsonFileFromDirectory(k, chainInfo.ChainConfig.ChainID.Uint64())
+	if err != nil {
+		return "", err
+	}
+	l2GenesisConfigured := k.String("init.genesis-json-file") != "" || inlineGenesisConfigured(k.Get("init.genesis-json")) || resolvedGenesisJsonFile != ""
 	var parentChainIsArbitrum bool
 	if chainInfo.ParentChainIsArbitrum != nil {
 		parentChainIsArbitrum = *chainInfo.ParentChainIsArbitrum
@@ -380,14 +459,14 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 	} else if chainInfo.ChainConfig.ArbitrumChainParams.DataAvailabilityCommittee {
 		chainDefaults["node.da.anytrust.enable"] = true
 	}
-	if !chainInfo.HasGenesisState && l2GenesisJsonFile == "" {
+	if !chainInfo.HasGenesisState && !l2GenesisConfigured {
 		chainDefaults["init.empty"] = true
 	}
 	if parentChainIsArbitrum {
 		l2MaxTxSize := gethexec.DefaultSequencerConfig.MaxTxDataSize
 		bufferSpace := 5000
 		if l2MaxTxSize < bufferSpace*2 {
-			return fmt.Errorf("not enough room in parent chain max tx size %v for bufferSpace %v * 2", l2MaxTxSize, bufferSpace)
+			return "", fmt.Errorf("not enough room in parent chain max tx size %v for bufferSpace %v * 2", l2MaxTxSize, bufferSpace)
 		}
 		safeBatchSize := l2MaxTxSize - bufferSpace
 		chainDefaults["node.batch-poster.max-calldata-batch-size"] = safeBatchSize
@@ -408,9 +487,9 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l2Ch
 
 	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
 	if err != nil {
-		return err
+		return "", err
 	}
-	return nil
+	return resolvedGenesisJsonFile, nil
 }
 
 type ConsensusNodeConfigFetcher struct {

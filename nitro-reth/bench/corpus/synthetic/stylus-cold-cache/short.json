@@ -1,0 +1,26 @@
+{
+  "name": "synthetic/stylus-cold-cache/short",
+  "category": "stylus-cold-cache",
+  "scale": "short",
+  "arbos_version": 60,
+  "chain_id": 421614,
+  "corpus_version": "1.0.0",
+  "description": "Stylus dispatch + activation: every block calls a Stylus-prefixed contract (real WASM with 0xEF F0 00 discriminant); block 1 also calls ArbWasm.activateProgram. Measures discriminant detection, metadata lookup, ACTIVATION_UPFRONT_GAS charge, and WASM validation cost. Successful WASM execution requires a stylus-sdk-compiled artifact (see crates/arb-bench/src/capture/stylus_fixture.rs).",
+  "messages": {
+    "source": "synthetic_generator",
+    "generator": "stylus_cold_cache",
+    "params": {
+      "block_count": 1000,
+      "txs_per_block": 16
+    }
+  },
+  "metrics": {
+    "rolling_window_blocks": 50
+  },
+  "regression": {
+    "gate": true,
+    "tolerance_pct": 5.0,
+    "paired_stat": "bootstrap_95ci",
+    "bootstrap_iters": 10000
+  }
+}

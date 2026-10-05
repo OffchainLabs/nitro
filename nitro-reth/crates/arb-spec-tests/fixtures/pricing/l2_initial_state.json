@@ -1,0 +1,17 @@
+{
+  "name": "l2_initial_state",
+  "description": "L2 pricing slots after init at v30 use the v6+ overrides",
+  "setup": {
+    "arbos_version": 30,
+    "chain_id": 412346
+  },
+  "assertions": {
+    "l2_pricing": {
+      "min_base_fee_wei": "0x5f5e100",
+      "speed_limit_per_second": 7000000,
+      "gas_backlog": 0,
+      "pricing_inertia": 102,
+      "backlog_tolerance": 10
+    }
+  }
+}

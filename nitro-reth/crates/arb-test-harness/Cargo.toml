@@ -1,0 +1,32 @@
+[package]
+name = "arb-test-harness"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+description = "Shared test orchestration for arbreth: spawn nodes, build L1 messages, capture state, diff dual-exec runs against Nitro reference."
+
+[dependencies]
+alloy-consensus = { workspace = true, features = ["std", "k256"] }
+alloy-eips = { workspace = true, features = ["std"] }
+alloy-primitives = { workspace = true, features = ["std", "serde", "k256"] }
+arb-node = { workspace = true }
+arb-primitives = { workspace = true }
+arbos = { workspace = true }
+arbos-types = { workspace = true }
+# Mock L1 server backend (kept lightweight; reused by spec tests)
+axum = { workspace = true, features = ["http1", "json", "tokio"] }
+base64 = { workspace = true }
+hex = { workspace = true }
+k256 = { workspace = true, features = ["ecdsa"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["net", "rt-multi-thread", "sync"] }
+# Sync JSON-RPC client (no async dep here; mirrors arb-spec-tests choice)
+ureq = { workspace = true, features = ["json"] }
+
+[lints]
+workspace = true

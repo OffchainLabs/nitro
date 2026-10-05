@@ -1,0 +1,210 @@
+use alloy_primitives::{Address, B256, U256, address, b256, keccak256};
+use arb_test_utils::ArbosHarness;
+use arbos::retryables::{
+    RETRYABLE_LIFETIME_SECONDS, retryable_escrow_address, retryable_submission_fee,
+};
+
+const FROM: Address = address!("00000000000000000000000000000000000A11CE");
+const BENEFICIARY: Address = address!("00000000000000000000000000000000000B0B00");
+const DEST: Address = address!("00000000000000000000000000000000C4A841E0");
+const TICKET_ID: B256 = b256!("0000000000000000000000000000000000000000000000000000000000000042");
+
+fn submit(h: &mut ArbosHarness, id: B256, timeout: u64, calldata: &[u8]) {
+    let state_ptr = h.state_ptr();
+    let rs = h.retryable_state();
+    let b = unsafe { &mut *state_ptr };
+    rs.create_retryable(
+        b,
+        id,
+        timeout,
+        FROM,
+        Some(DEST),
+        U256::from(1_000_000u64),
+        BENEFICIARY,
+        calldata,
+    )
+    .unwrap();
+}
+
+#[test]
+fn create_open_round_trip() {
+    let mut h = ArbosHarness::new().initialize();
+    submit(&mut h, TICKET_ID, 1_000, b"hello world");
+
+    let state_ptr = h.state_ptr();
+    let rs = h.retryable_state();
+    let b = unsafe { &mut *state_ptr };
+    let opened = rs
+        .open_retryable(b, TICKET_ID, 999)
+        .unwrap()
+        .expect("exists");
+    assert_eq!(opened.from(b).unwrap(), FROM);
+    assert_eq!(opened.to(b).unwrap(), Some(DEST));
+    assert_eq!(opened.callvalue(b).unwrap(), U256::from(1_000_000u64));
+    assert_eq!(opened.beneficiary(b).unwrap(), BENEFICIARY);
+    assert_eq!(opened.calldata(b).unwrap(), b"hello world".to_vec());
+    assert_eq!(opened.num_tries(b).unwrap(), 0);
+}
+
+#[test]
+fn open_returns_none_after_timeout() {
+    let mut h = ArbosHarness::new().initialize();
+    submit(&mut h, TICKET_ID, 100, &[]);
+
+    let state_ptr = h.state_ptr();
+    let rs = h.retryable_state();
+    let b = unsafe { &mut *state_ptr };
+    assert!(rs.open_retryable(b, TICKET_ID, 50).unwrap().is_some());
+    assert!(rs.open_retryable(b, TICKET_ID, 100).unwrap().is_some());
+    assert!(rs.open_retryable(b, TICKET_ID, 101).unwrap().is_none());
+    assert!(rs.open_retryable(b, TICKET_ID, 200).unwrap().is_none());
+}
+
+#[test]
+fn open_survives_past_raw_timeout_at_v60() {
+    let mut h = ArbosHarness::new().with_arbos_version(60).initialize();
+    submit(&mut h, TICKET_ID, 100, &[]);
+    let state_ptr = h.state_ptr();
+    let rs = h.retryable_state();
+    let b = unsafe { &mut *state_ptr };
+    let _ = rs
+        .keepalive(b, TICKET_ID, 50, 50 + RETRYABLE_LIFETIME_SECONDS, 0)
+        .unwrap();
+    let (alive, extra) = rs.open_retryable_metered(b, TICKET_ID, 101).unwrap();
+    assert!(alive.is_some());
+    assert_eq!(extra, 800);
+    let (dead, extra) = rs
+        .open_retryable_metered(b, TICKET_ID, 100 + RETRYABLE_LIFETIME_SECONDS + 1)
+        .unwrap();
+    assert!(dead.is_none());
+    assert_eq!(extra, 800);
+}
+
+#[test]
+fn open_reaps_with_charge_at_v60_windows_zero() {
+    let mut h = ArbosHarness::new().with_arbos_version(60).initialize();
+    submit(&mut h, TICKET_ID, 100, &[]);
+    let state_ptr = h.state_ptr();
+    let rs = h.retryable_state();
+    let b = unsafe { &mut *state_ptr };
+    let (dead, extra) = rs.open_retryable_metered(b, TICKET_ID, 101).unwrap();
+    assert!(dead.is_none());
+    assert_eq!(extra, 800);
+}
+
+#[test]
+fn open_reaps_without_charge_below_v60_with_windows() {
+    let mut h = ArbosHarness::new().with_arbos_version(30).initialize();
+    submit(&mut h, TICKET_ID, 100, &[]);
+    let state_ptr = h.state_ptr();
+    let rs = h.retryable_state();
+    let b = unsafe { &mut *state_ptr };
+    let _ = rs
+        .keepalive(b, TICKET_ID, 50, 50 + RETRYABLE_LIFETIME_SECONDS, 0)
+        .unwrap();
+    let (dead, extra) = rs.open_retryable_metered(b, TICKET_ID, 101).unwrap();
+    assert!(dead.is_none());
+    assert_eq!(extra, 0);
+}
+
+#[test]
+fn delete_returns_false_for_unknown_id() {
+    let mut h = ArbosHarness::new().initialize();
+    let state_ptr = h.state_ptr();
+    let rs = h.retryable_state();
+
+    let mut transfers = Vec::new();
+    let did = rs
+        .delete_retryable(
+            unsafe { &mut *state_ptr },
+            b256!("0000000000000000000000000000000000000000000000000000000000000099"),
+            |from, to, amount| {
+                transfers.push((from, to, amount));
+                Ok(())
+            },
+            |_| U256::ZERO,
+        )
+        .unwrap();
+
+    assert!(!did);
+    assert!(transfers.is_empty());
+}
+
+#[test]
+fn delete_clears_storage_and_transfers_escrow() {
+    let mut h = ArbosHarness::new().initialize();
+    submit(&mut h, TICKET_ID, 1_000, b"data");
+    let escrow = retryable_escrow_address(TICKET_ID);
+    let escrow_balance = U256::from(7_777_777u64);
+
+    let state_ptr = h.state_ptr();
+    let mut transfers = Vec::new();
+    let did = {
+        let rs = h.retryable_state();
+        rs.delete_retryable(
+            unsafe { &mut *state_ptr },
+            TICKET_ID,
+            |from, to, amount| {
+                transfers.push((from, to, amount));
+                Ok(())
+            },
+            |addr| {
+                if addr == escrow {
+                    escrow_balance
+                } else {
+                    U256::ZERO
+                }
+            },
+        )
+        .unwrap()
+    };
+
+    assert!(did);
+    assert_eq!(transfers, vec![(escrow, BENEFICIARY, escrow_balance)]);
+
+    let state_ptr = h.state_ptr();
+    let rs = h.retryable_state();
+    let b = unsafe { &mut *state_ptr };
+    assert!(rs.open_retryable(b, TICKET_ID, 500).unwrap().is_none());
+}
+
+#[test]
+fn increment_num_tries_sequence() {
+    let mut h = ArbosHarness::new().initialize();
+    submit(&mut h, TICKET_ID, 1_000, &[]);
+    let state_ptr = h.state_ptr();
+    let rs = h.retryable_state();
+    let b = unsafe { &mut *state_ptr };
+    let r = rs.open_retryable(b, TICKET_ID, 500).unwrap().unwrap();
+    assert_eq!(r.increment_num_tries(b).unwrap(), 1);
+    assert_eq!(r.increment_num_tries(b).unwrap(), 2);
+    assert_eq!(r.increment_num_tries(b).unwrap(), 3);
+    assert_eq!(r.num_tries(b).unwrap(), 3);
+}
+
+#[test]
+fn escrow_address_is_deterministic() {
+    let id = b256!("00000000000000000000000000000000000000000000000000000000DEADBEEF");
+    let mut data = Vec::from(b"retryable escrow".as_ref());
+    data.extend_from_slice(id.as_slice());
+    let expected = Address::from_slice(&keccak256(&data)[12..]);
+    assert_eq!(retryable_escrow_address(id), expected);
+}
+
+#[test]
+fn submission_fee_scales_with_calldata_length() {
+    let l1_base_fee = U256::from(1_000_000_000u64);
+    let small = retryable_submission_fee(0, l1_base_fee);
+    let medium = retryable_submission_fee(100, l1_base_fee);
+    let large = retryable_submission_fee(10_000, l1_base_fee);
+    assert!(small < medium);
+    assert!(medium < large);
+}
+
+#[test]
+fn submission_fee_scales_with_l1_base_fee() {
+    let calldata_len = 100;
+    let cheap = retryable_submission_fee(calldata_len, U256::from(1u64));
+    let expensive = retryable_submission_fee(calldata_len, U256::from(1_000_000_000u64));
+    assert!(cheap < expensive);
+}

@@ -13,7 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/bold/containers/fsm"
 )
 
-func (m *MessageExtractor) initialize(ctx context.Context, current *fsm.CurrentState[action, FSMState]) (time.Duration, error) {
+func (m *MessageExtractor) initialize(ctx context.Context, _current *fsm.CurrentState[action, FSMState]) (time.Duration, error) {
 	// Start from the latest MEL state we have in the database
 	melState, err := m.melDB.GetHeadMelState()
 	if err != nil {

@@ -51,10 +51,7 @@ func TestDelayInboxLong(t *testing.T) {
 		}
 
 		// adding multiple messages in the same Add with local=true to get them in the same L1 block
-		errs := builder.L1.L1Backend.TxPool().Add(l1Txs, false)
-		for _, err := range errs {
-			Require(t, err)
-		}
+		builder.L1.AddTransactionsToSingleBlock(t, l1Txs)
 		// Checking every tx is expensive, so we just check the last, assuming that the others succeeded too
 		confirmLatestBlock(ctx, t, builder.L1Info, builder.L1.Client)
 		_, err := builder.L1.EnsureTxSucceeded(l1Txs[len(l1Txs)-1])

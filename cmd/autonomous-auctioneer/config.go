@@ -69,14 +69,14 @@ var AutonomousAuctioneerConfigDefault = AutonomousAuctioneerConfig{
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
 	PProf:         false,
-	Persistent:    conf.PersistentConfigDefault,
+	Persistent:    conf.PersistentConfigDefaultNoReadCompact,
 	PprofCfg:      genericconf.PProfDefault,
 }
 
 func AuctioneerConfigAddOptions(f *pflag.FlagSet) {
 	timeboost.AuctioneerServerConfigAddOptions("auctioneer-server", f)
 	timeboost.BidValidatorConfigAddOptions("bid-validator", f)
-	conf.PersistentConfigAddOptions("persistent", f)
+	conf.PersistentConfigAddOptions("persistent", f, AutonomousAuctioneerConfigDefault.Persistent)
 	genericconf.ConfConfigAddOptions("conf", f)
 	f.String("log-level", AutonomousAuctioneerConfigDefault.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", AutonomousAuctioneerConfigDefault.LogType, "log type (plaintext or json)")

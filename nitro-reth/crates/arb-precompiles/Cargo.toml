@@ -1,0 +1,37 @@
+[package]
+name = "arb-precompiles"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[lib]
+doctest = false
+
+[dependencies]
+alloy-consensus = { workspace = true }
+alloy-eips = { workspace = true }
+alloy-evm = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std"] }
+alloy-sol-types = { workspace = true }
+arb-chainspec = { workspace = true }
+arb-context = { workspace = true }
+arb-primitives = { workspace = true }
+arb-storage = { workspace = true }
+arb-storage-errors = { workspace = true }
+arb-stylus = { workspace = true }
+arbos = { workspace = true }
+revm = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+arb-context = { workspace = true }
+arb-storage-errors = { workspace = true }
+parking_lot = { workspace = true }
+thiserror = { workspace = true }
+tiny-keccak = { workspace = true, features = ["keccak"] }
+
+[lints]
+workspace = true

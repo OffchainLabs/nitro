@@ -13,7 +13,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -385,11 +384,7 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 		RequestId:   nil,
 		L1BaseFee:   nil,
 	}
-	hooks := gethexec.MakeZeroTxSizeSequencingHooksForTesting(types.Transactions{tx}, nil, nil, nil)
-	_, _, err = hooks.NextTxToSequence()
-	Require(t, err)
-	hooks.TxSucceeded()
-	l1IncomingMsg, err := hooks.MessageFromTxes(&l1IncomingMsgHeader)
+	l1IncomingMsg, err := gethexec.MessageFromTxes(&l1IncomingMsgHeader, []gethexec.TxResult{{Tx: tx}})
 	Require(t, err)
 
 	broadcastMessage := message.BroadcastMessage{

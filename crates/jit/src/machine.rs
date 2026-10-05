@@ -121,7 +121,7 @@ fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Import
             Function::new_typed_with_env(store, func_env, $func)
         };
     }
-    imports! {
+    let mut imports = imports! {
         "arbcompress" => {
             "brotli_compress" => func!(brotli_compress::<WasmEnv>),
             "brotli_decompress" => func!(brotli_decompress::<WasmEnv>),
@@ -144,41 +144,6 @@ fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Import
             "resolveTypedPreimage" => func!(wavmio::resolve_typed_preimage::<WasmEnv>),
             "validateCertificate" => func!(wavmio::validate_certificate::<WasmEnv>),
         },
-        "wasi_snapshot_preview1" => {
-            "proc_exit" => func!(|_: WasmEnvMut, code: u32|Err::<(), Escape>(Escape::Exit(code))),
-            "environ_sizes_get" => func!(wasi::environ_sizes_get::<WasmEnv>),
-            "fd_write" => func!(wasi::fd_write::<WasmEnv>),
-            "environ_get" => func!(wasi::environ_get::<WasmEnv>),
-            "fd_close" => func!(wasi::fd_close::<WasmEnv>),
-            "fd_read" => func!(wasi::fd_read::<WasmEnv>),
-            "fd_readdir" => func!(wasi::fd_readdir::<WasmEnv>),
-            "fd_sync" => func!(wasi::fd_sync::<WasmEnv>),
-            "fd_seek" => func!(wasi::fd_seek::<WasmEnv>),
-            "fd_datasync" => func!(wasi::fd_datasync::<WasmEnv>),
-            "path_open" => func!(wasi::path_open::<WasmEnv>),
-            "path_create_directory" => func!(wasi::path_create_directory::<WasmEnv>),
-            "path_remove_directory" => func!(wasi::path_remove_directory::<WasmEnv>),
-            "path_readlink" => func!(wasi::path_readlink::<WasmEnv>),
-            "path_rename" => func!(wasi::path_rename::<WasmEnv>),
-            "path_filestat_get" => func!(wasi::path_filestat_get::<WasmEnv>),
-            "path_unlink_file" => func!(wasi::path_unlink_file::<WasmEnv>),
-            "fd_prestat_get" => func!(wasi::fd_prestat_get::<WasmEnv>),
-            "fd_prestat_dir_name" => func!(wasi::fd_prestat_dir_name::<WasmEnv>),
-            "fd_filestat_get" => func!(wasi::fd_filestat_get::<WasmEnv>),
-            "fd_filestat_set_size" => func!(wasi::fd_filestat_set_size::<WasmEnv>),
-            "fd_pread" => func!(wasi::fd_pread::<WasmEnv>),
-            "fd_pwrite" => func!(wasi::fd_pwrite::<WasmEnv>),
-            "sock_accept" => func!(wasi::sock_accept::<WasmEnv>),
-            "sock_shutdown" => func!(wasi::sock_shutdown::<WasmEnv>),
-            "sched_yield" => func!(wasi::sched_yield::<WasmEnv>),
-            "clock_time_get" => func!(wasi::clock_time_get::<WasmEnv>),
-            "random_get" => func!(wasi::random_get::<WasmEnv>),
-            "args_sizes_get" => func!(wasi::args_sizes_get::<WasmEnv>),
-            "args_get" => func!(wasi::args_get::<WasmEnv>),
-            "poll_oneoff" => func!(wasi::poll_oneoff::<WasmEnv>),
-            "fd_fdstat_get" => func!(wasi::fd_fdstat_get::<WasmEnv>),
-            "fd_fdstat_set_flags" => func!(wasi::fd_fdstat_set_flags::<WasmEnv>),
-        },
         "programs" => {
             "program_prepare" => func!(program::program_prepare),
             "program_requires_prepare" => func!(program::program_requires_prepare),
@@ -192,10 +157,18 @@ fn imports(store: &mut Store, func_env: &FunctionEnv<WasmEnv>) -> wasmer::Import
             "create_stylus_config" => func!(program::create_stylus_config),
             "create_evm_data" => func!(program::create_evm_data),
             "create_evm_data_v2" => func!(program::create_evm_data_v2),
+            "create_evm_data_v3" => func!(program::create_evm_data_v3),
             "activate" => func!(program::activate),
             "activate_v2" => func!(program::activate_v2),
         },
-    }
+    };
+    let mut wasi_ns = wasi::exports(store, func_env);
+    wasi_ns.insert(
+        "proc_exit",
+        func!(|_: WasmEnvMut, code: u32| Err::<(), Escape>(Escape::Exit(code))),
+    );
+    imports.register_namespace("wasi_snapshot_preview1", wasi_ns);
+    imports
 }
 
 #[derive(Error, Debug)]

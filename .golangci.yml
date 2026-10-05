@@ -7,6 +7,7 @@ linters:
     - gosec
     - nilerr
     - misspell
+    - unparam
   settings:
     errcheck:
       check-type-assertions: true
@@ -49,6 +50,10 @@ linters:
       - linters:
           - staticcheck
         path: _test\.go
+      # only lint unused parameters, not results or constant arguments
+      - linters:
+          - unparam
+        text: '- result .+ is (always|never)|always receives'
     paths:
       - go-ethereum
       - fastcache

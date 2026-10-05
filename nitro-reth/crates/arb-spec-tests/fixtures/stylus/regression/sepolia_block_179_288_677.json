@@ -1,0 +1,92 @@
+{
+  "name": "sepolia_block_179_288_677",
+  "description": "Sepolia block 179,288,677: L1 inbox event of kind=7 (L2FundedByL1) from aliased sender 0xfa4c3d4b... carries an L2 UnsignedUserTx with maxFeePerGas=0.02 Gwei, below the L2 basefee (0.1 Gwei). Nitro's preCheck returns ErrFeeCapTooLow and drops the unsigned tx from the block; only the L2FundedByL1 deposit (sub-id 0) remains. Pre-fix arbreth had cfg.disable_base_fee=true chain-wide which let revm execute the underpriced tx, producing an extra tx[2]. Fix adds a per-tx basefee check before EVM execution for tx types where Go's skipTransactionChecks() == false. Asserts block 2 gasUsed=0 (would be >0 if the underpriced tx executed) and TO_ADDR balance stays 0.",
+  "genesis": {
+    "config": {
+      "chainId": 421614,
+      "homesteadBlock": 0,
+      "daoForkSupport": true,
+      "eip150Block": 0,
+      "eip155Block": 0,
+      "eip158Block": 0,
+      "byzantiumBlock": 0,
+      "constantinopleBlock": 0,
+      "petersburgBlock": 0,
+      "istanbulBlock": 0,
+      "muirGlacierBlock": 0,
+      "berlinBlock": 0,
+      "londonBlock": 0,
+      "depositContractAddress": "0x0000000000000000000000000000000000000000",
+      "clique": {
+        "period": 0,
+        "epoch": 0
+      },
+      "arbitrum": {
+        "EnableArbOS": true,
+        "AllowDebugPrecompiles": true,
+        "DataAvailabilityCommittee": false,
+        "InitialArbOSVersion": 32,
+        "InitialChainOwner": "0x0000000000000000000000000000000000000000",
+        "GenesisBlockNum": 0
+      }
+    },
+    "coinbase": "0x0000000000000000000000000000000000000000",
+    "difficulty": "0x1",
+    "extraData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "gasLimit": "0x4000000000000",
+    "nonce": "0x1",
+    "timestamp": "0x0"
+  },
+  "messages": [
+    {
+      "msgIdx": 1,
+      "delayedMessagesRead": 2,
+      "message": {
+        "header": {
+          "kind": 12,
+          "sender": "0x0000000000000000000000000000000000000000",
+          "blockNumber": 1,
+          "timestamp": 1700000001,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "+kw9S2Jvy9BUypbCU1MK9qqQQBUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAN4Lazp2QAAA=="
+      }
+    },
+    {
+      "msgIdx": 2,
+      "delayedMessagesRead": 3,
+      "message": {
+        "header": {
+          "kind": 7,
+          "sender": "0xfa4c3d4b626fcbd054ca96c253530af6aa904015",
+          "blockNumber": 2,
+          "timestamp": 1700000002,
+          "requestId": "0xb0d7808a12cc18c96f64d470bf9472bbceab111d178cb80be5ebae69ef0127bc",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA7msoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAExLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAO4WnDXc+dvan5XVvpKXEinYophXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGqU109DAAAp6Z8HAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAU="
+      }
+    }
+  ],
+  "expected": {
+    "blocks": [
+      {
+        "number": 2,
+        "gas_used": 0
+      }
+    ],
+    "balances": [
+      {
+        "address": "0xee169c35dcf9dbda9f95d5be92971229d8a29857",
+        "at_block": "latest",
+        "value": "0"
+      },
+      {
+        "address": "0xfa4c3d4b626fcbd054ca96c253530af6aa904015",
+        "at_block": "latest",
+        "value": "1030000000000000000"
+      }
+    ]
+  }
+}

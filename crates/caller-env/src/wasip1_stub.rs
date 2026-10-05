@@ -341,4 +341,62 @@ pub mod host {
     host_fn_exec!(fn clock_time_get(a: u32, b: u64, c: GuestPtr));
     host_fn_exec!(fn random_get(a: GuestPtr, b: u32));
     host_fn_exec!(fn poll_oneoff(a: GuestPtr, b: GuestPtr, c: u32, d: GuestPtr));
+
+    /// Builds the complete `wasi_snapshot_preview1` namespace for a wasmer runner,
+    /// ready for [`wasmer::Imports::register_namespace`].
+    ///
+    /// `proc_exit` is deliberately absent: how a guest exit surfaces is runner
+    /// policy, so each embedder inserts its own binding.
+    pub fn exports<T>(
+        store: &mut impl wasmer::AsStoreMut,
+        env: &wasmer::FunctionEnv<T>,
+    ) -> wasmer::Exports
+    where
+        T: crate::wasmer_traits::HasMemory + crate::ExecEnv + Send + 'static,
+    {
+        let mut ns = wasmer::Exports::new();
+        macro_rules! insert {
+            ($($name:ident),* $(,)?) => {$(
+                ns.insert(
+                    stringify!($name),
+                    wasmer::Function::new_typed_with_env(store, env, $name::<T>),
+                );
+            )*};
+        }
+        insert!(
+            args_sizes_get,
+            args_get,
+            environ_sizes_get,
+            environ_get,
+            fd_write,
+            fd_close,
+            fd_read,
+            fd_readdir,
+            fd_sync,
+            fd_seek,
+            fd_datasync,
+            fd_fdstat_get,
+            fd_fdstat_set_flags,
+            fd_prestat_get,
+            fd_prestat_dir_name,
+            fd_filestat_get,
+            fd_filestat_set_size,
+            fd_pread,
+            fd_pwrite,
+            path_open,
+            path_create_directory,
+            path_remove_directory,
+            path_readlink,
+            path_rename,
+            path_filestat_get,
+            path_unlink_file,
+            sock_accept,
+            sock_shutdown,
+            sched_yield,
+            clock_time_get,
+            random_get,
+            poll_oneoff,
+        );
+        ns
+    }
 }

@@ -24,6 +24,7 @@ var (
 	confirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/sequencenumber/confirmed", nil)
 	backlogSizeInBytesGauge      = metrics.NewRegisteredGauge("arb/feed/backlog/bytes", nil)
 	backlogSizeGauge             = metrics.NewRegisteredGauge("arb/feed/backlog/messages", nil)
+	backlogDroppedCounter        = metrics.NewRegisteredCounter("arb/feed/backlog/dropped", nil)
 )
 
 // Backlog defines the interface for backlog.
@@ -40,7 +41,7 @@ type Backlog interface {
 type backlog struct {
 	head          atomic.Pointer[backlogSegment]
 	tail          atomic.Pointer[backlogSegment]
-	lookupByIndex atomic.Pointer[containers.SyncMap[uint64, *backlogSegment]]
+	lookupByIndex containers.SyncMap[uint64, *backlogSegment]
 	config        ConfigFetcher
 	messageCount  atomic.Uint64
 }
@@ -50,7 +51,7 @@ func NewBacklog(c ConfigFetcher) Backlog {
 	b := &backlog{
 		config: c,
 	}
-	b.lookupByIndex.Store(&containers.SyncMap[uint64, *backlogSegment]{})
+	b.lookupByIndex = containers.SyncMap[uint64, *backlogSegment]{}
 	return b
 }
 
@@ -134,7 +135,6 @@ func (b *backlog) Append(bm *message.BroadcastMessage) error {
 	}
 
 	enableDeepCopy := b.config().EnableBacklogDeepCopy
-	lookupByIndex := b.lookupByIndex.Load()
 	for _, msg := range bm.Messages {
 		// For memory debugging: deep copy L2msg to track allocations
 		msgToAppend := msg
@@ -173,17 +173,19 @@ func (b *backlog) Append(bm *message.BroadcastMessage) error {
 
 		err := segment.append(prevMsgIdx, msgToAppend)
 		if errors.Is(err, errDropSegments) {
-			head := b.head.Load()
-			b.removeFromLookup(head.Start(), uint64(msg.SequenceNumber))
+			// Empty out lookupByIndex so that there aren't any stale messages being tracked
+			// as backlog would now only have one single-message segment
+			b.lookupByIndex.Clear()
 			b.head.Store(segment)
 			b.tail.Store(segment)
 			b.messageCount.Store(0)
 			backlogSizeInBytesGauge.Update(0)
+			backlogDroppedCounter.Inc(1)
 			log.Warn(err.Error())
 		} else if err != nil {
 			return err
 		}
-		lookupByIndex.Store(uint64(msg.SequenceNumber), segment)
+		b.lookupByIndex.Store(uint64(msg.SequenceNumber), segment)
 		b.messageCount.Add(1)
 		// #nosec G115
 		backlogSizeInBytesGauge.Inc(int64(msg.Size()))
@@ -304,15 +306,14 @@ func (b *backlog) delete(confirmed uint64) {
 // removeFromLookup removes all entries from the head segment's start index to
 // the given confirmed index.
 func (b *backlog) removeFromLookup(start, end uint64) {
-	lookupByIndex := b.lookupByIndex.Load()
 	for i := start; i <= end; i++ {
-		lookupByIndex.Delete(i)
+		b.lookupByIndex.Delete(i)
 	}
 }
 
 // Lookup attempts to find the backlogSegment storing the given message index.
 func (b *backlog) Lookup(i uint64) (BacklogSegment, error) {
-	segment, ok := b.lookupByIndex.Load().Load(i)
+	segment, ok := b.lookupByIndex.Load(i)
 	if !ok {
 		return nil, fmt.Errorf("error finding backlog segment containing message with SequenceNumber %d", i)
 	}
@@ -329,7 +330,7 @@ func (s *backlog) Count() uint64 {
 func (b *backlog) reset() {
 	b.head.Store(nil)
 	b.tail.Store(nil)
-	b.lookupByIndex.Store(&containers.SyncMap[uint64, *backlogSegment]{})
+	b.lookupByIndex.Clear()
 	b.messageCount.Store(0)
 	backlogSizeInBytesGauge.Update(0)
 	backlogSizeGauge.Update(0)

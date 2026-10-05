@@ -1,0 +1,27 @@
+{
+  "name": "num_tries_increments",
+  "description": "Three increments yield num_tries=3",
+  "setup": {"arbos_version": 30, "chain_id": 412346},
+  "actions": [
+    {
+      "type": "retryable_create",
+      "id": "0x0000000000000000000000000000000000000000000000000000000000000099",
+      "timeout": 5000,
+      "from": "0x00000000000000000000000000000000000A11CE",
+      "callvalue": "0x1",
+      "beneficiary": "0x00000000000000000000000000000000000B0B00"
+    },
+    {"type": "retryable_increment_num_tries", "id": "0x0000000000000000000000000000000000000000000000000000000000000099", "at_time": 100},
+    {"type": "retryable_increment_num_tries", "id": "0x0000000000000000000000000000000000000000000000000000000000000099", "at_time": 100},
+    {"type": "retryable_increment_num_tries", "id": "0x0000000000000000000000000000000000000000000000000000000000000099", "at_time": 100}
+  ],
+  "assertions": {
+    "retryable": {
+      "num_tries": {
+        "id": "0x0000000000000000000000000000000000000000000000000000000000000099",
+        "at_time": 100,
+        "expected": 3
+      }
+    }
+  }
+}

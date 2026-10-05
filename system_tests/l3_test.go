@@ -11,7 +11,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 )
 
-func TestSimpleL3(t *testing.T) {
+func TestSimpleL3Flaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

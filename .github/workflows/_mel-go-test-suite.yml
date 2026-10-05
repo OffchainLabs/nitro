@@ -4,7 +4,7 @@ on:
   workflow_call:
 
 # MEL test modes are gated out of default CI because they triple runner contention
-# on the shared arbitrator-ci pool. Opt in per-PR with the `test-mel` label (see
+# on the shared go-tests runner pool. Opt in per-PR with the `test-mel` label (see
 # ci.yml) or wait for the scheduled nightly run (see nightly-ci.yml).
 jobs:
   main:

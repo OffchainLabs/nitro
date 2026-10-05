@@ -1,0 +1,26 @@
+{
+  "name": "synthetic/precompile-fanout/short",
+  "category": "precompile-fanout",
+  "scale": "short",
+  "arbos_version": 60,
+  "chain_id": 421614,
+  "corpus_version": "1.0.0",
+  "description": "Fans out across the canonical Arbitrum precompile set; every tx hits a different precompile dispatch path.",
+  "messages": {
+    "source": "synthetic_generator",
+    "generator": "precompile_fanout",
+    "params": {
+      "block_count": 2000,
+      "txs_per_block": 64
+    }
+  },
+  "metrics": {
+    "rolling_window_blocks": 100
+  },
+  "regression": {
+    "gate": true,
+    "tolerance_pct": 5.0,
+    "paired_stat": "bootstrap_95ci",
+    "bootstrap_iters": 10000
+  }
+}

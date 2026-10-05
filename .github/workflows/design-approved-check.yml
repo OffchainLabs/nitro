@@ -7,13 +7,24 @@ on:
     branches: [master, main, '*-release', '*-backports']
     types: [synchronize, opened, reopened, labeled, unlabeled]
 
-permissions:
-  statuses: write
-
 jobs:
+  # Nitro Reth-only PRs don't need design approval; see the nitro_reth
+  # category in _detect-changes.yml for what counts as reth-only.
+  changes:
+    if: github.event_name == 'pull_request_target'
+    uses: ./.github/workflows/_detect-changes.yml
+    secrets: inherit
+    permissions:
+      contents: read
+
   check-design-approved:
     name: Check if Design Approved
     runs-on: ubuntu-4
+    timeout-minutes: 10
+    needs: changes
+    if: always()
+    permissions:
+      statuses: write
     steps:
       - name: Check if design approved and update status
         run: |
@@ -25,13 +36,14 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" || "$GITHUB_EVENT_NAME" == "pull_request_target" ]]; then
             design_approved='${{ contains(github.event.pull_request.labels.*.name, 'design-approved') }}'
             after_next_version='${{ contains(github.event.pull_request.labels.*.name, 'after-next-version') }}'
+            reth_only='${{ needs.changes.outputs.reth_only }}'
             status_state="pending"
-            if [[ "$design_approved" == "true" && "$after_next_version" != "true" ]]; then
+            if [[ ( "$design_approved" == "true" || "$reth_only" == "true" ) && "$after_next_version" != "true" ]]; then
               status_state="success"
             fi
           fi
 
-          curl -sSL --fail-with-body \
+          curl -sSL --fail-with-body --retry 3 \
             -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \

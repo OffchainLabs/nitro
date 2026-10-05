@@ -1,0 +1,152 @@
+//! Live multi-message differential vs Nitro Docker.
+//!
+//!   ARB_SPEC_BINARY=$(pwd)/target/release/arb-reth \
+//!     ARB_FUZZ_ARBOS_VERSION=40 ARB_FUZZ_ITERATIONS=80 \
+//!     cargo test -p arb-fuzz --test multi_msg_scenarios --release \
+//!     -- --ignored live_against_nitro --nocapture
+
+use arb_fuzz::arbitrary_impls::DiffMultiMsgScenario;
+
+fn seed(i: usize) -> Vec<u8> {
+    let mut state: u64 = 0x4F1B_BCD8_8B17_5DC0u64.wrapping_add(i as u64);
+    let mut out = Vec::with_capacity(512);
+    while out.len() < 512 {
+        state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^= z >> 31;
+        out.extend_from_slice(&z.to_le_bytes());
+    }
+    out
+}
+
+#[test]
+#[ignore]
+fn live_against_nitro() {
+    use arb_fuzz::shared_nodes::shared_dual_exec;
+    use arbitrary::{Arbitrary, Unstructured};
+
+    let iterations: usize = std::env::var("ARB_FUZZ_ITERATIONS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(50);
+    let start: usize = std::env::var("ARB_FUZZ_START")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+
+    let mut clean = 0usize;
+    let mut skipped = 0usize;
+    let mut diverged: Vec<String> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
+
+    let nodes = shared_dual_exec();
+
+    for i in start..(start + iterations) {
+        let bytes = seed(i);
+        let mut u = Unstructured::new(&bytes);
+        let scenario = match DiffMultiMsgScenario::arbitrary(&mut u) {
+            Ok(s) => s,
+            Err(_) => {
+                skipped += 1;
+                continue;
+            }
+        };
+        let kinds =
+            scenario
+                .messages
+                .iter()
+                .map(|m| {
+                    match m {
+                arb_fuzz::arbitrary_impls::MessageStep::Deposit { .. } => "Dep",
+                arb_fuzz::arbitrary_impls::MessageStep::SubmitRetryable { .. } => "Sub",
+                arb_fuzz::arbitrary_impls::MessageStep::SignedTx { kind, .. } => match kind {
+                    arb_fuzz::arbitrary_impls::SignedKind::Legacy => "L",
+                    arb_fuzz::arbitrary_impls::SignedKind::Eip2930 => "29",
+                    arb_fuzz::arbitrary_impls::SignedKind::Eip1559 => "15",
+                    arb_fuzz::arbitrary_impls::SignedKind::Eip7702 => "77",
+                },
+                arb_fuzz::arbitrary_impls::MessageStep::UnsignedUserTx { .. } => "Uns",
+                arb_fuzz::arbitrary_impls::MessageStep::ContractTx { .. } => "Con",
+                arb_fuzz::arbitrary_impls::MessageStep::ArbWasmRead { method, .. } => match method {
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::StylusVersion => "AWsv",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::InkPrice => "AWip",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::MaxStackDepth => "AWmsd",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::FreePages => "AWfp",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::PageGas => "AWpg",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::PageRamp => "AWpr",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::PageLimit => "AWpl",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::MinInitGas => "AWmig",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::InitCostScalar => "AWics",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::ExpiryDays => "AWed",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::KeepaliveDays => "AWkd",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::BlockCacheSize => "AWbcs",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::ActivationGas => "AWag",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::CodehashVersion => "AWchv",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::CodehashAsmSize => "AWchs",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::ProgramVersion => "AWv",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::ProgramInitGas => "AWi",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::ProgramMemoryFootprint => "AWm",
+                    arb_fuzz::arbitrary_impls::ArbWasmReadMethod::ProgramTimeLeft => "AWt",
+                },
+            }
+                })
+                .collect::<Vec<_>>()
+                .join("/");
+        let scen = match scenario.clone().into_scenario() {
+            Some(s) if !s.steps.is_empty() => s,
+            _ => {
+                skipped += 1;
+                continue;
+            }
+        };
+        eprintln!("iter {i}: msgs=[{kinds}] — running");
+        if std::env::var("ARB_FUZZ_DUMP").is_ok() {
+            for (mi, m) in scenario.messages.iter().enumerate() {
+                eprintln!("    msg[{mi}]: {m:?}");
+            }
+        }
+
+        let mut nodes = nodes.lock().expect("dual-exec mutex poisoned");
+        match nodes.run(&scen) {
+            Ok(report) if report.is_clean() => {
+                clean += 1;
+                eprintln!("iter {i}: clean");
+            }
+            Ok(report) => {
+                let summary = format!(
+                    "iter {i} ({kinds}): block_diffs={} tx_diffs={} state_diffs={} log_diffs={}\n{:#?}",
+                    report.block_diffs.len(),
+                    report.tx_diffs.len(),
+                    report.state_diffs.len(),
+                    report.log_diffs.len(),
+                    report
+                );
+                eprintln!("DIVERGENCE: {summary}");
+                diverged.push(summary);
+            }
+            Err(e) => {
+                let msg = format!("iter {i}: harness error: {e}");
+                eprintln!("{msg}");
+                errors.push(msg);
+            }
+        }
+    }
+
+    eprintln!(
+        "\n=== multi_msg live summary: {clean} clean, {skipped} skipped, {} divergences, {} errors ===",
+        diverged.len(),
+        errors.len()
+    );
+    if !diverged.is_empty() {
+        for d in &diverged {
+            eprintln!("--- {d}");
+        }
+        panic!(
+            "{} divergences across {iterations} iterations",
+            diverged.len()
+        );
+    }
+    assert!(clean > 0, "expected at least one clean iteration");
+}

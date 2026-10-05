@@ -1,0 +1,16 @@
+{
+  "name": "synthetic/state-growth/short",
+  "category": "baseline",
+  "scale": "short",
+  "arbos_version": 60,
+  "chain_id": 421614,
+  "corpus_version": "1.0.0",
+  "description": "Every tx deploys an empty contract, growing the global account trie one new entry per tx. After 500 blocks × 32 deploys = 16k new accounts. Use the long/endurance scale to see late-chain trie-depth effects via the rolling-window metrics.",
+  "messages": {
+    "source": "synthetic_generator",
+    "generator": "state_growth",
+    "params": { "block_count": 500, "deploys_per_block": 32 }
+  },
+  "metrics": { "rolling_window_blocks": 25 },
+  "regression": { "gate": true, "tolerance_pct": 5.0, "paired_stat": "bootstrap_95ci", "bootstrap_iters": 10000 }
+}

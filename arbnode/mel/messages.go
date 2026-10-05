@@ -19,6 +19,7 @@ import (
 var ErrDelayedMessageNotYetFinalized = errors.New("delayed message not yet finalized")
 var ErrDelayedAccumulatorMismatch = errors.New("delayed message accumulator mismatch")
 var ErrDelayedMessagePreimageNotFound = errors.New("delayed message preimage not found")
+var ErrFindDelayedNotImplementedByMEL = errors.New("FindParentChainBlockContainingDelayed is not implemented by MEL as batch gas cost data is already filled in during extraction")
 
 type BatchDataLocation uint8
 

@@ -24,6 +24,7 @@ use {
     wasmer_compiler_singlepass::Singlepass,
 };
 
+use super::DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT;
 use crate::{programs::meter, value::FunctionType};
 
 /// Minimum Stylus version that uses the spec-compliant `memory.fill` implementation.
@@ -96,7 +97,8 @@ impl PricingParams {
 pub type SigMap = HashMap<SignatureIndex, FunctionType>;
 pub type OpCosts = fn(&Operator, &SigMap) -> u64;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Derivative)]
+#[derivative(Default)]
 pub struct CompileConfig {
     /// Version of the compiler to use
     pub version: u16,
@@ -106,6 +108,9 @@ pub struct CompileConfig {
     pub bounds: CompileMemoryParams,
     /// Debug parameters for test chains
     pub debug: CompileDebugParams,
+    /// Maximum emitted machine code size for a Singlepass module
+    #[derivative(Default(value = "Some(DEFAULT_SINGLEPASS_OUTPUT_SIZE_LIMIT)"))]
+    max_singlepass_output_size: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -164,6 +169,15 @@ impl Default for CompileMemoryParams {
 }
 
 impl CompileConfig {
+    pub fn with_max_singlepass_output_size(mut self, limit: Option<usize>) -> Self {
+        self.max_singlepass_output_size = limit;
+        self
+    }
+
+    pub fn max_singlepass_output_size(&self) -> Option<usize> {
+        self.max_singlepass_output_size
+    }
+
     pub fn version(version: u16, debug_chain: bool) -> Self {
         let mut config = Self::default();
         config.version = version;
@@ -189,6 +203,23 @@ impl CompileConfig {
         config
     }
 
+    /// Pushes the standard Stylus middleware stack onto a wasmer compiler config.
+    /// Order must be consistent with the prover.
+    #[cfg(feature = "native")]
+    pub fn push_stylus_middlewares(&self, config: &mut dyn wasmer::sys::CompilerConfig) {
+        let start = MiddlewareWrapper::new(StartMover::new(self.debug.debug_info));
+        let meter = MiddlewareWrapper::new(Meter::new(&self.pricing));
+        let dygas = MiddlewareWrapper::new(DynamicMeter::new(&self.pricing));
+        let depth = MiddlewareWrapper::new(DepthChecker::new(self.bounds));
+        let bound = MiddlewareWrapper::new(HeapBound::new(self.bounds));
+
+        config.push_middleware(Arc::new(start));
+        config.push_middleware(Arc::new(meter));
+        config.push_middleware(Arc::new(dygas));
+        config.push_middleware(Arc::new(depth));
+        config.push_middleware(Arc::new(bound));
+    }
+
     #[cfg(feature = "native")]
     fn engine_type(&self, target: Target, cranelift: bool) -> Engine {
         use wasmer::sys::EngineBuilder;
@@ -204,19 +235,7 @@ impl CompileConfig {
         wasmer_config.canonicalize_nans(true);
         wasmer_config.enable_verifier();
 
-        let start = MiddlewareWrapper::new(StartMover::new(self.debug.debug_info));
-        let meter = MiddlewareWrapper::new(Meter::new(&self.pricing));
-        let dygas = MiddlewareWrapper::new(DynamicMeter::new(&self.pricing));
-        let depth = MiddlewareWrapper::new(DepthChecker::new(self.bounds));
-        let bound = MiddlewareWrapper::new(HeapBound::new(self.bounds));
-
-        // add the instrumentation in the order of application
-        // note: this must be consistent with the prover
-        wasmer_config.push_middleware(Arc::new(start));
-        wasmer_config.push_middleware(Arc::new(meter));
-        wasmer_config.push_middleware(Arc::new(dygas));
-        wasmer_config.push_middleware(Arc::new(depth));
-        wasmer_config.push_middleware(Arc::new(bound));
+        self.push_stylus_middlewares(wasmer_config.as_mut());
 
         if self.debug.count_ops {
             let counter = Counter::new();

@@ -117,8 +117,8 @@ func testProgramRecursiveCall(t *testing.T, builder *NodeBuilder, slotVals map[s
 	return receipt.BlockNumber.Uint64()
 }
 
-func testProgramRecursiveCalls(t *testing.T, tests [][]multiCallRecurse, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func testProgramRecursiveCalls(t *testing.T, tests [][]multiCallRecurse, jit bool, builderOpts ...func(*NodeBuilder)) {
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
@@ -185,21 +185,23 @@ func testProgramRecursiveCalls(t *testing.T, tests [][]multiCallRecurse, jit boo
 }
 
 func TestProgramCallSimple(t *testing.T) {
-	tests := [][]multiCallRecurse{
-		{
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		tests := [][]multiCallRecurse{
 			{
-				Name:   "multicall-rust",
-				opcode: vm.SLOAD,
+				{
+					Name:   "multicall-rust",
+					opcode: vm.SLOAD,
+				},
+				{
+					Name:   "multicall-rust",
+					opcode: vm.STATICCALL,
+				},
+				{
+					Name:   "multicall-rust",
+					opcode: vm.DELEGATECALL,
+				},
 			},
-			{
-				Name:   "multicall-rust",
-				opcode: vm.STATICCALL,
-			},
-			{
-				Name:   "multicall-rust",
-				opcode: vm.DELEGATECALL,
-			},
-		},
-	}
-	testProgramRecursiveCalls(t, tests, true)
+		}
+		testProgramRecursiveCalls(t, tests, true, recorderOpt)
+	})
 }

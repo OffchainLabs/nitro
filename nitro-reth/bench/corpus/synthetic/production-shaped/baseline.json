@@ -1,0 +1,21 @@
+{
+  "name": "synthetic/production-shaped/baseline",
+  "category": "baseline",
+  "scale": "short",
+  "arbos_version": 60,
+  "chain_id": 421614,
+  "corpus_version": "1.0.0",
+  "description": "Baseline transfers running against a pre-warmed genesis (1M synthetic accounts injected). Trie depth is ~20 from block 1 — close to production. Use to measure SLOAD/state-root costs at realistic depth without a snapshot.",
+  "messages": {
+    "source": "synthetic_generator",
+    "generator": "transfer_train",
+    "params": { "block_count": 5000, "txs_per_block": 16 }
+  },
+  "metrics": { "rolling_window_blocks": 250 },
+  "regression": { "gate": true, "tolerance_pct": 5.0, "paired_stat": "bootstrap_95ci", "bootstrap_iters": 10000 },
+  "prewarm": {
+    "accounts": 1000000,
+    "seed": 11400714819323198487,
+    "balance_wei": "0x0"
+  }
+}

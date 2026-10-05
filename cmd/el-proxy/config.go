@@ -81,7 +81,7 @@ var ExpressLaneProxyConfigDefault = ExpressLaneProxyConfig{
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
 	PProf:         false,
-	Persistent:    conf.PersistentConfigDefault,
+	Persistent:    conf.PersistentConfigDefaultNoReadCompact,
 	PprofCfg:      genericconf.PProfDefault,
 }
 
@@ -92,7 +92,7 @@ func ExpressLaneProxyConfigAddOptions(f *pflag.FlagSet) {
 	f.String("auction-contract-address", ExpressLaneProxyConfigDefault.AuctionContractAddress, "Address of the proxy pointing to the ExpressLaneAuction contract")
 	genericconf.WalletConfigAddOptions("wallet", f, "wallet with account for proxy to use to sign txs")
 
-	conf.PersistentConfigAddOptions("persistent", f)
+	conf.PersistentConfigAddOptions("persistent", f, ExpressLaneProxyConfigDefault.Persistent)
 	genericconf.ConfConfigAddOptions("conf", f)
 	f.String("log-level", ExpressLaneProxyConfigDefault.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", ExpressLaneProxyConfigDefault.LogType, "log type (plaintext or json)")

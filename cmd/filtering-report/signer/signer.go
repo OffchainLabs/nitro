@@ -126,9 +126,9 @@ func checkLeafValidity(leaf *x509.Certificate, now time.Time, reloadInterval tim
 	return nil
 }
 
-func (s *Signer) SignHTTPRequest(req *http.Request, body []byte, now time.Time) {
+func (s *Signer) SignHTTPRequest(req *http.Request, body []byte) {
 	creds := s.creds.Load()
-	timestamp := strconv.FormatInt(now.Unix(), 10)
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 	payload := BuildSigningPayload(timestamp, body)
 	signature := ed25519.Sign(creds.privateKey, payload)
 

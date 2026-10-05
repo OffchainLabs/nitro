@@ -44,8 +44,8 @@ func testTwoNodesLong(t *testing.T, daModeStr string) {
 	builder.nodeConfig = l1NodeConfigA
 	builder.chainConfig = chainConfig
 	builder.L2Info = nil
-	builder.Build(t)
-	defer requireClose(t, builder.L1.Stack)
+	cleanup := builder.Build(t)
+	defer cleanup()
 
 	authorizeAnyTrustKeyset(t, ctx, anyTrustSignerKey, builder.L1Info, builder.L1.Client)
 
@@ -99,12 +99,7 @@ func testTwoNodesLong(t *testing.T, daModeStr string) {
 		}
 
 		// adding multiple messages in the same Add with local=true to get them in the same L1 block
-		errs := builder.L1.L1Backend.TxPool().Add(l1Txs, false)
-		for _, err := range errs {
-			if err != nil {
-				Fatal(t, err)
-			}
-		}
+		builder.L1.AddTransactionsToSingleBlock(t, l1Txs)
 		l2TxsThisTime := rand.Int() % (avgL2MsgsPerLoop * 2)
 		l2Txs := make([]*types.Transaction, 0, l2TxsThisTime)
 		for len(l2Txs) < l2TxsThisTime {
@@ -192,6 +187,6 @@ func TestTwoNodesLong(t *testing.T) {
 	testTwoNodesLong(t, "onchain")
 }
 
-func TestTwoNodesLongLocalAnyTrust(t *testing.T) {
+func TestTwoNodesLongLocalAnyTrustFlaky(t *testing.T) {
 	testTwoNodesLong(t, "files")
 }

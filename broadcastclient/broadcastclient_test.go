@@ -308,7 +308,7 @@ func TestServerClientDisconnect(t *testing.T) {
 	}
 }
 
-func TestBroadcastClientConfirmedMessage(t *testing.T) {
+func TestBroadcastClientConfirmedMessageFlaky(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

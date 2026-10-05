@@ -4,31 +4,24 @@
 package gethexec
 
 import (
-	"errors"
 	"testing"
+	"time"
 
-	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
 
-// TestSequencerWrapperMutexReleasedOnPanic verifies that createBlocksMutex is
-// properly released even when sequencerFunc panics. Without defer, a panic
-// would bypass Unlock() and leave the mutex locked, causing a deadlock on the
-// next call (e.g. after createBlock's recover() catches the panic).
-func TestSequencerWrapperMutexReleasedOnPanic(t *testing.T) {
-	engine := &ExecutionEngine{
-		cachedL1PriceData: NewL1PriceData(),
-	}
+func TestSequenceTransactionsMutexReleasedOnPanic(t *testing.T) {
+	// Zero-value engine: sequenceTransactionsWithBlockMutex calls
+	// getCurrentHeader -> s.bc.CurrentBlock() on a nil bc, which panics.
+	engine := &ExecutionEngine{}
 
-	// Mirrors what createBlock does: call into sequencerWrapper and recover.
 	func() {
 		defer func() {
 			if r := recover(); r == nil {
 				t.Error("expected a panic but got none")
 			}
 		}()
-		_, _ = engine.sequencerWrapper(func() (*types.Block, error) {
-			panic("simulated sequencer panic")
-		})
+		_, _, _ = engine.SequenceTransactions(nil, nil)
 	}()
 
 	// The mutex must be unlocked after the panic is recovered upstream.
@@ -38,23 +31,67 @@ func TestSequencerWrapperMutexReleasedOnPanic(t *testing.T) {
 	engine.createBlocksMutex.Unlock()
 }
 
-// TestSequencerWrapperMutexReleasedOnSuccess verifies that normal (non-panic)
-// returns also leave the mutex unlocked.
-func TestSequencerWrapperMutexReleasedOnSuccess(t *testing.T) {
-	engine := &ExecutionEngine{
-		cachedL1PriceData: NewL1PriceData(),
+func TestEnqueueDelayedMessagesRejectsMisalignedBatches(t *testing.T) {
+	// Queue seeded with idx 5 => expected next idx is 6, without needing a
+	// blockchain for the empty-queue header fallback.
+	tests := []struct {
+		name        string
+		firstMsgIdx uint64
+		numMsgs     int
+		wantNextIdx uint64
+	}{
+		{"aligned batch appended", 6, 2, 8},
+		{"overlapping batch trimmed", 4, 4, 8},
+		{"fully duplicate batch dropped", 3, 3, 6},
+		{"gapped batch dropped", 8, 2, 6},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			engine := &ExecutionEngine{}
+			engine.delayedMsgs.Push(&delayedMsg{msgIdx: 5})
+
+			msgs := make([]*arbostypes.L1IncomingMessage, tt.numMsgs)
+			engine.EnqueueDelayedMessages(msgs, tt.firstMsgIdx)
+
+			nextIdx, err := engine.NextDelayedMessageNumber()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if nextIdx != tt.wantNextIdx {
+				t.Errorf("NextDelayedMessageNumber() = %d, want %d", nextIdx, tt.wantNextIdx)
+			}
+			// The queue must stay contiguous from idx 5.
+			for wantIdx := uint64(5); engine.delayedMsgs.Len() > 0; wantIdx++ {
+				if gotIdx := engine.delayedMsgs.Pop().msgIdx; gotIdx != wantIdx {
+					t.Fatalf("queue entry msgIdx = %d, want %d", gotIdx, wantIdx)
+				}
+			}
+		})
+	}
+}
+
+// Uses a zero-value ExecutionEngine so createBlockFromNextMessage nil-derefs;
+// the test asserts the recover swallows it and the goroutine returns.
+func TestPrefetchNextBlockRecoversFromPanic(t *testing.T) {
+	engine := &ExecutionEngine{}
+
+	done := make(chan struct{})
+	var recovered any
+	go func() {
+		defer func() {
+			recovered = recover()
+			close(done)
+		}()
+		engine.prefetchNextBlock(nil)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("prefetch goroutine did not complete; panic was not recovered")
 	}
 
-	sentinel := errors.New("stop retrying")
-	_, err := engine.sequencerWrapper(func() (*types.Block, error) {
-		return nil, sentinel
-	})
-	if !errors.Is(err, sentinel) {
-		t.Fatalf("unexpected error: %v", err)
+	if recovered != nil {
+		t.Fatalf("panic sneaked out: %v", recovered)
 	}
-
-	if !engine.createBlocksMutex.TryLock() {
-		t.Fatal("createBlocksMutex is still locked after normal return")
-	}
-	engine.createBlocksMutex.Unlock()
 }

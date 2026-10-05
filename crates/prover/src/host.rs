@@ -530,6 +530,7 @@ fn load_bulk_func(
                 0,                        // -----------------------------------
                 0,                        // impls don't use other internals
                 &bin.names.module,
+                0,
             )
         },
         ty.clone(),

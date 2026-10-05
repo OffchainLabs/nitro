@@ -1,0 +1,46 @@
+---
+name: nitro-reth-coverage
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  coverage:
+    name: llvm-cov
+    runs-on: ocl-16cpu-64ram
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: nitro-reth
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
+      - uses: dtolnay/rust-toolchain@1.93
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: nitro-reth
+      - uses: taiki-e/install-action@0abfcd587b70a713fdaa7fb502c885e2112acb15  # v2
+        with:
+          tool: cargo-llvm-cov,cargo-nextest
+      - name: Generate coverage report
+        run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: nitro-reth/lcov.info
+          flags: nitro-reth
+          fail_ci_if_error: false

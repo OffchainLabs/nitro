@@ -1,0 +1,17 @@
+{
+  "name": "multiple_posters_total_funds_due",
+  "description": "Three posters with funds due — total is the sum",
+  "setup": {"arbos_version": 30, "chain_id": 412346},
+  "actions": [
+    {"type": "l1_pricing_add_poster", "poster": "0xAAAA000000000000000000000000000000000000", "pay_to": "0xAAAA000000000000000000000000000000000000"},
+    {"type": "l1_pricing_add_poster", "poster": "0xBBBB000000000000000000000000000000000000", "pay_to": "0xBBBB000000000000000000000000000000000000"},
+    {"type": "l1_pricing_set_poster_funds_due", "poster": "0xa4b0000000000000000000000000000073657175", "amount": "0x64"},
+    {"type": "l1_pricing_set_poster_funds_due", "poster": "0xAAAA000000000000000000000000000000000000", "amount": "0x32"},
+    {"type": "l1_pricing_set_poster_funds_due", "poster": "0xBBBB000000000000000000000000000000000000", "amount": "0x14"}
+  ],
+  "assertions": {
+    "l1_pricing": {
+      "total_funds_due": "0xaa"
+    }
+  }
+}

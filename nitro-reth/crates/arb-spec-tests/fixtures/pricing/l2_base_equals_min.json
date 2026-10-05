@@ -1,0 +1,14 @@
+{
+  "name": "l2_base_equals_min",
+  "description": "Initial L2 base fee equals min base fee",
+  "setup": {
+    "arbos_version": 30,
+    "chain_id": 412346
+  },
+  "assertions": {
+    "l2_pricing": {
+      "base_fee_wei": "0x5f5e100",
+      "min_base_fee_wei": "0x5f5e100"
+    }
+  }
+}

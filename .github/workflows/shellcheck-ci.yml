@@ -16,6 +16,7 @@ jobs:
   shellcheck:
     name: Run ShellCheck
     runs-on: ubuntu-4
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -33,3 +34,6 @@ jobs:
             ./nitro-testnode/**
             ./brotli/**
             ./crates/**
+
+      - name: Run CI version selector smoke tests
+        run: ./scripts/test-ci-version-select.sh

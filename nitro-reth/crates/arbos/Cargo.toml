@@ -1,0 +1,39 @@
+[package]
+name = "arbos"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+alloy-eips = { workspace = true }
+alloy-primitives = { workspace = true, features = ["std", "map-foldhash"] }
+alloy-rlp = { workspace = true, features = ["derive"] }
+arb-alloy-consensus = { workspace = true }
+arb-chainspec = { workspace = true }
+arb-math = { workspace = true }
+arb-primitives = { workspace = true }
+arb-storage = { workspace = true }
+arbos-types = { workspace = true }
+revm = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+arb-test-utils = { workspace = true }
+proptest = { workspace = true }
+revm-database = { workspace = true }
+revm-database-interface = { workspace = true }
+revm-state = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+nitro-brotli = { workspace = true, features = ["cc_brotli"] }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+nitro-brotli = { workspace = true }

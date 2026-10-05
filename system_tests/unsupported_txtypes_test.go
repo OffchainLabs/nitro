@@ -100,10 +100,7 @@ func TestBlobAndInternalTxsAsDelayedMsgReject(t *testing.T) {
 	l1tx = WrapL2ForDelayed(t, delayedTx2, builder.L1Info, "User", 100000)
 	l1Txs = append(l1Txs, l1tx)
 
-	errs := builder.L1.L1Backend.TxPool().Add(l1Txs, false)
-	for _, err := range errs {
-		Require(t, err)
-	}
+	builder.L1.AddTransactionsToSingleBlock(t, l1Txs)
 
 	confirmLatestBlock(ctx, t, builder.L1Info, builder.L1.Client)
 	for _, tx := range l1Txs {

@@ -1,0 +1,2 @@
+### Configuration
+- Changed the batch poster's default blob transaction fee settings to prevent overpaying priority fees: `--node.batch-poster.data-poster.min-blob-tx-tip-cap-gwei` lowered from 1 to 0.01, and `--node.batch-poster.data-poster.blob-tx-replacement-times` changed to `2m,4m,6m,8m,10m,12m,16m,22m,30m,1h,2h,4h,8h,16h` so the tip escalates from the lower starting point on a similar timescale.

@@ -81,29 +81,30 @@ func TestParentChainEthConfigPolling(t *testing.T) {
 	}
 }
 
-// TestParentChainEthConfigForkTransition verifies that the ParentChain poller
+// TestParentChainEthConfigForkTransitionFlaky verifies that the ParentChain poller
 // detects when the parent chain transitions through a fork that changes the
 // blob schedule (e.g., Osaka -> BPO1).
-func TestParentChainEthConfigForkTransition(t *testing.T) {
+func TestParentChainEthConfigForkTransitionFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Pick a BPO1 activation far enough in the future that Build()'s setup
-	// blocks won't already cross it, and drive L1 past it explicitly later.
-	// The pointer is set once before Build() and never mutated again, so we
-	// don't depend on geth retaining the same struct pointer we passed in.
-	// #nosec G115
-	bpo1Time := uint64(time.Now().Unix()) + 600
-	l1ChainConfig := *params.AllDevChainProtocolChanges
-	l1ChainConfig.BPO1Time = &bpo1Time
-	l1ChainConfig.BlobScheduleConfig = &params.BlobScheduleConfig{
+	// Pick an activation far enough in the future that setup cannot cross it,
+	// then advance the external L1 explicitly after observing Osaka.
+	// #nosec G115 -- current Unix time is non-negative
+	bpo1Time := uint64(time.Now().Unix()) + 30000
+	blobSchedule := &params.BlobScheduleConfig{
 		Cancun: params.DefaultCancunBlobConfig,
 		Prague: params.DefaultPragueBlobConfig,
 		Osaka:  params.DefaultOsakaBlobConfig,
 		BPO1:   params.DefaultBPO1BlobConfig,
 	}
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithL1ChainConfig(&l1ChainConfig)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithExternalL1GenesisOverrides(map[string]interface{}{
+		"bpo1Time":     bpo1Time,
+		"blobSchedule": blobSchedule,
+		// The upstream developer genesis schedules Bogota at genesis. Remove it
+		// so BPO1 is the next fork after Osaka.
+		"bogotaTime": nil,
+	})
 	cleanup := builder.Build(t)
 	defer cleanup()
 
@@ -117,10 +118,12 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 	l1HeaderReader.Start(ctx)
 	defer l1HeaderReader.StopAndWait()
 
+	l1ChainID, err := builder.L1.Client.ChainID(ctx)
+	Require(t, err)
 	testConfig := parent.Config{ConfigPollInterval: 200 * time.Millisecond}
 	pc := parent.NewParentChainWithConfig(
 		ctx,
-		l1ChainConfig.ChainID,
+		l1ChainID,
 		l1HeaderReader,
 		func() *parent.Config { return &testConfig },
 	)
@@ -156,10 +159,11 @@ func TestParentChainEthConfigForkTransition(t *testing.T) {
 		if head.Time() >= bpo1Time {
 			return true
 		}
-		// Each dev-mode L1 block only bumps the timestamp by 1s, so advancing a
-		// single block per 100ms iteration cannot cover the 600s to BPO1Time
-		// within the poll budget; advance a chunk of blocks per iteration instead.
-		AdvanceL1(t, ctx, builder.L1.Client, builder.L1Info, 25)
+		// Retry if another L1 submission happens to be in flight.
+		// #nosec G115 -- the subtraction is guarded by the comparison above
+		if err := builder.L1.AdvanceL1Time(ctx, time.Duration(bpo1Time-head.Time()+1)*time.Second); err != nil {
+			t.Logf("AdvanceL1Time failed (will retry): %v", err)
+		}
 		return false
 	})
 

@@ -1,0 +1,8 @@
+{
+  "name": "v11_per_batch_gas_cost_overridden",
+  "description": "ArbOS v11 upgrade changes per_batch_gas_cost to V12=210000",
+  "setup": {"arbos_version": 11, "chain_id": 421614},
+  "assertions": {
+    "l1_pricing": {"per_batch_gas_cost": 210000}
+  }
+}

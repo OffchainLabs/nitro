@@ -1,0 +1,407 @@
+#![allow(dead_code)]
+
+use std::sync::{Mutex, MutexGuard, OnceLock};
+
+use alloy_evm::{
+    EvmInternals,
+    eth::EthEvmContext,
+    precompiles::{DynPrecompile, Precompile, PrecompileInput},
+};
+use alloy_primitives::{Address, B256, Bytes, U256, keccak256};
+use arb_storage::{
+    ARBOS_STATE_ADDRESS,
+    layout::{VERSION_OFFSET, root_slot},
+};
+use revm::{
+    Database,
+    database::{CacheDB, EmptyDB},
+    precompile::{PrecompileError, PrecompileOutput, PrecompileResult},
+    primitives::hardfork::SpecId,
+    state::{AccountInfo, EvmState},
+};
+use tiny_keccak::{Hasher, Keccak};
+
+/// Serialises tests that share global state in arb-precompiles.
+fn test_lock() -> MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+}
+
+pub fn selector(sig: &str) -> [u8; 4] {
+    let mut h = Keccak::v256();
+    let mut out = [0u8; 32];
+    h.update(sig.as_bytes());
+    h.finalize(&mut out);
+    [out[0], out[1], out[2], out[3]]
+}
+
+pub fn calldata(sig: &str, args: &[B256]) -> Bytes {
+    let mut buf = Vec::with_capacity(4 + args.len() * 32);
+    buf.extend_from_slice(&selector(sig));
+    for a in args {
+        buf.extend_from_slice(a.as_slice());
+    }
+    Bytes::from(buf)
+}
+
+/// ABI-encode `(address,bool,bytes)` — the shape shared by `gasEstimateComponents`
+/// and `gasEstimateL1Component`. `bytes` is zero-length.
+pub fn calldata_estimate(sig: &str) -> Bytes {
+    let mut buf = Vec::with_capacity(4 + 4 * 32);
+    buf.extend_from_slice(&selector(sig));
+    buf.extend_from_slice(word_address(Address::ZERO).as_slice());
+    buf.extend_from_slice(word_u256(U256::ZERO).as_slice());
+    buf.extend_from_slice(word_u256(U256::from(96u64)).as_slice()); // offset to `bytes` tail
+    buf.extend_from_slice(word_u256(U256::ZERO).as_slice()); // bytes length = 0
+    Bytes::from(buf)
+}
+
+pub fn word_u256(v: U256) -> B256 {
+    B256::from(v.to_be_bytes::<32>())
+}
+
+pub fn word_u64(v: u64) -> B256 {
+    word_u256(U256::from(v))
+}
+
+pub fn word_address(a: Address) -> B256 {
+    let mut out = [0u8; 32];
+    out[12..].copy_from_slice(a.as_slice());
+    B256::from(out)
+}
+
+pub fn decode_word(out: &Bytes, index: usize) -> B256 {
+    let start = index * 32;
+    let mut w = [0u8; 32];
+    w.copy_from_slice(&out[start..start + 32]);
+    B256::from(w)
+}
+
+pub fn decode_u256(out: &Bytes) -> U256 {
+    U256::from_be_bytes(decode_word(out, 0).0)
+}
+
+pub fn decode_address(out: &Bytes) -> Address {
+    let w = decode_word(out, 0);
+    Address::from_slice(&w.0[12..])
+}
+
+pub struct PrecompileTest {
+    db: CacheDB<EmptyDB>,
+    spec: SpecId,
+    block_number: u64,
+    block_timestamp: u64,
+    chain_id: u64,
+    arbos_version: u64,
+    caller: Address,
+    target_address: Address,
+    bytecode_address: Address,
+    value: U256,
+    is_static: bool,
+    gas_limit: u64,
+    evm_depth: usize,
+    tx_is_aliased: bool,
+    block_basefee: u64,
+    l1_block_cache: Vec<(u64, u64)>,
+    l2_block_hashes: Vec<(u64, B256)>,
+    allow_debug_precompiles: bool,
+}
+
+impl Default for PrecompileTest {
+    fn default() -> Self {
+        Self {
+            db: CacheDB::new(EmptyDB::default()),
+            spec: SpecId::CANCUN,
+            block_number: 1,
+            block_timestamp: 1_700_000_000,
+            chain_id: 42_161,
+            arbos_version: 30,
+            caller: Address::repeat_byte(0xAA),
+            target_address: Address::ZERO,
+            bytecode_address: Address::ZERO,
+            value: U256::ZERO,
+            is_static: false,
+            gas_limit: 1_000_000,
+            evm_depth: 1,
+            tx_is_aliased: false,
+            block_basefee: 100_000_000,
+            l1_block_cache: Vec::new(),
+            l2_block_hashes: Vec::new(),
+            allow_debug_precompiles: false,
+        }
+    }
+}
+
+impl PrecompileTest {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn spec(mut self, s: SpecId) -> Self {
+        self.spec = s;
+        self
+    }
+    pub fn arbos_version(mut self, v: u64) -> Self {
+        self.arbos_version = v;
+        self
+    }
+    pub fn chain_id(mut self, id: u64) -> Self {
+        self.chain_id = id;
+        self
+    }
+    pub fn caller(mut self, c: Address) -> Self {
+        self.caller = c;
+        self
+    }
+    pub fn target(mut self, t: Address) -> Self {
+        self.target_address = t;
+        self.bytecode_address = t;
+        self
+    }
+    pub fn block(mut self, number: u64, timestamp: u64) -> Self {
+        self.block_number = number;
+        self.block_timestamp = timestamp;
+        self
+    }
+    pub fn block_number(mut self, n: u64) -> Self {
+        self.block_number = n;
+        self
+    }
+    pub fn block_timestamp(mut self, ts: u64) -> Self {
+        self.block_timestamp = ts;
+        self
+    }
+    pub fn static_call(mut self, s: bool) -> Self {
+        self.is_static = s;
+        self
+    }
+    pub fn gas(mut self, g: u64) -> Self {
+        self.gas_limit = g;
+        self
+    }
+    pub fn value(mut self, v: U256) -> Self {
+        self.value = v;
+        self
+    }
+    pub fn evm_depth(mut self, d: usize) -> Self {
+        self.evm_depth = d;
+        self
+    }
+    pub fn tx_is_aliased(mut self, a: bool) -> Self {
+        self.tx_is_aliased = a;
+        self
+    }
+    pub fn block_basefee(mut self, fee: u64) -> Self {
+        self.block_basefee = fee;
+        self
+    }
+    pub fn cache_l1_block_number(mut self, l2_block: u64, l1_block: u64) -> Self {
+        self.l1_block_cache.push((l2_block, l1_block));
+        self
+    }
+    pub fn cache_l2_block_hash(mut self, l2_block: u64, hash: B256) -> Self {
+        self.l2_block_hashes.push((l2_block, hash));
+        self
+    }
+    pub fn allow_debug_precompiles(mut self, allow: bool) -> Self {
+        self.allow_debug_precompiles = allow;
+        self
+    }
+
+    pub fn account(mut self, addr: Address, info: AccountInfo) -> Self {
+        self.db.insert_account_info(addr, info);
+        self
+    }
+    pub fn balance(mut self, addr: Address, balance: U256) -> Self {
+        let info = self.db.basic(addr).ok().flatten().unwrap_or_default();
+        self.db.insert_account_info(
+            addr,
+            AccountInfo {
+                balance,
+                nonce: info.nonce,
+                code_hash: info.code_hash,
+                code: info.code,
+                ..Default::default()
+            },
+        );
+        self
+    }
+    pub fn storage(mut self, addr: Address, slot: U256, value: U256) -> Self {
+        if self.db.basic(addr).ok().flatten().is_none() {
+            self.db.insert_account_info(addr, AccountInfo::default());
+        }
+        self.db
+            .insert_account_storage(addr, slot, value)
+            .expect("insert storage");
+        self
+    }
+
+    pub fn arbos_state(mut self) -> Self {
+        let info = AccountInfo {
+            nonce: 1,
+            code_hash: keccak256([]),
+            ..Default::default()
+        };
+        self.db.insert_account_info(ARBOS_STATE_ADDRESS, info);
+        self.db
+            .insert_account_storage(
+                ARBOS_STATE_ADDRESS,
+                root_slot(VERSION_OFFSET),
+                U256::from(self.arbos_version),
+            )
+            .expect("insert arbos version");
+        self
+    }
+
+    pub fn call<F>(self, factory: F, input: &Bytes) -> PrecompileRun
+    where
+        F: FnOnce(std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile,
+    {
+        let pre_ctx = std::sync::Arc::new(arb_context::ArbPrecompileCtx::default());
+        self.call_with(factory, input, pre_ctx)
+    }
+
+    pub fn call_with<F>(
+        self,
+        factory: F,
+        input: &Bytes,
+        prior: std::sync::Arc<arb_context::ArbPrecompileCtx>,
+    ) -> PrecompileRun
+    where
+        F: FnOnce(std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile,
+    {
+        let _guard = test_lock();
+
+        let prior_tx = prior.tx.lock().clone();
+        let block_ctx = arb_context::BlockCtx::new(
+            self.arbos_version,
+            self.block_timestamp,
+            self.block_number,
+            self.block_number,
+            self.allow_debug_precompiles,
+        );
+        for (l2, l1) in &self.l1_block_cache {
+            block_ctx.cache_l1_block_number(*l2, *l1);
+        }
+        for (l2, hash) in &self.l2_block_hashes {
+            block_ctx.cache_l2_block_hash(*l2, *hash);
+        }
+        let pre_ctx = std::sync::Arc::new(arb_context::ArbPrecompileCtx {
+            block: std::sync::Arc::new(block_ctx),
+            tx: std::sync::Arc::new(parking_lot::Mutex::new(prior_tx)),
+            evm_depth: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(self.evm_depth)),
+            caller_stack: std::sync::Arc::new(parking_lot::Mutex::new(Vec::new())),
+            stylus_frame_depth: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        });
+        pre_ctx.set_tx_is_aliased(self.tx_is_aliased);
+        let precompile = factory(pre_ctx.clone());
+
+        let mut ctx = EthEvmContext::new(self.db, self.spec);
+        ctx.cfg.chain_id = self.chain_id;
+        ctx.block.number = U256::from(self.block_number);
+        ctx.block.timestamp = U256::from(self.block_timestamp);
+        ctx.block.basefee = self.block_basefee;
+        ctx.tx.caller = self.caller;
+
+        let result = {
+            let internals = EvmInternals::from_context(&mut ctx);
+            precompile.call(PrecompileInput {
+                data: input,
+                gas: self.gas_limit,
+                caller: self.caller,
+                value: self.value,
+                is_static: self.is_static,
+                internals,
+                target_address: self.target_address,
+                bytecode_address: self.bytecode_address,
+            })
+        };
+
+        let journal_state = ctx.journaled_state.inner.state.clone();
+        PrecompileRun {
+            result,
+            db: ctx.journaled_state.database,
+            journal_state,
+        }
+    }
+}
+
+pub struct PrecompileRun {
+    pub result: PrecompileResult,
+    pub db: CacheDB<EmptyDB>,
+    pub journal_state: EvmState,
+}
+
+impl PrecompileRun {
+    pub fn assert_ok(&self) -> &PrecompileOutput {
+        match &self.result {
+            Ok(out) => out,
+            Err(e) => panic!("expected Ok, got Err: {e:?}"),
+        }
+    }
+    pub fn assert_err(&self) -> &PrecompileError {
+        match &self.result {
+            Err(e) => e,
+            Ok(out) => panic!("expected Err, got Ok with {} bytes", out.bytes.len()),
+        }
+    }
+    pub fn output(&self) -> &Bytes {
+        &self.assert_ok().bytes
+    }
+    pub fn gas_used(&self) -> u64 {
+        self.assert_ok().gas_used
+    }
+    pub fn storage(&self, addr: Address, slot: U256) -> U256 {
+        if let Some(account) = self.journal_state.get(&addr)
+            && let Some(s) = account.storage.get(&slot)
+        {
+            return s.present_value;
+        }
+        self.db
+            .cache
+            .accounts
+            .get(&addr)
+            .and_then(|a| a.storage.get(&slot).copied())
+            .unwrap_or(U256::ZERO)
+    }
+    pub fn balance(&self, addr: Address) -> U256 {
+        if let Some(account) = self.journal_state.get(&addr) {
+            return account.info.balance;
+        }
+        self.db
+            .cache
+            .accounts
+            .get(&addr)
+            .map(|a| a.info.balance)
+            .unwrap_or(U256::ZERO)
+    }
+
+    /// Copy every modified storage slot for `addr` from this run's journal
+    /// state onto a fresh `PrecompileTest`. Lets round-trip tests chain a
+    /// setter call into a subsequent getter call without hand-listing each
+    /// slot the setter touched.
+    ///
+    /// This also carries forward everything that was in the previous run's
+    /// underlying `db` (i.e. state accumulated across prior calls), so a
+    /// chain of three or more runs keeps the cumulative state. Without that,
+    /// only the most-recent run's mutations would be visible, and tests that
+    /// perform several sequential writes would silently lose early ones.
+    pub fn continue_into(&self, base: PrecompileTest, addr: Address) -> PrecompileTest {
+        // Start from the previous run's db (cumulative state), but preserve
+        // the fresh base's knobs (arbos_version, caller, block context, etc).
+        let mut next = PrecompileTest {
+            db: self.db.clone(),
+            ..base
+        };
+        // Layer the journal mutations on top — these are deltas the previous
+        // run made but hasn't been committed to the db yet.
+        if let Some(account) = self.journal_state.get(&addr) {
+            for (slot, entry) in &account.storage {
+                next = next.storage(addr, *slot, entry.present_value);
+            }
+        }
+        next
+    }
+}
