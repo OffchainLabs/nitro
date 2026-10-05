@@ -131,7 +131,7 @@ func TestStateAfterRegular(t *testing.T) {
 
 func TestStateAfterDelayed(t *testing.T) {
 	// Produced a delayed block => drain unthrottled, no delayed throttle set.
-	got := sequencingStateAfterDelayedSequencing(sequencingState{}, true, now0, testMaxBlockSpeed)
+	got := sequencingStateAfterDelayedSequencing(sequencingState{}, 0, now0)
 	if got.lastTurn != delayedSequencingTurn {
 		t.Errorf("lastTurn = %v, want delayed", got.lastTurn)
 	}
@@ -141,8 +141,18 @@ func TestStateAfterDelayed(t *testing.T) {
 
 	// No block produced (filtered halt) => throttle delayed one MaxBlockSpeed out;
 	// the regular throttle is untouched.
-	got = sequencingStateAfterDelayedSequencing(sequencingState{regularSequencingThrottledUntil: now0.Add(time.Hour)}, false, now0, testMaxBlockSpeed)
+	got = sequencingStateAfterDelayedSequencing(sequencingState{regularSequencingThrottledUntil: now0.Add(time.Hour)}, testMaxBlockSpeed, now0)
 	if want := now0.Add(testMaxBlockSpeed); !got.delayedSequencingThrottledUntil.Equal(want) {
+		t.Errorf("delayedSequencingThrottledUntil = %v, want %v", got.delayedSequencingThrottledUntil, want)
+	}
+	if want := now0.Add(time.Hour); !got.regularSequencingThrottledUntil.Equal(want) {
+		t.Errorf("regularSequencingThrottledUntil = %v, want %v (untouched)", got.regularSequencingThrottledUntil, want)
+	}
+
+	// Panic while sequencing => throttle delayed for the panic backoff;
+	// the regular throttle is untouched.
+	got = sequencingStateAfterDelayedSequencing(sequencingState{regularSequencingThrottledUntil: now0.Add(time.Hour)}, delayedSequencingPanicThrottle, now0)
+	if want := now0.Add(time.Minute); !got.delayedSequencingThrottledUntil.Equal(want) {
 		t.Errorf("delayedSequencingThrottledUntil = %v, want %v", got.delayedSequencingThrottledUntil, want)
 	}
 	if want := now0.Add(time.Hour); !got.regularSequencingThrottledUntil.Equal(want) {

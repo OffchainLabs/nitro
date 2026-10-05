@@ -485,6 +485,68 @@ func TestFailQueuedItemsResolvesAllQueues(t *testing.T) {
 	}
 }
 
+// TestDelayedSequencingPanicThrottlesDelayedTurns drives a real panic through
+// a delayed turn: the engine has no chain, so sequencing the head delayed
+// message panics on the nil blockchain.
+func TestDelayedSequencingPanicThrottlesDelayedTurns(t *testing.T) {
+	ctx := context.Background()
+	engine := &ExecutionEngine{}
+	engine.delayedMsgs.Push(&delayedMsg{msgIdx: 7})
+	configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
+	seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seq.Activate()
+
+	before := time.Now()
+	sequencedMsg, wait := seq.StartSequencing(ctx)
+	after := time.Now()
+	if sequencedMsg != nil {
+		t.Error("panicking delayed turn produced a sequenced message")
+	}
+	if wait != 0 {
+		t.Errorf("wait = %v, want 0 for a taken turn", wait)
+	}
+	if seq.pendingDelayedMsgCommit {
+		t.Error("pendingDelayedMsgCommit set after a panicking delayed turn")
+	}
+	if seq.sequencingState.lastTurn != delayedSequencingTurn {
+		t.Errorf("lastTurn = %v, want delayedSequencingTurn", seq.sequencingState.lastTurn)
+	}
+	throttledUntil := seq.sequencingState.delayedSequencingThrottledUntil
+	if throttledUntil.Before(before.Add(delayedSequencingPanicThrottle)) || throttledUntil.After(after.Add(delayedSequencingPanicThrottle)) {
+		t.Errorf("delayedSequencingThrottledUntil = %v, want within [%v, %v]", throttledUntil, before.Add(delayedSequencingPanicThrottle), after.Add(delayedSequencingPanicThrottle))
+	}
+	if !engine.createBlocksMutex.TryLock() {
+		t.Fatal("createBlocksMutex still locked after the panic")
+	}
+	engine.createBlocksMutex.Unlock()
+	if !engine.delayedMsgsMutex.TryLock() {
+		t.Fatal("delayedMsgsMutex still locked after the panic")
+	}
+	engine.delayedMsgsMutex.Unlock()
+	seq.EndSequencing(ctx, nil)
+	if engine.delayedMsgs.Len() != 1 {
+		t.Error("delayed message should stay queued after a panicking turn")
+	}
+
+	sequencedMsg, wait = seq.StartSequencing(ctx)
+	if sequencedMsg != nil {
+		t.Error("throttled delayed turn produced a sequenced message")
+	}
+	if wait <= DefaultSequencerConfig.MaxBlockSpeed {
+		t.Errorf("wait = %v, want longer than MaxBlockSpeed %v while the delayed turn is throttled after a panic", wait, DefaultSequencerConfig.MaxBlockSpeed)
+	}
+	if seq.sequencingState.lastTurn != delayedSequencingTurn {
+		t.Errorf("lastTurn = %v, want delayedSequencingTurn (no turn taken while throttled)", seq.sequencingState.lastTurn)
+	}
+	seq.EndSequencing(ctx, nil)
+	if engine.delayedMsgs.Len() != 1 {
+		t.Error("delayed message should stay queued while throttled")
+	}
+}
+
 func TestSequencerDoesntBlockWithoutTransactions(t *testing.T) {
 	engine := &ExecutionEngine{}
 	configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
