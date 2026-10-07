@@ -4,7 +4,8 @@
 // Command transaction-feed-client is a demo client for the Nitro transaction feed.
 //
 // It connects to the feed WebSocket endpoint, decodes each JSON message, and
-// prints a summary line per transaction. The file must depend only on the
+// prints a summary line per message. It accepts feed versions 1 and 2 and
+// skips messages of an unknown kind. The file must depend only on the
 // standard library and github.com/coder/websocket so that it can be copied
 // into any Go module.
 //
@@ -32,15 +33,36 @@ import (
 )
 
 const (
-	feedMessageVersion = 1
-	dialTimeout        = 10 * time.Second
+	feedVersionV1 = 1
+	feedVersionV2 = 2
+	dialTimeout   = 10 * time.Second
+
+	kindTransaction = "Transaction"
+	kindRoundEnd    = "RoundEnd"
 )
 
+type feedEnvelope struct {
+	Version uint32 `json:"version"`
+	Kind    string `json:"kind"`
+}
+
+func (e *feedEnvelope) kind() string {
+	if e.Version == feedVersionV1 {
+		return kindTransaction
+	}
+	return e.Kind
+}
+
 type feedMessage struct {
-	Version     uint32              `json:"version"`
 	TimestampMs uint64              `json:"timestamp_ms"`
 	PGARound    uint64              `json:"pga_round"`
 	Transaction includedTransaction `json:"transaction"`
+}
+
+type roundEndMessage struct {
+	TimestampMs uint64 `json:"timestamp_ms"`
+	PGARound    uint64 `json:"pga_round"`
+	BlockNumber uint64 `json:"block_number"`
 }
 
 type includedTransaction struct {
@@ -132,6 +154,7 @@ func run(ctx context.Context, url string, header http.Header) error {
 	conn.SetReadLimit(-1)
 	log.Printf("connected")
 
+	skippedKinds := make(map[string]bool)
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
@@ -145,16 +168,36 @@ func run(ctx context.Context, url string, header http.Header) error {
 			return fmt.Errorf("read: %w", err)
 		}
 
-		var msg feedMessage
-		if err := json.Unmarshal(data, &msg); err != nil {
+		var envelope feedEnvelope
+		if err := json.Unmarshal(data, &envelope); err != nil {
 			log.Printf("skipping undecodable message: %v", err)
 			continue
 		}
-		if msg.Version != feedMessageVersion {
-			log.Printf("skipping message with version %d, expected %d", msg.Version, feedMessageVersion)
+		if envelope.Version != feedVersionV1 && envelope.Version != feedVersionV2 {
+			log.Printf("skipping message with version %d, expected %d or %d", envelope.Version, feedVersionV1, feedVersionV2)
 			continue
 		}
-		printMessage(&msg)
+		switch kind := envelope.kind(); kind {
+		case kindTransaction:
+			var msg feedMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				log.Printf("skipping undecodable transaction message: %v", err)
+				continue
+			}
+			printMessage(&msg)
+		case kindRoundEnd:
+			var msg roundEndMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				log.Printf("skipping undecodable round end message: %v", err)
+				continue
+			}
+			printRoundEnd(&msg)
+		default:
+			if !skippedKinds[kind] {
+				skippedKinds[kind] = true
+				log.Printf("skipping messages of unknown kind %q", kind)
+			}
+		}
 	}
 }
 
@@ -171,17 +214,28 @@ func dial(ctx context.Context, url string, header http.Header) (*websocket.Conn,
 	return conn, nil
 }
 
+func formatTimestamp(timestampMs uint64) string {
+	// #nosec G115 -- a wrapped value only misprints the timestamp.
+	return time.UnixMilli(int64(timestampMs)).UTC().Format(time.RFC3339Nano)
+}
+
 func printMessage(msg *feedMessage) {
 	tx := &msg.Transaction
-	// #nosec G115 -- a wrapped value only misprints the timestamp.
-	ts := time.UnixMilli(int64(msg.TimestampMs)).UTC().Format(time.RFC3339Nano)
 	line := fmt.Sprintf("%s block=%d idx=%d hash=%s status=%d gas_used=%d effective_gas_price=%s logs=%d",
-		ts, tx.BlockNumber, tx.TxIndex, tx.TxHash, tx.Receipt.Status, tx.Receipt.GasUsed, tx.Receipt.EffectiveGasPrice, len(tx.Receipt.Logs))
+		formatTimestamp(msg.TimestampMs), tx.BlockNumber, tx.TxIndex, tx.TxHash, tx.Receipt.Status, tx.Receipt.GasUsed, tx.Receipt.EffectiveGasPrice, len(tx.Receipt.Logs))
 	if msg.PGARound != 0 {
 		line += fmt.Sprintf(" pga_round=%d", msg.PGARound)
 	}
 	if tx.Receipt.ContractAddress != "" {
 		line += fmt.Sprintf(" contract=%s", tx.Receipt.ContractAddress)
+	}
+	fmt.Println(line)
+}
+
+func printRoundEnd(msg *roundEndMessage) {
+	line := fmt.Sprintf("%s round_end block=%d", formatTimestamp(msg.TimestampMs), msg.BlockNumber)
+	if msg.PGARound != 0 {
+		line += fmt.Sprintf(" pga_round=%d", msg.PGARound)
 	}
 	fmt.Println(line)
 }
