@@ -1562,6 +1562,8 @@ func (s *Sequencer) InitializeExpressLaneService(
 
 const maxConsecutiveExpectedSurplusFailures = 20
 
+const delayedSequencingPanicThrottle = time.Minute
+
 var (
 	usableBytesInBlob    = big.NewInt(int64(len(kzg4844.Blob{}) * 31 / 32))
 	blobTxBlobGasPerBlob = big.NewInt(params.BlobTxBlobGasPerBlob)
@@ -1850,17 +1852,27 @@ func (s *Sequencer) StartSequencing(ctx context.Context) (*execution.SequencedMs
 		s.sequencingState = sequencingStateAfterRegularSequencing(s.sequencingState, throttleRegularSequencingFor, now)
 		return sequencedMsg, 0
 	case delayedSequencingTurn:
-		sequencedMsg, err := s.execEngine.SequenceDelayedMessage()
-		producedMsg := err == nil && sequencedMsg != nil
-		s.pendingDelayedMsgCommit = producedMsg
-		s.sequencingState = sequencingStateAfterDelayedSequencing(s.sequencingState, producedMsg, now, config.MaxBlockSpeed)
-		if err != nil {
-			return nil, 0
-		}
+		sequencedMsg, throttleDelayedSequencingFor := s.sequenceDelayedMessage(config)
+		s.pendingDelayedMsgCommit = sequencedMsg != nil
+		s.sequencingState = sequencingStateAfterDelayedSequencing(s.sequencingState, throttleDelayedSequencingFor, now)
 		return sequencedMsg, 0
 	default:
 		return nil, wait
 	}
+}
+
+func (s *Sequencer) sequenceDelayedMessage(config *SequencerConfig) (sequencedMsg *execution.SequencedMsg, throttleDelayedSequencingFor time.Duration) {
+	defer func() {
+		if panicErr := recover(); panicErr != nil {
+			log.Error("delayed message sequencing panicked", "panic", panicErr, "backtrace", string(debug.Stack()))
+			throttleDelayedSequencingFor = delayedSequencingPanicThrottle
+		}
+	}()
+	sequencedMsg, err := s.execEngine.SequenceDelayedMessage()
+	if err != nil || sequencedMsg == nil {
+		return nil, config.MaxBlockSpeed
+	}
+	return sequencedMsg, 0
 }
 
 func (s *Sequencer) StopAndWait() {

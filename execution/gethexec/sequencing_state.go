@@ -25,8 +25,7 @@ type sequencingState struct {
 	regularSequencingThrottledUntil time.Time
 	// delayedSequencingThrottledUntil is the earliest time a delayed message
 	// may be sequenced again. It is set only when a delayed turn fails to produce
-	// a block (the head message is halted on a filtered tx), so a stuck delayed
-	// message is retried at most once per MaxBlockSpeed instead of every iteration.
+	// a block.
 	delayedSequencingThrottledUntil time.Time
 }
 
@@ -75,12 +74,10 @@ func sequencingStateAfterRegularSequencing(state sequencingState, throttleRegula
 	return state
 }
 
-func sequencingStateAfterDelayedSequencing(state sequencingState, producedMsg bool, now time.Time, maxBlockSpeed time.Duration) sequencingState {
+func sequencingStateAfterDelayedSequencing(state sequencingState, throttleDelayedSequencingFor time.Duration, now time.Time) sequencingState {
 	state.lastTurn = delayedSequencingTurn
-	if !producedMsg {
-		// The head delayed message is present but not sequenceable (halted on a
-		// filtered tx); retry it at most once per MaxBlockSpeed.
-		state.delayedSequencingThrottledUntil = now.Add(maxBlockSpeed)
+	if throttleDelayedSequencingFor > 0 {
+		state.delayedSequencingThrottledUntil = now.Add(throttleDelayedSequencingFor)
 	}
 	return state
 }
