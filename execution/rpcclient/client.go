@@ -67,6 +67,9 @@ func (c *Client) DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.Mess
 }
 
 func (c *Client) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) containers.PromiseInterface[[]*execution.MessageResult] {
+	if newMessages == nil {
+		newMessages = []arbostypes.MessageWithMetadataAndBlockInfo{}
+	}
 	return sendRequest[[]*execution.MessageResult](c, "_reorg", msgIdxOfFirstMsgToAdd, newMessages)
 }
 
