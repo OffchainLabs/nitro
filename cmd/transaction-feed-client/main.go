@@ -38,7 +38,7 @@ const (
 	dialTimeout   = 10 * time.Second
 
 	kindTransaction = "Transaction"
-	kindRoundEnd    = "RoundEnd"
+	kindPGARoundEnd = "PGARoundEnd"
 )
 
 type feedEnvelope struct {
@@ -59,7 +59,7 @@ type feedMessage struct {
 	Transaction includedTransaction `json:"transaction"`
 }
 
-type roundEndMessage struct {
+type pgaRoundEndMessage struct {
 	TimestampMs uint64 `json:"timestamp_ms"`
 	PGARound    uint64 `json:"pga_round"`
 	BlockNumber uint64 `json:"block_number"`
@@ -185,13 +185,13 @@ func run(ctx context.Context, url string, header http.Header) error {
 				continue
 			}
 			printMessage(&msg)
-		case kindRoundEnd:
-			var msg roundEndMessage
+		case kindPGARoundEnd:
+			var msg pgaRoundEndMessage
 			if err := json.Unmarshal(data, &msg); err != nil {
-				log.Printf("skipping undecodable round end message: %v", err)
+				log.Printf("skipping undecodable PGA round end message: %v", err)
 				continue
 			}
-			printRoundEnd(&msg)
+			printPGARoundEnd(&msg)
 		default:
 			if !skippedKinds[kind] {
 				skippedKinds[kind] = true
@@ -232,10 +232,6 @@ func printMessage(msg *feedMessage) {
 	fmt.Println(line)
 }
 
-func printRoundEnd(msg *roundEndMessage) {
-	line := fmt.Sprintf("%s round_end block=%d", formatTimestamp(msg.TimestampMs), msg.BlockNumber)
-	if msg.PGARound != 0 {
-		line += fmt.Sprintf(" pga_round=%d", msg.PGARound)
-	}
-	fmt.Println(line)
+func printPGARoundEnd(msg *pgaRoundEndMessage) {
+	fmt.Printf("%s pga_round_end block=%d pga_round=%d\n", formatTimestamp(msg.TimestampMs), msg.BlockNumber, msg.PGARound)
 }
