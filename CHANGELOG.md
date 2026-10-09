@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [v3.12.2](https://github.com/OffchainLabs/nitro/compare/v3.12.1...v3.12.2) - 2026-10-09
+
+### Added
+
+- Add transaction-feed client example implementation. [[commit]](https://github.com/OffchainLabs/nitro/commit/b8d83b7541e15c9d0fa8ae296470b518430200f9)
+
+### Fixed
+
+- Fix for head truncation below a diverged tail group. [[commit]](https://github.com/OffchainLabs/nitro/commit/c9f1ccf374a12eb3d91c84e6f0178da6a8795848)
+- The sequencer survives a panic while sequencing a delayed message, retrying it after a minute. [[commit]](https://github.com/OffchainLabs/nitro/commit/498ce18fcba28eba8f0a6594ea95522b60c61ad2)
+
 ## [v3.12.1](https://github.com/OffchainLabs/nitro/compare/v3.12.0...v3.12.1) - 2026-09-29
 
 ### Configuration
