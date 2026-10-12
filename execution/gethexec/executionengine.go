@@ -1705,7 +1705,7 @@ func (s *ExecutionEngine) ShouldTriggerMaintenance(trieLimitBeforeFlushMaintenan
 
 	procTimeBeforeFlush, err := s.bc.ProcTimeBeforeFlush()
 	if err != nil {
-		log.Error("failed to get time before flush", "err")
+		log.Error("failed to get time before flush", "err", err)
 		return false
 	}
 
