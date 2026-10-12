@@ -46,10 +46,12 @@ type BlobClient struct {
 	skipBlobProofVerification bool
 }
 
+// lint:require-exhaustive-initialization
 type BlobClientDangerousConfig struct {
 	SkipBlobProofVerification bool `koanf:"skip-blob-proof-verification"`
 }
 
+// lint:require-exhaustive-initialization
 type BlobClientConfig struct {
 	BeaconUrl          string                    `koanf:"beacon-url"`
 	SecondaryBeaconUrl string                    `koanf:"secondary-beacon-url"`
