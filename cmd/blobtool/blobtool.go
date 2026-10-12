@@ -91,7 +91,11 @@ func fetchBlobs(args []string) error {
 	}
 
 	blobClientConfig := headerreader.BlobClientConfig{
-		BeaconUrl: config.BeaconURL,
+		BeaconUrl:          config.BeaconURL,
+		SecondaryBeaconUrl: "",
+		BlobDirectory:      "",
+		Authorization:      "",
+		Dangerous:          headerreader.DefaultDangerousConfig,
 	}
 
 	blobClient, err := headerreader.NewBlobClient(blobClientConfig, nil)
