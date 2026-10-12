@@ -286,7 +286,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 	case EdgeAddingSubchallengeLeaf:
 		ok, err := et.isEssentialAncestorConfirmable(ctx)
 		if err != nil {
-			log.Error("Could not check if closest essential ancestor is confirmable", fields, "err", err)
+			log.Error("Could not check if closest essential ancestor is confirmable", append(fields, "err", err)...)
 			et.fsm.MarkError(err)
 			return et.fsm.Do(edgeBackToStart{})
 		}
@@ -304,7 +304,7 @@ func (et *Tracker) Act(ctx context.Context) error {
 	case EdgeBisecting:
 		ok, err := et.isEssentialAncestorConfirmable(ctx)
 		if err != nil {
-			log.Error("Could not check if closest essential ancestor is confirmable", fields, "err", err)
+			log.Error("Could not check if closest essential ancestor is confirmable", append(fields, "err", err)...)
 			et.fsm.MarkError(err)
 			return et.fsm.Do(edgeBackToStart{})
 		}

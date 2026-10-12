@@ -746,7 +746,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, usedMultiGas multigas.MultiGas, 
 		gasRefund := arbmath.BigMulByUint(effectiveBaseFee, gasLeft)
 		err := util.BurnBalance(&inner.From, gasRefund, p.evm, scenario, tracing.BalanceDecreaseUndoRefund)
 		if err != nil {
-			log.Error("Uh oh, Geth didn't refund the user", inner.From, gasRefund)
+			log.Error("Uh oh, Geth didn't refund the user", "from", inner.From, "gasRefund", gasRefund, "err", err)
 		}
 
 		singleGasCost := arbmath.BigMulByUint(effectiveBaseFee, gasUsed)

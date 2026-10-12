@@ -164,7 +164,7 @@ func ParseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 		maxZeroheavyDecompressedLen := 101*uncompressedBatchSizeLimit/100 + 64
 		pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload[1:])), int64(maxZeroheavyDecompressedLen))) // #nosec G115
 		if err != nil {
-			log.Warn("error reading from zeroheavy decoder", err.Error())
+			log.Warn("error reading from zeroheavy decoder", "err", err)
 			return parsedMsg, nil
 		}
 		payload = pl

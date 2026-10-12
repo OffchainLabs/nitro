@@ -97,8 +97,7 @@ func (cc *challengeConfirmer) beginConfirmationJob(
 	royalTreeLeaves, err := retry.UntilSucceeds(ctx, func() ([]protocol.SpecEdge, error) {
 		edges, innerErr := cc.reader.LowerMostRoyalEdges(ctx, challengedAssertionHash)
 		if innerErr != nil {
-			fields = append(fields, "err", innerErr)
-			log.Error("Could not fetch lower-most royal edges", fields)
+			log.Error("Could not fetch lower-most royal edges", append(fields, "err", innerErr)...)
 			return nil, innerErr
 		}
 		return edges, nil
@@ -119,8 +118,7 @@ func (cc *challengeConfirmer) beginConfirmationJob(
 				ctx, challengedAssertionHash, edge.Id(),
 			)
 			if innerErr != nil {
-				fields = append(fields, "err", innerErr)
-				log.Error("Could not compute ancestors for edge", fields)
+				log.Error("Could not compute ancestors for edge", append(fields, "err", innerErr)...)
 				return nil, innerErr
 			}
 			return resp, nil
@@ -169,8 +167,7 @@ func (cc *challengeConfirmer) beginConfirmationJob(
 	onchainInheritedTimer, err := retry.UntilSucceeds(ctx, func() (protocol.InheritedTimer, error) {
 		timer, innerErr := royalRootEdge.LatestInheritedTimer(ctx)
 		if innerErr != nil {
-			fields = append(fields, "err", innerErr)
-			log.Error("Could not get inherited timer for edge", fields)
+			log.Error("Could not get inherited timer for edge", append(fields, "err", innerErr)...)
 			return 0, innerErr
 		}
 		return timer, nil
@@ -198,8 +195,7 @@ func (cc *challengeConfirmer) beginConfirmationJob(
 	log.Info("Confirming essential root edge by timer", fields...)
 	if _, err = retry.UntilSucceeds(ctx, func() (bool, error) {
 		if _, innerErr := royalRootEdge.ConfirmByTimer(ctx, claimedAssertionHash); innerErr != nil {
-			fields = append(fields, "err", innerErr)
-			log.Error("Could not confirm edge by timer", fields)
+			log.Error("Could not confirm edge by timer", append(fields, "err", innerErr)...)
 			return false, innerErr
 		}
 		return false, nil
@@ -243,8 +239,7 @@ func (cc *challengeConfirmer) propageTimerUpdateToBranch(
 				log.Info("Onchain, cached timer for branch is already sufficient, so no need to transact", fields...)
 				return nil, nil
 			}
-			fields = append(fields, "err", innerErr)
-			log.Error("Could not transact multi-update inherited timers", fields...)
+			log.Error("Could not transact multi-update inherited timers", append(fields, "err", innerErr)...)
 			return nil, innerErr
 		}
 		return tx, nil
@@ -257,8 +252,7 @@ func (cc *challengeConfirmer) propageTimerUpdateToBranch(
 	rootTimer, err := retry.UntilSucceeds(ctx, func() (protocol.InheritedTimer, error) {
 		timer, innerErr := royalRootEdge.LatestInheritedTimer(ctx)
 		if innerErr != nil {
-			fields = append(fields, "err", innerErr)
-			log.Error("Could not get inherited timer for edge", fields...)
+			log.Error("Could not get inherited timer for edge", append(fields, "err", innerErr)...)
 			return 0, innerErr
 		}
 		return timer, nil
@@ -279,8 +273,7 @@ func (cc *challengeConfirmer) propageTimerUpdateToBranch(
 	tx, err = retry.UntilSucceeds(ctx, func() (*types.Transaction, error) {
 		innerTx, innerErr := royalRootEdge.ConfirmByTimer(ctx, claimedAssertionHash)
 		if innerErr != nil {
-			fields = append(fields, "err", innerErr)
-			log.Error("Could not confirm edge by timer early with confirmable branch", fields...)
+			log.Error("Could not confirm edge by timer early with confirmable branch", append(fields, "err", innerErr)...)
 			return nil, innerErr
 		}
 		return innerTx, nil
