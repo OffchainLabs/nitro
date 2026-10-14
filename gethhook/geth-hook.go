@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -69,6 +70,10 @@ func (p ArbosPrecompileWrapper) RunAdvanced(
 }
 
 func init() {
+	// Nitro never builds block access lists, so a lagging bals table holds nothing to keep.
+	if err := rawdb.SetChainFreezerTableOptional(rawdb.ChainFreezerBALTable); err != nil {
+		panic(err)
+	}
 	core.ReadyEVMForL2 = func(evm *vm.EVM, msg *core.Message) {
 		if evm.ChainConfig().IsArbitrum() {
 			evm.ProcessingHook = arbos.NewTxProcessor(evm, msg)
