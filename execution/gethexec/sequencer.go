@@ -108,6 +108,7 @@ type SequencerConfig struct {
 	ExpectedSurplusHardThreshold string           `koanf:"expected-surplus-hard-threshold" reload:"hot"`
 	EnableProfiling              bool             `koanf:"enable-profiling" reload:"hot"`
 	Timeboost                    timeboost.Config `koanf:"timeboost"`
+	FIFO                         FIFOConfig       `koanf:"fifo" reload:"hot"`
 	PGA                          PGAConfig        `koanf:"pga"`
 	Dangerous                    DangerousConfig  `koanf:"dangerous"`
 	FilterSetReportingInterval   time.Duration    `koanf:"filter-set-reporting-interval"`
@@ -120,10 +121,18 @@ type DangerousConfig struct {
 	DisableBlobBaseFeeCheck         bool `koanf:"disable-blob-base-fee-check"`
 }
 
+type FIFOConfig struct {
+	SizeSamplingMaxExponent uint `koanf:"size-sampling-max-exponent" reload:"hot"`
+	SizeSamplingGraceBlocks uint `koanf:"size-sampling-grace-blocks" reload:"hot"`
+	SizeSamplingMinTxSize   int  `koanf:"size-sampling-min-tx-size" reload:"hot"`
+}
+
 type PGAConfig struct {
 	DangerousForceFIFO bool `koanf:"dangerous-force-fifo"`
 	RoundsPerBlock     uint `koanf:"rounds-per-block"`
 }
+
+const MaxFIFOSizeSamplingExponent = 100
 
 // pgaRoundLength returns the length of a PGA round. It is derived from the
 // block time rather than configured directly, so MaxBlockSpeed remains the
@@ -194,6 +203,15 @@ func (c *SequencerConfig) Validate() error {
 	if roundLength := pgaRoundLength(c.MaxBlockSpeed, c.PGA.RoundsPerBlock); roundLength < 5*time.Millisecond {
 		return fmt.Errorf("pga round length must be at least 5ms, got %v (max-block-speed %v / pga.rounds-per-block %d)", roundLength, c.MaxBlockSpeed, c.PGA.RoundsPerBlock)
 	}
+	if c.FIFO.SizeSamplingMaxExponent > MaxFIFOSizeSamplingExponent {
+		return fmt.Errorf("fifo.size-sampling-max-exponent must be at most %d, got %d", MaxFIFOSizeSamplingExponent, c.FIFO.SizeSamplingMaxExponent)
+	}
+	if c.FIFO.SizeSamplingMinTxSize < 0 {
+		return fmt.Errorf("fifo.size-sampling-min-tx-size must not be negative, got %d", c.FIFO.SizeSamplingMinTxSize)
+	}
+	if c.FIFO.SizeSamplingMinTxSize > c.MaxTxDataSize {
+		return fmt.Errorf("fifo.size-sampling-min-tx-size must be at most max-tx-data-size (%d), got %d", c.MaxTxDataSize, c.FIFO.SizeSamplingMinTxSize)
+	}
 	if c.PollInterval <= 0 {
 		return fmt.Errorf("sequencer poll-interval must be positive, got %v", c.PollInterval)
 	}
@@ -228,6 +246,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
 	Timeboost:                    timeboost.DefaultConfig,
+	FIFO:                         DefaultFIFOConfig,
 	PGA:                          DefaultPGAConfig,
 	Dangerous:                    DefaultDangerousConfig,
 	FilterSetReportingInterval:   time.Minute,
@@ -235,6 +254,12 @@ var DefaultSequencerConfig = SequencerConfig{
 
 var DefaultDangerousConfig = DangerousConfig{
 	DisableSeqInboxMaxDataSizeCheck: false,
+}
+
+var DefaultFIFOConfig = FIFOConfig{
+	SizeSamplingMaxExponent: 10,
+	SizeSamplingGraceBlocks: 1,
+	SizeSamplingMinTxSize:   1024,
 }
 
 var DefaultPGAConfig = PGAConfig{
@@ -251,6 +276,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.StringSlice(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
 	timeboost.AddOptions(prefix+".timeboost", f)
+	FIFOAddOptions(prefix+".fifo", f)
 	PGAAddOptions(prefix+".pga", f)
 
 	DangerousAddOptions(prefix+".dangerous", f)
@@ -271,6 +297,12 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 func DangerousAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".disable-seq-inbox-max-data-size-check", DefaultDangerousConfig.DisableSeqInboxMaxDataSizeCheck, "DANGEROUS! disables nitro checks on sequencer MaxTxDataSize against the sequencer inbox MaxDataSize")
 	f.Bool(prefix+".disable-blob-base-fee-check", DefaultDangerousConfig.DisableBlobBaseFeeCheck, "DANGEROUS! disables nitro checks on sequencer for blob base fee")
+}
+
+func FIFOAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Uint(prefix+".size-sampling-max-exponent", DefaultFIFOConfig.SizeSamplingMaxExponent, "cap on the exponent k of the FIFO size sampling, which admits a transaction with probability ((max-tx-data-size - txSize) / max-tx-data-size)^k; k grows by one for each consecutive block that ended for data size beyond size-sampling-grace-blocks; 0 disables the sampling")
+	f.Uint(prefix+".size-sampling-grace-blocks", DefaultFIFOConfig.SizeSamplingGraceBlocks, "the FIFO size sampling starts once more than this many consecutive blocks ended for data size")
+	f.Int(prefix+".size-sampling-min-tx-size", DefaultFIFOConfig.SizeSamplingMinTxSize, "transactions up to this many bytes are always admitted by the FIFO size sampling")
 }
 
 func PGAAddOptions(prefix string, f *pflag.FlagSet) {
@@ -511,6 +543,7 @@ type Sequencer struct {
 
 	pendingQueueItemsResults *pendingQueueItemsResults
 	createBlockMutex         sync.Mutex
+	dataLimitedBlockStreak   uint
 
 	pendingDelayedMsgCommit bool
 
@@ -950,6 +983,10 @@ func (s *Sequencer) getForwarder() *TxForwarder {
 	return s.forwarder
 }
 
+func (s *Sequencer) QueuedTxCount() int {
+	return len(s.txQueue)
+}
+
 func (s *Sequencer) IsActive() bool {
 	s.forwarderMutex.Lock()
 	defer s.forwarderMutex.Unlock()
@@ -1233,9 +1270,10 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 		baseFee:              baseFee,
 		maxBlockTxCandidates: config.MaxBlockTxCandidates,
 		maxBlockSpeed:        config.MaxBlockSpeed,
+		maxTxDataSize:        config.MaxTxDataSize,
 	}
 	strategy := "FIFO"
-	var orderer txOrderer = newFIFOTxOrderer(s, ordererConfig, config.PollInterval)
+	var orderer txOrderer = newFIFOTxOrderer(s, ordererConfig, config.FIFO, config.PollInterval, s.dataLimitedBlockStreak)
 	if collectTips && !config.PGA.DangerousForceFIFO {
 		strategy = "PGA"
 		orderer = NewPGATxOrderer(ctx, s, ordererConfig, config.PGA.RoundsPerBlock)
@@ -1253,7 +1291,11 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 		s.blockTxOrderer = containers.None[txOrderer]()
 	}()
 
-	return s.createBlockWithTxOrderer(ctx, orderer, statedb)
+	sequencedMsg, throttle := s.createBlockWithTxOrderer(ctx, orderer, statedb)
+	if s.pendingQueueItemsResults == nil {
+		s.dataLimitedBlockStreak = 0
+	}
+	return sequencedMsg, throttle
 }
 
 // createBlockWithTxOrderer creates one block from the txs yielded by the orderer; split from
@@ -1440,6 +1482,15 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 	// The block is done, so retries below go straight to the retry queue.
 	hooks := s.pendingQueueItemsResults.hooks
 
+	dataLimitedBlock := false
+	defer func() {
+		if dataLimitedBlock {
+			s.dataLimitedBlockStreak++
+		} else {
+			s.dataLimitedBlockStreak = 0
+		}
+	}()
+
 	if errors.Is(errWhileSequencing, execution.ErrRetrySequencer) {
 		// Requeue for the next attempt; if we are no longer the active sequencer, the next
 		// backgroundForwarder tick forwards the retry queue, outside the createBlockMutex.
@@ -1494,7 +1545,8 @@ func (s *Sequencer) EndSequencing(ctx context.Context, errWhileSequencing error)
 		if madeBlock {
 			blockTxSizeHistogram.Update(blockTxSize)
 			finishReason := s.pendingQueueItemsResults.hooks.ordererStatus
-			if finishReason == blockSizeLimitReached {
+			dataLimitedBlock = finishReason == blockSizeLimitReached
+			if dataLimitedBlock {
 				dataLimitedBlocksCounter.Inc(1)
 			} else if finishReason == blockGasLimitReached || blockOutOfGas {
 				gasLimitedBlocksCounter.Inc(1)

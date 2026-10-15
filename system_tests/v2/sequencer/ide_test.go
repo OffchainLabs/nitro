@@ -15,3 +15,5 @@ func TestMain(m *testing.M) {
 }
 
 func TestNonces(t *testing.T) { systest.RunGroup(t, nonceTests) }
+
+func TestSizeSampling(t *testing.T) { systest.RunGroup(t, sizeSamplingTests) }
