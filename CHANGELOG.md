@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
-## [v3.12.2](https://github.com/OffchainLabs/nitro/compare/v3.12.1...v3.12.2) - 2026-10-09
+## [v3.12.2](https://github.com/OffchainLabs/nitro/compare/v3.12.1...v3.12.2) - 2026-10-14
 
 ### Added
 
@@ -14,6 +14,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 - Fix for head truncation below a diverged tail group. [[commit]](https://github.com/OffchainLabs/nitro/commit/c9f1ccf374a12eb3d91c84e6f0178da6a8795848)
 - The sequencer survives a panic while sequencing a delayed message, retrying it after a minute. [[commit]](https://github.com/OffchainLabs/nitro/commit/498ce18fcba28eba8f0a6594ea95522b60c61ad2)
+- Returning to 3.12.x after running 3.11.x no longer deletes recent blocks. [[commit]](https://github.com/OffchainLabs/nitro/commit/5f02f3f03076343061f167e81b8e82ec5518064b)
 
 ## [v3.12.1](https://github.com/OffchainLabs/nitro/compare/v3.12.0...v3.12.1) - 2026-09-29
 
