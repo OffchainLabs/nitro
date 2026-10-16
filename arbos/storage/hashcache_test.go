@@ -55,17 +55,9 @@ func TestShardedHashCacheShardCountIsPowerOfTwo(t *testing.T) {
 
 func TestShardedHashCacheSpreadsKeys(t *testing.T) {
 	c := newShardedHashCache(storageKeyCacheShards, storageKeyCacheSize)
-	used := make(map[*struct{}]bool)
-	_ = used
 	counts := make([]int, len(c.shards))
-	for i, k := range testKeys(10000) {
-		_ = i
-		for j, sh := range c.shards {
-			if sh == c.shardFor(k) {
-				counts[j]++
-				break
-			}
-		}
+	for _, k := range testKeys(10000) {
+		counts[maphash.String(c.seed, k)&c.mask]++
 	}
 	// Keys share a long prefix; a prefix-sliced shard function would put them
 	// all in one shard. Require every shard to see something.
