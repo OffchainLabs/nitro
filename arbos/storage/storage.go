@@ -12,7 +12,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
@@ -55,7 +54,7 @@ type Storage struct {
 	db         vm.StateDB
 	storageKey []byte
 	burner     burn.Burner
-	hashCache  *lru.Cache[string, []byte]
+	hashCache  *shardedHashCache
 }
 
 const StorageReadCost = params.SloadGasEIP2200
@@ -63,9 +62,7 @@ const StorageWriteCost = params.SstoreSetGasEIP2200
 const StorageWriteZeroCost = params.SstoreResetGasEIP2200
 const StorageCodeHashCost = params.ColdAccountAccessCostEIP2929
 
-const storageKeyCacheSize = 1024
-
-var storageHashCache = lru.NewCache[string, []byte](storageKeyCacheSize)
+var storageHashCache = newShardedHashCache(storageKeyCacheShards, storageKeyCacheSize)
 var cacheFullLogged atomic.Bool
 
 // KVStorage uses a Geth database to create an evm key-value store for an arbitrary account.
