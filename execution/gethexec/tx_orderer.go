@@ -158,7 +158,7 @@ func (o *fifoTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize
 			if o.sampling.skip(item) {
 				continue
 			}
-		case exhaustedQueue:
+		case exhaustedQueue, blockSizeLimitReached:
 			if skipped, ok := o.sampling.fallback(); ok {
 				o.fetcher.items = append(o.fetcher.items, skipped...)
 				continue

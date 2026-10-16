@@ -324,15 +324,15 @@ func TestFIFOTxOrdererSamplingKeepsExhaustedTxs(t *testing.T) {
 	o.fetcher.exhausted = append(o.fetcher.exhausted, o.fetcher.items[0])
 	o.fetcher.items = o.fetcher.items[1:]
 
-	if _, status := o.NextQueueItem(nil, math.MaxInt, math.MaxUint64); status != blockSizeLimitReached {
-		t.Fatalf("status = %v, want blockSizeLimitReached", status)
+	if got, status := yieldNonces(o); !slices.Equal(got, []uint64{1, 2}) || status != blockSizeLimitReached {
+		t.Fatalf("yielded (%v, %v), want ([1 2], blockSizeLimitReached)", got, status)
 	}
-	if got := queueItemNonces(o.TakeRemaining()); !slices.Equal(got, []uint64{0, 1, 2}) {
-		t.Fatalf("TakeRemaining nonces = %v, want [0 1 2]", got)
+	if got := queueItemNonces(o.TakeRemaining()); !slices.Equal(got, []uint64{0}) {
+		t.Fatalf("TakeRemaining nonces = %v, want [0]", got)
 	}
 }
 
-func TestFIFOTxOrdererSamplingNoFallbackOnBudgetLimit(t *testing.T) {
+func TestFIFOTxOrdererSamplingFallsBackOnBudgetLimit(t *testing.T) {
 	o := newTestSampledFIFOTxOrderer(t, 3, []uint64{1})
 
 	item, reason := o.NextQueueItem(nil, testSamplingMaxTxDataSize, math.MaxUint64)
@@ -341,11 +341,16 @@ func TestFIFOTxOrdererSamplingNoFallbackOnBudgetLimit(t *testing.T) {
 	}
 	o.OnTxInclusion(item)
 	o.fetcher.items[0].txSize = testSamplingMaxTxDataSize
+	item, reason = o.NextQueueItem(nil, testSamplingBigTxSize+50, math.MaxUint64)
+	if reason != fetchedTx || item.tx.Nonce() != 0 {
+		t.Fatalf("yield = (nonce %d, %v), want the skipped nonce 0 once the oversized tx is set aside", item.tx.Nonce(), reason)
+	}
+	o.OnTxInclusion(item)
 	if _, reason := o.NextQueueItem(nil, testSamplingBigTxSize+50, math.MaxUint64); reason != blockSizeLimitReached {
 		t.Fatalf("status = %v, want blockSizeLimitReached", reason)
 	}
-	if got := queueItemNonces(o.TakeRemaining()); !slices.Equal(got, []uint64{2, 0}) {
-		t.Fatalf("TakeRemaining nonces = %v, want [2 0] (the oversized tx, then the skipped one)", got)
+	if got := queueItemNonces(o.TakeRemaining()); !slices.Equal(got, []uint64{2}) {
+		t.Fatalf("TakeRemaining nonces = %v, want [2] (the oversized tx)", got)
 	}
 }
 
