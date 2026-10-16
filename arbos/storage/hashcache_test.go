@@ -5,6 +5,7 @@ package storage
 
 import (
 	"fmt"
+	"hash/maphash"
 	"testing"
 )
 
