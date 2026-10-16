@@ -109,6 +109,7 @@ type txOrdererConfig struct {
 	baseFee              *big.Int
 	maxBlockTxCandidates int
 	maxBlockSpeed        time.Duration
+	maxTxDataSize        int
 }
 
 // txOrdererSequencer is the sequencer functionality the tx orderers depend on.
@@ -118,42 +119,65 @@ type txOrdererSequencer interface {
 	drainValidatedTxs(latestHeader *types.Header, statedb *state.StateDB, baseFee *big.Int, maxQueueItems int) []txQueueItem
 }
 
-// fifoTxOrderer yields the block's candidates in the order the sequencer drained them.
 type fifoTxOrderer struct {
 	txOrdererConfig
 	seq          txOrdererSequencer
 	pollInterval time.Duration
+	sampling     sizeSampling
 	started      bool
-	// The embedded fetcher holds the not-yet-yielded candidates; set by StartBlock, consumed
-	// through NextQueueItem, and emptied by TakeRemaining.
-	fixedTxFetcher
+	fetcher      fixedTxFetcher
 }
 
 var _ txOrderer = (*fifoTxOrderer)(nil)
 
-func newFIFOTxOrderer(seq txOrdererSequencer, config txOrdererConfig, pollInterval time.Duration) *fifoTxOrderer {
+func newFIFOTxOrderer(seq txOrdererSequencer, config txOrdererConfig, fifoConfig FIFOConfig, pollInterval time.Duration, dataLimitedBlockStreak uint) *fifoTxOrderer {
 	return &fifoTxOrderer{
 		txOrdererConfig: config,
 		seq:             seq,
 		pollInterval:    pollInterval,
+		sampling:        newSizeSampling(fifoConfig, config.maxTxDataSize, dataLimitedBlockStreak),
 	}
 }
 
 // StartBlock drains the sequencer's pending txs as the block's candidates.
 func (o *fifoTxOrderer) StartBlock(statedb *state.StateDB) bool {
 	items := o.seq.drainValidatedTxs(o.latestHeader, statedb, o.baseFee, o.maxBlockTxCandidates)
-	o.fixedTxFetcher = fixedTxFetcher{items: items}
+	o.fetcher = fixedTxFetcher{items: items}
 	o.started = len(items) > 0
+	if o.started {
+		o.sampling.recordExponent()
+	}
 	return o.started
 }
 
-// OnTxInclusion is a no-op: FIFO ordering doesn't react to inclusions.
+func (o *fifoTxOrderer) NextQueueItem(statedb *state.StateDB, remainingBlockSize int, blockGasLeft uint64) (txQueueItem, ordererStatus) {
+	for {
+		item, status := o.fetcher.NextQueueItem(statedb, remainingBlockSize, blockGasLeft)
+		switch status {
+		case fetchedTx:
+			if o.sampling.skip(item) {
+				continue
+			}
+		case exhaustedQueue, blockSizeLimitReached:
+			if skipped, ok := o.sampling.fallback(); ok {
+				o.fetcher.items = append(o.fetcher.items, skipped...)
+				continue
+			}
+		}
+		return item, status
+	}
+}
+
 func (o *fifoTxOrderer) OnTxInclusion(queueItem txQueueItem) {}
+
+func (o *fifoTxOrderer) TakeRemaining() []txQueueItem {
+	return append(o.fetcher.TakeRemaining(), o.sampling.takeSkipped()...)
+}
 
 // OnNonceGapResolved appends the revived tx to the block's candidates: its nonce is valid
 // against the in-progress state, so it can follow its predecessor into the same block.
 func (o *fifoTxOrderer) OnNonceGapResolved(queueItem txQueueItem) {
-	o.items = append(o.items, queueItem)
+	o.fetcher.items = append(o.fetcher.items, queueItem)
 }
 
 // BlockInterval is the full block interval once StartBlock has found work; until then it is

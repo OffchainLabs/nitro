@@ -50,6 +50,24 @@ func TestSequencerConfigValidate(t *testing.T) {
 			c.MaxBlockSpeed = 250 * time.Millisecond
 			c.PGA.RoundsPerBlock = 6
 		}, false},
+		{"max size sampling exponent", func(c *SequencerConfig) {
+			c.FIFO.SizeSamplingMaxExponent = MaxFIFOSizeSamplingExponent
+		}, false},
+		{"size sampling exponent above max", func(c *SequencerConfig) {
+			c.FIFO.SizeSamplingMaxExponent = MaxFIFOSizeSamplingExponent + 1
+		}, true},
+		{"size sampling min tx size at zero", func(c *SequencerConfig) {
+			c.FIFO.SizeSamplingMinTxSize = 0
+		}, false},
+		{"size sampling min tx size at max tx data size", func(c *SequencerConfig) {
+			c.FIFO.SizeSamplingMinTxSize = c.MaxTxDataSize
+		}, false},
+		{"negative size sampling min tx size", func(c *SequencerConfig) {
+			c.FIFO.SizeSamplingMinTxSize = -1
+		}, true},
+		{"size sampling min tx size above max tx data size", func(c *SequencerConfig) {
+			c.FIFO.SizeSamplingMinTxSize = c.MaxTxDataSize + 1
+		}, true},
 		{"round length below 5ms", func(c *SequencerConfig) {
 			c.MaxBlockSpeed = 10 * time.Millisecond
 			c.PGA.RoundsPerBlock = 6
@@ -156,6 +174,63 @@ func TestEndSequencingClearsPendingQueueItemsResults(t *testing.T) {
 				t.Error("pendingQueueItemsResults should be cleared by EndSequencing")
 			}
 		})
+	}
+}
+
+func TestEndSequencingTracksDataLimitedBlockStreak(t *testing.T) {
+	engine := &ExecutionEngine{}
+	configFetcher := func() *SequencerConfig { c := DefaultSequencerConfig; return &c }
+	seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	endBlock := func(status ordererStatus, txErr, errWhileSequencing error) {
+		seq.pendingQueueItemsResults = &pendingQueueItemsResults{
+			hooks: &FullSequencingHooks{
+				ordererStatus: status,
+				sequencedTxs:  []sequencedTx{{queueItem: txQueueItem{resultChan: make(chan error, 1), returnedResult: &atomic.Bool{}}, err: txErr}},
+			},
+		}
+		seq.EndSequencing(context.Background(), errWhileSequencing)
+	}
+	endDataLimitedBlocks := func(count uint) {
+		for range count {
+			endBlock(blockSizeLimitReached, nil, nil)
+		}
+		if seq.dataLimitedBlockStreak != count {
+			t.Fatalf("streak after %d data-limited blocks = %d, want %d", count, seq.dataLimitedBlockStreak, count)
+		}
+	}
+
+	endDataLimitedBlocks(2)
+	endBlock(exhaustedQueue, nil, nil)
+	if seq.dataLimitedBlockStreak != 0 {
+		t.Fatalf("streak after a non-data-limited block = %d, want 0", seq.dataLimitedBlockStreak)
+	}
+
+	endDataLimitedBlocks(2)
+	endBlock(blockSizeLimitReached, errors.New("tx failed"), nil)
+	if seq.dataLimitedBlockStreak != 0 {
+		t.Fatalf("streak after a block with no successful tx = %d, want 0", seq.dataLimitedBlockStreak)
+	}
+
+	endDataLimitedBlocks(2)
+	endBlock(blockSizeLimitReached, nil, execution.ErrRetrySequencer)
+	if seq.dataLimitedBlockStreak != 0 {
+		t.Fatalf("streak after a block the consensus side rejected = %d, want 0", seq.dataLimitedBlockStreak)
+	}
+
+	endDataLimitedBlocks(2)
+	endBlock(blockSizeLimitReached, nil, errors.New("write failed"))
+	if seq.dataLimitedBlockStreak != 0 {
+		t.Fatalf("streak after a block that failed to commit = %d, want 0", seq.dataLimitedBlockStreak)
+	}
+
+	endDataLimitedBlocks(2)
+	seq.pendingQueueItemsResults = nil
+	seq.EndSequencing(context.Background(), nil)
+	if seq.dataLimitedBlockStreak != 2 {
+		t.Fatalf("streak after EndSequencing with no pending results = %d, want unchanged 2", seq.dataLimitedBlockStreak)
 	}
 }
 
@@ -285,7 +360,7 @@ func TestCreateBlockRequeuesNeverAttemptedTxs(t *testing.T) {
 		maxBlockTxCandidates: math.MaxInt,
 		maxBlockSpeed:        DefaultSequencerConfig.MaxBlockSpeed,
 	}
-	orderer := newFIFOTxOrderer(newStubOrdererSequencer(item), ordererConfig, DefaultSequencerConfig.PollInterval)
+	orderer := newFIFOTxOrderer(newStubOrdererSequencer(item), ordererConfig, DefaultFIFOConfig, DefaultSequencerConfig.PollInterval, 0)
 
 	statedb, err := engine.bc.StateAt(ordererConfig.latestHeader)
 	if err != nil {
@@ -332,7 +407,7 @@ func TestCreateBlockPanicFailsTxsInsteadOfRequeueing(t *testing.T) {
 		maxBlockTxCandidates: math.MaxInt,
 		maxBlockSpeed:        DefaultSequencerConfig.MaxBlockSpeed,
 	}
-	orderer := newFIFOTxOrderer(newStubOrdererSequencer(item), ordererConfig, DefaultSequencerConfig.PollInterval)
+	orderer := newFIFOTxOrderer(newStubOrdererSequencer(item), ordererConfig, DefaultFIFOConfig, DefaultSequencerConfig.PollInterval, 0)
 
 	statedb, err := engine.bc.StateAt(ordererConfig.latestHeader)
 	if err != nil {

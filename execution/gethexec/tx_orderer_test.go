@@ -60,7 +60,7 @@ func (s *stubOrdererSequencer) drainValidatedTxs(latestHeader *types.Header, sta
 // newTestFIFOTxOrderer builds a FIFO orderer over the given canned items with no drain bound.
 func newTestFIFOTxOrderer(t *testing.T, items ...txQueueItem) *fifoTxOrderer {
 	t.Helper()
-	return newFIFOTxOrderer(newStubOrdererSequencer(items...), txOrdererConfig{maxBlockTxCandidates: math.MaxInt}, 0)
+	return newFIFOTxOrderer(newStubOrdererSequencer(items...), txOrdererConfig{maxBlockTxCandidates: math.MaxInt}, DefaultFIFOConfig, 0, 0)
 }
 
 func queueItemNonces(items []txQueueItem) []uint64 {
@@ -201,7 +201,7 @@ func TestFIFOTxOrdererPassesDrainBound(t *testing.T) {
 		items = append(items, item)
 	}
 	seq := newStubOrdererSequencer(items...)
-	o := newFIFOTxOrderer(seq, txOrdererConfig{maxBlockTxCandidates: 7}, 0)
+	o := newFIFOTxOrderer(seq, txOrdererConfig{maxBlockTxCandidates: 7}, DefaultFIFOConfig, 0, 0)
 
 	if !o.StartBlock(nil) {
 		t.Fatal("StartBlock = false, want true")
@@ -219,7 +219,7 @@ func TestFIFOTxOrdererBlockInterval(t *testing.T) {
 	pollInterval := 100 * time.Millisecond
 	item, _ := makeTestQueueItem(t, 0, testBaseFee)
 	config := txOrdererConfig{maxBlockTxCandidates: math.MaxInt, maxBlockSpeed: blockInterval}
-	o := newFIFOTxOrderer(newStubOrdererSequencer(item), config, pollInterval)
+	o := newFIFOTxOrderer(newStubOrdererSequencer(item), config, DefaultFIFOConfig, pollInterval, 0)
 	if got := o.BlockInterval(); got != pollInterval {
 		t.Fatalf("BlockInterval = %v, want %v", got, pollInterval)
 	}
@@ -256,5 +256,120 @@ func TestFIFOTxOrdererNonceGapResolvedJoinsCandidates(t *testing.T) {
 	}
 	if _, reason := o.NextQueueItem(nil, math.MaxInt, math.MaxUint64); reason == fetchedTx {
 		t.Fatal("NextQueueItem yielded after TakeRemaining")
+	}
+}
+
+func newTestSampledFIFOTxOrderer(t *testing.T, nonceCount uint64, admit []uint64) *fifoTxOrderer {
+	t.Helper()
+	var items []txQueueItem
+	for nonce := range nonceCount {
+		item, _ := makeTestQueueItem(t, nonce, testBaseFee)
+		item.txSize = testSamplingBigTxSize
+		if slices.Contains(admit, nonce) {
+			item.txSize = testSamplingSmallTxSize
+		}
+		items = append(items, item)
+	}
+	config := txOrdererConfig{maxBlockTxCandidates: math.MaxInt, maxTxDataSize: testSamplingMaxTxDataSize}
+	fifoConfig := FIFOConfig{SizeSamplingMaxExponent: 1, SizeSamplingGraceBlocks: 0, SizeSamplingMinTxSize: 0}
+	o := newFIFOTxOrderer(newStubOrdererSequencer(items...), config, fifoConfig, 0, 1)
+	o.sampling.randomBips = fixedBips(5000)
+	if !o.StartBlock(nil) {
+		t.Fatal("StartBlock = false, want true")
+	}
+	return o
+}
+
+func yieldNonces(o *fifoTxOrderer) ([]uint64, ordererStatus) {
+	var nonces []uint64
+	for {
+		item, status := o.NextQueueItem(nil, math.MaxInt, math.MaxUint64)
+		if status != fetchedTx {
+			return nonces, status
+		}
+		nonces = append(nonces, item.tx.Nonce())
+	}
+}
+
+func TestFIFOTxOrdererSamplesCandidates(t *testing.T) {
+	o := newTestSampledFIFOTxOrderer(t, 6, []uint64{1, 3, 4})
+
+	for _, wantNonce := range []uint64{1, 3} {
+		item, reason := o.NextQueueItem(nil, math.MaxInt, math.MaxUint64)
+		if reason != fetchedTx || item.tx.Nonce() != wantNonce {
+			t.Fatalf("yield = (nonce %d, %v), want nonce %d", item.tx.Nonce(), reason, wantNonce)
+		}
+	}
+	if got := queueItemNonces(o.TakeRemaining()); !slices.Equal(got, []uint64{4, 5, 0, 2}) {
+		t.Fatalf("TakeRemaining nonces = %v, want [4 5 0 2] (the never-yielded tail, then the skipped ones in order)", got)
+	}
+	if leftover := o.TakeRemaining(); len(leftover) != 0 {
+		t.Fatalf("second TakeRemaining returned %d items, want 0", len(leftover))
+	}
+}
+
+func TestFIFOTxOrdererSamplingFallsBackWhenExhausted(t *testing.T) {
+	o := newTestSampledFIFOTxOrderer(t, 4, []uint64{2})
+
+	if got, status := yieldNonces(o); !slices.Equal(got, []uint64{2, 0, 1, 3}) || status != exhaustedQueue {
+		t.Fatalf("yielded (%v, %v), want ([2 0 1 3], exhaustedQueue)", got, status)
+	}
+	if leftover := o.TakeRemaining(); len(leftover) != 0 {
+		t.Fatalf("TakeRemaining returned %d items, want 0", len(leftover))
+	}
+}
+
+func TestFIFOTxOrdererSamplingKeepsExhaustedTxs(t *testing.T) {
+	o := newTestSampledFIFOTxOrderer(t, 3, nil)
+	o.fetcher.exhausted = append(o.fetcher.exhausted, o.fetcher.items[0])
+	o.fetcher.items = o.fetcher.items[1:]
+
+	if got, status := yieldNonces(o); !slices.Equal(got, []uint64{1, 2}) || status != blockSizeLimitReached {
+		t.Fatalf("yielded (%v, %v), want ([1 2], blockSizeLimitReached)", got, status)
+	}
+	if got := queueItemNonces(o.TakeRemaining()); !slices.Equal(got, []uint64{0}) {
+		t.Fatalf("TakeRemaining nonces = %v, want [0]", got)
+	}
+}
+
+func TestFIFOTxOrdererSamplingFallsBackOnBudgetLimit(t *testing.T) {
+	o := newTestSampledFIFOTxOrderer(t, 3, []uint64{1})
+
+	item, reason := o.NextQueueItem(nil, testSamplingMaxTxDataSize, math.MaxUint64)
+	if reason != fetchedTx || item.tx.Nonce() != 1 {
+		t.Fatalf("yield = (nonce %d, %v), want nonce 1", item.tx.Nonce(), reason)
+	}
+	o.OnTxInclusion(item)
+	o.fetcher.items[0].txSize = testSamplingMaxTxDataSize
+	item, reason = o.NextQueueItem(nil, testSamplingBigTxSize+50, math.MaxUint64)
+	if reason != fetchedTx || item.tx.Nonce() != 0 {
+		t.Fatalf("yield = (nonce %d, %v), want the skipped nonce 0 once the oversized tx is set aside", item.tx.Nonce(), reason)
+	}
+	o.OnTxInclusion(item)
+	if _, reason := o.NextQueueItem(nil, testSamplingBigTxSize+50, math.MaxUint64); reason != blockSizeLimitReached {
+		t.Fatalf("status = %v, want blockSizeLimitReached", reason)
+	}
+	if got := queueItemNonces(o.TakeRemaining()); !slices.Equal(got, []uint64{2}) {
+		t.Fatalf("TakeRemaining nonces = %v, want [2] (the oversized tx)", got)
+	}
+}
+
+func TestFIFOTxOrdererSamplesNonceGapResolvedTxs(t *testing.T) {
+	o := newTestSampledFIFOTxOrderer(t, 1, []uint64{0})
+
+	item, reason := o.NextQueueItem(nil, math.MaxInt, math.MaxUint64)
+	if reason != fetchedTx || item.tx.Nonce() != 0 {
+		t.Fatalf("yield = (nonce %d, %v), want nonce 0", item.tx.Nonce(), reason)
+	}
+	o.OnTxInclusion(item)
+	revivedBig, _ := makeTestQueueItem(t, 1, testBaseFee)
+	revivedBig.txSize = testSamplingBigTxSize
+	o.OnNonceGapResolved(revivedBig)
+	revivedSmall, _ := makeTestQueueItem(t, 2, testBaseFee)
+	revivedSmall.txSize = testSamplingSmallTxSize
+	o.OnNonceGapResolved(revivedSmall)
+
+	if got, status := yieldNonces(o); !slices.Equal(got, []uint64{2, 1}) || status != exhaustedQueue {
+		t.Fatalf("yielded (%v, %v), want ([2 1], exhaustedQueue)", got, status)
 	}
 }
