@@ -38,7 +38,7 @@ func NewTracingInfo(evm *vm.EVM, from, to common.Address, scenario TracingScenar
 	return &TracingInfo{
 		Tracer:       evm.Config.Tracer,
 		Scenario:     scenario,
-		Contract:     vm.NewContract(to, from, uint256.NewInt(0), vm.NewGasBudget(0, 0), evm.JumpDests()),
+		Contract:     vm.NewContract(from, to, uint256.NewInt(0), vm.NewGasBudget(0, 0), evm.JumpDests()),
 		Depth:        evm.Depth(),
 		storageCache: newStorageCache(),
 	}
