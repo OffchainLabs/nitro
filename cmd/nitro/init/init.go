@@ -1053,7 +1053,8 @@ func getNewBlockchain(parsedInitMessage *arbostypes.ParsedInitMessage, config *c
 	txIndexWg := sync.WaitGroup{}
 
 	if initDataReader == nil {
-		l2BlockChain, err := gethexec.GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer, config.Execution.ExposeMultiGas)
+		var err error
+		l2BlockChain, err = gethexec.GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer, config.Execution.ExposeMultiGas)
 		if err != nil {
 			return nil, err
 		}
