@@ -1311,6 +1311,113 @@ func TestOpenInitializeExecutionDbEmptyInit(t *testing.T) {
 	Require(t, err)
 }
 
+// A node started from a downloaded snapshot, with no other --init.* mode,
+// must get a blockchain back on its first start, not only after a restart.
+func TestOpenInitializeExecutionDbFromDownloadedSnapshot(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	newNodeConfig := func() config.NodeConfig {
+		nodeConfig := config.NodeConfigDefault
+		nodeConfig.Execution.Caching.StateScheme = env.GetTestStateScheme()
+		nodeConfig.Chain.ID = 42161
+		nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
+		nodeConfig.Init.ValidateGenesisAssertion = false
+		return nodeConfig
+	}
+	openInitialize := func(stack *node.Node, nodeConfig *config.NodeConfig) (ethdb.Database, *core.BlockChain) {
+		executionDB, _, blockchain, _, err := OpenInitializeExecutionDB(
+			ctx,
+			stack,
+			nodeConfig,
+			new(big.Int).SetUint64(nodeConfig.Chain.ID),
+			gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
+			nil,
+			&nodeConfig.Persistent,
+			ethclient.NewClient(stack.Attach()),
+			chaininfo.RollupAddresses{},
+		)
+		Require(t, err)
+		return executionDB, blockchain
+	}
+
+	// Create the source database with --init.empty
+	sourceStackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	sourceStackConfig.DBEngine = rawdb.DBPebble
+	sourceStack, err := node.New(sourceStackConfig)
+	Require(t, err)
+	sourceConfig := newNodeConfig()
+	sourceConfig.Init.Empty = true
+	sourceDB, sourceBlockchain := openInitialize(sourceStack, &sourceConfig)
+	wantHead := sourceBlockchain.CurrentBlock().Hash()
+	sourceBlockchain.Stop()
+	Require(t, sourceDB.Close())
+	sourceInstanceDir := sourceStack.InstanceDir()
+	Require(t, sourceStack.Close())
+
+	// Pack the source database into a snapshot archive
+	const snapshotName = "snapshot.tar"
+	serverDir := t.TempDir()
+	{
+		archiveFile, err := os.Create(path.Join(serverDir, snapshotName))
+		Require(t, err)
+		tarWriter := tar.NewWriter(archiveFile)
+		err = filepath.WalkDir(sourceInstanceDir, func(filePath string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			header, err := tar.FileInfoHeader(info, "")
+			if err != nil {
+				return err
+			}
+			header.Name, err = filepath.Rel(sourceInstanceDir, filePath)
+			if err != nil {
+				return err
+			}
+			if err := tarWriter.WriteHeader(header); err != nil {
+				return err
+			}
+			file, err := os.Open(filePath)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+			_, err = io.Copy(tarWriter, file)
+			return err
+		})
+		Require(t, err)
+		Require(t, tarWriter.Close())
+		Require(t, archiveFile.Close())
+	}
+	addr, server := startFileServer(t, serverDir)
+	defer gracefulShutdown(t, ctx, server)
+
+	// Start a node with an empty data directory from the snapshot
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+	defer stack.Close()
+	nodeConfig := newNodeConfig()
+	nodeConfig.Init.Url = fmt.Sprintf("http://%s/%s", addr, snapshotName)
+	nodeConfig.Init.ValidateChecksum = false
+	executionDB, blockchain := openInitialize(stack, &nodeConfig)
+	defer executionDB.Close()
+	if blockchain == nil {
+		t.Fatal("OpenInitializeExecutionDB returned a nil blockchain")
+	}
+	defer blockchain.Stop()
+	if gotHead := blockchain.CurrentBlock().Hash(); gotHead != wantHead {
+		t.Fatalf("unexpected head block: want %v, got %v", wantHead, gotHead)
+	}
+}
+
 func TestExtractSnapshot(t *testing.T) {
 	testCases := []struct {
 		name         string
