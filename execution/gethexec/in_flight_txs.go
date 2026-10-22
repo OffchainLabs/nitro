@@ -15,11 +15,11 @@ import (
 )
 
 var (
-	inFlightTxsSizeGauge                 = metrics.NewRegisteredGauge("arb/sequencer/inflight/size", nil)
-	inFlightTxsAlreadyKnownCounter       = metrics.NewRegisteredCounter("arb/sequencer/inflight/rejected/alreadyknown", nil)
-	inFlightTxsNonceInFlightCounter      = metrics.NewRegisteredCounter("arb/sequencer/inflight/rejected/nonceinflight", nil)
-	inFlightTxsReplaceUnderpricedCounter = metrics.NewRegisteredCounter("arb/sequencer/inflight/rejected/replaceunderpriced", nil)
-	inFlightTxsReplacedCounter           = metrics.NewRegisteredCounter("arb/sequencer/inflight/replaced", nil)
+	inFlightTxsSizeGauge                 = metrics.NewRegisteredGauge("arb/sequencer/inflight/size/gauge", nil)
+	inFlightTxsAlreadyKnownCounter       = metrics.NewRegisteredCounter("arb/sequencer/inflight/rejected/alreadyknown/counter", nil)
+	inFlightTxsNonceInFlightCounter      = metrics.NewRegisteredCounter("arb/sequencer/inflight/rejected/nonceinflight/counter", nil)
+	inFlightTxsReplaceUnderpricedCounter = metrics.NewRegisteredCounter("arb/sequencer/inflight/rejected/replaceunderpriced/counter", nil)
+	inFlightTxsReplacedCounter           = metrics.NewRegisteredCounter("arb/sequencer/inflight/replaced/counter", nil)
 )
 
 var ErrNonceInFlight = errors.New("another transaction with the same nonce is already in flight")
