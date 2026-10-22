@@ -40,6 +40,14 @@ var (
 const filterQueueSize = 100
 
 type TransactionFiltererAPI struct {
+	txFilterer *TransactionFiltererService
+}
+
+func (a *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter common.Hash) error {
+	return a.txFilterer.Filter(ctx, txHashToFilter)
+}
+
+type TransactionFiltererService struct {
 	stopwaiter.StopWaiter
 
 	queue chan common.Hash
@@ -48,19 +56,19 @@ type TransactionFiltererAPI struct {
 	txOpts                         *bind.TransactOpts
 }
 
-func NewTransactionFiltererAPI(
+func NewTransactionFiltererService(
 	manager *precompilesgen.ArbFilteredTransactionsManager,
 	txOpts *bind.TransactOpts,
-) *TransactionFiltererAPI {
-	api := &TransactionFiltererAPI{
+) *TransactionFiltererService {
+	txFilterer := &TransactionFiltererService{
 		queue:  make(chan common.Hash, filterQueueSize),
 		txOpts: txOpts,
 	}
-	api.arbFilteredTransactionsManager.Store(manager)
-	return api
+	txFilterer.arbFilteredTransactionsManager.Store(manager)
+	return txFilterer
 }
 
-func (t *TransactionFiltererAPI) Start(ctx context.Context) error {
+func (t *TransactionFiltererService) Start(ctx context.Context) error {
 	t.StopWaiter.Start(ctx, t)
 	return stopwaiter.CallWhenTriggeredWith(&t.StopWaiterSafe, t.filter, t.queue)
 }
@@ -68,7 +76,7 @@ func (t *TransactionFiltererAPI) Start(ctx context.Context) error {
 // Filter adds the given transaction hash to the filtered transactions set,
 // which is managed by the ArbFilteredTransactionsManager precompile.
 // Requests are processed sequentially by a single consumer goroutine to avoid nonce collisions.
-func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter common.Hash) error {
+func (t *TransactionFiltererService) Filter(ctx context.Context, txHashToFilter common.Hash) error {
 	select {
 	case t.queue <- txHashToFilter:
 		filterQueueDepthGauge.Update(int64(len(t.queue)))
@@ -78,7 +86,7 @@ func (t *TransactionFiltererAPI) Filter(ctx context.Context, txHashToFilter comm
 	}
 }
 
-func (t *TransactionFiltererAPI) filter(ctx context.Context, txHashToFilter common.Hash) {
+func (t *TransactionFiltererService) filter(ctx context.Context, txHashToFilter common.Hash) {
 	filterQueueDepthGauge.Update(int64(len(t.queue)))
 	txOpts := *t.txOpts
 	txOpts.Context = ctx
@@ -100,9 +108,9 @@ func (t *TransactionFiltererAPI) filter(ctx context.Context, txHashToFilter comm
 }
 
 // Only used for testing.
-// Sequencer and TransactionFiltererAPI depend on each other, as a workaround for the egg/chicken problem,
+// Sequencer and TransactionFiltererService depend on each other, as a workaround for the egg/chicken problem,
 // we set the sequencer client after both are created.
-func (t *TransactionFiltererAPI) SetSequencerClient(_ *testing.T, sequencerClient *ethclient.Client) error {
+func (t *TransactionFiltererService) SetSequencerClient(_ *testing.T, sequencerClient *ethclient.Client) error {
 	if sequencerClient == nil {
 		return errors.New("cannot set nil sequencer client")
 	}
@@ -142,7 +150,7 @@ func NewStack(
 	stackConfig *node.Config,
 	txOpts *bind.TransactOpts,
 	sequencerClient *ethclient.Client,
-) (*node.Node, *TransactionFiltererAPI, error) {
+) (*node.Node, *TransactionFiltererService, error) {
 	stack, err := node.New(stackConfig)
 	if err != nil {
 		return nil, nil, err
@@ -159,11 +167,11 @@ func NewStack(
 		}
 	}
 
-	api := NewTransactionFiltererAPI(arbFilteredTransactionsManager, txOpts)
+	txFilterer := NewTransactionFiltererService(arbFilteredTransactionsManager, txOpts)
 	apis := []rpc.API{{
 		Namespace: gethexec.TransactionFiltererNamespace,
 		Version:   "1.0",
-		Service:   api,
+		Service:   &TransactionFiltererAPI{txFilterer: txFilterer},
 		Public:    true,
 	}}
 	stack.RegisterAPIs(apis)
@@ -175,5 +183,5 @@ func NewStack(
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	return stack, api, nil
+	return stack, txFilterer, nil
 }

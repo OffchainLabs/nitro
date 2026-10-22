@@ -37,6 +37,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/bold/protocol"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
@@ -270,16 +271,46 @@ func TestDownloadInitInPartsWithChecksum(t *testing.T) {
 	}
 }
 
+func TestLatestSnapshotKind(t *testing.T) {
+	testCases := []struct {
+		kind        string
+		stateScheme string
+		want        string
+		wantErr     bool
+	}{
+		{kind: conf.SnapshotKindArchive, stateScheme: rawdb.HashScheme, want: conf.SnapshotKindArchive},
+		{kind: conf.SnapshotKindPruned, stateScheme: rawdb.HashScheme, want: conf.SnapshotKindPruned},
+		{kind: conf.SnapshotKindGenesis, stateScheme: rawdb.HashScheme, want: conf.SnapshotKindGenesis},
+		{kind: conf.SnapshotKindArchive, stateScheme: rawdb.PathScheme, want: "archive-path"},
+		{kind: conf.SnapshotKindPruned, stateScheme: rawdb.PathScheme, want: "full-path"},
+		{kind: conf.SnapshotKindGenesis, stateScheme: rawdb.PathScheme, wantErr: true},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.stateScheme+" "+testCase.kind, func(t *testing.T) {
+			got, err := latestSnapshotKind(testCase.kind, testCase.stateScheme)
+			if testCase.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, testCase.want, got)
+		})
+	}
+}
+
 func TestSetLatestSnapshotUrl(t *testing.T) {
 	const (
-		chain        = "arb1"
-		snapshotKind = "archive"
-		latestFile   = "latest-" + snapshotKind + ".txt"
+		chain             = "arb1"
+		snapshotKind      = conf.SnapshotKindArchive
+		defaultLatestFile = "latest-" + snapshotKind + ".txt"
 	)
 
 	testCases := []struct {
 		name           string
 		chain          string
+		stateScheme    string
+		latestFile     string
 		latestContents string
 		wantUrl        func(string) string
 	}{
@@ -304,6 +335,13 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 			wantUrl:        func(serverAddr string) string { return "https://some.domain.com/arb1/2024/21/archive.tar.gz" },
 		},
 		{
+			name:           "path state scheme",
+			stateScheme:    rawdb.PathScheme,
+			latestFile:     "latest-archive-path.txt",
+			latestContents: "/arb1/2024/21/archive-path.tar.gz",
+			wantUrl:        func(serverAddr string) string { return serverAddr + "/arb1/2024/21/archive-path.tar.gz" },
+		},
+		{
 			name:           "chain and contents with upper case",
 			chain:          "ARB1",
 			latestContents: "ARB1/2024/21/ARCHIVE.TAR.GZ",
@@ -320,6 +358,10 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 
 			err := os.Mkdir(filepath.Join(serverDir, chain), dirPerm)
 			Require(t, err)
+			latestFile := testCase.latestFile
+			if latestFile == "" {
+				latestFile = defaultLatestFile
+			}
 			err = os.WriteFile(filepath.Join(serverDir, chain, latestFile), []byte(testCase.latestContents), filePerm)
 			Require(t, err)
 
@@ -338,7 +380,11 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 			if configChain == "" {
 				configChain = chain
 			}
-			err = setLatestSnapshotUrl(ctx, &initConfig, configChain)
+			stateScheme := testCase.stateScheme
+			if stateScheme == "" {
+				stateScheme = rawdb.HashScheme
+			}
+			err = setLatestSnapshotUrl(ctx, &initConfig, configChain, stateScheme)
 			Require(t, err)
 
 			// Check url
@@ -533,6 +579,15 @@ func generateKeys(prefix []byte, numKeys int) [][]byte {
 	return keys
 }
 
+func TestWasmerSerializeVersionMatchesRust(t *testing.T) {
+	got := programs.WasmerSerializeVersion()
+	if WasmerSerializeVersion != got {
+		t.Fatalf("WasmerSerializeVersion mismatch: Go constant = %d, wasmer "+
+			"MetadataHeader::CURRENT_VERSION = %d. Update WasmerSerializeVersion in "+
+			"cmd/nitro/init/init.go to match wasmer.", WasmerSerializeVersion, got)
+	}
+}
+
 func TestPurgeIncompatibleWasmerSerializeVersionEntries(t *testing.T) {
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = t.TempDir()
@@ -611,6 +666,540 @@ func TestPurgeIncompatibleWasmerSerializeVersionEntries(t *testing.T) {
 	Require(t, err)
 	if currWasmerSerializeVersion != WasmerSerializeVersion {
 		t.Fatalf("Expected current WasmerSerializeVersion to be %d, got %d", WasmerSerializeVersion, currWasmerSerializeVersion)
+	}
+}
+
+func TestPurgeIncompatibleWavmSerializeVersionEntries(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+
+	// Seed all the wasmdb prefixes the production validators interact with.
+	// The wavm validator must purge only `wavmKeys` and leave everything else.
+	wavmKeys := generateKeys([]byte{0x00, 'w', 'w'}, 20)
+	armKeys := generateKeys([]byte{0x00, 'w', 'r'}, 20)
+	x86Keys := generateKeys([]byte{0x00, 'w', 'x'}, 20)
+	hostKeys := generateKeys([]byte{0x00, 'w', 'h'}, 20)
+	otherKeys := generateKeys([]byte{0x01, 'z', 'z'}, 20)
+
+	writeKeys(t, db, wavmKeys)
+	writeKeys(t, db, armKeys)
+	writeKeys(t, db, x86Keys)
+	writeKeys(t, db, hostKeys)
+	writeKeys(t, db, otherKeys)
+
+	// Case 1: no WavmSerializeVersion key in the DB. The validator must treat
+	// this as incompatible (existing nodes upgrading from bincode have no key
+	// and their stored bytes are in the old format), purge wavm entries, leave
+	// the wasmer-managed prefixes untouched, and write the current version.
+	purged, err := reconcileWavmSerializeVersion(db)
+	Require(t, err)
+	if !purged {
+		t.Fatal("Case 1: validator must report purged=true when wavm keys existed without a version key")
+	}
+	checkKeys(t, db, wavmKeys, false)
+	checkKeys(t, db, armKeys, true)
+	checkKeys(t, db, x86Keys, true)
+	checkKeys(t, db, hostKeys, true)
+	checkKeys(t, db, otherKeys, true)
+	got, err := rawdb.ReadWavmSerializeVersion(db)
+	Require(t, err)
+	if got != WavmSerializeVersion {
+		t.Fatalf("after missing-key purge, expected version %d, got %d", WavmSerializeVersion, got)
+	}
+
+	// Case 2: matching version. Re-seed wavm keys and confirm the validator
+	// preserves them and reports purged=false.
+	writeKeys(t, db, wavmKeys)
+	purged, err = reconcileWavmSerializeVersion(db)
+	Require(t, err)
+	if purged {
+		t.Fatal("Case 2: validator must report purged=false on matching version")
+	}
+	checkKeys(t, db, wavmKeys, true)
+	checkKeys(t, db, armKeys, true)
+	checkKeys(t, db, x86Keys, true)
+	checkKeys(t, db, hostKeys, true)
+	checkKeys(t, db, otherKeys, true)
+
+	// Case 3: mismatched version. Wavm entries are purged, the wasmer-managed
+	// prefixes survive untouched, and the version key is rewritten to current.
+	Require(t, rawdb.WriteWavmSerializeVersion(db, WavmSerializeVersion+1))
+	purged, err = reconcileWavmSerializeVersion(db)
+	Require(t, err)
+	if !purged {
+		t.Fatal("Case 3: validator must report purged=true on mismatched version")
+	}
+	checkKeys(t, db, wavmKeys, false)
+	checkKeys(t, db, armKeys, true)
+	checkKeys(t, db, x86Keys, true)
+	checkKeys(t, db, hostKeys, true)
+	checkKeys(t, db, otherKeys, true)
+	got, err = rawdb.ReadWavmSerializeVersion(db)
+	Require(t, err)
+	if got != WavmSerializeVersion {
+		t.Fatalf("after mismatched-version purge, expected version %d, got %d", WavmSerializeVersion, got)
+	}
+}
+
+// Empty-wasmdb startup must write the version key proactively rather than
+// running the "missing key = old format" purge branch. Without this, the next
+// non-empty startup would mistake the absence of the key for legacy bincode
+// data and purge legitimate new-format entries activated during this session.
+func TestValidateOrUpgradeWavmOnEmptyDbWritesVersionKey(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+
+	// DB is empty: validator must write the version key and otherwise do nothing.
+	purged, err := reconcileWavmSerializeVersion(db)
+	Require(t, err)
+	if purged {
+		t.Fatal("empty wasmdb must report purged=false; nothing was deleted")
+	}
+
+	got, err := rawdb.ReadWavmSerializeVersion(db)
+	Require(t, err)
+	if got != WavmSerializeVersion {
+		t.Fatalf("expected version %d on empty-db startup, got %d", WavmSerializeVersion, got)
+	}
+}
+
+// Wasmer-only wasmdb (arm/x86/host but no wavm) must take the
+// no-wavm-entries branch: write version key, no purge, no misleading warn.
+func TestValidateOrUpgradeWavmSkipsPurgeOnWasmerOnlyDb(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+
+	// Seed wasmer-managed prefixes but no wavm keys, no version key.
+	armKeys := generateKeys([]byte{0x00, 'w', 'r'}, 5)
+	x86Keys := generateKeys([]byte{0x00, 'w', 'x'}, 5)
+	hostKeys := generateKeys([]byte{0x00, 'w', 'h'}, 5)
+	writeKeys(t, db, armKeys)
+	writeKeys(t, db, x86Keys)
+	writeKeys(t, db, hostKeys)
+
+	purged, err := reconcileWavmSerializeVersion(db)
+	Require(t, err)
+	if purged {
+		t.Fatal("wasmer-only wasmdb must take the no-wavm-entries branch (purged=false)")
+	}
+	checkKeys(t, db, armKeys, true)
+	checkKeys(t, db, x86Keys, true)
+	checkKeys(t, db, hostKeys, true)
+	got, err := rawdb.ReadWavmSerializeVersion(db)
+	Require(t, err)
+	if got != WavmSerializeVersion {
+		t.Fatalf("expected version %d to be written, got %d", WavmSerializeVersion, got)
+	}
+}
+
+// iteratorFailingDB injects iterator failures into deleteWasmEntries.
+// `failNextAfter` exercises the end-of-loop it.Error() check;
+// `errorAfter` exercises the mid-loop (batch-boundary) check by making
+// Error() return non-nil while Next() keeps working.
+type iteratorFailingDB struct {
+	ethdb.Database
+	nextCalls     *int // shared across iterators to budget by global progress
+	failNextAfter int
+	errorAfter    int
+	injected      error
+}
+
+func (d *iteratorFailingDB) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
+	return &erroringIter{
+		Iterator:      d.Database.NewIterator(prefix, start),
+		nextCalls:     d.nextCalls,
+		failNextAfter: d.failNextAfter,
+		errorAfter:    d.errorAfter,
+		injected:      d.injected,
+	}
+}
+
+type erroringIter struct {
+	ethdb.Iterator
+	nextCalls     *int
+	failNextAfter int
+	errorAfter    int
+	injected      error
+	tripped       bool
+}
+
+func (it *erroringIter) Next() bool {
+	if it.tripped {
+		return false
+	}
+	if it.failNextAfter > 0 && *it.nextCalls >= it.failNextAfter {
+		it.tripped = true
+		return false
+	}
+	*it.nextCalls++
+	return it.Iterator.Next()
+}
+
+func (it *erroringIter) Error() error {
+	if it.tripped {
+		return it.injected
+	}
+	if it.errorAfter > 0 && *it.nextCalls >= it.errorAfter {
+		return it.injected
+	}
+	return it.Iterator.Error()
+}
+
+// End-of-loop it.Error() check: propagated, version stamp NOT advanced.
+// FFI mismatch must short-circuit before touching the wasmdb: no purge, no
+// version key written.
+func TestValidateOrUpgradeWavmRefusesOnFFIMismatch(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+
+	// Seed wavm entries so we'd observe a purge if the guard failed.
+	wavmKeys := generateKeys([]byte{0x00, 'w', 'w'}, 5)
+	writeKeys(t, db, wavmKeys)
+
+	// NOTE: do NOT add t.Parallel() to any test that touches
+	// readRustWavmFormatVersion: the package-level override is restored via
+	// t.Cleanup at the end of this test, which is only safe under sequential
+	// execution within the package.
+	original := readRustWavmFormatVersion
+	t.Cleanup(func() { readRustWavmFormatVersion = original })
+	readRustWavmFormatVersion = func() uint32 { return WavmSerializeVersion + 1 }
+
+	purged, err := reconcileWavmSerializeVersion(db)
+	if err == nil {
+		t.Fatal("expected mismatch error")
+	}
+	if !strings.Contains(err.Error(), "mismatch") {
+		t.Fatalf("error must mention mismatch; got %v", err)
+	}
+	if purged {
+		t.Fatal("purged must be false on mismatch")
+	}
+
+	// No side effects: keys still present, version key not written.
+	checkKeys(t, db, wavmKeys, true)
+	if _, readErr := rawdb.ReadWavmSerializeVersion(db); readErr == nil {
+		t.Fatal("version key must not be written on mismatch")
+	}
+}
+
+// Probe I/O failure must bail, not silently return false (a false return
+// would skip the purge and leave stale entries for the decoder to reject
+// later as "magic mismatch").
+func TestValidateOrUpgradeWavmPropagatesProbeError(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+
+	calls := 0
+	injected := errors.New("injected probe I/O error")
+	// errorAfter=1 fires Error() on the first Next() the probe issues.
+	wrapped := &iteratorFailingDB{
+		Database:   db,
+		nextCalls:  &calls,
+		errorAfter: 1,
+		injected:   injected,
+	}
+
+	purged, err := reconcileWavmSerializeVersion(wrapped)
+	if err == nil {
+		t.Fatal("expected probe error to be propagated")
+	}
+	if !errors.Is(err, injected) {
+		t.Fatalf("expected wrapped injected error, got %v", err)
+	}
+	if purged {
+		t.Fatal("purged must be false when the probe errored out")
+	}
+
+	// Version key must NOT have been written: a future boot must retry.
+	_, readErr := rawdb.ReadWavmSerializeVersion(db)
+	if readErr == nil {
+		t.Fatal("version key must not be written when the probe fails")
+	}
+}
+
+func TestValidateOrUpgradeWavmPropagatesIteratorError(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+
+	wavmKeys := generateKeys([]byte{0x00, 'w', 'w'}, 20)
+	writeKeys(t, db, wavmKeys)
+
+	// 1 Next() for the wavmPrefixHasEntries probe; the next Next() (first
+	// from the purge iterator) trips, exercising end-of-loop it.Error().
+	calls := 0
+	injected := errors.New("injected iterator I/O error")
+	wrapped := &iteratorFailingDB{
+		Database:      db,
+		nextCalls:     &calls,
+		failNextAfter: 1,
+		injected:      injected,
+	}
+
+	purged, err := reconcileWavmSerializeVersion(wrapped)
+	if err == nil {
+		t.Fatal("expected iterator error to be propagated")
+	}
+	if !errors.Is(err, injected) {
+		t.Fatalf("expected wrapped injected error, got %v", err)
+	}
+	if purged {
+		t.Fatal("purged must be false when the purge errored out")
+	}
+
+	// Version key must NOT have been written; next boot must retry.
+	_, readErr := rawdb.ReadWavmSerializeVersion(db)
+	if readErr == nil {
+		t.Fatal("version key must not be written when the purge fails")
+	}
+}
+
+// Mid-loop it.Error() check at the batch-write boundary. Requires enough
+// keys to push batch.ValueSize() over ethdb.IdealBatchSize (100KB) so the
+// mid-loop check is the first error surface (vs the end-of-loop one tested
+// above).
+func TestValidateOrUpgradeWavmPropagatesIteratorErrorAtBatchBoundary(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+
+	// 5000 35-byte-key deletes comfortably exceed IdealBatchSize (100KB).
+	const numKeys = 5000
+	wavmKeys := generateKeys([]byte{0x00, 'w', 'w'}, numKeys)
+	writeKeys(t, db, wavmKeys)
+
+	// Iteration runs normally; Error() starts firing after 100 Next() calls,
+	// well before exhaustion. First batch fill then bails via mid-loop check.
+	calls := 0
+	injected := errors.New("injected mid-iteration I/O error")
+	wrapped := &iteratorFailingDB{
+		Database:   db,
+		nextCalls:  &calls,
+		errorAfter: 100,
+		injected:   injected,
+	}
+
+	purged, err := reconcileWavmSerializeVersion(wrapped)
+	if err == nil {
+		t.Fatal("expected mid-loop iterator error to be propagated")
+	}
+	if !errors.Is(err, injected) {
+		t.Fatalf("expected wrapped injected error, got %v", err)
+	}
+	if purged {
+		t.Fatal("purged must be false when the purge errored out")
+	}
+	// Distinguishes mid-loop from end-of-loop: end-of-loop bails without
+	// running batch.Write (all keys survive); mid-loop runs after at least
+	// one batch.Write succeeded (some keys gone).
+	survivors := 0
+	for _, k := range wavmKeys {
+		has, hasErr := db.Has(k)
+		if hasErr != nil {
+			t.Fatalf("Has(%x): %v", k, hasErr)
+		}
+		if has {
+			survivors++
+		}
+	}
+	if survivors == len(wavmKeys) {
+		t.Fatalf("no keys were deleted; mid-loop check did not fire (all %d keys survived)", survivors)
+	}
+	if survivors == 0 {
+		t.Fatalf("all keys were deleted; the error must have surfaced before the trailing batch.Write")
+	}
+
+	// Version key must not have been written.
+	_, readErr := rawdb.ReadWavmSerializeVersion(db)
+	if readErr == nil {
+		t.Fatal("version key must not be written when the purge fails")
+	}
+}
+
+// Pins outer-caller behavior: when reconcileWavmSerializeVersion
+// reports purged=true, openDownloadedExecutionDB must skip the
+// RebuildingDone stamp so the recovery rebuild runs.
+func TestOpenDownloadedExecutionDBSkipsStampOnPurge(t *testing.T) {
+	t.Parallel()
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+	defer stack.Close()
+
+	nodeConfig := config.NodeConfigDefault
+	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme
+	nodeConfig.Chain.ID = 42161
+
+	// Stale wavm entries with no version key — simulates a snapshot from
+	// the bincode era; the validator must treat this as incompatible.
+	{
+		seedDB, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{
+			MetricsNamespace:   "wasm/",
+			Cache:              nodeConfig.Execution.Caching.DatabaseCache,
+			Handles:            nodeConfig.Persistent.Handles,
+			NoFreezer:          true,
+			PebbleExtraOptions: nodeConfig.Persistent.Pebble.ExtraOptions("wasm"),
+		})
+		Require(t, err)
+		wavmKeys := generateKeys([]byte{0x00, 'w', 'w'}, 5)
+		writeKeys(t, seedDB, wavmKeys)
+		Require(t, seedDB.Close())
+	}
+
+	executionDB, wasmDB, err := openDownloadedExecutionDB(stack, &nodeConfig, gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Persistent)
+	Require(t, err)
+	defer func() { Require(t, executionDB.Close()) }()
+
+	wavmIt := wasmDB.NewIterator([]byte{0x00, 'w', 'w'}, nil)
+	if wavmIt.Next() {
+		t.Fatal("wavm entries must have been purged")
+	}
+	wavmIt.Release()
+
+	got, err := rawdb.ReadWavmSerializeVersion(wasmDB)
+	Require(t, err)
+	if got != WavmSerializeVersion {
+		t.Fatalf("expected version %d after purge, got %d", WavmSerializeVersion, got)
+	}
+
+	// Centerpiece: RebuildingPositionKey must NOT be set to RebuildingDone.
+	has, err := wasmDB.Has(gethexec.RebuildingPositionKey)
+	Require(t, err)
+	if has {
+		stored, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDB, gethexec.RebuildingPositionKey)
+		Require(t, err)
+		t.Fatalf("RebuildingPositionKey must not be set after a purge; openDownloadedExecutionDB stamped %x", stored)
+	}
+}
+
+// Fresh snapshot (no purge): the RebuildingDone stamp still fires.
+func TestOpenDownloadedExecutionDBStampsWhenNoPurge(t *testing.T) {
+	t.Parallel()
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+	defer stack.Close()
+
+	nodeConfig := config.NodeConfigDefault
+	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme
+	nodeConfig.Chain.ID = 42161
+
+	executionDB, wasmDB, err := openDownloadedExecutionDB(stack, &nodeConfig, gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), &nodeConfig.Persistent)
+	Require(t, err)
+	defer func() { Require(t, executionDB.Close()) }()
+
+	stored, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDB, gethexec.RebuildingPositionKey)
+	Require(t, err)
+	if stored != gethexec.RebuildingDone {
+		t.Fatalf("expected RebuildingDone stamp on fresh open, got %x", stored)
+	}
+}
+
+// After a wavm purge, RebuildingPositionKey must be cleared so
+// rebuildLocalWasm restarts recovery (a leftover "done" would skip it).
+func TestValidateOrUpgradeWavmResetsRebuildingPositionAfterPurge(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithOptions("wasm", node.DatabaseOptions{MetricsNamespace: "wasm/", Cache: config.NodeConfigDefault.Execution.Caching.DatabaseCache, Handles: config.NodeConfigDefault.Persistent.Handles, NoFreezer: true})
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+
+	// Previously-completed rebuild + old-format wavm entries.
+	wavmKeys := generateKeys([]byte{0x00, 'w', 'w'}, 5)
+	writeKeys(t, db, wavmKeys)
+	Require(t, gethexec.WriteToKeyValueStore(db, gethexec.RebuildingPositionKey, gethexec.RebuildingDone))
+
+	purged, err := reconcileWavmSerializeVersion(db)
+	Require(t, err)
+	if !purged {
+		t.Fatal("missing version key + wavm entries must trigger a purge")
+	}
+	checkKeys(t, db, wavmKeys, false)
+
+	has, err := db.Has(gethexec.RebuildingPositionKey)
+	Require(t, err)
+	if has {
+		t.Fatal("RebuildingPositionKey must be deleted after a wavm purge so rebuild restarts")
+	}
+}
+
+// CI drift guard: Go and Rust constants must agree. Reads via FFI so the
+// check is robust to source-format changes.
+func TestWavmSerializeVersionMatchesRustConstant(t *testing.T) {
+	rustVersion := programs.RustWavmFormatVersion()
+	if rustVersion != WavmSerializeVersion {
+		t.Fatalf("WavmSerializeVersion drift: Go=%d, Rust=%d. Bump both together.", WavmSerializeVersion, rustVersion)
 	}
 }
 
@@ -1024,7 +1613,7 @@ func TestCheckAndDownloadDBNoSnapshot(t *testing.T) {
 	require.False(t, downloaded)
 }
 
-func getInitHelper(t *testing.T, ownerAdress string, chainID uint64, emptyState bool, importFile, genesisJsonFile string, useDevInit, skipInitDataReader bool) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, ethdb.Database, func(), error) {
+func getInitHelper(t *testing.T, ownerAddress string, chainID uint64, emptyState bool, importFile, genesisJsonFile, inlineGenesisJson string, useDevInit, skipInitDataReader bool) (statetransfer.InitDataReader, *params.ChainConfig, *params.ArbOSInit, ethdb.Database, func(), error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1050,12 +1639,15 @@ func getInitHelper(t *testing.T, ownerAdress string, chainID uint64, emptyState 
 	if genesisJsonFile != "" {
 		nodeConfig.Init.GenesisJsonFile = genesisJsonFile
 	}
+	if inlineGenesisJson != "" {
+		nodeConfig.Init.GenesisJson = inlineGenesisJson
+	}
 
 	if useDevInit {
 		nodeConfig.Init.DevInit = true
 	}
 
-	nodeConfig.Init.DevInitAddress = ownerAdress
+	nodeConfig.Init.DevInitAddress = ownerAddress
 	nodeConfig.Init.ValidateGenesisAssertion = false
 
 	l1Client := ethclient.NewClient(stack.Attach())
@@ -1078,6 +1670,7 @@ func getInitHelper(t *testing.T, ownerAdress string, chainID uint64, emptyState 
 		nodeConfig.Init.Empty = false
 		nodeConfig.Init.ImportFile = ""
 		nodeConfig.Init.GenesisJsonFile = ""
+		nodeConfig.Init.GenesisJson = ""
 		nodeConfig.Init.DevInit = false
 	}
 
@@ -1091,9 +1684,9 @@ func getInitHelper(t *testing.T, ownerAdress string, chainID uint64, emptyState 
 func TestSimpleGetInit(t *testing.T) {
 	t.Parallel()
 
-	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	ownerAddress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	expectedChainConfig := chaininfo.ArbitrumDevTestChainConfig()
-	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, "", "", true, false)
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAddress, expectedChainConfig.ChainID.Uint64(), false, "", "", "", true, false)
 	Require(t, err)
 	defer cleanup()
 
@@ -1114,7 +1707,7 @@ func TestSimpleGetInit(t *testing.T) {
 	chainOwner, err := initDataReader.GetChainOwner()
 	Require(t, err)
 
-	expectedOwnerAddress := common.HexToAddress(ownerAdress)
+	expectedOwnerAddress := common.HexToAddress(ownerAddress)
 	if chainOwner != expectedOwnerAddress {
 		t.Fatalf("chainOwner address %s does not match expected address: %s", chainOwner.Hex(), expectedOwnerAddress.Hex())
 	}
@@ -1135,9 +1728,9 @@ func TestSimpleGetInit(t *testing.T) {
 func TestGetInitSkipInitDataReader(t *testing.T) {
 	t.Parallel()
 
-	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	ownerAddress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	expectedChainConfig := chaininfo.ArbitrumRollupGoerliTestnetChainConfig()
-	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, "", "", true, true)
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAddress, expectedChainConfig.ChainID.Uint64(), false, "", "", "", true, true)
 	Require(t, err)
 	defer cleanup()
 
@@ -1159,9 +1752,9 @@ func TestGetInitSkipInitDataReader(t *testing.T) {
 func TestGetInitWithEmpty(t *testing.T) {
 	t.Parallel()
 
-	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	ownerAddress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	expectedChainConfig := chaininfo.ArbitrumOneChainConfig()
-	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), true, "", "", false, false)
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAddress, expectedChainConfig.ChainID.Uint64(), true, "", "", "", false, false)
 	Require(t, err)
 	defer cleanup()
 
@@ -1206,10 +1799,10 @@ func TestGetInitWithEmpty(t *testing.T) {
 func TestGetInitWithImportFile(t *testing.T) {
 	t.Parallel()
 
-	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	ownerAddress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	importFile := "testdata/initFileContent.json"
 	expectedChainConfig := chaininfo.ArbitrumDevTestAnyTrustChainConfig()
-	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, importFile, "", false, false)
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAddress, expectedChainConfig.ChainID.Uint64(), false, importFile, "", "", false, false)
 	Require(t, err)
 	defer cleanup()
 
@@ -1251,10 +1844,10 @@ func TestGetInitWithImportFile(t *testing.T) {
 func TestGetInitWithGenesis(t *testing.T) {
 	t.Parallel()
 
-	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	ownerAddress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	genesisJsonFile := "testdata/testGenesis.json"
 	expectedChainIdNum := uint64(3503995874084926)
-	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAdress, expectedChainIdNum, false, "", genesisJsonFile, false, false)
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAddress, expectedChainIdNum, false, "", genesisJsonFile, "", false, false)
 	Require(t, err)
 	defer cleanup()
 
@@ -1315,13 +1908,317 @@ func TestGetInitWithGenesis(t *testing.T) {
 	Require(t, err)
 }
 
+func makeInlineTestGenesis(t *testing.T, chainId uint64, cancunTime uint64) string {
+	t.Helper()
+	chainConfigSerialized, err := json.Marshal(params.ChainConfig{
+		ChainID:    new(big.Int).SetUint64(chainId),
+		CancunTime: &cancunTime,
+	})
+	Require(t, err)
+	gen := core.Genesis{
+		SerializedChainConfig: string(chainConfigSerialized),
+		GasLimit:              0,
+		Difficulty:            big.NewInt(0),
+		Alloc:                 core.GenesisAlloc{},
+	}
+	genesisBytes, err := gen.MarshalJSON()
+	Require(t, err)
+	return string(genesisBytes)
+}
+
+func TestGetInitWithInlineGenesis(t *testing.T) {
+	t.Parallel()
+
+	ownerAddress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	genesisJson, err := os.ReadFile("testdata/testGenesis.json")
+	Require(t, err)
+	var gen core.Genesis
+	Require(t, json.Unmarshal(genesisJson, &gen))
+	expectedChainIdNum := uint64(3503995874084926)
+
+	initDataReader, chainConfig, arbOsInit, _, cleanup, err := getInitHelper(t, ownerAddress, expectedChainIdNum, false, "", "", string(genesisJson), false, false)
+	Require(t, err)
+	defer cleanup()
+
+	if chainConfig == nil {
+		t.Fatalf("Expected non nil chainConfig")
+	}
+	// The inline genesis must produce the same chain config as the same
+	// document supplied as a file (see TestGetInitWithGenesis)
+	expectedChainConfig, err := gen.GetConfig()
+	Require(t, err)
+	require.Equal(t, expectedChainConfig, chainConfig)
+
+	if arbOsInit != nil {
+		t.Fatalf("arbOsInit expected to be nil")
+	}
+	if initDataReader == nil {
+		t.Fatalf("initDataReader shouldn't be nil")
+	}
+	err = initDataReader.Close()
+	Require(t, err)
+}
+
+func TestGetInitInlineGenesisPrecedence(t *testing.T) {
+	t.Parallel()
+
+	chainId := uint64(42161)
+	inlineGenJson := makeInlineTestGenesis(t, chainId, 111)
+	fileGenJson := makeInlineTestGenesis(t, chainId, 222)
+	genesisFile := filepath.Join(t.TempDir(), "genesis.json")
+	Require(t, os.WriteFile(genesisFile, []byte(fileGenJson), 0600))
+
+	nodeConfig := config.NodeConfigDefault
+	nodeConfig.Chain.ID = chainId
+	nodeConfig.Init.GenesisJson = inlineGenJson
+	nodeConfig.Init.GenesisJsonFile = genesisFile
+
+	// default mode: the inline genesis wins over the file
+	_, chainConfig, _, err := GetInit(&nodeConfig, nil)
+	Require(t, err)
+	if *chainConfig.CancunTime != 111 {
+		t.Fatalf("expected inline genesis to win, got CancunTime %d", *chainConfig.CancunTime)
+	}
+
+	// explicit file mode overrides the precedence
+	nodeConfig.Init.GenesisMode = conf.GenesisModeFile
+	_, chainConfig, _, err = GetInit(&nodeConfig, nil)
+	Require(t, err)
+	if *chainConfig.CancunTime != 222 {
+		t.Fatalf("expected genesis file to win with genesis-mode=file, got CancunTime %d", *chainConfig.CancunTime)
+	}
+
+	// explicit inline mode
+	nodeConfig.Init.GenesisMode = conf.GenesisModeInline
+	_, chainConfig, _, err = GetInit(&nodeConfig, nil)
+	Require(t, err)
+	if *chainConfig.CancunTime != 111 {
+		t.Fatalf("expected inline genesis to win with genesis-mode=inline, got CancunTime %d", *chainConfig.CancunTime)
+	}
+
+	// no inline genesis: default mode falls back to the file
+	nodeConfig.Init.GenesisMode = conf.GenesisModeDefault
+	nodeConfig.Init.GenesisJson = ""
+	_, chainConfig, _, err = GetInit(&nodeConfig, nil)
+	Require(t, err)
+	if *chainConfig.CancunTime != 222 {
+		t.Fatalf("expected fallback to genesis file when inline genesis is absent, got CancunTime %d", *chainConfig.CancunTime)
+	}
+}
+
+func TestGetInitInlineGenesisMalformed(t *testing.T) {
+	t.Parallel()
+
+	nodeConfig := config.NodeConfigDefault
+	nodeConfig.Chain.ID = 42161
+	nodeConfig.Init.GenesisJson = `{"gasLimit":"0x0","difficulty":"0x0","alloc":{"0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E":{"balance":"not-a-number"}}}`
+
+	_, _, _, err := GetInit(&nodeConfig, nil)
+	if err == nil {
+		t.Fatal("expected malformed inline genesis to fail at init")
+	}
+}
+
+func TestGetInitInlineGenesisWrongChainId(t *testing.T) {
+	t.Parallel()
+
+	nodeConfig := config.NodeConfigDefault
+	nodeConfig.Chain.ID = 42161
+	nodeConfig.Init.GenesisJson = makeInlineTestGenesis(t, 42162, 0)
+
+	// GetInit is faithful to the init source; the mismatch against the
+	// configured chain id is caught at boot by validateConfiguredChainId
+	_, chainConfig, _, err := GetInit(&nodeConfig, nil)
+	Require(t, err)
+	if chainConfig.ChainID.Uint64() != 42162 {
+		t.Fatal("expected genesis chain id 42162, got:", chainConfig.ChainID)
+	}
+
+	err = validateConfiguredChainId(chainConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID))
+	if err == nil {
+		t.Fatal("expected error when genesis chain id does not match configured chain id")
+	}
+	if !strings.Contains(err.Error(), "but configured chain ID is") {
+		t.Fatal("expected chain id mismatch error, got:", err.Error())
+	}
+
+	Require(t, validateConfiguredChainId(chainConfig, new(big.Int).SetUint64(42162)))
+
+	if err := validateConfiguredChainId(&params.ChainConfig{}, new(big.Int).SetUint64(42161)); err == nil {
+		t.Fatal("expected error for chain config without chain id")
+	}
+}
+
+func TestGetInitInlineGenesisConflictsWithDevInit(t *testing.T) {
+	t.Parallel()
+
+	nodeConfig := config.NodeConfigDefault
+	nodeConfig.Chain.ID = 42161
+	nodeConfig.Init.GenesisJson = makeInlineTestGenesis(t, 42161, 0)
+	nodeConfig.Init.DevInit = true
+
+	_, _, _, err := GetInit(&nodeConfig, nil)
+	if err == nil {
+		t.Fatal("expected error when both dev-init and inline genesis are supplied")
+	}
+	if !strings.Contains(err.Error(), "multiple init methods supplied") {
+		t.Fatal("expected multiple init methods error, got:", err.Error())
+	}
+}
+
+func TestGetInitResolvedGenesisJsonFile(t *testing.T) {
+	t.Parallel()
+
+	chainId := uint64(42161)
+	genesisFile := filepath.Join(t.TempDir(), "genesis.json")
+	Require(t, os.WriteFile(genesisFile, []byte(makeInlineTestGenesis(t, chainId, 333)), 0600))
+
+	// default mode: the directory file resolved at config parse time is used
+	nodeConfig := config.NodeConfigDefault
+	nodeConfig.Chain.ID = chainId
+	nodeConfig.Init.SetResolvedGenesisJsonFile(genesisFile)
+	_, chainConfig, _, err := GetInit(&nodeConfig, nil)
+	Require(t, err)
+	if *chainConfig.CancunTime != 333 {
+		t.Fatalf("expected genesis from resolved directory file, got CancunTime %d", *chainConfig.CancunTime)
+	}
+
+	// explicit directory mode uses the resolved file without rescanning the directory
+	nodeConfig.Init.GenesisMode = conf.GenesisModeDirectory
+	nodeConfig.Init.GenesisJsonFileDirectory = "/nonexistent"
+	_, chainConfig, _, err = GetInit(&nodeConfig, nil)
+	Require(t, err)
+	if *chainConfig.CancunTime != 333 {
+		t.Fatalf("expected genesis-mode directory to use the resolved file, got CancunTime %d", *chainConfig.CancunTime)
+	}
+}
+
+func TestInitConfigInlineGenesisValidation(t *testing.T) {
+	gen := makeInlineTestGenesis(t, 42161, 0)
+
+	initConfig := conf.InitConfigDefault
+	initConfig.GenesisJson = gen
+	initConfig.Empty = true
+	err := initConfig.Validate()
+	if err == nil || !strings.Contains(err.Error(), "cannot be both empty") {
+		t.Fatal("expected conflict between empty and inline genesis, got:", err)
+	}
+
+	initConfig = conf.InitConfigDefault
+	initConfig.Empty = true
+	initConfig.SetResolvedGenesisJsonFile("/some/genesis.json")
+	err = initConfig.Validate()
+	if err == nil || !strings.Contains(err.Error(), "cannot be both empty") {
+		t.Fatal("expected conflict between empty and discovered genesis, got:", err)
+	}
+
+	for _, mode := range []string{conf.GenesisModeInline, conf.GenesisModeFile, conf.GenesisModeDirectory} {
+		initConfig = conf.InitConfigDefault
+		initConfig.GenesisMode = mode
+		err = initConfig.Validate()
+		if err == nil || !strings.Contains(err.Error(), "genesis-mode") {
+			t.Fatalf("expected error for genesis-mode %q without its source, got: %v", mode, err)
+		}
+	}
+
+	initConfig = conf.InitConfigDefault
+	initConfig.GenesisMode = "bogus"
+	err = initConfig.Validate()
+	if err == nil || !strings.Contains(err.Error(), "invalid value of genesis-mode") {
+		t.Fatal("expected invalid genesis-mode error, got:", err)
+	}
+
+	// mode values are case-insensitive
+	initConfig = conf.InitConfigDefault
+	initConfig.GenesisMode = "INLINE"
+	initConfig.GenesisJson = gen
+	Require(t, initConfig.Validate())
+}
+
+// TestInlineGenesisEndToEnd joins the two halves the other tests cover
+// separately: a single config file with a nested genesis-json object goes
+// through config.ParseNode and the result initializes a real database with
+// the genesis block built from the inline document.
+func TestInlineGenesisEndToEnd(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	devChainConfig := chaininfo.ArbitrumDevTestChainConfig()
+	chainConfigSerialized, err := json.Marshal(devChainConfig)
+	Require(t, err)
+	fundedAddress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	nodeCfg := map[string]interface{}{
+		"persistent":   map[string]interface{}{"chain": t.TempDir()},
+		"chain":        map[string]interface{}{"id": devChainConfig.ChainID.Uint64()},
+		"parent-chain": map[string]interface{}{"id": 1337},
+		"node":         map[string]interface{}{"parent-chain-reader": map[string]interface{}{"enable": false}},
+		"execution":    map[string]interface{}{"forwarding-target": "null"},
+		"init": map[string]interface{}{
+			"genesis-json": map[string]interface{}{
+				"gasLimit":              "0x0",
+				"difficulty":            "0x0",
+				"alloc":                 map[string]interface{}{fundedAddress: map[string]interface{}{"balance": "0x3635c9adc5dea00000"}},
+				"serializedChainConfig": string(chainConfigSerialized),
+			},
+		},
+	}
+	cfgBytes, err := json.Marshal(nodeCfg)
+	Require(t, err)
+	configFile := filepath.Join(t.TempDir(), "config.json")
+	Require(t, os.WriteFile(configFile, cfgBytes, 0600))
+
+	nodeConfig, _, err := config.ParseNode(ctx, []string{"--conf.file", configFile})
+	Require(t, err)
+
+	if nodeConfig.Init.GenesisJson == "" {
+		t.Fatal("expected the nested genesis-json object to populate Init.GenesisJson")
+	}
+	if nodeConfig.Init.Empty {
+		t.Fatal("expected inline genesis to disable the empty init default")
+	}
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stackConfig.DBEngine = rawdb.DBPebble
+	stack, err := node.New(stackConfig)
+	Require(t, err)
+	defer stack.Close()
+
+	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme
+	l1Client := ethclient.NewClient(stack.Attach())
+
+	_, _, l2BlockChain, _, err := OpenInitializeExecutionDB(
+		ctx,
+		stack,
+		nodeConfig,
+		new(big.Int).SetUint64(nodeConfig.Chain.ID),
+		gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
+		nil,
+		&nodeConfig.Persistent,
+		l1Client,
+		chaininfo.RollupAddresses{},
+	)
+	Require(t, err)
+
+	genesisBlock := l2BlockChain.Genesis()
+	if genesisBlock == nil {
+		t.Fatal("expected genesis block to be built from the inline genesis")
+	}
+	statedb, err := l2BlockChain.State()
+	Require(t, err)
+	if statedb.GetBalance(common.HexToAddress(fundedAddress)).IsZero() {
+		t.Fatal("expected the inline genesis alloc account to be funded in genesis state")
+	}
+}
+
 func TestGetInitWithChainconfigInDB(t *testing.T) {
 	t.Parallel()
 
 	// Force getInitHelper to store chainConfig to DB (similar to TestGetInitSkipInitDataReader)
-	ownerAdress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+	ownerAddress := "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
 	expectedChainConfig := chaininfo.ArbitrumRollupGoerliTestnetChainConfig()
-	initDataReader, chainConfig, arbOsInit, executionDB, cleanup, err := getInitHelper(t, ownerAdress, expectedChainConfig.ChainID.Uint64(), false, "", "", true, true)
+	initDataReader, chainConfig, arbOsInit, executionDB, cleanup, err := getInitHelper(t, ownerAddress, expectedChainConfig.ChainID.Uint64(), false, "", "", "", true, true)
 	Require(t, err)
 	defer cleanup()
 

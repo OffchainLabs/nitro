@@ -1,0 +1,16 @@
+{
+  "name": "synthetic/storage-churn-block/short",
+  "category": "heavy-blocks",
+  "scale": "short",
+  "arbos_version": 60,
+  "chain_id": 421614,
+  "corpus_version": "1.0.0",
+  "description": "Every tx is a CREATE that writes 16 storage slots. Stresses storage trie write path + intermediate state hashing.",
+  "messages": {
+    "source": "synthetic_generator",
+    "generator": "storage_churn_block",
+    "params": { "block_count": 200, "txs_per_block": 32, "sstores_per_tx": 16 }
+  },
+  "metrics": { "rolling_window_blocks": 10 },
+  "regression": { "gate": true, "tolerance_pct": 5.0, "paired_stat": "bootstrap_95ci", "bootstrap_iters": 10000 }
+}

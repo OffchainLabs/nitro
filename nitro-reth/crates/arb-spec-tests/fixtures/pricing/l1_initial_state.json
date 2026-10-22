@@ -1,0 +1,17 @@
+{
+  "name": "l1_initial_state",
+  "description": "L1 pricing slots match initial values after genesis init",
+  "setup": {
+    "arbos_version": 30,
+    "chain_id": 412346
+  },
+  "assertions": {
+    "l1_pricing": {
+      "last_update_time": 0,
+      "units_since_update": 0,
+      "l1_fees_available": "0x0",
+      "inertia": 10,
+      "per_unit_reward": 10
+    }
+  }
+}

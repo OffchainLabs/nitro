@@ -35,6 +35,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	dataposterconfig "github.com/offchainlabs/nitro/arbnode/dataposter/config"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/mel"
 	"github.com/offchainlabs/nitro/arbnode/parent"
@@ -186,23 +187,23 @@ type BatchPosterConfig struct {
 	CompressionLevel int `koanf:"compression-level" reload:"hot"`
 	// CompressionLevels defines adaptive compression based on backlog. Each entry specifies the
 	// compression level and recompression level to use when backlog >= the entry's backlog threshold.
-	CompressionLevels              CompressionLevelStepList    `koanf:"compression-levels" reload:"hot"`
-	AnyTrustRetentionPeriod        time.Duration               `koanf:"anytrust-retention-period" reload:"hot"`
-	GasRefunderAddress             string                      `koanf:"gas-refunder-address" reload:"hot"`
-	DataPoster                     dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
-	RedisUrl                       string                      `koanf:"redis-url"`
-	RedisLock                      redislock.SimpleCfg         `koanf:"redis-lock" reload:"hot"`
-	ExtraBatchGas                  uint64                      `koanf:"extra-batch-gas" reload:"hot"`
-	Post4844Blobs                  bool                        `koanf:"post-4844-blobs" reload:"hot"`
-	IgnoreBlobPrice                bool                        `koanf:"ignore-blob-price" reload:"hot"`
-	ParentChainWallet              genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
-	L1BlockBound                   string                      `koanf:"l1-block-bound" reload:"hot"`
-	L1BlockBoundBypass             time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
-	UseAccessLists                 bool                        `koanf:"use-access-lists" reload:"hot"`
-	GasEstimateBaseFeeMultipleBips arbmath.UBips               `koanf:"gas-estimate-base-fee-multiple-bips"`
-	Dangerous                      BatchPosterDangerousConfig  `koanf:"dangerous"`
-	ReorgResistanceMargin          time.Duration               `koanf:"reorg-resistance-margin" reload:"hot"`
-	CheckBatchCorrectness          bool                        `koanf:"check-batch-correctness"`
+	CompressionLevels              CompressionLevelStepList          `koanf:"compression-levels" reload:"hot"`
+	AnyTrustRetentionPeriod        time.Duration                     `koanf:"anytrust-retention-period" reload:"hot"`
+	GasRefunderAddress             string                            `koanf:"gas-refunder-address" reload:"hot"`
+	DataPoster                     dataposterconfig.DataPosterConfig `koanf:"data-poster" reload:"hot"`
+	RedisUrl                       string                            `koanf:"redis-url"`
+	RedisLock                      redislock.SimpleCfg               `koanf:"redis-lock" reload:"hot"`
+	ExtraBatchGas                  uint64                            `koanf:"extra-batch-gas" reload:"hot"`
+	Post4844Blobs                  bool                              `koanf:"post-4844-blobs" reload:"hot"`
+	IgnoreBlobPrice                bool                              `koanf:"ignore-blob-price" reload:"hot"`
+	ParentChainWallet              genericconf.WalletConfig          `koanf:"parent-chain-wallet"`
+	L1BlockBound                   string                            `koanf:"l1-block-bound" reload:"hot"`
+	L1BlockBoundBypass             time.Duration                     `koanf:"l1-block-bound-bypass" reload:"hot"`
+	UseAccessLists                 bool                              `koanf:"use-access-lists" reload:"hot"`
+	GasEstimateBaseFeeMultipleBips arbmath.UBips                     `koanf:"gas-estimate-base-fee-multiple-bips"`
+	Dangerous                      BatchPosterDangerousConfig        `koanf:"dangerous"`
+	ReorgResistanceMargin          time.Duration                     `koanf:"reorg-resistance-margin" reload:"hot"`
+	CheckBatchCorrectness          bool                              `koanf:"check-batch-correctness"`
 	// MaxEmptyBatchDelay defines how long the batch poster waits before submitting a batch
 	// that contains no new useful transactions (a “report-only” or “empty” batch). Set to 0 to disable it.
 	MaxEmptyBatchDelay         time.Duration `koanf:"max-empty-batch-delay"`
@@ -289,10 +290,10 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".check-batch-correctness", DefaultBatchPosterConfig.CheckBatchCorrectness, "setting this to true will run the batch against an inbox multiplexer and verifies that it produces the correct set of messages")
 	f.Duration(prefix+".max-empty-batch-delay", DefaultBatchPosterConfig.MaxEmptyBatchDelay, "maximum empty batch posting delay, batch poster will only be able to post an empty batch if this time period building a batch has passed; if 0, disable automatic empty batch posting")
 	f.Uint64(prefix+".delay-buffer-threshold-margin", DefaultBatchPosterConfig.DelayBufferThresholdMargin, "the number of blocks to post the batch before reaching the delay buffer threshold")
-	f.String(prefix+".parent-chain-eip7623", DefaultBatchPosterConfig.ParentChainEip7623, "if parent chain uses EIP7623 (\"yes\", \"no\", \"auto\")")
+	f.String(prefix+".parent-chain-eip7623", DefaultBatchPosterConfig.ParentChainEip7623, "DEPRECATED: if parent chain uses EIP7623 (\"yes\", \"no\", \"auto\"); the dynamic price comparison this feeds is deprecated, use ignore-blob-price instead")
 	f.Bool(prefix+".delay-buffer-always-updatable", DefaultBatchPosterConfig.DelayBufferAlwaysUpdatable, "always treat delay buffer as updatable")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
-	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig, dataposter.DataPosterUsageBatchPoster)
+	dataposterconfig.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposterconfig.DefaultDataPosterConfig, dataposterconfig.DataPosterUsageBatchPoster)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
 	DangerousBatchPosterConfigAddOptions(prefix+".dangerous", f)
 }
@@ -316,8 +317,8 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	GasRefunderAddress:             "",
 	ExtraBatchGas:                  50_000,
 	Post4844Blobs:                  false,
-	IgnoreBlobPrice:                false,
-	DataPoster:                     dataposter.DefaultDataPosterConfig,
+	IgnoreBlobPrice:                true,
+	DataPoster:                     dataposterconfig.DefaultDataPosterConfig,
 	ParentChainWallet:              DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:                   "",
 	L1BlockBoundBypass:             time.Hour,
@@ -357,7 +358,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	ExtraBatchGas:                      10_000,
 	Post4844Blobs:                      false,
 	IgnoreBlobPrice:                    false,
-	DataPoster:                         dataposter.TestDataPosterConfig,
+	DataPoster:                         dataposterconfig.TestDataPosterConfig,
 	ParentChainWallet:                  DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:                       "",
 	L1BlockBoundBypass:                 time.Hour,
@@ -408,6 +409,9 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		checkEip7623 = true
 		useEip7623 = false
 	}
+	if opts.Config().Post4844Blobs && !opts.Config().IgnoreBlobPrice {
+		log.Warn("the dynamic price calculation and fallback to calldata is deprecated post-Amsterdam and may not function correctly if used; set --node.batch-poster.ignore-blob-price=true to always post blobs when --node.batch-poster.post-4844-blobs is enabled and the parent chain supports them")
+	}
 	seqInboxABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
 	if err != nil {
 		return nil, err
@@ -449,7 +453,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	if err != nil {
 		return nil, err
 	}
-	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
+	dataPosterConfigFetcher := func() *dataposterconfig.DataPosterConfig {
 		dpCfg := opts.Config().DataPoster
 		dpCfg.Post4844Blobs = opts.Config().Post4844Blobs
 		return &dpCfg
@@ -1285,11 +1289,23 @@ type StateOverride map[common.Address]OverrideAccount
 func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams, blockHex string) (uint64, error) {
 	var gas hexutil.Uint64
 	err := client.CallContext(ctx, &gas, "eth_estimateGas", params, blockHex)
-	// If eth_estimateGas fails due to a revert, we try again with eth_call to get a detailed error.
-	if err != nil && headerreader.IsExecutionReverted(err) {
-		err = client.CallContext(ctx, nil, "eth_call", params, blockHex)
+	estimate, err := util.CheckedGasEstimate(uint64(gas), err)
+	if err != nil {
+		return 0, detailedEstimateGasError(ctx, client, err, params, blockHex)
 	}
-	return uint64(gas), err
+	return estimate, nil
+}
+
+// detailedEstimateGasError enriches a reverted eth_estimateGas error with the
+// reason reported by eth_call. It always returns a non-nil error.
+func detailedEstimateGasError(ctx context.Context, client rpc.ClientInterface, estimateErr error, callArgs ...interface{}) error {
+	if !headerreader.IsExecutionReverted(estimateErr) {
+		return estimateErr
+	}
+	if callErr := client.CallContext(ctx, nil, "eth_call", callArgs...); callErr != nil {
+		return fmt.Errorf("%w (eth_call reported: %w)", estimateErr, callErr)
+	}
+	return estimateErr
 }
 
 func (b *BatchPoster) estimateGasSimple(
@@ -1383,15 +1399,14 @@ func (b *BatchPoster) estimateGasForFutureTx(
 	}
 	var gas hexutil.Uint64
 	err = rawRpcClient.CallContext(ctx, &gas, "eth_estimateGas", gasParams, rpc.PendingBlockNumber, stateOverride)
+	estimate, err := util.CheckedGasEstimate(uint64(gas), err)
 	if err != nil {
 		sequencerMessageHeader := sequencerMessage
 		if len(sequencerMessageHeader) > 33 {
 			sequencerMessageHeader = sequencerMessageHeader[:33]
 		}
 		// If eth_estimateGas fails due to a revert, we try again with eth_call to get a detailed error.
-		if headerreader.IsExecutionReverted(err) {
-			err = rawRpcClient.CallContext(ctx, nil, "eth_call", gasParams, rpc.PendingBlockNumber, stateOverride)
-		}
+		err = detailedEstimateGasError(ctx, rawRpcClient, err, gasParams, rpc.PendingBlockNumber, stateOverride)
 		log.Warn(
 			"error estimating gas for batch",
 			"err", err,
@@ -1402,7 +1417,7 @@ func (b *BatchPoster) estimateGasForFutureTx(
 		)
 		return 0, fmt.Errorf("error estimating gas for batch: %w", err)
 	}
-	return uint64(gas) + config.ExtraBatchGas, nil
+	return estimate + config.ExtraBatchGas, nil
 }
 
 const ethPosBlockTime = 12 * time.Second
@@ -1413,10 +1428,12 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 	if b.batchReverted.Load() {
 		return false, fmt.Errorf("batch was reverted, not posting any more batches")
 	}
-	nonce, batchPositionBytes, err := b.dataPoster.GetNextNonceAndMeta(ctx)
+	nonceAndMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
 	if err != nil {
 		return false, err
 	}
+	nonce := nonceAndMeta.Nonce
+	batchPositionBytes := nonceAndMeta.Meta
 	var batchPosition batchPosterPosition
 	if err := rlp.DecodeBytes(batchPositionBytes, &batchPosition); err != nil {
 		return false, fmt.Errorf("decoding batch position: %w", err)
@@ -1599,6 +1616,7 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 	}
 
+	var l1BoundDisabledCount uint64
 	for b.building.msgCount < msgCount {
 		msg, err := b.streamer.GetMessage(b.building.msgCount)
 		if err != nil {
@@ -1606,14 +1624,17 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			break
 		}
 		if msg.Message.Header.BlockNumber < l1BoundMinBlockNumberWithBypass || msg.Message.Header.Timestamp < l1BoundMinTimestampWithBypass {
-			log.Error(
-				"disabling L1 bound as batch posting message is close to the maximum delay",
-				"blockNumber", msg.Message.Header.BlockNumber,
-				"l1BoundMinBlockNumberWithBypass", l1BoundMinBlockNumberWithBypass,
-				"timestamp", msg.Message.Header.Timestamp,
-				"l1BoundMinTimestampWithBypass", l1BoundMinTimestampWithBypass,
-				"l1BlockBoundBypass", config.L1BlockBoundBypass,
-			)
+			l1BoundDisabledCount++
+			if l1BoundDisabledCount == 1 {
+				log.Error(
+					"disabling L1 bound as batch posting message is close to the maximum delay",
+					"blockNumber", msg.Message.Header.BlockNumber,
+					"l1BoundMinBlockNumberWithBypass", l1BoundMinBlockNumberWithBypass,
+					"timestamp", msg.Message.Header.Timestamp,
+					"l1BoundMinTimestampWithBypass", l1BoundMinTimestampWithBypass,
+					"l1BlockBoundBypass", config.L1BlockBoundBypass,
+				)
+			}
 			l1BoundMaxBlockNumber = math.MaxUint64
 			l1BoundMaxTimestamp = math.MaxUint64
 		}
@@ -1669,6 +1690,9 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			b.building.firstNonDelayedMsg = msg
 		}
 		b.building.msgCount++
+	}
+	if l1BoundDisabledCount > 1 {
+		log.Error("L1 bound was disabled for additional messages", "count", l1BoundDisabledCount-1)
 	}
 
 	feeEscalationBaseTime := time.Now()
@@ -1756,11 +1780,12 @@ func (b *BatchPoster) MaybePostSequencerBatch(ctx context.Context) (bool, error)
 			return false, errAttemptLockFailed
 		}
 
-		gotNonce, gotMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
+		gotNonceAndMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
 		if err != nil {
 			batchPosterDAFailureCounter.Inc(1)
 			return false, err
 		}
+		gotNonce, gotMeta := gotNonceAndMeta.Nonce, gotNonceAndMeta.Meta
 		if nonce != gotNonce {
 			batchPosterDAFailureCounter.Inc(1)
 			return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)

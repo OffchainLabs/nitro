@@ -5,6 +5,7 @@ package genericconf
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -22,6 +23,9 @@ var HTTPClientConfigDefault = HTTPClientConfig{
 func (c *HTTPClientConfig) Validate() error {
 	if c.URL == "" {
 		return errors.New("url is required")
+	}
+	if c.Timeout <= 0 {
+		return fmt.Errorf("timeout must be positive, got %s", c.Timeout)
 	}
 	return nil
 }

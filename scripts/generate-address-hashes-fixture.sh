@@ -9,9 +9,12 @@
 # with the production algorithm, selected by --hashing-scheme:
 #   sha256-rawbytesinput (default): sha256(salt_16_raw_bytes || addr_20_raw_bytes)
 #   sha256-stringinput            : sha256(salt_uuid_string + "::0x" + lowercase_addr_hex)
+#   plaintext                     : the lowercase address hex itself, unhashed
+#                                   (the salt is written but ignored by the node)
 # (mirrors execution/gethexec/addressfilter/hash_store.go: HashStringInputWithPrefix /
 # GetHashStringInputPrefix / HashRawBytesInput). The remainder is filler: zero-padded sequential
-# counters formatted as 64-hex strings ("0x000...001", "0x000...002", ...),
+# counters formatted as hex strings of the scheme's entry width — 64 hex chars
+# for the sha256 schemes, 40 for plaintext ("0x000...001", "0x000...002", ...),
 # emitted in parallel by 8 awk workers writing to per-chunk temp files,
 # then concatenated.
 #
@@ -75,8 +78,9 @@ Options:
                           reproducible fixtures). Filler is always
                           counter-based and reproducible regardless.
       --hashing-scheme S  Hashing scheme for real hashes: sha256-rawbytesinput
-                          (default) or sha256-stringinput. Written to the
-                          file's hashing_scheme field.
+                          (default), sha256-stringinput or plaintext (entries
+                          are unhashed addresses; the salt is ignored by the
+                          node). Written to the file's hashing_scheme field.
       --jobs N            Number of parallel filler workers. Default: 8.
   -h, --help              Show this help.
 EOF
@@ -184,8 +188,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$HASHING_SCHEME" in
-    sha256-stringinput|sha256-rawbytesinput) ;;
-    *) die "invalid --hashing-scheme: $HASHING_SCHEME (expected sha256-stringinput or sha256-rawbytesinput)" ;;
+    sha256-stringinput|sha256-rawbytesinput) HEX_WIDTH=64 ;;
+    plaintext) HEX_WIDTH=40 ;;
+    *) die "invalid --hashing-scheme: $HASHING_SCHEME (expected sha256-stringinput, sha256-rawbytesinput or plaintext)" ;;
 esac
 
 detect_tools
@@ -267,34 +272,36 @@ fi
 HASH_PREFIX="${SALT}::0x"
 
 # ---------------------------------------------------------------------------
-# Compute real hashes (mirrors hashAddress in hash_store.go: string-input or
-# raw-bytes path, selected by --hashing-scheme)
+# Compute real hashes (mirrors hashAddress in hash_store.go: string-input,
+# raw-bytes or plaintext path, selected by --hashing-scheme)
 # ---------------------------------------------------------------------------
 REAL_HASHES=()
 for addr in "${REAL_ADDRESSES[@]}"; do
     addr_hex="${addr:2}"
-    if [[ "$HASHING_SCHEME" == "sha256-rawbytesinput" ]]; then
-        h=$(hash_raw_bytes "$SALT" "$addr_hex")
-    else
-        h=$(printf '%s%s' "$HASH_PREFIX" "$addr_hex" | sha256_hex)
-    fi
+    case "$HASHING_SCHEME" in
+        sha256-rawbytesinput) h=$(hash_raw_bytes "$SALT" "$addr_hex") ;;
+        plaintext)            h="$addr_hex" ;;
+        *)                    h=$(printf '%s%s' "$HASH_PREFIX" "$addr_hex" | sha256_hex) ;;
+    esac
     REAL_HASHES+=("$h")
 done
 
 # ---------------------------------------------------------------------------
 # Filler count from byte arithmetic.
 #
-# Layout (no whitespace between entries):
+# Layout (no whitespace between entries; W = HEX_WIDTH, 64 or 40):
 #   header        210 + len(scheme) bytes  ({"id":"<36>","extract_uuid":"<36>","salt":"<36>","issued_at":"<20>","hashing_scheme":"<scheme>","hashes":[)
-#   each non-final hash   69 bytes  ("0x<64hex>",)
-#   final hash            68 bytes  ("0x<64hex>")
-#   footer                 2 bytes  (]})
+#   each non-final entry  W+5 bytes  ("0x<Whex>",)
+#   final entry           W+4 bytes  ("0x<Whex>")
+#   footer                  2 bytes  (]})
 #
-#   total = HEADER_BYTES + 69*(N-1) + 68 + 2 = (HEADER_BYTES + 1) + 69*N
-# (HEADER_BYTES is 228 for sha256-stringinput, 230 for sha256-rawbytesinput.)
+#   total = HEADER_BYTES + (W+5)*(N-1) + (W+4) + 2 = (HEADER_BYTES + 1) + (W+5)*N
+# (HEADER_BYTES is 228 for sha256-stringinput, 230 for sha256-rawbytesinput,
+# 219 for plaintext.)
 # ---------------------------------------------------------------------------
 HEADER_BYTES=$(( 210 + ${#HASHING_SCHEME} ))
-TOTAL_HASHES=$(( (TARGET_BYTES - (HEADER_BYTES + 1)) / 69 ))
+ENTRY_BYTES=$(( HEX_WIDTH + 5 ))
+TOTAL_HASHES=$(( (TARGET_BYTES - (HEADER_BYTES + 1)) / ENTRY_BYTES ))
 FILLER_COUNT=$(( TOTAL_HASHES - REAL_COUNT ))
 
 if (( FILLER_COUNT < 1 )); then
@@ -333,8 +340,8 @@ for (( k=0; k<JOBS; k++ )); do
         count=$PER_CHUNK
     fi
     chunk_file=$(printf '%s/chunk.%03d' "$TMPDIR_RUN" "$k")
-    awk -v start="$next_start" -v n="$count" '
-        BEGIN { for (i = 0; i < n; i++) printf "\"0x%064x\",", start + i }
+    awk -v start="$next_start" -v n="$count" -v w="$HEX_WIDTH" '
+        BEGIN { fmt = "\"0x%0" w "x\","; for (i = 0; i < n; i++) printf fmt, start + i }
     ' > "$chunk_file" &
     PIDS+=("$!")
     next_start=$(( next_start + count ))
@@ -374,7 +381,7 @@ mkdir -p "$(dirname "$OUT_PATH")"
         cat "$chunk_file"
     done
 
-    printf '"0x%064x"' "$LAST_COUNTER"
+    printf '"0x%0'"$HEX_WIDTH"'x"' "$LAST_COUNTER"
     printf ']}'
 } > "$OUT_PATH"
 
@@ -382,7 +389,7 @@ mkdir -p "$(dirname "$OUT_PATH")"
 # Summary
 # ---------------------------------------------------------------------------
 ACTUAL_SIZE=$(file_size "$OUT_PATH")
-EXPECTED_SIZE=$(( (HEADER_BYTES + 1) + 69 * TOTAL_HASHES ))
+EXPECTED_SIZE=$(( (HEADER_BYTES + 1) + ENTRY_BYTES * TOTAL_HASHES ))
 
 printf '\n'
 printf 'wrote: %s\n' "$OUT_PATH"

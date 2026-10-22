@@ -34,7 +34,7 @@ func NewValidator(l1Client *ethclient.Client, validatorAddr common.Address) *Val
 // GenerateReadPreimageProof creates a ReadPreimage proof for ReferenceDA
 // The proof enhancer will prepend the standardized header [certKeccak256, offset, certSize, certificate]
 // So we only need to return the custom data: [Version(1), PreimageSize(8), PreimageData]
-func (v *Validator) generateReadPreimageProofInternal(ctx context.Context, offset uint64, certificate []byte) ([]byte, error) {
+func (v *Validator) generateReadPreimageProofInternal(_ctx context.Context, _offset uint64, certificate []byte) ([]byte, error) {
 	// Deserialize certificate to extract data hash
 	cert, err := Deserialize(certificate)
 	if err != nil {

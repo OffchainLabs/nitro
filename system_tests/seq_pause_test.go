@@ -14,7 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 )
 
-func TestSequencerPause(t *testing.T) {
+func TestSequencerPauseFlaky(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

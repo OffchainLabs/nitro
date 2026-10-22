@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,6 +37,13 @@ import (
 
 var (
 	isActiveSequencer = metrics.NewRegisteredGauge("arb/sequencer/active", nil)
+	// isLiveSequencer is 1 while this sequencer's liveliness key is published to
+	// Redis and not released, i.e. it is a candidate for the chosen lockout.
+	isLiveSequencer = metrics.NewRegisteredGauge("arb/sequencer/live", nil)
+	// sequencerPriority is this sequencer's zero-based rank in the coordinator
+	// priorities list (0 is the highest priority), or -1 if it isn't listed.
+	// Unrelated to transaction priority (arb/sequencer/pga/tx/priority).
+	sequencerPriority = metrics.NewRegisteredGauge("arb/sequencer/priority", nil)
 )
 
 type SeqCoordinator struct {
@@ -385,9 +393,14 @@ func (c *SeqCoordinator) acquireLockoutAndWriteMessage(ctx context.Context, msgC
 	}
 	if setWantsLockout {
 		c.reportedWantsLockout = true
+		isLiveSequencer.Update(1)
 	}
 	isActiveSequencer.Update(1)
-	atomicTimeWrite(&c.lockoutUntil, lockoutUntil.Add(-c.config.LockoutSpare))
+	activeUntil := lockoutUntil.Add(-c.config.LockoutSpare)
+	atomicTimeWrite(&c.lockoutUntil, activeUntil)
+	if c.sequencer != nil {
+		c.sequencer.SetActiveUntil(activeUntil)
+	}
 	return nil
 }
 
@@ -439,6 +452,7 @@ func (c *SeqCoordinator) wantsLockoutUpdateWithMutex(ctx context.Context, client
 		return fmt.Errorf("failed to update wants lockout key in redis: %w", err)
 	}
 	c.reportedWantsLockout = true
+	isLiveSequencer.Update(1)
 	return nil
 }
 
@@ -452,6 +466,9 @@ func (c *SeqCoordinator) CurrentChosenSequencer(ctx context.Context) (string, er
 
 func (c *SeqCoordinator) chosenOneRelease(ctx context.Context) error {
 	atomicTimeWrite(&c.lockoutUntil, time.Time{})
+	if c.sequencer != nil {
+		c.sequencer.SetActiveUntil(time.Time{})
+	}
 	isActiveSequencer.Update(0)
 	releaseErr := c.RedisCoordinator().Client.Watch(ctx, func(tx *redis.Tx) error {
 		current, err := tx.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
@@ -503,6 +520,7 @@ func (c *SeqCoordinator) wantsLockoutRelease(ctx context.Context) error {
 		}
 	}
 	c.reportedWantsLockout = false
+	isLiveSequencer.Update(0)
 	return nil
 }
 
@@ -642,8 +660,16 @@ func (c *SeqCoordinator) blockMetadataAt(ctx context.Context, pos arbutil.Messag
 	return common.BlockMetadata(blockMetadataStr), nil
 }
 
+// updatePriorityMetric reports this sequencer's zero-based rank in the given
+// coordinator priorities list, or -1 if it isn't listed — including when the
+// list is unset or couldn't be read this tick (pass nil in that case).
+func (c *SeqCoordinator) updatePriorityMetric(priorities []string) {
+	sequencerPriority.Update(int64(slices.Index(priorities, c.config.Url())))
+}
+
 func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
-	chosenSeq, err := c.RedisCoordinator().RecommendSequencerWantingLockout(ctx)
+	chosenSeq, priorities, err := c.RedisCoordinator().RecommendSequencerWantingLockoutAndPriorities(ctx)
+	c.updatePriorityMetric(priorities)
 	if err != nil {
 		log.Warn("coordinator failed finding sequencer wanting lockout", "err", err)
 		return c.retryAfterRedisError(), nil
@@ -830,9 +856,9 @@ func (c *SeqCoordinator) update(ctx context.Context) (time.Duration, error) {
 			}
 			log.Info("caught chosen-coordinator lock", "myUrl", c.config.Url())
 			if c.delayedSequencer != nil {
-				err = c.delayedSequencer.ForceSequenceDelayed(ctx)
+				err = c.delayedSequencer.ForceEnqueue(ctx)
 				if err != nil {
-					log.Warn("failed sequencing delayed messages after catching lock", "err", err)
+					log.Warn("failed enqueueing delayed messages after catching lock", "err", err)
 				}
 			}
 			// This should be redundant now that even non-primary sequencers broadcast over the feed,

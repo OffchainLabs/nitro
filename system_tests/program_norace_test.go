@@ -107,11 +107,13 @@ func validateBlockRange(
 }
 
 func TestProgramEvmData(t *testing.T) {
-	testEvmData(t, true)
+	testProgramRecorderModes(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testEvmData(t, true, recorderOpt)
+	})
 }
 
-func testEvmData(t *testing.T, jit bool) {
-	builder, auth, cleanup := setupProgramTest(t, jit)
+func testEvmData(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) {
+	builder, auth, cleanup := setupProgramTest(t, jit, builderOpts...)
 	builder.WithPrestateTracerChecks = true
 	ctx := builder.ctx
 	l2info := builder.L2Info

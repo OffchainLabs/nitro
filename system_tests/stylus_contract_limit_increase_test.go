@@ -123,6 +123,12 @@ func deployAndActivateFragmentedContract(
 // Validation Tests
 
 func TestFragmentedContractValidation(t *testing.T) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testFragmentedContractValidation(t, recorderOpt)
+	})
+}
+
+func testFragmentedContractValidation(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	tests := []struct {
 		name string
 		cfg  deployConfig
@@ -198,10 +204,12 @@ func TestFragmentedContractValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+			builderOpts := append([]func(*NodeBuilder){}, builderOpts...)
+			builderOpts = append(builderOpts, func(b *NodeBuilder) {
 				b.WithExtraArchs(allWasmTargets)
 				b.WithArbOSVersion(params.ArbosVersion_StylusContractLimit)
 			})
+			builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 			defer cleanup()
 
 			// If testing 0 fragments, readFragmentedContractFile returns empty sourceWasm,
@@ -213,10 +221,17 @@ func TestFragmentedContractValidation(t *testing.T) {
 }
 
 func TestFragmentActivationChargesPerFragmentCodeRead(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testFragmentActivationChargesPerFragmentCodeRead(t, recorderOpt)
+	})
+}
+
+func testFragmentActivationChargesPerFragmentCodeRead(t *testing.T, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithExtraArchs(allWasmTargets)
 		b.WithArbOSVersion(params.ArbosVersion_StylusContractLimit)
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	defer cleanup()
 
 	file := rustFile("storage")
@@ -248,10 +263,17 @@ func TestFragmentActivationChargesPerFragmentCodeRead(t *testing.T) {
 // Specific Edge Case Tests
 
 func TestThatWeCantActivateStylusFragmentContract(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testThatWeCantActivateStylusFragmentContract(t, recorderOpt)
+	})
+}
+
+func testThatWeCantActivateStylusFragmentContract(t *testing.T, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithExtraArchs(allWasmTargets)
 		b.WithArbOSVersion(params.ArbosVersion_StylusContractLimit)
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	defer cleanup()
 
 	file := rustFile("storage")
@@ -270,11 +292,18 @@ func TestThatWeCantActivateStylusFragmentContract(t *testing.T) {
 }
 
 func TestDeployStylusRootContractGreaterThanMaxCodeSize(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testDeployStylusRootContractGreaterThanMaxCodeSize(t, recorderOpt)
+	})
+}
+
+func testDeployStylusRootContractGreaterThanMaxCodeSize(t *testing.T, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithExtraArchs(allWasmTargets)
 		b.WithArbOSVersion(params.ArbosVersion_StylusContractLimit)
 		b.chainConfig.ArbitrumChainParams.MaxCodeSize = 2500
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	defer cleanup()
 
 	// 1. Classic contract fail
@@ -291,10 +320,17 @@ func TestDeployStylusRootContractGreaterThanMaxCodeSize(t *testing.T) {
 // ArbOwner Limit Modification Tests
 
 func TestCantActivateRootContractBiggerThanMaxWasmSize(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testCantActivateRootContractBiggerThanMaxWasmSize(t, recorderOpt)
+	})
+}
+
+func testCantActivateRootContractBiggerThanMaxWasmSize(t *testing.T, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithExtraArchs(allWasmTargets)
 		b.WithArbOSVersion(params.ArbosVersion_StylusContractLimit)
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	defer cleanup()
 
 	// Deploy manually to inject custom logic before activation
@@ -334,10 +370,17 @@ func TestCantActivateRootContractBiggerThanMaxWasmSize(t *testing.T) {
 }
 
 func TestArbOwnerModifyingMaxFragmentCount(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testArbOwnerModifyingMaxFragmentCount(t, recorderOpt)
+	})
+}
+
+func testArbOwnerModifyingMaxFragmentCount(t *testing.T, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithExtraArchs(allWasmTargets)
 		b.WithArbOSVersion(params.ArbosVersion_StylusContractLimit)
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	defer cleanup()
 
 	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(types.ArbOwnerPublicAddress, builder.L2.Client)
@@ -373,10 +416,17 @@ func TestArbOwnerModifyingMaxFragmentCount(t *testing.T) {
 }
 
 func TestArbOwnerPublicReturnsCorrectMaxFragmentCount(t *testing.T) {
-	builder, _, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testArbOwnerPublicReturnsCorrectMaxFragmentCount(t, recorderOpt)
+	})
+}
+
+func testArbOwnerPublicReturnsCorrectMaxFragmentCount(t *testing.T, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithExtraArchs(allWasmTargets)
 		b.WithArbOSVersion(params.ArbosVersion_StylusContractLimit)
 	})
+	builder, _, cleanup := setupProgramTest(t, true, builderOpts...)
 	defer cleanup()
 
 	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(types.ArbOwnerPublicAddress, builder.L2.Client)
@@ -393,13 +443,14 @@ func TestArbOwnerPublicReturnsCorrectMaxFragmentCount(t *testing.T) {
 
 type limitSetter func(t *testing.T, ctx context.Context, auth *bind.TransactOpts, client *ethclient.Client)
 
-func runRebuildWasmStoreTest(t *testing.T, setLimit limitSetter) {
+func runRebuildWasmStoreTest(t *testing.T, setLimit limitSetter, builderOpts ...func(*NodeBuilder)) {
 	databaseEngine := rawdb.DBLeveldb
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithExtraArchs(allWasmTargets)
 		b.WithArbOSVersion(params.ArbosVersion_StylusContractLimit)
 		b.WithDatabase(databaseEngine)
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	ctx := builder.ctx
 	defer cleanup()
 
@@ -435,7 +486,7 @@ func runRebuildWasmStoreTest(t *testing.T, setLimit limitSetter) {
 	require.Equal(t, val, common.BytesToHash(result))
 
 	// Verify Wasm Store
-	wasmDb := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDb := nodeB.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	checkWasmStoreContent(t, wasmDb, builder.execConfig.StylusTarget.WasmTargets(), 1)
 
 	// Rebuild Test: Close, Delete Wasm, Reopen, Rebuild
@@ -449,7 +500,7 @@ func runRebuildWasmStoreTest(t *testing.T, setLimit limitSetter) {
 	nodeB, cleanupB = builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
 
 	// Verify empty before rebuild
-	wasmDbAfterDelete := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDbAfterDelete := nodeB.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	storeMapAfterDelete, err := createMapFromDb(wasmDbAfterDelete)
 	Require(t, err)
 	require.Empty(t, storeMapAfterDelete)
@@ -459,18 +510,19 @@ func runRebuildWasmStoreTest(t *testing.T, setLimit limitSetter) {
 	bc := nodeB.ExecNode.Backend.ArbInterface().BlockChain()
 	Require(t, gethexec.RebuildWasmStore(ctx, wasmDbAfterDelete, nodeB.ExecNode.ExecutionDB, execConfig.RPC.MaxRecreateStateDepth, &execConfig.StylusTarget, bc, common.Hash{}, bc.CurrentBlock().Hash()))
 
-	wasmDbAfterRebuild := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmDbAfterRebuild := nodeB.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	checkWasmStoreContent(t, wasmDbAfterRebuild, builder.execConfig.StylusTarget.WasmTargets(), 1)
 	cleanupB()
 }
 
-func runExecuteWasmTest(t *testing.T, setLimit limitSetter, deleteWasm bool) {
+func runExecuteWasmTest(t *testing.T, setLimit limitSetter, deleteWasm bool, builderOpts ...func(*NodeBuilder)) {
 	databaseEngine := rawdb.DBLeveldb
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithExtraArchs(allWasmTargets)
 		b.WithArbOSVersion(params.ArbosVersion_StylusContractLimit)
 		b.WithDatabase(databaseEngine)
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	ctx := builder.ctx
 	defer cleanup()
 
@@ -487,7 +539,7 @@ func runExecuteWasmTest(t *testing.T, setLimit limitSetter, deleteWasm bool) {
 		l, err := arbWasm.ParseProgramActivated(*receipt.Logs[0])
 		Require(t, err)
 
-		wasmStore := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+		wasmStore := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 		Require(t, deleteAnyKeysContainingModuleHash(wasmStore, l.ModuleHash))
 	}
 
@@ -500,13 +552,14 @@ func runExecuteWasmTest(t *testing.T, setLimit limitSetter, deleteWasm bool) {
 	Require(t, err)
 }
 
-func runCacheProgramTest(t *testing.T, setLimit limitSetter) {
+func runCacheProgramTest(t *testing.T, setLimit limitSetter, builderOpts ...func(*NodeBuilder)) {
 	databaseEngine := rawdb.DBLeveldb
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithExtraArchs(allWasmTargets)
 		b.WithArbOSVersion(params.ArbosVersion_StylusContractLimit)
 		b.WithDatabase(databaseEngine)
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	ctx := builder.ctx
 	defer cleanup()
 
@@ -522,7 +575,7 @@ func runCacheProgramTest(t *testing.T, setLimit limitSetter) {
 	Require(t, err)
 	l, err := arbWasm.ParseProgramActivated(*receipt.Logs[0])
 	Require(t, err)
-	wasmStore := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	wasmStore := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().WasmStore()
 	Require(t, deleteAnyKeysContainingModuleHash(wasmStore, l.ModuleHash))
 
 	// Cache
@@ -532,13 +585,14 @@ func runCacheProgramTest(t *testing.T, setLimit limitSetter) {
 	Require(t, err)
 }
 
-func runDeployAfterLimitTest(t *testing.T, setLimit limitSetter) {
+func runDeployAfterLimitTest(t *testing.T, setLimit limitSetter, builderOpts ...func(*NodeBuilder)) {
 	databaseEngine := rawdb.DBLeveldb
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithExtraArchs(allWasmTargets)
 		b.WithArbOSVersion(params.ArbosVersion_StylusContractLimit)
 		b.WithDatabase(databaseEngine)
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	ctx := builder.ctx
 	defer cleanup()
 
@@ -595,45 +649,72 @@ func setFragmentLimitTo1(t *testing.T, ctx context.Context, auth *bind.TransactO
 
 // Tests: Decrease Max Wasm Size
 func TestRebuildWasmStoreWithDecreasedMaxWasmSize(t *testing.T) {
-	runRebuildWasmStoreTest(t, setWasmLimitTo10k)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		runRebuildWasmStoreTest(t, setWasmLimitTo10k, recorderOpt)
+	})
 }
 func TestExecuteWasmWithDecreasedMaxWasmSizeWasmPresent(t *testing.T) {
-	runExecuteWasmTest(t, setWasmLimitTo10k, false)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		runExecuteWasmTest(t, setWasmLimitTo10k, false, recorderOpt)
+	})
 }
 func TestExecuteWasmWithDecreasedMaxWasmSizeRecoverWasm(t *testing.T) {
-	runExecuteWasmTest(t, setWasmLimitTo10k, true)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		runExecuteWasmTest(t, setWasmLimitTo10k, true, recorderOpt)
+	})
 }
 func TestCacheProgramWithDecreasedMaxWasmSizeRecoverWasm(t *testing.T) {
-	runCacheProgramTest(t, setWasmLimitTo10k)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		runCacheProgramTest(t, setWasmLimitTo10k, recorderOpt)
+	})
 }
 func TestDeployingContractBeforeAndAfterDecreaseMaxWasmSize(t *testing.T) {
-	runDeployAfterLimitTest(t, setWasmLimitTo7k)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		runDeployAfterLimitTest(t, setWasmLimitTo7k, recorderOpt)
+	})
 }
 
 // Tests: Decrease Max Fragment Count
 func TestRebuildWasmStoreWithDecreasedMaxFragmentCount(t *testing.T) {
-	runRebuildWasmStoreTest(t, setFragmentLimitTo1)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		runRebuildWasmStoreTest(t, setFragmentLimitTo1, recorderOpt)
+	})
 }
 func TestExecuteWasmWithDecreasedMaxFragmentCountWasmPresent(t *testing.T) {
-	runExecuteWasmTest(t, setFragmentLimitTo1, false)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		runExecuteWasmTest(t, setFragmentLimitTo1, false, recorderOpt)
+	})
 }
 func TestExecuteWasmWithDecreasedMaxFragmentCountRecoverWasm(t *testing.T) {
-	runExecuteWasmTest(t, setFragmentLimitTo1, true)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		runExecuteWasmTest(t, setFragmentLimitTo1, true, recorderOpt)
+	})
 }
 func TestCacheProgramWithDecreasedMaxFragmentCountRecoverWasm(t *testing.T) {
-	runCacheProgramTest(t, setFragmentLimitTo1)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		runCacheProgramTest(t, setFragmentLimitTo1, recorderOpt)
+	})
 }
 func TestDeployingContractBeforeAndAfterDecreaseMaxFragmentCount(t *testing.T) {
-	runDeployAfterLimitTest(t, setFragmentLimitTo1)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		runDeployAfterLimitTest(t, setFragmentLimitTo1, recorderOpt)
+	})
 }
 
 // Test that fragmented contracts fail on ArbOS versions before the feature is active
 
 func TestFragmentedContractFailsOnArbOS50(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testFragmentedContractFailsOnArbOS50(t, recorderOpt)
+	})
+}
+
+func testFragmentedContractFailsOnArbOS50(t *testing.T, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithExtraArchs(allWasmTargets)
 		b.WithArbOSVersion(params.ArbosVersion_50)
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	defer cleanup()
 
 	fragments, _, _ := readFragmentedContractFile(t, rustFile("storage"), 2)
@@ -645,10 +726,17 @@ func TestFragmentedContractFailsOnArbOS50(t *testing.T) {
 }
 
 func TestArbOwnerPublicGetMaxFragmentCountFailsOnArbOS50(t *testing.T) {
-	builder, _, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testArbOwnerPublicGetMaxFragmentCountFailsOnArbOS50(t, recorderOpt)
+	})
+}
+
+func testArbOwnerPublicGetMaxFragmentCountFailsOnArbOS50(t *testing.T, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithExtraArchs(allWasmTargets)
 		b.WithArbOSVersion(params.ArbosVersion_50)
 	})
+	builder, _, cleanup := setupProgramTest(t, true, builderOpts...)
 	defer cleanup()
 
 	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(types.ArbOwnerPublicAddress, builder.L2.Client)
@@ -659,10 +747,17 @@ func TestArbOwnerPublicGetMaxFragmentCountFailsOnArbOS50(t *testing.T) {
 }
 
 func TestArbOwnerSetMaxFragmentCountFailsOnArbOS50(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testArbOwnerSetMaxFragmentCountFailsOnArbOS50(t, recorderOpt)
+	})
+}
+
+func testArbOwnerSetMaxFragmentCountFailsOnArbOS50(t *testing.T, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithExtraArchs(allWasmTargets)
 		b.WithArbOSVersion(params.ArbosVersion_50)
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	defer cleanup()
 
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)

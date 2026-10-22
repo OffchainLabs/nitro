@@ -19,8 +19,8 @@ import (
 )
 
 // txFilterer implements core.TxFilterer for address-based transaction filtering
-// for node API calls such as eth_estimateGas and eth_call. It wraps ExecutionEngine to resolve the address
-// checker lazily, so tests can inject checkers via ExecEngine.SetAddressChecker.
+// for node API calls such as eth_estimateGas and eth_call. It wraps ExecutionEngine
+// to resolve the address checker lazily.
 type txFilterer struct {
 	execEngine  *ExecutionEngine
 	eventFilter *eventfilter.EventFilter
@@ -32,7 +32,11 @@ func (f *txFilterer) Setup(statedb *state.StateDB) {
 	if f.execEngine.addressChecker != nil {
 		statedb.SetAddressCheckerState(f.execEngine.addressChecker.NewTxState())
 	}
-	statedb.SetTxContext(common.Hash{}, 0)
+	// This is a dummy context for simulation, so the EIP-7928 block access
+	// list index is 0 (the slot reserved for system calls) rather than the
+	// txIndex+1 convention block building uses. The index is only consumed
+	// at ArbOS >= params.ArbosVersion_Amsterdam.
+	statedb.SetTxContext(common.Hash{}, 0, 0)
 }
 
 func (f *txFilterer) TouchAddresses(statedb *state.StateDB, tx *types.Transaction, sender common.Address) {
@@ -45,7 +49,7 @@ func (f *txFilterer) CheckFiltered(statedb *state.StateDB, rootTx *types.Transac
 		if f.filteringReportRPCClient != nil {
 			f.reportFilteredTx(rootTx, header, records)
 		}
-		return state.ErrArbTxFilter
+		return state.ErrSeqFilter
 	}
 	return nil
 }
@@ -70,5 +74,5 @@ func (f *txFilterer) reportFilteredTx(tx *types.Transaction, header *types.Heade
 		IsDelayed:         false,
 		DelayedReportData: nil,
 	}
-	f.filteringReportRPCClient.ReportFilteredTransactions([]addressfilter.FilteredTxReport{report})
+	f.filteringReportRPCClient.ReportFilteredTransactions(ReportProducerPrechecker, []addressfilter.FilteredTxReport{report})
 }

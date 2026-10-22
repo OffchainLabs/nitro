@@ -572,11 +572,11 @@ func makeFakeTxForMessage(message *core.Message) *types.Transaction {
 	if nonce == 0 {
 		nonce = randomNonce
 	}
-	gasTipCap := message.GasTipCap
+	gasTipCap := message.GasTipCap.ToBig()
 	if gasTipCap.Sign() == 0 {
 		gasTipCap = randomGasTipCap
 	}
-	gasFeeCap := message.GasFeeCap
+	gasFeeCap := message.GasFeeCap.ToBig()
 	if gasFeeCap.Sign() == 0 {
 		gasFeeCap = randomGasFeeCap
 	}
@@ -591,7 +591,7 @@ func makeFakeTxForMessage(message *core.Message) *types.Transaction {
 		GasFeeCap:  gasFeeCap,
 		Gas:        gas,
 		To:         message.To,
-		Value:      message.Value,
+		Value:      message.Value.ToBig(),
 		Data:       message.Data,
 		AccessList: message.AccessList,
 		V:          randV,

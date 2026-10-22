@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/arbitrum/multigas"
@@ -65,8 +66,8 @@ func TestStartTxHookReturnsMultigas(t *testing.T) {
 
 			msg := &core.Message{
 				TxRunContext: core.NewMessageReplayContext(),
-				GasTipCap:    big.NewInt(1),
-				GasFeeCap:    big.NewInt(1),
+				GasTipCap:    uint256.NewInt(1),
+				GasFeeCap:    uint256.NewInt(1),
 			}
 
 			txProcessor := NewTxProcessor(evm, msg)
@@ -96,9 +97,9 @@ func TestEndTxHookMultiGasRefundNormalTx(t *testing.T) {
 		TxRunContext: core.NewMessageReplayContext(),
 		From:         from,
 		GasLimit:     gasLimit,
-		GasPrice:     big.NewInt(0),
-		GasFeeCap:    big.NewInt(1),
-		GasTipCap:    big.NewInt(0),
+		GasPrice:     uint256.NewInt(0),
+		GasFeeCap:    uint256.NewInt(1),
+		GasTipCap:    uint256.NewInt(0),
 	}
 
 	txProcessor := NewTxProcessor(evm, msg)
@@ -170,9 +171,9 @@ func TestEndTxHookMultiGasRefundRetryableTx(t *testing.T) {
 		TxRunContext: core.NewMessageReplayContext(),
 		From:         from,
 		GasLimit:     gasLimit,
-		GasPrice:     big.NewInt(0),
-		GasFeeCap:    big.NewInt(1),
-		GasTipCap:    big.NewInt(0),
+		GasPrice:     uint256.NewInt(0),
+		GasFeeCap:    uint256.NewInt(1),
+		GasTipCap:    uint256.NewInt(0),
 	}
 
 	txProcessor := NewTxProcessor(evm, msg)
@@ -288,9 +289,9 @@ func TestEndTxHookMultiGasRefundWithEVMRefundCredit(t *testing.T) {
 		TxRunContext: core.NewMessageReplayContext(),
 		From:         from,
 		GasLimit:     gasLimit,
-		GasPrice:     big.NewInt(0),
-		GasFeeCap:    big.NewInt(1),
-		GasTipCap:    big.NewInt(0),
+		GasPrice:     uint256.NewInt(0),
+		GasFeeCap:    uint256.NewInt(1),
+		GasTipCap:    uint256.NewInt(0),
 	}
 
 	txProcessor := NewTxProcessor(evm, msg)

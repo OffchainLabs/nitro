@@ -1,0 +1,2 @@
+### Internal
+- Skip the `TestSequencerPriceAdjustsFrom*Gwei` system tests when message extraction is enabled. Under MEL no batch spending report reaches L2 within the window these tests run in, so the batch poster is never registered in the L1 pricing poster table and the reimbursement assertion fails intermittently in the MEL CI shards. The tests still run in every non-MEL configuration, where they are stable.

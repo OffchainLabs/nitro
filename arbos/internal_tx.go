@@ -78,7 +78,12 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		// For ArbOS versions >= 40 we need to call ProcessParentBlockHash to fill
 		// the historyStorage with the block hash to support EIP-2935.
 		if state.ArbOSVersion() >= params.ArbosVersion_40 {
-			core.ProcessParentBlockHash(prevHash, evm)
+			// A nil block access list is only valid below
+			// params.ArbosVersion_Amsterdam: ProcessParentBlockHash merges the
+			// EIP-7928 access list returned by StateDB.Finalise into it, and that
+			// list is nil below Amsterdam. Once ArbOS supports Amsterdam, a real
+			// accumulator must be threaded through here.
+			core.ProcessParentBlockHash(prevHash, evm, nil)
 		}
 		l1BlockNumber := util.SafeMapGet[uint64](inputs, "l1BlockNumber")
 		timePassed := util.SafeMapGet[uint64](inputs, "timePassed")

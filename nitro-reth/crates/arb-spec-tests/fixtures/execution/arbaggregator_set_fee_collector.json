@@ -1,0 +1,111 @@
+{
+  "name": "arbaggregator_set_fee_collector",
+  "description": "ArbAggregator.setFeeCollector + getFeeCollector round-trip for the default BatchPoster.",
+  "genesis": {
+    "alloc": {
+      "0x26E554a8acF9003b83495c7f45F06edCB803d4e3": {
+        "balance": "115792089237316195423570985008687907853269984665640564039457584007913129639927"
+      },
+      "0xaF24Ca6c2831f4d4F629418b50C227DF0885613A": {
+        "balance": "115792089237316195423570985008687907853269984665640564039457584007913129639927"
+      }
+    },
+    "coinbase": "0x0000000000000000000000000000000000000000",
+    "config": {
+      "chainId": 412346,
+      "homesteadBlock": 0,
+      "daoForkSupport": true,
+      "eip150Block": 0,
+      "eip155Block": 0,
+      "eip158Block": 0,
+      "byzantiumBlock": 0,
+      "constantinopleBlock": 0,
+      "petersburgBlock": 0,
+      "istanbulBlock": 0,
+      "muirGlacierBlock": 0,
+      "berlinBlock": 0,
+      "londonBlock": 0,
+      "depositContractAddress": "0x0000000000000000000000000000000000000000",
+      "clique": {
+        "period": 0,
+        "epoch": 0
+      },
+      "arbitrum": {
+        "EnableArbOS": true,
+        "AllowDebugPrecompiles": true,
+        "DataAvailabilityCommittee": false,
+        "InitialArbOSVersion": 51,
+        "InitialChainOwner": "0x0000000000000000000000000000000000000000",
+        "GenesisBlockNum": 0
+      }
+    },
+    "difficulty": "0x1",
+    "extraData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "gasLimit": "0x4000000000000",
+    "nonce": "0x1",
+    "timestamp": "0x0"
+  },
+  "messages": [
+    {
+      "msgIdx": 0,
+      "message": {
+        "header": {
+          "kind": 11,
+          "sender": "0x0000000000000000000000000000000000000000",
+          "blockNumber": 0,
+          "timestamp": 0,
+          "requestId": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "baseFeeL1": 0
+        },
+        "l2Msg": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGSroAeyJjaGFpbklkIjo0MTIzNDYsImhvbWVzdGVhZEJsb2NrIjowLCJkYW9Gb3JrU3VwcG9ydCI6dHJ1ZSwiZWlwMTUwQmxvY2siOjAsImVpcDE1NUJsb2NrIjowLCJlaXAxNThCbG9jayI6MCwiYnl6YW50aXVtQmxvY2siOjAsImNvbnN0YW50aW5vcGxlQmxvY2siOjAsInBldGVyc2J1cmdCbG9jayI6MCwiaXN0YW5idWxCbG9jayI6MCwibXVpckdsYWNpZXJCbG9jayI6MCwiYmVybGluQmxvY2siOjAsImxvbmRvbkJsb2NrIjowLCJkZXBvc2l0Q29udHJhY3RBZGRyZXNzIjoiMHgwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIiwiY2xpcXVlIjp7InBlcmlvZCI6MCwiZXBvY2giOjB9LCJhcmJpdHJ1bSI6eyJFbmFibGVBcmJPUyI6dHJ1ZSwiQWxsb3dEZWJ1Z1ByZWNvbXBpbGVzIjp0cnVlLCJEYXRhQXZhaWxhYmlsaXR5Q29tbWl0dGVlIjpmYWxzZSwiSW5pdGlhbEFyYk9TVmVyc2lvbiI6NTEsIkluaXRpYWxDaGFpbk93bmVyIjoiMHgwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIiwiR2VuZXNpc0Jsb2NrTnVtIjowfX0="
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1776671979,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4boMGSrqAgIQL68IAgxmFqJQAAAAAAAAAAAAAAAAAAAAAAAAA/4CEDlu8EcABoHy22QNkSTUA7OBSgbB624OfWCnigPherzik97HMn+EqoDumaDjDOpWZVsxbgg6RGkcS9g8Bgh+/2oorLf4/SI64"
+      },
+      "delayedMessagesRead": 1
+    },
+    {
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 0,
+          "timestamp": 1776671979,
+          "requestId": null,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BAL4r4MGSroBgIQL68IAgyMsLZQAAAAAAAAAAAAAAAAAAAAAAAAAbYC4RCkUl5kAAAAAAAAAAAAAAACksAAAAAAAAAAAAHNlcXVlbmNlcgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwICgitjRo/BjBYzJ8B2rcDpgq7UmhtwpVCrZk9Dd2B02damgL0rOytMMUfXsINUmjIDIGhWTNUFPcuZj9XW54y8Hvlo="
+      },
+      "delayedMessagesRead": 1
+    }
+  ],
+  "expected": {
+    "blocks": [
+      {
+        "number": 1
+      },
+      {
+        "number": 2
+      }
+    ],
+    "eth_calls": [
+      {
+        "to": "0x000000000000000000000000000000000000006d",
+        "data": "0x9c2c5bb5000000000000000000000000a4b000000000000000000073657175656e636572",
+        "at_block": "latest",
+        "result": "0x0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    ]
+  }
+}

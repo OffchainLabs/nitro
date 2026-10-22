@@ -1,0 +1,16 @@
+{
+  "name": "synthetic/stylus-compute-loop/short",
+  "category": "stylus",
+  "scale": "short",
+  "arbos_version": 60,
+  "chain_id": 421614,
+  "corpus_version": "1.0.0",
+  "description": "Stylus contract running a tight 4096-iteration arithmetic loop per call. Exercises ink-metering middleware and per-instruction pricing.",
+  "messages": {
+    "source": "synthetic_generator",
+    "generator": "stylus_compute_loop",
+    "params": { "block_count": 500, "txs_per_block": 8 }
+  },
+  "metrics": { "rolling_window_blocks": 25 },
+  "regression": { "gate": true, "tolerance_pct": 5.0, "paired_stat": "bootstrap_95ci", "bootstrap_iters": 10000 }
+}

@@ -187,7 +187,8 @@ func createMockValidationNode(t *testing.T, ctx context.Context, config *server_
 	}
 	configFetcher := func() *server_arb.ArbitratorSpawnerConfig { return config }
 	spawner := &mockSpawner{}
-	serverAPI := valnode.NewExecutionServerAPI(spawner, spawner, configFetcher)
+	execServer := valnode.NewExecServer(spawner, configFetcher)
+	serverAPI := valnode.NewExecServerAPI(spawner, execServer)
 
 	valAPIs := []rpc.API{{
 		Namespace:     server_api.Namespace,
@@ -201,7 +202,7 @@ func createMockValidationNode(t *testing.T, ctx context.Context, config *server_
 	err = stack.Start()
 	Require(t, err)
 
-	serverAPI.Start(ctx)
+	execServer.Start(ctx)
 
 	var redisConsumer *valnoderedis.ValidationServer
 	if config.RedisValidationServerConfig.Enabled() {
@@ -213,7 +214,7 @@ func createMockValidationNode(t *testing.T, ctx context.Context, config *server_
 	go func() {
 		<-ctx.Done()
 		stack.Close()
-		serverAPI.StopOnly()
+		execServer.StopOnly()
 		if redisConsumer != nil {
 			redisConsumer.StopOnly()
 		}
@@ -320,13 +321,15 @@ func TestValidationServerAPIWithBoldValidationConsumerProducer(t *testing.T) {
 	Require(t, err)
 	err = redisValClient.Start(ctx)
 	Require(t, err)
-	err = redisValClient.StartValidators(mockWasmModuleRoots)
+	// start with only the first module root known, as in production where only
+	// the latest root is registered at startup
+	err = redisValClient.StartValidators(mockWasmModuleRoots[:1])
 	Require(t, err)
 
 	config := server_arb.DefaultArbitratorSpawnerConfig
 	config.RedisValidationServerConfig = valnoderedis.TestValidationServerConfig
 	config.RedisValidationServerConfig.RedisURL = redisUrl
-	mockWasmModuleRootsStr := make([]string, len(mockWasmModuleRoots))
+	mockWasmModuleRootsStr := make([]string, 0, len(mockWasmModuleRoots))
 	for _, moduleRoot := range mockWasmModuleRoots {
 		mockWasmModuleRootsStr = append(mockWasmModuleRootsStr, moduleRoot.Hex())
 	}
@@ -338,13 +341,11 @@ func TestValidationServerAPIWithBoldValidationConsumerProducer(t *testing.T) {
 	roots, err := client.WasmModuleRoots()
 
 	Require(t, err)
-	if len(roots) != len(mockWasmModuleRoots) {
+	if len(roots) != 1 {
 		Fatal(t, "wrong number of wasmModuleRoots", len(roots))
 	}
-	for i := range roots {
-		if roots[i] != mockWasmModuleRoots[i] {
-			Fatal(t, "unexpected root", roots[i], mockWasmModuleRoots[i])
-		}
+	if roots[0] != mockWasmModuleRoots[0] {
+		Fatal(t, "unexpected root", roots[0], mockWasmModuleRoots[0])
 	}
 
 	hash1 := common.HexToHash("0x11223344556677889900aabbccddeeff")
@@ -388,6 +389,41 @@ func TestValidationServerAPIWithBoldValidationConsumerProducer(t *testing.T) {
 		t.Error("unexpected number of hashes")
 	}
 
+	// simulate BlockValidator.Initialize registering the on-chain module roots
+	// after the spawners have started
+	err = redisValClient.StartValidators(mockWasmModuleRoots)
+	Require(t, err)
+	err = client.StartValidators(mockWasmModuleRoots)
+	Require(t, err)
+
+	roots, err = client.WasmModuleRoots()
+	Require(t, err)
+	if len(roots) != len(mockWasmModuleRoots) {
+		Fatal(t, "wrong number of wasmModuleRoots", len(roots))
+	}
+	for i := range roots {
+		if roots[i] != mockWasmModuleRoots[i] {
+			Fatal(t, "unexpected root", roots[i], mockWasmModuleRoots[i])
+		}
+	}
+
+	proof, err = client.GetProofAt(ctx, mockWasmModuleRoots[0], &valInput, 0)
+	Require(t, err)
+	if !bytes.Equal(proof, mockProof) {
+		t.Error("mock proof not expected")
+	}
+
+	proof, err = client.GetProofAt(ctx, mockWasmModuleRoots[1], &valInput, 0)
+	Require(t, err)
+	if !bytes.Equal(proof, mockProof) {
+		t.Error("mock proof not expected")
+	}
+
+	hashes, err = client.GetMachineHashesWithStepSize(ctx, mockWasmModuleRoots[1], &valInput, 0, 1, 5)
+	Require(t, err)
+	if len(hashes) != 5 {
+		t.Error("unexpected number of hashes")
+	}
 }
 
 func TestThrottledValidationSpawner(t *testing.T) {
@@ -575,6 +611,10 @@ func (m *mockBlockRecorder) RecordBlockCreation(
 }
 
 func (m *mockBlockRecorder) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
+}
+
+func (m *mockBlockRecorder) PruneBlockRecordings(before arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
 }
 

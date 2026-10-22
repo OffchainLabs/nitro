@@ -75,7 +75,7 @@ func (av *AddressVerifier) FlushCache(ctx context.Context) error {
 	return av.flushCache_locked(ctx)
 }
 
-func (av *AddressVerifier) flushCache_locked(ctx context.Context) error {
+func (av *AddressVerifier) flushCache_locked(_ctx context.Context) error {
 	av.cache = make(map[common.Address]bool)
 	av.cacheExpiry = time.Now().Add(addressVerifierLifetime)
 	return nil

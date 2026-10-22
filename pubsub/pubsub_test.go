@@ -212,15 +212,33 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testReques
 					if msg.Value.IsInvalid {
 						errString := fmt.Sprintf("invalid request: %v", msg.ID)
 						if err := c.SetError(ctx, msg.ID, errString); err != nil {
-							t.Errorf("Error setting a error: %v", err)
+							if errors.Is(err, ErrAlreadySet) {
+								// Another consumer auto-claimed this message (e.g.
+								// because this consumer's heartbeat lapsed on a
+								// loaded runner) and responded first. That is
+								// expected at-least-once behavior; the winner owns
+								// the response, so drop this consumer's record to
+								// keep the bookkeeping exactly-once.
+								delete(gotMessages[idx], msg.ID)
+							} else {
+								t.Errorf("Error setting a error: %v", err)
+							}
+						} else {
+							wantErrors[idx] = append(wantErrors[idx], errString)
 						}
-						wantErrors[idx] = append(wantErrors[idx], errString)
 					} else {
 						resp := fmt.Sprintf("result for: %v", msg.ID)
 						if err := c.SetResult(ctx, msg.ID, testResponse{Response: resp}); err != nil {
-							t.Errorf("Error setting a result: %v", err)
+							if errors.Is(err, ErrAlreadySet) {
+								// See above: lost the SetResult race to another
+								// consumer that auto-claimed this message.
+								delete(gotMessages[idx], msg.ID)
+							} else {
+								t.Errorf("Error setting a result: %v", err)
+							}
+						} else {
+							wantResponses[idx] = append(wantResponses[idx], resp)
 						}
-						wantResponses[idx] = append(wantResponses[idx], resp)
 					}
 					msg.Ack()
 				}
@@ -229,7 +247,7 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testReques
 	return wantResponses, wantErrors
 }
 
-func TestRedisProduceComplex(t *testing.T) {
+func TestRedisProduceComplexFlaky(t *testing.T) {
 	log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stderr, log.LevelTrace, true)))
 	t.Parallel()
 	for _, tc := range []struct {

@@ -12,6 +12,7 @@ use std::{
 };
 
 use arbutil::{Bytes32, Color, DebugColor, PreimageType, format};
+use clap::Parser;
 use eyre::{Context, Result, eyre};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
@@ -21,90 +22,93 @@ use prover::{
     wavm::Opcode,
 };
 use serde::Deserialize;
-use structopt::StructOpt;
 use validation::GoGlobalState;
 
-#[derive(StructOpt)]
-#[structopt(name = "arbitrator-prover")]
+#[derive(Parser)]
+#[command(name = "arbitrator-prover")]
 struct Opts {
     binary: PathBuf,
-    #[structopt(short, long)]
+    #[arg(short, long)]
     libraries: Vec<PathBuf>,
-    #[structopt(short, long)]
+    #[arg(short, long)]
     output: Option<PathBuf>,
-    #[structopt(short = "b", long)]
+    #[arg(short = 'b', long)]
     proving_backoff: bool,
-    #[structopt(long)]
+    #[arg(long)]
     allow_hostapi: bool,
-    #[structopt(long)]
+    #[arg(long)]
     inbox_add_stub_headers: bool,
-    #[structopt(long)]
+    #[arg(long)]
     debug_funcs: bool,
-    #[structopt(long)]
+    #[arg(long)]
     /// print modules to the console
     print_modules: bool,
-    #[structopt(long)]
+    #[arg(long)]
     /// print wasm module root to the console
     print_wasmmoduleroot: bool,
     /// profile output instead of generting proofs
-    #[structopt(short = "p", long)]
+    #[arg(short = 'p', long)]
     profile_run: bool,
     /// simple summary of hot opcodes
-    #[structopt(long)]
+    #[arg(long)]
     profile_sum_opcodes: bool,
     /// simple summary of hot functions
-    #[structopt(long)]
+    #[arg(long)]
     profile_sum_funcs: bool,
     /// profile written in "folded" format (use as input for e.g. inferno-flamegraph)
-    #[structopt(long)]
+    #[arg(long)]
     profile_output: Option<PathBuf>,
-    #[structopt(short = "i", long, default_value = "1")]
+    #[arg(short = 'i', long, default_value = "1")]
     proving_interval: u64,
-    #[structopt(short = "s", long, default_value = "0")]
+    #[arg(short = 's', long, default_value = "0")]
     proving_start: u64,
-    #[structopt(long, default_value = "0")]
+    #[arg(long, default_value = "0")]
     delayed_inbox_position: u64,
-    #[structopt(long, default_value = "0")]
+    #[arg(long, default_value = "0")]
     inbox_position: u64,
-    #[structopt(long, default_value = "0")]
+    #[arg(long, default_value = "0")]
     position_within_message: u64,
-    #[structopt(long)]
+    #[arg(long)]
     last_block_hash: Option<String>,
-    #[structopt(long)]
+    #[arg(long)]
     last_send_root: Option<String>,
-    #[structopt(long)]
+    #[arg(long)]
     mel_state_root: Option<String>,
-    #[structopt(long)]
+    #[arg(long)]
     mel_msg_hash: Option<String>,
-    #[structopt(long)]
+    #[arg(long)]
     inbox: Vec<PathBuf>,
-    #[structopt(long)]
+    #[arg(long)]
     delayed_inbox: Vec<PathBuf>,
-    #[structopt(long)]
+    #[arg(long)]
     preimages: Option<PathBuf>,
-    #[structopt(long)]
+    #[arg(long)]
     stylus_modules: Vec<PathBuf>,
     /// Require that the machine end in the Finished state
-    #[structopt(long)]
+    #[arg(long)]
     require_success: bool,
     /// Generate WAVM binary, until host io state, and module root and exit
-    #[structopt(long)]
+    #[arg(long)]
     generate_binaries: Option<PathBuf>,
-    #[structopt(long)]
+    #[arg(long)]
     skip_until_host_io: bool,
-    #[structopt(long)]
+    #[arg(long)]
     max_steps: Option<u64>,
     /// Options for WAVM binary generation.
-    #[structopt(long, default_value = "module-root.txt")]
+    #[arg(long, default_value = "module-root.txt")]
     module_root_filename: String,
-    #[structopt(long, default_value = "machine.v2.wavm.br")]
+    #[arg(long, default_value = "machine.v2.wavm.br")]
     brotli_wavm_machine_filename: String,
-    #[structopt(long, default_value = "until-host-io-state.bin")]
+    #[arg(long, default_value = "until-host-io-state.bin")]
     until_hostio_bin_filename: String,
     // JSON inputs supercede any of the command-line inputs which could
     // be specified in the JSON file.
-    #[structopt(long)]
+    #[arg(long)]
     json_inputs: Option<PathBuf>,
+    /// Count WAVM steps to completion and print the result, then exit.
+    /// Much faster than proof generation or --profile-run.
+    #[arg(long)]
+    count_steps: bool,
 }
 
 fn file_with_stub_header(path: &Path, headerlength: usize) -> Result<Vec<u8>> {
@@ -140,7 +144,7 @@ const DELAYED_HEADER_LEN: usize = 112; // also in test-case's host-io.rs & contr
 
 #[cfg(feature = "native")]
 fn main() -> Result<()> {
-    let opts = Opts::from_args();
+    let opts = Opts::parse();
     let expected_state = get_expected_state(&opts)?;
 
     if opts.print_wasmmoduleroot {
@@ -164,6 +168,23 @@ fn main() -> Result<()> {
         let codehash = &Bytes32::default();
         mach.add_program(&wasm, codehash, 1, true)
             .wrap_err_with(err)?;
+    }
+
+    if opts.count_steps {
+        let start = std::time::Instant::now();
+        while !mach.is_halted() {
+            mach.step_n(1 << 20)?;
+        }
+        if opts.require_success && mach.get_status() != MachineStatus::Finished {
+            eprintln!("Machine didn't finish: {}", mach.get_status().red());
+            std::process::exit(1);
+        }
+        println!(
+            "WAVM steps: {}, time: {:.3}s",
+            mach.get_steps(),
+            start.elapsed().as_secs_f64(),
+        );
+        return Ok(());
     }
 
     if opts.print_modules {

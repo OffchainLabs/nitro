@@ -1,0 +1,81 @@
+services:
+  arbitrum-reth:
+    image: ghcr.io/0xbloctopus/arbitrum-reth:${ARBRETH_TAG:-latest}
+    pull_policy: missing
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: arbitrum-reth
+    restart: "no"
+    ports:
+      - "8545:8545"
+      - "8551:8551"
+    volumes:
+      - ${DATA_DIR:-arbitrum-reth-data}:/data
+    environment:
+      - RUST_LOG=${RUST_LOG:-warn}
+      - ARB_BLOCK_BUFFER_SIZE=${ARB_BLOCK_BUFFER_SIZE:-128}
+      - ARB_FLUSH_INTERVAL=${ARB_FLUSH_INTERVAL:-128}
+    command:
+      - node
+      - --chain=/genesis/arbitrum-sepolia.json
+      - --datadir=/data/db
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.port=8545
+      - --http.api=eth,web3,net,debug
+      - --authrpc.addr=0.0.0.0
+      - --authrpc.port=8551
+      - --authrpc.jwtsecret=/data/jwt.hex
+      - --disable-discovery
+      - --log.stdout.filter=${RUST_LOG:-warn}
+      - --db.exclusive=true
+      - --db.growth-step=4GB
+      - --db.log-level=error
+      - --db.sync-mode=safe-no-sync
+    networks:
+      - arb-network
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - timeout 5 bash -c '</dev/tcp/localhost/8551' || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  nitro:
+    image: ${NITRO_IMAGE:-offchainlabs/nitro-node:v3.10.0-rc.10-b1cf6db}
+    container_name: nitro
+    user: root
+    entrypoint: /usr/local/bin/nitro
+    depends_on:
+      arbitrum-reth:
+        condition: service_healthy
+    restart: "no"
+    volumes:
+      - ${NITRO_DATA_DIR:-nitro-data}:/tmp/nitro-data
+      - ${DATA_DIR:-arbitrum-reth-data}:/arbitrum-reth-data:ro
+    command:
+      - --init.empty=true
+      - --init.validate-genesis-assertion=false
+      - --persistent.global-config=/tmp/nitro-data
+      - --parent-chain.connection.url=${PARENT_CHAIN_RPC_URL}
+      - --parent-chain.blob-client.beacon-url=${PARENT_CHAIN_BEACON_URL}
+      - --chain.id=${CHAIN_ID:-421614}
+      - --execution.forwarding-target=null
+      - --log-level=${LOG_LEVEL:-WARN}
+      - --node.execution-rpc-client.url=http://arbitrum-reth:8551
+      - --node.execution-rpc-client.jwtsecret=/arbitrum-reth-data/jwt.hex
+      - --node.sequencer=false
+      - --node.feed.input.url=${FEED_URL:-wss://sepolia-rollup.arbitrum.io/feed}
+    networks:
+      - arb-network
+
+volumes:
+  arbitrum-reth-data:
+  nitro-data:
+
+networks:
+  arb-network:
+    name: arb-network

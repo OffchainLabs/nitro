@@ -4,28 +4,42 @@
 package api
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/cmd/filtering-report/signer"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/sqsclient"
 )
 
-type FilteringReportAPI struct {
-	queueClient sqsclient.QueueClient
+type filterSetReporter struct {
+	url        string
+	httpClient *http.Client
+	signer     *signer.Signer
 }
 
-func NewFilteringReportAPI(queueClient sqsclient.QueueClient) (*FilteringReportAPI, error) {
-	if queueClient == nil {
-		return nil, errors.New("queueClient must not be nil")
+type FilteringReportAPI struct {
+	queueClient       sqsclient.QueueClient
+	filterSetReporter *filterSetReporter
+}
+
+func NewFilteringReportAPI(queueClient sqsclient.QueueClient, filterSetReporterConfig *genericconf.HTTPClientConfig, sgn *signer.Signer) *FilteringReportAPI {
+	var reporter *filterSetReporter
+	if filterSetReporterConfig.URL != "" {
+		reporter = &filterSetReporter{
+			url:        filterSetReporterConfig.URL,
+			httpClient: &http.Client{Timeout: filterSetReporterConfig.Timeout},
+			signer:     sgn,
+		}
 	}
 	return &FilteringReportAPI{
-		queueClient: queueClient,
-	}, nil
+		queueClient:       queueClient,
+		filterSetReporter: reporter,
+	}
 }
 
 var DefaultStackConfig = node.Config{
@@ -52,16 +66,15 @@ var DefaultStackConfig = node.Config{
 func NewStack(
 	stackConfig *node.Config,
 	queueClient sqsclient.QueueClient,
+	filterSetReporterConfig *genericconf.HTTPClientConfig,
+	sgn *signer.Signer,
 ) (*node.Node, error) {
 	stack, err := node.New(stackConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	api, err := NewFilteringReportAPI(queueClient)
-	if err != nil {
-		return nil, err
-	}
+	api := NewFilteringReportAPI(queueClient, filterSetReporterConfig, sgn)
 
 	apis := []rpc.API{{
 		Namespace: gethexec.FilteringReportNamespace,

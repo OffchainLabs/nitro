@@ -66,7 +66,7 @@ var ValidationNodeConfigDefault = ValidationNodeConfig{
 	Conf:          genericconf.ConfConfigDefault,
 	LogLevel:      "INFO",
 	LogType:       "plaintext",
-	Persistent:    conf.PersistentConfigDefault,
+	Persistent:    conf.PersistentConfigDefaultNoReadCompact,
 	HTTP:          HTTPConfigDefault,
 	WS:            WSConfigDefault,
 	IPC:           IPCConfigDefault,
@@ -84,7 +84,7 @@ func ValidationNodeConfigAddOptions(f *pflag.FlagSet) {
 	f.String("log-level", ValidationNodeConfigDefault.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", ValidationNodeConfigDefault.LogType, "log type (plaintext or json)")
 	genericconf.FileLoggingConfigAddOptions("file-logging", f)
-	conf.PersistentConfigAddOptions("persistent", f)
+	conf.PersistentConfigAddOptions("persistent", f, ValidationNodeConfigDefault.Persistent)
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)

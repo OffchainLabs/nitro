@@ -1,0 +1,53 @@
+---
+name: nitro-reth-spec-tests
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    uses: ./.github/workflows/_nitro-reth-build-release.yml
+    secrets: inherit
+    with:
+      artifact-name: spec-tests-binaries
+
+  spec:
+    name: arb-spec-tests
+    needs: build
+    runs-on: ocl-16cpu-64ram
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: nitro-reth
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/init-submodules
+        with:
+          client-id: ${{ vars.NITRO_CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.NITRO_CI_APP_PRIVATE_KEY }}
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential clang libclang-dev cmake
+      - uses: dtolnay/rust-toolchain@1.93
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: nitro-reth
+      - uses: taiki-e/install-action@0abfcd587b70a713fdaa7fb502c885e2112acb15  # v2
+        with:
+          tool: cargo-nextest
+      - uses: actions/download-artifact@v8
+        with:
+          name: spec-tests-binaries
+          path: nitro-reth/target/release
+      - name: Make arb-reth executable
+        run: chmod +x target/release/arb-reth
+      - name: Run spec tests
+        env:
+          ARB_SPEC_BINARY: ${{ github.workspace }}/nitro-reth/target/release/arb-reth
+          ARB_SPEC_REQUIRE_BINARY: "1"
+        run: cargo nextest run -p arb-spec-tests --features spec-binary --profile ci

@@ -1,0 +1,2 @@
+### Internal
+- CI: point the buildx builder in `docker.yml` and `release-ci.yml` at the in-cluster registry:2 Docker Hub cache via `buildkitd-config-inline`. These jobs run on the `ocl-16cpu-64ram-dind-500gi` runner, where the buildx `docker-container` driver ignores the dind daemon's registry mirror, so base-image pulls (golang/rust/node/debian) previously egressed through the NAT gateway; they are now served in-cluster. Falls back to Docker Hub directly if the cache is unreachable.

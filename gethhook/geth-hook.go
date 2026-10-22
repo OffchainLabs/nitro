@@ -47,17 +47,25 @@ func (p ArbosPrecompileWrapper) RunAdvanced(
 	input []byte,
 	gasSupplied uint64,
 	info *vm.AdvancedPrecompileCall,
-) (ret []byte, gasLeft uint64, usedMultiGas multigas.MultiGas, err error) {
+) (ret []byte, remaining vm.GasBudget, usedMultiGas multigas.MultiGas, err error) {
 
 	// Precompiles don't actually enter evm execution like normal calls do,
 	// so we need to increment the depth here to simulate the callstack change.
 	info.Evm.IncrementDepth()
 	defer info.Evm.DecrementDepth()
 
-	return p.inner.Call(
+	ret, gasLeft, usedMultiGas, err := p.inner.Call(
 		input, info.ActingAsAddress,
 		info.Caller, info.Value, info.ReadOnly, gasSupplied, info.Evm,
 	)
+	// The zero EIP-8037 state-gas reservoir returned here reaches the caller
+	// verbatim: vm.RunPrecompiledContract hands advanced precompiles only
+	// gas.RegularGas and returns their leftover budget as-is, so a CALL into
+	// an ArbOS precompile zeroes the caller's StateGas. This is only valid
+	// below ArbOS params.ArbosVersion_Amsterdam, where state gas is never
+	// charged; supporting Amsterdam requires the geth-side RunAdvanced
+	// interface to carry the full GasBudget.
+	return ret, vm.NewGasBudget(gasLeft, 0), usedMultiGas, err
 }
 
 func init() {

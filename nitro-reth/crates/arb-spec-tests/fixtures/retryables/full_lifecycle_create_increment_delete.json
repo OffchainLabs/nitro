@@ -1,0 +1,44 @@
+{
+  "name": "full_lifecycle_create_increment_delete",
+  "description": "Create, increment num_tries twice, delete with escrow transfer",
+  "setup": {"arbos_version": 30, "chain_id": 412346},
+  "actions": [
+    {
+      "type": "retryable_create",
+      "id": "0x000000000000000000000000000000000000000000000000000000000000beef",
+      "timeout": 5000,
+      "from": "0x00000000000000000000000000000000000A11CE",
+      "to": "0x00000000000000000000000000000000C4A841E0",
+      "callvalue": "0xf4240",
+      "beneficiary": "0x00000000000000000000000000000000000B0B00",
+      "calldata_hex": "deadbeef"
+    },
+    {
+      "type": "retryable_increment_num_tries",
+      "id": "0x000000000000000000000000000000000000000000000000000000000000beef",
+      "at_time": 1000
+    },
+    {
+      "type": "retryable_increment_num_tries",
+      "id": "0x000000000000000000000000000000000000000000000000000000000000beef",
+      "at_time": 1000
+    },
+    {
+      "type": "retryable_delete",
+      "id": "0x000000000000000000000000000000000000000000000000000000000000beef",
+      "escrow_balance": "0xf4240"
+    }
+  ],
+  "assertions": {
+    "retryable": {
+      "exists": {
+        "id": "0x000000000000000000000000000000000000000000000000000000000000beef",
+        "at_time": 2000,
+        "expected": false
+      }
+    },
+    "transfers": {
+      "log_length": 1
+    }
+  }
+}

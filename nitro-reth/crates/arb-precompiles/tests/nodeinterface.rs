@@ -1,0 +1,130 @@
+mod common;
+
+use alloy_evm::precompiles::DynPrecompile;
+use alloy_primitives::U256;
+use arb_precompiles::create_nodeinterface_precompile;
+use arb_storage::{
+    ARBOS_STATE_ADDRESS,
+    layout::{L1_PRICING_SUBSPACE, L2_PRICING_SUBSPACE, root_slot, subspace_slot},
+};
+use arbos::{
+    arbos_state::GENESIS_BLOCK_NUM_OFFSET, l1_pricing::PRICE_PER_UNIT_OFFSET as L1_PRICE_PER_UNIT,
+    l2_pricing::BASE_FEE_WEI_OFFSET as L2_BASE_FEE,
+};
+use common::{PrecompileTest, calldata, calldata_estimate, decode_u256, decode_word, word_u256};
+
+fn nodeinterface(ctx: std::sync::Arc<arb_context::ArbPrecompileCtx>) -> DynPrecompile {
+    create_nodeinterface_precompile(ctx)
+}
+
+#[test]
+fn nitro_genesis_block_returns_root_field() {
+    let run = PrecompileTest::new()
+        .arbos_version(30)
+        .arbos_state()
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            root_slot(GENESIS_BLOCK_NUM_OFFSET),
+            U256::from(123_456_u64),
+        )
+        .call(nodeinterface, &calldata("nitroGenesisBlock()", &[]));
+    assert_eq!(decode_u256(run.output()), U256::from(123_456_u64));
+}
+
+#[test]
+fn block_l1_num_returns_cached_value() {
+    let run = PrecompileTest::new()
+        .arbos_version(30)
+        .arbos_state()
+        .cache_l1_block_number(99, 7_777_777)
+        .call(
+            nodeinterface,
+            &calldata("blockL1Num(uint64)", &[word_u256(U256::from(99))]),
+        );
+    assert_eq!(decode_u256(run.output()), U256::from(7_777_777_u64));
+}
+
+#[test]
+fn block_l1_num_returns_zero_for_unknown_l2_block() {
+    let run = PrecompileTest::new().arbos_version(30).arbos_state().call(
+        nodeinterface,
+        &calldata(
+            "blockL1Num(uint64)",
+            &[word_u256(U256::from(99_999_999_u64))],
+        ),
+    );
+    assert_eq!(decode_u256(run.output()), U256::ZERO);
+}
+
+#[test]
+fn gas_estimate_components_returns_basefee_and_l1_price() {
+    let l1_price = U256::from(50_000_000_u64);
+    let basefee = U256::from(100_000_000_u64);
+    let run = PrecompileTest::new()
+        .arbos_version(30)
+        .arbos_state()
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT),
+            l1_price,
+        )
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE),
+            basefee,
+        )
+        .call(
+            nodeinterface,
+            &calldata_estimate("gasEstimateComponents(address,bool,bytes)"),
+        );
+    let out = run.output();
+    assert_eq!(decode_word(out, 0), common::word_u256(U256::ZERO));
+    assert_eq!(decode_word(out, 2), common::word_u256(basefee));
+    assert_eq!(decode_word(out, 3), common::word_u256(l1_price));
+}
+
+#[test]
+fn gas_estimate_l1_component_returns_basefee_and_l1_price() {
+    let l1_price = U256::from(75_000_000_u64);
+    let basefee = U256::from(150_000_000_u64);
+    let run = PrecompileTest::new()
+        .arbos_version(30)
+        .arbos_state()
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            subspace_slot(L1_PRICING_SUBSPACE, L1_PRICE_PER_UNIT),
+            l1_price,
+        )
+        .storage(
+            ARBOS_STATE_ADDRESS,
+            subspace_slot(L2_PRICING_SUBSPACE, L2_BASE_FEE),
+            basefee,
+        )
+        .call(
+            nodeinterface,
+            &calldata_estimate("gasEstimateL1Component(address,bool,bytes)"),
+        );
+    let out = run.output();
+    assert_eq!(decode_word(out, 1), common::word_u256(basefee));
+    assert_eq!(decode_word(out, 2), common::word_u256(l1_price));
+}
+
+#[test]
+fn rpc_only_methods_still_revert() {
+    // These methods require full chain access (header scans, tx construction,
+    // log filtering) that the precompile can't perform. They revert with
+    // "method only available via RPC" and are expected to be handled by an
+    // RPC interception layer. See nodeinterface_conformance.rs for the
+    // methods we DO resolve (returning zero/defaults to match Nitro when
+    // batch fetcher is nil).
+    for sig in [
+        "l2BlockRangeForL1(uint64)",
+        "constructOutboxProof(uint64,uint64)",
+    ] {
+        let run = PrecompileTest::new()
+            .arbos_version(30)
+            .arbos_state()
+            .call(nodeinterface, &calldata(sig, &[word_u256(U256::ZERO)]));
+        assert!(run.assert_ok().reverted, "{sig} must revert (RPC-only)",);
+    }
+}

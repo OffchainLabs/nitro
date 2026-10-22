@@ -1,0 +1,85 @@
+{
+  "name": "sepolia_block_204_060_366_pre_recorded_revert",
+  "description": "Sepolia tx 0x58df300a7f04fe31d41d24672786cbe1c58b4f3d8329d0d74392d814dd9f7e40 at block 204,060,366 (idx 2). Pre-recorded reverted tx that Nitro hardcodes in core/reverted_tx_gas.go to gasUsed=45174 (l2-only). The override exists because a Stylus bug caused divergent gas accounting in production. arbreth must apply the same override via RevertedTxHook pre_recorded_gas path or it will diverge on Sepolia replay. Canon receipt: status=0, gasUsed=0xb226=45606.",
+  "genesis": {
+    "config": {
+      "chainId": 421614,
+      "arbitrum": {
+        "InitialArbOSVersion": 40,
+        "InitialChainOwner": "0x71B61c2E250AFa05dFc36304D6c91501bE0965D8"
+      }
+    },
+    "alloc": {
+      "0xbebae99953148d4cbba7c1a36016569a8d4bc00d": {
+        "balance": "0x158fe2719c431fe",
+        "nonce": "0x3"
+      },
+      "0xa4b000000000000000000073657175656e636572": {
+        "balance": "0x35772aec276000"
+      },
+      "0x68c709da6c89bb74501530f2b9d0970b9a08165a": {
+        "balance": "0x0",
+        "nonce": "0x1"
+      },
+      "0xa4b05fffffffffffffffffffffffffffffffffff": {
+        "balance": "0x0",
+        "nonce": "0x1",
+        "storage": {
+          "0x15fed0451499512d95f3ec5a41c878b9de55f21878b5b4e190d4667ec709b400": "0x0000000000000000000000000000000000000000000000000000000000000028",
+          "0x15fed0451499512d95f3ec5a41c878b9de55f21878b5b4e190d4667ec709b403": "0x00000000000000000000000071b61c2e250afa05dfc36304d6c91501be0965d8",
+          "0x15fed0451499512d95f3ec5a41c878b9de55f21878b5b4e190d4667ec709b407": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "0x32f3a25635b90f501d25f654cd2ff8f009d6c539bf8691682a31ded63f25ed00": "0x000000000000000000000000000000000000000000000000000000000011abab",
+          "0x32f3a25635b90f501d25f654cd2ff8f009d6c539bf8691682a31ded63f25ed01": "0x0000000000000000000000000000000000000000000000000000000000008831",
+          "0x32f3a25635b90f501d25f654cd2ff8f009d6c539bf8691682a31ded63f25ed02": "0x0000000000000000000000000000000000000000000000000000000068ec71d0",
+          "0x32f3a25635b90f501d25f654cd2ff8f009d6c539bf8691682a31ded63f25ed03": "0x0000000000000000000000000000000000000000000000000000000004f16249",
+          "0x32f3a25635b90f501d25f654cd2ff8f009d6c539bf8691682a31ded63f25ed04": "0x000000000000000000000000000000000000000000000000000000000145ef23",
+          "0x4329e13427cece0e3e0c6495b768e9f788cd149b5ed4d18df4a1f5d07956b44f": "0x00020ad1045f001101616e000298000000000000000000000000000000000000",
+          "0xa9f6f085d78d1d37c5819e5c16c9e03198bd14e08cd1f6f8191bc6207b9e9706": "0x0000000000000000000000000000000000000000000000000000000004a613f2",
+          "0xa9f6f085d78d1d37c5819e5c16c9e03198bd14e08cd1f6f8191bc6207b9e9707": "0x0000000000000000000000000000000000000000000000000000000000000ba5",
+          "0xa9f6f085d78d1d37c5819e5c16c9e03198bd14e08cd1f6f8191bc6207b9e970b": "0x000000000000000000000000000000000000000000000000000001d8cdde1fbc",
+          "0xe091f9fd471791fe8327579880285904f593adeb8e6d737e687fa1e02549374f": "0x151f57e40af4d79cb0eac5580bef92f974bad637d8d15a6f1f05765d590fb15b",
+          "0xe54de2a4cdacc0a0059d2b6e16348103df8c4aff409c31e40ec73d11926c8201": "0x0000000000000000000000000000000000000000000000000000000001e84800",
+          "0xe54de2a4cdacc0a0059d2b6e16348103df8c4aff409c31e40ec73d11926c8202": "0x0000000000000000000000000000000000000000000000000000000005f5e100",
+          "0xe54de2a4cdacc0a0059d2b6e16348103df8c4aff409c31e40ec73d11926c8204": "0x00000000000000000000000000000000000000000000000000000000000da808",
+          "0xfb3a65ee2a3cc0d9ce98ddab7e30ebb719b46a87b8706ff1bf3aef1dcfb0e300": "0x000200271000040000000203e80080450b3232016d001f002000020000000000"
+        }
+      },
+      "0x71b61c2e250afa05dfc36304d6c91501be0965d8": {
+        "balance": "0x0",
+        "nonce": "0x1"
+      }
+    }
+  },
+  "messages": [
+    {
+      "msgIdx": 1,
+      "message": {
+        "header": {
+          "kind": 3,
+          "sender": "0xa4b000000000000000000073657175656e636572",
+          "blockNumber": 204060365,
+          "timestamp": 1760326236,
+          "baseFeeL1": 0
+        },
+        "l2Msg": "BPiLA4QF9eEAgwehIJRoxwnabIm7dFAVMPK50JcLmggWWoCkqxHsIAAAAAAAAAAAAAAAANTDC/rZWYKH3KGQNN+8cNLEdTPGgwzeAKASO+Z5t1jzef7dp+2Wm7muvtyKL1mgiHbegw1GZWnNmqAkc4A8Ds1i+Va9x5HDeWjcKsivs9IshLQfibbJJW0hlw=="
+      },
+      "delayedMessagesRead": 1
+    }
+  ],
+  "expected": {
+    "txReceipts": [
+      {
+        "txHash": "0x58df300a7f04fe31d41d24672786cbe1c58b4f3d8329d0d74392d814dd9f7e40",
+        "blockNumber": 1,
+        "from": "0xbebae99953148d4cbba7c1a36016569a8d4bc00d",
+        "to": "0x68c709da6c89bb74501530f2b9d0970b9a08165a",
+        "status": 0,
+        "gasUsed": 45606
+      }
+    ],
+    "blocks": [],
+    "balances": [],
+    "storage": [],
+    "eth_calls": []
+  }
+}

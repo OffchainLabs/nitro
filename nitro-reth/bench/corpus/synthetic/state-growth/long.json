@@ -1,0 +1,16 @@
+{
+  "name": "synthetic/state-growth/long",
+  "category": "baseline",
+  "scale": "long",
+  "arbos_version": 60,
+  "chain_id": 421614,
+  "corpus_version": "1.0.0",
+  "description": "Long-scale state growth: 100k blocks × 64 deploys = 6.4M new accounts. Trie depth approaches production (~24 levels). Measure rolling-window gas/sec to surface trie-depth degradation.",
+  "messages": {
+    "source": "synthetic_generator",
+    "generator": "state_growth",
+    "params": { "block_count": 100000, "deploys_per_block": 64 }
+  },
+  "metrics": { "rolling_window_blocks": 2000 },
+  "regression": { "gate": false, "tolerance_pct": 5.0, "paired_stat": "bootstrap_95ci", "bootstrap_iters": 10000 }
+}

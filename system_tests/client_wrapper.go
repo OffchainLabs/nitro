@@ -70,7 +70,7 @@ func (w *ClientWrapper) DisableRawTransactionFilter() {
 	w.rawTransactionFilter = common.Address{}
 }
 
-func (w *ClientWrapper) filterRawTransaction(result interface{}, args ...interface{}) bool {
+func (w *ClientWrapper) filterRawTransaction(_result interface{}, args ...interface{}) bool {
 	if w.rawTransactionFilter == (common.Address{}) {
 		return false
 	}

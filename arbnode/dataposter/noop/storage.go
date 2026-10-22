@@ -28,6 +28,10 @@ func (s *Storage) Prune(_ context.Context, _ uint64) error {
 	return nil
 }
 
+func (s *Storage) PruneAll(_ context.Context) error {
+	return nil
+}
+
 func (s *Storage) Put(_ context.Context, _ uint64, _, _ *storage.QueuedTransaction) error {
 	return nil
 }

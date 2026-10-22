@@ -22,6 +22,12 @@
 
 set -eu
 
+# Git sets GIT_DIR (+ sometimes GIT_WORK_TREE) for hooks; it overrides repo
+# discovery, making `git -C <submodule>` read the parent repo instead — which
+# breaks submodule-scope checks when pushing from a worktree (absolute GIT_DIR).
+# Safe to unset: all git calls here locate their repo via -C / cwd.
+unset GIT_DIR GIT_WORK_TREE
+
 # shellcheck source=scripts/lib-private-submodules.sh
 # shellcheck disable=SC1091  # CI runs shellcheck without -x, so it cannot follow the source.
 . "$(dirname "$0")/lib-private-submodules.sh"

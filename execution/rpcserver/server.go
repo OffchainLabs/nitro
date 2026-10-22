@@ -25,8 +25,8 @@ func (c *Server) DigestMessage(ctx context.Context, msgIdx arbutil.MessageIndex,
 	return c.executionClient.DigestMessage(msgIdx, msg, msgForPrefetch).Await(ctx)
 }
 
-func (c *Server) Reorg(ctx context.Context, msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
-	return c.executionClient.Reorg(msgIdxOfFirstMsgToAdd, newMessages, oldMessages).Await(ctx)
+func (c *Server) Reorg(ctx context.Context, msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) ([]*execution.MessageResult, error) {
+	return c.executionClient.Reorg(msgIdxOfFirstMsgToAdd, newMessages).Await(ctx)
 }
 
 func (c *Server) HeadMessageIndex(ctx context.Context) (arbutil.MessageIndex, error) {
@@ -75,5 +75,10 @@ func (c *Server) RecordBlockCreation(ctx context.Context, pos arbutil.MessageInd
 
 func (c *Server) PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error {
 	_, err := c.executionRecorder.PrepareForRecord(start, end).Await(ctx)
+	return err
+}
+
+func (c *Server) PruneBlockRecordings(ctx context.Context, before arbutil.MessageIndex) error {
+	_, err := c.executionRecorder.PruneBlockRecordings(before).Await(ctx)
 	return err
 }

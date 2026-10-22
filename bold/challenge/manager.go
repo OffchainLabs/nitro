@@ -277,6 +277,7 @@ func (m *Manager) NewBlockSubscriber() *events.Producer[*gethtypes.Header] {
 
 func (m *Manager) Start(ctx context.Context) {
 	m.StopWaiter.Start(ctx, m)
+	m.LaunchThread(m.newBlockNotifier.Start)
 	log.Info("Started challenge manager", "stakerAddress", m.chain.StakerAddress().Hex())
 
 	m.StartAndTrackChild(m.assertionManager)

@@ -1,0 +1,21 @@
+{
+  "name": "synthetic/production-shaped/storage-churn",
+  "category": "heavy-blocks",
+  "scale": "short",
+  "arbos_version": 60,
+  "chain_id": 421614,
+  "corpus_version": "1.0.0",
+  "description": "Storage-churn workload running against a 1M-account pre-warmed trie. Catches state-root regressions that only show up under realistic trie depth.",
+  "messages": {
+    "source": "synthetic_generator",
+    "generator": "storage_churn_block",
+    "params": { "block_count": 200, "txs_per_block": 32, "sstores_per_tx": 16 }
+  },
+  "metrics": { "rolling_window_blocks": 10 },
+  "regression": { "gate": true, "tolerance_pct": 5.0, "paired_stat": "bootstrap_95ci", "bootstrap_iters": 10000 },
+  "prewarm": {
+    "accounts": 1000000,
+    "seed": 11400714819323198487,
+    "balance_wei": "0x0"
+  }
+}

@@ -1,0 +1,112 @@
+# Arbitrum Reth
+
+[![license](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE.md)
+[![test](https://github.com/OffchainLabs/arbitrum-reth/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/OffchainLabs/arbitrum-reth/actions/workflows/test.yml)
+[![docs](https://github.com/OffchainLabs/arbitrum-reth/actions/workflows/docs.yml/badge.svg?branch=main)](https://github.com/OffchainLabs/arbitrum-reth/actions/workflows/docs.yml)
+[![codecov](https://codecov.io/gh/OffchainLabs/arbitrum-reth/branch/main/graph/badge.svg)](https://codecov.io/gh/OffchainLabs/arbitrum-reth)
+[![DeepWiki](https://img.shields.io/badge/DeepWiki-OffchainLabs%2Farbitrum--reth-blue.svg?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTQgMTkuNUEyLjUgMi41IDAgMCAxIDYuNSAxN0gyMCI+PC9wYXRoPjxwYXRoIGQ9Ik02LjUgMkgyMHYyMEg2LjVBMi41IDIuNSAwIDAgMSA0IDE5LjVWNC41QTIuNSAyLjUgMCAwIDEgNi41IDJ6Ij48L3BhdGg+PC9zdmc+)](https://deepwiki.com/OffchainLabs/arbitrum-reth)
+
+A modular, Rust-native execution client for Arbitrum, built on [reth](https://github.com/paradigmxyz/reth).
+
+## What is Arbitrum Reth?
+
+Arbitrum Reth is a ground-up Rust implementation of [Arbitrum Nitro](https://github.com/OffchainLabs/nitro)'s execution layer. It replaces Nitro's embedded Geth fork with [reth](https://github.com/paradigmxyz/reth), delivering the same state-transition logic through a modular crate architecture designed for extensibility.
+
+Each component (ArbOS state management, L1/L2 pricing, precompiles, Stylus WASM execution) lives in its own crate and builds on reth's trait system (`BlockExecutor`, `StateProvider`, `EvmConfig`). This makes Arbitrum Reth usable both as a full node and as an SDK for building Arbitrum-compatible tooling and infrastructure.
+
+**Supported networks:** Arbitrum Sepolia (421614)
+
+## Quick Start
+
+### Docker (recommended)
+
+Set `PARENT_CHAIN_RPC_URL` and `PARENT_CHAIN_BEACON_URL` in `.env` first, then start the full node via Compose:
+
+```bash
+cp .env.example .env
+docker compose up -d
+```
+
+`docker compose up -d` pulls and runs the prebuilt multi-arch image `ghcr.io/OffchainLabs/arbitrum-reth` (`linux/amd64`, `linux/arm64`). To build the image from source instead, run `docker compose up -d --build`.
+
+To sync from a snapshot instead of from genesis, see [Snapshots](https://arbreth.rs/docs/snapshots) for the fast first-run path.
+
+### Build from Source
+
+**Requirements:** Rust 1.93+, clang, cmake
+
+The build scripts pull C and contract sources from git submodules, so fetch them first or the build fails:
+
+```bash
+git submodule update --init --recursive
+cargo build --release -p arb-reth
+```
+
+Run the node:
+
+```bash
+./target/release/arb-reth node \
+  --chain=genesis/arbitrum-sepolia.json \
+  --datadir=/path/to/data \
+  --http \
+  --http.addr=0.0.0.0 \
+  --http.api=eth,web3,net,debug \
+  --authrpc.addr=0.0.0.0 \
+  --authrpc.jwtsecret=/path/to/jwt.hex
+```
+
+| Port | Service |
+|------|---------|
+| 8545 | JSON-RPC (HTTP) |
+| 8551 | Authenticated RPC (JWT) |
+
+See [`.env.example`](.env.example) for all configuration options.
+
+## Architecture
+
+Arbitrum Reth is organized as a Cargo workspace of focused, independently consumable crates:
+
+```
+crates/
+├── arbos/             Core ArbOS state machine, pricing models, retryables
+├── arb-evm/           Block executor, custom opcodes, EVM integration
+├── arb-precompiles/   Arbitrum precompile contracts (0x64+)
+├── arb-stylus/        Stylus WASM runtime and host functions
+├── arb-context/       Per-block / per-tx context (BlockCtx, TxCtx) for the EVM and precompiles
+├── arb-primitives/    Transaction types, receipts, gas types
+├── arb-chainspec/     Chain spec and ArbOS version constants
+├── arb-storage/       Storage-backed types over reth's StateProvider
+├── arb-node/          Node builder plugin for reth
+├── arb-rpc/           Custom JSON-RPC methods
+├── arb-payload/       Payload building primitives
+└── arb-txpool/        Transaction pool validation
+
+bin/
+└── arb-reth/          Node binary
+```
+
+All crates integrate with the reth ecosystem through its standard traits and can be consumed individually as libraries for custom tooling, indexers, or alternative node configurations.
+
+## Contributing
+
+```bash
+git clone --recurse-submodules https://github.com/OffchainLabs/arbitrum-reth.git
+cd arbitrum-reth
+cargo check
+cargo test
+```
+
+Please open an issue before starting work on larger changes.
+
+## License
+
+Licensed under the [Business Source License 1.1](LICENSE.md), consistent with the [Arbitrum Nitro license](https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md). See [LICENSE.md](LICENSE.md) and [NOTICE](NOTICE) for full terms and third-party attributions.
+
+## Acknowledgements
+
+Arbitrum Reth builds on the work of several projects:
+
+- [**reth**](https://github.com/paradigmxyz/reth) by Paradigm, the modular Ethereum execution client that provides the node framework, trait system, and database infrastructure that Arbitrum Reth extends.
+- [**Arbitrum Nitro**](https://github.com/OffchainLabs/nitro) by Offchain Labs, the Arbitrum node implementation that Arbitrum Reth is derived from.
+- [**revm**](https://github.com/bluealloy/revm), the Rust EVM that powers transaction execution.
+- [**alloy**](https://github.com/alloy-rs/alloy), Rust types and primitives for the Ethereum ecosystem.

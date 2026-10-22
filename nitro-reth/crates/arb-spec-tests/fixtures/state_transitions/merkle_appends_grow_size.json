@@ -1,0 +1,13 @@
+{
+  "name": "merkle_appends_grow_size",
+  "description": "Three merkle appends should yield size 3",
+  "setup": { "arbos_version": 30, "chain_id": 412346 },
+  "actions": [
+    { "type": "merkle_append", "item": "0x0000000000000000000000000000000000000000000000000000000000000001" },
+    { "type": "merkle_append", "item": "0x0000000000000000000000000000000000000000000000000000000000000002" },
+    { "type": "merkle_append", "item": "0x0000000000000000000000000000000000000000000000000000000000000003" }
+  ],
+  "assertions": {
+    "merkle": { "size": 3 }
+  }
+}

@@ -1,0 +1,21 @@
+[package]
+name = "arb-context"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[lib]
+doctest = false
+
+[dependencies]
+alloy-primitives = { workspace = true, features = ["std"] }
+arb-primitives = { workspace = true }
+arb-storage = { workspace = true }
+arbos = { workspace = true }
+parking_lot = { workspace = true }
+
+[lints]
+workspace = true

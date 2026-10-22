@@ -1,0 +1,27 @@
+{
+  "name": "synthetic/max-calldata/short",
+  "category": "max-calldata",
+  "scale": "short",
+  "arbos_version": 60,
+  "chain_id": 421614,
+  "corpus_version": "1.0.0",
+  "description": "Large calldata payloads exercising L1 poster cost computation and calldata hashing.",
+  "messages": {
+    "source": "synthetic_generator",
+    "generator": "max_calldata",
+    "params": {
+      "block_count": 2000,
+      "calldata_bytes": 32768,
+      "txs_per_block": 8
+    }
+  },
+  "metrics": {
+    "rolling_window_blocks": 100
+  },
+  "regression": {
+    "gate": true,
+    "tolerance_pct": 5.0,
+    "paired_stat": "bootstrap_95ci",
+    "bootstrap_iters": 10000
+  }
+}

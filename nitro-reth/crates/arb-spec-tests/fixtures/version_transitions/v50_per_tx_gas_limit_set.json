@@ -1,0 +1,8 @@
+{
+  "name": "v50_per_tx_gas_limit_set",
+  "description": "ArbOS v50 sets per-tx gas limit to 32M",
+  "setup": {"arbos_version": 50, "chain_id": 421614},
+  "assertions": {
+    "l2_pricing": {"per_tx_gas_limit": 32000000}
+  }
+}

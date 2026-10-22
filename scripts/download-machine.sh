@@ -22,7 +22,7 @@ if [ "$repo" = "OffchainLabs/nitro" ]; then
 	url_base="https://github.com/$repo/releases/download/$tag"
 	wget "$url_base/machine.v2.wavm.br"
 
-	status_code="$(curl -LI "$url_base/replay.wasm" -so /dev/null -w '%{http_code}')"
+	status_code="$(curl -LI --retry 3 --retry-all-errors "$url_base/replay.wasm" -so /dev/null -w '%{http_code}')"
 	if [ "$status_code" -ne 404 ]; then
 		wget "$url_base/replay.wasm"
 	fi

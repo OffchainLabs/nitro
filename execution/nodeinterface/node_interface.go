@@ -151,7 +151,7 @@ func (n NodeInterface) EstimateRetryableTicket(
 		From:             util.RemapL1Address(sender),
 		L1BaseFee:        l1BaseFee,
 		DepositValue:     deposit,
-		GasFeeCap:        n.sourceMessage.GasPrice,
+		GasFeeCap:        n.sourceMessage.GasPrice.ToBig(),
 		Gas:              n.sourceMessage.GasLimit,
 		RetryTo:          pRetryTo,
 		RetryValue:       l2CallValue,
@@ -440,8 +440,8 @@ func (n NodeInterface) messageArgs(
 	from := msg.From
 	gas := msg.GasLimit
 	nonce := msg.Nonce
-	maxFeePerGas := msg.GasFeeCap
-	maxPriorityFeePerGas := msg.GasTipCap
+	maxFeePerGas := msg.GasFeeCap.ToBig()
+	maxPriorityFeePerGas := msg.GasTipCap.ToBig()
 	chainid := evm.ChainConfig().ChainID
 
 	args := arbitrum.TransactionArgs{

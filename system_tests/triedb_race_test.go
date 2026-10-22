@@ -21,7 +21,7 @@ func TestTrieDBCommitRace(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true).WithTakeOwnership(false)
 	builder.RequireScheme(t, rawdb.HashScheme)
 	builder.execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
-	builder.execConfig.Sequencer.MaxBlockSpeed = 0
+	builder.execConfig.Sequencer.MaxBlockSpeed = 5 * time.Millisecond
 	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	builder.execConfig.Caching.Archive = true
 	builder.execConfig.Caching.BlockCount = 127
@@ -58,7 +58,7 @@ func TestTrieDBCommitRace(t *testing.T) {
 				block, err := api.BlockByNumber(ctx, rpc.BlockNumber(blockNumber))
 				if err == nil && block != nil {
 					root := block.Root()
-					if statedb, err := bc.StateAt(root); err == nil {
+					if statedb, err := bc.StateAt(block.Header()); err == nil {
 						err := statedb.Database().TrieDB().Reference(root, common.Hash{})
 						Require(t, err)
 						roots = append(roots, root)

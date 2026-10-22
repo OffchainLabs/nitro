@@ -1,0 +1,113 @@
+{
+  "config": {
+    "chainId": 421614,
+    "homesteadBlock": 0,
+    "daoForkSupport": true,
+    "eip150Block": 0,
+    "eip155Block": 0,
+    "eip158Block": 0,
+    "byzantiumBlock": 0,
+    "constantinopleBlock": 0,
+    "petersburgBlock": 0,
+    "istanbulBlock": 0,
+    "muirGlacierBlock": 0,
+    "berlinBlock": 0,
+    "londonBlock": 0,
+    "depositContractAddress": "0x0000000000000000000000000000000000000000",
+    "clique": {
+      "period": 0,
+      "epoch": 0
+    },
+    "arbitrum": {
+      "EnableArbOS": true,
+      "AllowDebugPrecompiles": true,
+      "DataAvailabilityCommittee": false,
+      "InitialArbOSVersion": 51,
+      "InitialChainOwner": "0x0000000000000000000000000000000000000000",
+      "GenesisBlockNum": 0,
+      "SkipGenesisInjection": true
+    }
+  },
+  "alloc": {
+    "0x0000000000000000000000000000000000000064": {
+      "balance": "0x0",
+      "code": "0xfe"
+    },
+    "0x0000000000000000000000000000000000000065": {
+      "balance": "0x0",
+      "code": "0xfe"
+    },
+    "0x0000000000000000000000000000000000000066": {
+      "balance": "0x0",
+      "code": "0xfe"
+    },
+    "0x0000000000000000000000000000000000000067": {
+      "balance": "0x0",
+      "code": "0xfe"
+    },
+    "0x0000000000000000000000000000000000000068": {
+      "balance": "0x0",
+      "code": "0xfe"
+    },
+    "0x0000000000000000000000000000000000000069": {
+      "balance": "0x0",
+      "code": "0xfe"
+    },
+    "0x000000000000000000000000000000000000006b": {
+      "balance": "0x0",
+      "code": "0xfe"
+    },
+    "0x000000000000000000000000000000000000006c": {
+      "balance": "0x0",
+      "code": "0xfe"
+    },
+    "0x000000000000000000000000000000000000006d": {
+      "balance": "0x0",
+      "code": "0xfe"
+    },
+    "0x000000000000000000000000000000000000006e": {
+      "balance": "0x0",
+      "code": "0xfe"
+    },
+    "0x000000000000000000000000000000000000006f": {
+      "balance": "0x0",
+      "code": "0xfe"
+    },
+    "0x0000000000000000000000000000000000000070": {
+      "balance": "0x0",
+      "code": "0xfe"
+    },
+    "0x0000000000000000000000000000000000000071": {
+      "balance": "0x0",
+      "code": "0xfe"
+    },
+    "0x0000000000000000000000000000000000000072": {
+      "balance": "0x0",
+      "code": "0xfe"
+    },
+    "0x0000000000000000000000000000000000000073": {
+      "balance": "0x0",
+      "code": "0xfe"
+    },
+    "0x00000000000000000000000000000000000000ff": {
+      "balance": "0x0",
+      "code": "0xfe"
+    },
+    "0x00000000000000000000000000000000000a4b05": {
+      "balance": "0x0",
+      "code": "0xfe"
+    },
+    "0xa4b05fffffffffffffffffffffffffffffffffff": {
+      "balance": "0x0",
+      "nonce": "0x1"
+    }
+  },
+  "nonce": "0x1",
+  "timestamp": "0x0",
+  "gasLimit": "0x4000000000000",
+  "difficulty": "0x1",
+  "mixHash": "0x0000000000000000000000000000000000000000000000330000000000000000",
+  "coinbase": "0x0000000000000000000000000000000000000000",
+  "extraData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "baseFeePerGas": "0x5f5e100"
+}

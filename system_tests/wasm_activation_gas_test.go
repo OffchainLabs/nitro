@@ -31,11 +31,12 @@ type activationGasTest struct {
 
 // setupActivationGasTest spins up a node at ArbosVersion_59 and wires
 // up the ArbOwner / ArbWasm bindings used by the activation-gas test suite.
-func setupActivationGasTest(t *testing.T) activationGasTest {
+func setupActivationGasTest(t *testing.T, builderOpts ...func(*NodeBuilder)) activationGasTest {
 	t.Helper()
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithArbOSVersion(params.ArbosVersion_59)
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 
@@ -88,7 +89,13 @@ func requireTxReverts(t *testing.T, ctx context.Context, l2client *ethclient.Cli
 //   - setting a blocking activation gas value prevents contract activation while
 //     resetting it to zero restores normal activation.
 func TestWasmActivationGasBlocking(t *testing.T) {
-	env := setupActivationGasTest(t)
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testWasmActivationGasBlocking(t, recorderOpt)
+	})
+}
+
+func testWasmActivationGasBlocking(t *testing.T, builderOpts ...func(*NodeBuilder)) {
+	env := setupActivationGasTest(t, builderOpts...)
 	defer env.cleanup()
 
 	program := deployUnactivatedWasm(t, env, rustFile("keccak"))
@@ -119,9 +126,16 @@ func TestWasmActivationGasBlocking(t *testing.T) {
 // TestWasmActivationGasVersionGating verifies that SetWasmActivationGas and ActivationGas
 // are unavailable on ArbOS versions prior to ArbosVersion_StylusActivationGas.
 func TestWasmActivationGasVersionGating(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true, func(b *NodeBuilder) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testWasmActivationGasVersionGating(t, recorderOpt)
+	})
+}
+
+func testWasmActivationGasVersionGating(t *testing.T, builderOpts ...func(*NodeBuilder)) {
+	builderOpts = append(builderOpts, func(b *NodeBuilder) {
 		b.WithArbOSVersion(params.ArbosVersion_51)
 	})
+	builder, auth, cleanup := setupProgramTest(t, true, builderOpts...)
 	defer cleanup()
 	ctx := builder.ctx
 	l2client := builder.L2.Client
@@ -149,12 +163,18 @@ func TestWasmActivationGasVersionGating(t *testing.T) {
 // TestWasmActivationGasCharge verifies that a non-zero activation gas is actually
 // deducted on top of the normal activation cost when activating a Stylus contract.
 func TestWasmActivationGasCharge(t *testing.T) {
+	testProgramDefaultRecorderOnly(t, func(t *testing.T, recorderOpt func(*NodeBuilder)) {
+		testWasmActivationGasCharge(t, recorderOpt)
+	})
+}
+
+func testWasmActivationGasCharge(t *testing.T, builderOpts ...func(*NodeBuilder)) {
 	const (
 		extraGas            = uint64(1_000_000)
 		fixedActivationCost = uint64(1_659_168)
 	)
 
-	env := setupActivationGasTest(t)
+	env := setupActivationGasTest(t, builderOpts...)
 	defer env.cleanup()
 
 	env.ensure(env.arbOwner.SetWasmActivationGas(&env.auth, extraGas))

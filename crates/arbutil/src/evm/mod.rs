@@ -97,6 +97,7 @@ pub struct EvmData {
     pub tx_origin: Bytes20,
     pub reentrant: u32,
     pub return_data_len: u32,
+    pub storage_cache_limit: u32,
     pub cached: bool,
     pub tracing: bool,
 }

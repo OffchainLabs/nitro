@@ -8,10 +8,12 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/util/colors"
 )
 
@@ -41,6 +43,51 @@ func TestMemoryBackingEvmStorage(t *testing.T) {
 	Require(t, err)
 	if value != val1 {
 		Fail(t)
+	}
+}
+
+// TestCollectTipsFreeFunction covers the stateDB-level CollectTips used by the sequencer.
+func TestCollectTipsFreeFunction(t *testing.T) {
+	// The dev-test config initializes below ArbOS 60, where CollectTips is false even when the
+	// storage flag is set.
+	state, statedb := NewArbosMemoryBackedArbOSState()
+	if state.ArbOSVersion() >= params.ArbosVersion_60 {
+		Fail(t, "test expects a pre-60 state, got version", state.ArbOSVersion())
+	}
+	Require(t, state.SetCollectTips(true))
+	collect, err := CollectTips(statedb)
+	Require(t, err)
+	if collect {
+		Fail(t, "CollectTips = true below ArbOS 60, want false")
+	}
+
+	// From ArbOS 60 on, CollectTips reflects the stored flag.
+	config := chaininfo.ArbitrumDevTestChainConfig()
+	config.ArbitrumChainParams.InitialArbOSVersion = params.ArbosVersion_60
+	state60, statedb60 := NewArbosMemoryBackedArbOSStateWithConfig(config)
+	collect, err = CollectTips(statedb60)
+	Require(t, err)
+	if collect {
+		Fail(t, "CollectTips = true before SetCollectTips, want false")
+	}
+	Require(t, state60.SetCollectTips(true))
+	collect, err = CollectTips(statedb60)
+	Require(t, err)
+	if !collect {
+		Fail(t, "CollectTips = false after SetCollectTips(true), want true")
+	}
+}
+
+// TestBaseFeeFreeFunction checks that the stateDB-level BaseFee reads the same base fee as
+// the ArbosState pricing accessor.
+func TestBaseFeeFreeFunction(t *testing.T) {
+	state, statedb := NewArbosMemoryBackedArbOSState()
+	got, err := BaseFee(statedb)
+	Require(t, err)
+	want, err := state.L2PricingState().BaseFeeWei()
+	Require(t, err)
+	if got.Cmp(want) != 0 {
+		Fail(t, "base fee mismatch:", got, "vs", want)
 	}
 }
 

@@ -5,19 +5,19 @@ use arbutil::Bytes32;
 use eyre::{Result, WrapErr};
 use prover::{machine::GlobalState, utils::file_bytes, Machine};
 use std::{collections::HashMap, fmt::Display, path::PathBuf, sync::Arc};
-use structopt::StructOpt;
+use clap::Parser;
 
-#[derive(StructOpt)]
-#[structopt(name = "module-roots")]
+#[derive(Parser)]
+#[command(name = "module-roots")]
 struct Opts {
-    #[structopt(long)]
+    #[arg(long)]
     binary: PathBuf,
-    #[structopt(long)]
+    #[arg(long)]
     stylus_modules: Vec<PathBuf>,
 }
 
 fn main() -> Result<()> {
-    let mut opts = Opts::from_args();
+    let mut opts = Opts::parse();
 
     macro_rules! relocate {
         ($file:expr) => {

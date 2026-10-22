@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	dataposterconfig "github.com/offchainlabs/nitro/arbnode/dataposter/config"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/solgen/go/rollup_legacy_gen"
@@ -77,25 +78,25 @@ func L1PostingStrategyAddOptions(prefix string, f *pflag.FlagSet) {
 }
 
 type L1ValidatorConfig struct {
-	Enable                    bool                        `koanf:"enable"`
-	Strategy                  string                      `koanf:"strategy"`
-	StakerInterval            time.Duration               `koanf:"staker-interval"`
-	MakeAssertionInterval     time.Duration               `koanf:"make-assertion-interval"`
-	PostingStrategy           L1PostingStrategy           `koanf:"posting-strategy"`
-	DisableChallenge          bool                        `koanf:"disable-challenge"`
-	ConfirmationBlocks        int64                       `koanf:"confirmation-blocks"`
-	UseSmartContractWallet    bool                        `koanf:"use-smart-contract-wallet"`
-	OnlyCreateWalletContract  bool                        `koanf:"only-create-wallet-contract"`
-	StartValidationFromStaked bool                        `koanf:"start-validation-from-staked"`
-	ContractWalletAddress     string                      `koanf:"contract-wallet-address"`
-	GasRefunderAddress        string                      `koanf:"gas-refunder-address"`
-	DataPoster                dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
-	RedisUrl                  string                      `koanf:"redis-url"`
-	ExtraGas                  uint64                      `koanf:"extra-gas" reload:"hot"`
-	Dangerous                 DangerousConfig             `koanf:"dangerous"`
-	ParentChainWallet         genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
-	LogQueryBatchSize         uint64                      `koanf:"log-query-batch-size" reload:"hot"`
-	EnableFastConfirmation    bool                        `koanf:"enable-fast-confirmation"`
+	Enable                    bool                              `koanf:"enable"`
+	Strategy                  string                            `koanf:"strategy"`
+	StakerInterval            time.Duration                     `koanf:"staker-interval"`
+	MakeAssertionInterval     time.Duration                     `koanf:"make-assertion-interval"`
+	PostingStrategy           L1PostingStrategy                 `koanf:"posting-strategy"`
+	DisableChallenge          bool                              `koanf:"disable-challenge"`
+	ConfirmationBlocks        int64                             `koanf:"confirmation-blocks"`
+	UseSmartContractWallet    bool                              `koanf:"use-smart-contract-wallet"`
+	OnlyCreateWalletContract  bool                              `koanf:"only-create-wallet-contract"`
+	StartValidationFromStaked bool                              `koanf:"start-validation-from-staked"`
+	ContractWalletAddress     string                            `koanf:"contract-wallet-address"`
+	GasRefunderAddress        string                            `koanf:"gas-refunder-address"`
+	DataPoster                dataposterconfig.DataPosterConfig `koanf:"data-poster" reload:"hot"`
+	RedisUrl                  string                            `koanf:"redis-url"`
+	ExtraGas                  uint64                            `koanf:"extra-gas" reload:"hot"`
+	Dangerous                 DangerousConfig                   `koanf:"dangerous"`
+	ParentChainWallet         genericconf.WalletConfig          `koanf:"parent-chain-wallet"`
+	LogQueryBatchSize         uint64                            `koanf:"log-query-batch-size" reload:"hot"`
+	EnableFastConfirmation    bool                              `koanf:"enable-fast-confirmation"`
 
 	strategy    StakerStrategy
 	gasRefunder common.Address
@@ -181,7 +182,7 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	StartValidationFromStaked: true,
 	ContractWalletAddress:     "",
 	GasRefunderAddress:        "",
-	DataPoster:                dataposter.DefaultDataPosterConfigForValidator,
+	DataPoster:                dataposterconfig.DefaultDataPosterConfigForValidator,
 	RedisUrl:                  "",
 	ExtraGas:                  50000,
 	Dangerous:                 DefaultDangerousConfig,
@@ -203,7 +204,7 @@ var TestL1ValidatorConfig = L1ValidatorConfig{
 	StartValidationFromStaked: true,
 	ContractWalletAddress:     "",
 	GasRefunderAddress:        "",
-	DataPoster:                dataposter.TestDataPosterConfigForValidator,
+	DataPoster:                dataposterconfig.TestDataPosterConfigForValidator,
 	RedisUrl:                  "",
 	ExtraGas:                  50000,
 	Dangerous:                 DefaultDangerousConfig,
@@ -236,7 +237,7 @@ func L1ValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".redis-url", DefaultL1ValidatorConfig.RedisUrl, "redis url for L1 validator")
 	f.Uint64(prefix+".extra-gas", DefaultL1ValidatorConfig.ExtraGas, "use this much more gas than estimation says is necessary to post transactions")
 	f.Uint64(prefix+".log-query-batch-size", DefaultL1ValidatorConfig.LogQueryBatchSize, "range ro query from eth_getLogs")
-	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfigForValidator, dataposter.DataPosterUsageStaker)
+	dataposterconfig.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposterconfig.DefaultDataPosterConfigForValidator, dataposterconfig.DataPosterUsageStaker)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultL1ValidatorConfig.ParentChainWallet.Pathname)
 	f.Bool(prefix+".enable-fast-confirmation", DefaultL1ValidatorConfig.EnableFastConfirmation, "enable fast confirmation")
@@ -727,10 +728,11 @@ func (s *Staker) confirmDataPosterIsReady(ctx context.Context) error {
 	if dp == nil {
 		return nil
 	}
-	dataPosterNonce, _, err := dp.GetNextNonceAndMeta(ctx)
+	nonceAndMeta, err := dp.GetNextNonceAndMeta(ctx)
 	if err != nil {
 		return err
 	}
+	dataPosterNonce := nonceAndMeta.Nonce
 	latestNonce, err := s.l1Reader.Client().NonceAt(ctx, dp.Sender(), nil)
 	if err != nil {
 		return err

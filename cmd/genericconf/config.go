@@ -16,9 +16,15 @@ import (
 )
 
 type ConfConfig struct {
-	Dump           bool          `koanf:"dump"`
-	EnvPrefix      string        `koanf:"env-prefix"`
-	File           []string      `koanf:"file"`
+	Dump      bool     `koanf:"dump"`
+	EnvPrefix string   `koanf:"env-prefix"`
+	File      []string `koanf:"file"`
+	// MaxVersion and MinVersion are read straight out of koanf by
+	// confighelpers.BeginCommonParse, before this struct is populated. They are
+	// declared here so the keys are accepted by EndCommonParse and show up in
+	// --help and --conf.dump.
+	MaxVersion     string        `koanf:"max-version" reload:"hot"`
+	MinVersion     string        `koanf:"min-version" reload:"hot"`
 	S3             S3Config      `koanf:"s3"`
 	String         string        `koanf:"string"`
 	ReloadInterval time.Duration `koanf:"reload-interval" reload:"hot"`
@@ -28,6 +34,8 @@ func ConfConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".dump", ConfConfigDefault.Dump, "print out currently active configuration file")
 	f.String(prefix+".env-prefix", ConfConfigDefault.EnvPrefix, "environment variables with given prefix will be loaded as configuration values")
 	f.StringSlice(prefix+".file", ConfConfigDefault.File, "name of configuration file")
+	f.String(prefix+".max-version", ConfConfigDefault.MaxVersion, "highest nitro version this configuration supports, as a semantic version (e.g. \"v3.10.0\"); a release build newer than this exits at startup (empty = no maximum)")
+	f.String(prefix+".min-version", ConfConfigDefault.MinVersion, "lowest nitro version this configuration supports, as a semantic version (e.g. \"v3.9.0\"); a release build older than this exits at startup (empty = no minimum)")
 	S3ConfigAddOptions(prefix+".s3", f)
 	f.String(prefix+".string", ConfConfigDefault.String, "configuration as JSON string")
 	f.Duration(prefix+".reload-interval", ConfConfigDefault.ReloadInterval, "how often to reload configuration (0=disable periodic reloading)")
@@ -37,6 +45,8 @@ var ConfConfigDefault = ConfConfig{
 	Dump:           false,
 	EnvPrefix:      "",
 	File:           []string{},
+	MaxVersion:     "",
+	MinVersion:     "",
 	S3:             DefaultS3Config,
 	String:         "",
 	ReloadInterval: 0,
@@ -91,7 +101,7 @@ var DefaultFileLoggingConfig = FileLoggingConfig{
 	File:       "nitro.log",
 	MaxSize:    5,     // 5Mb
 	MaxAge:     0,     // don't remove old files based on age
-	MaxBackups: 20,    // keep 20 files
+	MaxBackups: 40,    // keep 40 files
 	LocalTime:  false, // use UTC time
 	Compress:   true,
 	BufSize:    512,

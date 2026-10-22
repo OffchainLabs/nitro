@@ -851,7 +851,7 @@ func (w *Watcher) processEdgeConfirmation(
 	return nil
 }
 
-func (w *Watcher) confirmAssertionByChallengeWinner(ctx context.Context, edge protocol.SpecEdge, claimedAssertion protocol.AssertionHash, challengeParentAssertionHash protocol.AssertionHash) {
+func (w *Watcher) confirmAssertionByChallengeWinner(ctx context.Context, edge protocol.SpecEdge, claimedAssertion protocol.AssertionHash, _challengeParentAssertionHash protocol.AssertionHash) {
 	edgeConfirmedAtBlock, err := retry.UntilSucceeds(ctx, func() (uint64, error) {
 		return edge.ConfirmedAtBlock(ctx)
 	})

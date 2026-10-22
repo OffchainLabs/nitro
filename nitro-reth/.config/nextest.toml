@@ -1,0 +1,46 @@
+# nextest configuration. Mirrors reth's pattern: a fast default profile for
+# PRs and a slower profile that runs everything (including spec-tests) on
+# scheduled CI.
+
+[profile.default]
+# Keep PR runs snappy: 60s per test is plenty for unit tests; if anything
+# wants longer it should be tagged as slow and gated by the `ci` profile.
+slow-timeout = { period = "30s", terminate-after = 2 }
+fail-fast = false
+
+# Retry once on transient failures (typically I/O flakes); true failures
+# repro reliably so this rarely hides bugs.
+retries = 1
+
+[profile.ci]
+# Run everything, no early exit, longer timeouts for fixture-heavy suites.
+slow-timeout = { period = "60s", terminate-after = 4 }
+fail-fast = false
+retries = 0
+failure-output = "immediate-final"
+status-level = "all"
+
+# Spec-test categories spawn many arbreth processes per fixture; running
+# multiple categories in parallel oversubscribes CPU/memory on CI and
+# causes startup timeouts. Pin them to a single thread, with a long
+# slow-timeout to cover the sequential fixture sweep.
+[[profile.ci.overrides]]
+filter = 'package(arb-spec-tests)'
+test-group = 'spec-tests-serial'
+slow-timeout = { period = "10m", terminate-after = 3 }
+
+# arb-fuzz scenarios boot a Nitro container and compile Stylus WASM per test.
+# Cap concurrency so the Docker VM is never oversubscribed by parallel nodes.
+[[profile.default.overrides]]
+filter = 'package(arb-fuzz)'
+test-group = 'fuzz-docker'
+slow-timeout = { period = "180s", terminate-after = 2 }
+
+[[profile.ci.overrides]]
+filter = 'package(arb-fuzz)'
+test-group = 'fuzz-docker'
+slow-timeout = { period = "180s", terminate-after = 2 }
+
+[test-groups]
+spec-tests-serial = { max-threads = 1 }
+fuzz-docker = { max-threads = 2 }

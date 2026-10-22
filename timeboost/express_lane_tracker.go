@@ -25,6 +25,8 @@ import (
 
 var (
 	auctionResolutionLatency = metrics.NewRegisteredGauge("arb/sequencer/timeboost/auctionresolution", nil)
+	// early next-round submissions slept until the round boundary
+	expressLaneEarlySubmissionSleepCounter = metrics.NewRegisteredCounter("arb/sequencer/timeboost/expresslane/earlysubmissionsleeps", nil)
 )
 
 type RoundListener interface {
@@ -105,7 +107,7 @@ func (t *ExpressLaneTracker) RoundController(round uint64) (common.Address, erro
 
 // validateExpressLaneTx checks for the correctness of all fields of msg
 func (t *ExpressLaneTracker) ValidateExpressLaneTx(msg *ExpressLaneSubmission) error {
-	if msg == nil || msg.Transaction == nil || msg.Signature == nil {
+	if msg == nil || msg.Transaction == nil || msg.Signature == nil || msg.ChainId == nil {
 		return ErrMalformedData
 	}
 	txSize := msg.Transaction.Size()
@@ -125,6 +127,13 @@ func (t *ExpressLaneTracker) ValidateExpressLaneTx(msg *ExpressLaneSubmission) e
 		// We allow txs to come in for the next round if it is close enough to that round,
 		// but we sleep until the round starts.
 		if msg.Round == currentRound+1 && timeTilNextRound <= t.earlySubmissionGrace {
+			expressLaneEarlySubmissionSleepCounter.Inc(1)
+			log.Info("Express lane tx submitted early for next round; sleeping until round start",
+				"round", msg.Round,
+				"currentRound", currentRound,
+				"sleepDuration", timeTilNextRound,
+				"txHash", msg.Transaction.Hash(),
+			)
 			time.Sleep(timeTilNextRound)
 		} else {
 			return errors.Wrapf(ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, currentRound)

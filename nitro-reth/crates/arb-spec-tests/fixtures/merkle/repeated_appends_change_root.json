@@ -1,0 +1,15 @@
+{
+  "name": "repeated_appends_change_root",
+  "description": "Two distinct items yield a non-zero root different from any single-leaf root",
+  "setup": {"arbos_version": 30, "chain_id": 412346},
+  "actions": [
+    {"type": "merkle_append", "item": "0x0000000000000000000000000000000000000000000000000000000000000001"},
+    {"type": "merkle_append", "item": "0x0000000000000000000000000000000000000000000000000000000000000002"}
+  ],
+  "assertions": {
+    "merkle": {
+      "size": 2,
+      "root_not": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  }
+}

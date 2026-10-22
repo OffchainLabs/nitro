@@ -21,9 +21,29 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-var simulatedChainID = big.NewInt(1337)
+var testL1ChainID = big.NewInt(1337)
+
+type info = *BlockchainTestInfo
+
+var RollupOwner = "RollupOwner"
+var Sequencer = "Sequencer"
+var Validator = "Validator"
+var User = "User"
+
+var DefaultChainAccounts = []string{RollupOwner, Sequencer, Validator, User}
+
+func Require(t *testing.T, err error, text ...interface{}) {
+	t.Helper()
+	testhelpers.RequireImpl(t, err, text...)
+}
+
+func Fatal(t *testing.T, printables ...interface{}) {
+	t.Helper()
+	testhelpers.FailImpl(t, printables...)
+}
 
 type AccountInfo struct {
 	Address    common.Address
@@ -78,7 +98,7 @@ func NewArbTestInfo(t *testing.T, chainId *big.Int) *BlockchainTestInfo {
 }
 
 func NewL1TestInfo(t *testing.T) *BlockchainTestInfo {
-	return NewBlockChainTestInfo(t, types.NewPragueSigner(simulatedChainID), big.NewInt(params.GWei*100), params.TxGas)
+	return NewBlockChainTestInfo(t, types.NewPragueSigner(testL1ChainID), big.NewInt(params.GWei*100), params.TxGas)
 }
 
 func GetTestKeyForAccountName(t *testing.T, name string) *ecdsa.PrivateKey {

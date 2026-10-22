@@ -1,0 +1,15 @@
+[package]
+name = "arb-math"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[features]
+default = ["std"]
+std = []
+
+[lints]
+workspace = true

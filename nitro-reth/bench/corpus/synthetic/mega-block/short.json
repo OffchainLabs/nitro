@@ -1,0 +1,16 @@
+{
+  "name": "synthetic/mega-block/short",
+  "category": "heavy-blocks",
+  "scale": "short",
+  "arbos_version": 60,
+  "chain_id": 421614,
+  "corpus_version": "1.0.0",
+  "description": "Each block packed to ~200M gas via storage-write-heavy CREATEs (40 txs × 5M gas, ~150 SSTOREs each). Stresses per-block accounting + state-root recomputation under maximum block load.",
+  "messages": {
+    "source": "synthetic_generator",
+    "generator": "mega_block",
+    "params": { "block_count": 50, "target_block_gas": 200000000 }
+  },
+  "metrics": { "rolling_window_blocks": 5 },
+  "regression": { "gate": true, "tolerance_pct": 5.0, "paired_stat": "bootstrap_95ci", "bootstrap_iters": 10000 }
+}

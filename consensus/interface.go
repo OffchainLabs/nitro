@@ -5,9 +5,7 @@ package consensus
 import (
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -29,13 +27,7 @@ type ConsensusInfo interface {
 	BlockMetadataAtMessageIndex(msgIdx arbutil.MessageIndex) containers.PromiseInterface[common.BlockMetadata]
 }
 
-type ConsensusSequencer interface {
-	WriteMessageFromSequencer(msgIdx arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult, blockMetadata common.BlockMetadata) containers.PromiseInterface[struct{}]
-	ExpectChosenSequencer() containers.PromiseInterface[struct{}]
-}
-
 type FullConsensusClient interface {
 	BatchFetcher
 	ConsensusInfo
-	ConsensusSequencer
 }

@@ -54,6 +54,7 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeinterface"
 	"github.com/offchainlabs/nitro/execution_consensus"
+	"github.com/offchainlabs/nitro/nitroversion"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -146,6 +147,7 @@ func mainImpl() int {
 	defer cancelFunc()
 
 	args := os.Args[1:]
+	nitroVersion := nitroversion.Current()
 	nodeConfig, l2DevWallet, err := config.ParseNode(ctx, args)
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
@@ -162,8 +164,7 @@ func mainImpl() int {
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
-	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
-	stackConf.Version = strippedRevision
+	stackConf.Version = nitroVersion.GethVersion()
 
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
 		filename := genericconf.DefaultPathResolver(nodeConfig.Persistent.GlobalConfig)("jwtsecret")
@@ -179,7 +180,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
+	log.Info("Running Arbitrum nitro node", "version", nitroVersion)
 	log.Info("Resources detected", "GOMAXPROCS", nitroutil.GoMaxProcs())
 
 	if nodeConfig.Execution.LegacyZeroBaseFeeUntil != 0 {
@@ -262,6 +263,11 @@ func mainImpl() int {
 		if strategy != legacystaker.WatchtowerStrategy && !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
 		}
+	}
+
+	if nodeConfig.Node.BlockValidator.Enable && nodeConfig.Execution.RecordingDatabase.Mode == gethexec.BlockRecorderModeOff {
+		log.Error("validation requires a block recorder, set --execution.recording-database.mode to legacy or chain-tip")
+		return 1
 	}
 
 	if nodeConfig.Execution.RPC.MaxRecreateStateDepth == arbitrum.UninitializedMaxRecreateStateDepth {
@@ -547,10 +553,11 @@ func mainImpl() int {
 			stack,
 			executionDB,
 			l2BlockChain,
-			l1ClientOpt,
 			&config.ExecutionNodeConfigFetcher{LiveConfig: liveNodeConfig},
-			liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock,
-			parentChain,
+			gethexec.WithL1Client(l1ClientOpt),
+			gethexec.WithSyncTillBlock(liveNodeConfig.Get().Node.TransactionStreamer.SyncTillBlock),
+			gethexec.WithParentChain(parentChain),
+			gethexec.WithFatalErrChan(fatalErrChan),
 		)
 		if err != nil {
 			log.Error("failed to create execution node", "err", err)
@@ -725,7 +732,7 @@ func mainImpl() int {
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	if err == nil && nodeConfig.Init.IsReorgRequested() {
-		err = nitroinit.InitReorg(nodeConfig.Init, chainInfo.ChainConfig, consensusNode.InboxTracker)
+		err = nitroinit.InitReorg(nodeConfig.Init, chainInfo.ChainConfig, consensusNode.InboxTracker, consensusNode.TxStreamer, consensusNode.MessageExtractor)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error reorging per init config: %w", err)
 		} else if nodeConfig.Init.ThenQuit {

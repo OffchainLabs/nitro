@@ -4,7 +4,6 @@ package timeboost
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -21,6 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 type auctioneerTestHelper struct {
@@ -555,7 +555,7 @@ func setupAuctioneerServer(t *testing.T, ctx context.Context, consumerConfig pub
 			StreamTimeout:            time.Minute,
 			ReserveOriginatorAddress: reserveOriginatorAddr,
 			Wallet: genericconf.WalletConfig{
-				PrivateKey: fmt.Sprintf("%x", testSetup.accounts[0].privKey.D.Bytes()),
+				PrivateKey: testhelpers.PrivateKeyToHex(testSetup.accounts[0].privKey),
 			},
 		}
 	}
