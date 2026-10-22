@@ -3,7 +3,7 @@
 
 ### Configuration
 - Add `--execution.sequencer.reject-noop-replacements` (default true).
-- Add `--execution.sequencer.pga.min-replacement-percentage` (default 10).
+- Add `--execution.sequencer.pga.min-priority-fee-percent-bump-to-replace` (default 10).
 
 ### Added
 - Add metric `arb/sequencer/pending/count/gauge`.

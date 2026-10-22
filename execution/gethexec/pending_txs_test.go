@@ -34,7 +34,7 @@ func mustAdmit(t *testing.T, set *pendingTxs, sender common.Address, tx *types.T
 }
 
 func TestPendingTxsRejectsSameHash(t *testing.T) {
-	set := newPendingTxs(DefaultPGAConfig.MinReplacementPercentage)
+	set := newPendingTxs(DefaultPGAConfig.MinPriorityFeePercentBumpToReplace)
 	tx := makePendingTx(0, 1, 100)
 	mustAdmit(t, set, testPendingSender, tx, orderingStrategyFIFO)
 	for _, strategy := range []orderingStrategy{orderingStrategyUninitialized, orderingStrategyFIFO, orderingStrategyPGA} {
@@ -49,7 +49,7 @@ func TestPendingTxsRejectsSameHash(t *testing.T) {
 
 func TestPendingTxsRejectsSameNonceOutsidePGA(t *testing.T) {
 	for _, strategy := range []orderingStrategy{orderingStrategyUninitialized, orderingStrategyFIFO} {
-		set := newPendingTxs(DefaultPGAConfig.MinReplacementPercentage)
+		set := newPendingTxs(DefaultPGAConfig.MinPriorityFeePercentBumpToReplace)
 		mustAdmit(t, set, testPendingSender, makePendingTx(0, 1, 100), strategy)
 		if _, err := set.admit(testPendingSender, makePendingTx(0, 1000, 100000), strategy); !errors.Is(err, ErrNoncePending) {
 			t.Errorf("admit(second, %s) = %v, want ErrNoncePending", strategy, err)
@@ -58,7 +58,7 @@ func TestPendingTxsRejectsSameNonceOutsidePGA(t *testing.T) {
 }
 
 func TestPendingTxsRejectsUnderpricedReplacement(t *testing.T) {
-	set := newPendingTxs(DefaultPGAConfig.MinReplacementPercentage)
+	set := newPendingTxs(DefaultPGAConfig.MinPriorityFeePercentBumpToReplace)
 	mustAdmit(t, set, testPendingSender, makePendingTx(0, 10, 100), orderingStrategyPGA)
 	if _, err := set.admit(testPendingSender, makePendingTx(0, 10, 109), orderingStrategyPGA); !errors.Is(err, txpool.ErrReplaceUnderpriced) {
 		t.Errorf("admit(second) = %v, want ErrReplaceUnderpriced", err)
@@ -66,7 +66,7 @@ func TestPendingTxsRejectsUnderpricedReplacement(t *testing.T) {
 }
 
 func TestPendingTxsReplacesWithFeeBump(t *testing.T) {
-	set := newPendingTxs(DefaultPGAConfig.MinReplacementPercentage)
+	set := newPendingTxs(DefaultPGAConfig.MinPriorityFeePercentBumpToReplace)
 	releaseFirst := mustAdmit(t, set, testPendingSender, makePendingTx(0, 10, 100), orderingStrategyPGA)
 	second := makePendingTx(0, 11, 110)
 	releaseSecond := mustAdmit(t, set, testPendingSender, second, orderingStrategyPGA)
@@ -88,7 +88,7 @@ func TestPendingTxsReplacesWithFeeBump(t *testing.T) {
 }
 
 func TestPendingTxsReplacementReleasedBeforeReplaced(t *testing.T) {
-	set := newPendingTxs(DefaultPGAConfig.MinReplacementPercentage)
+	set := newPendingTxs(DefaultPGAConfig.MinPriorityFeePercentBumpToReplace)
 	first := makePendingTx(0, 10, 100)
 	releaseFirst := mustAdmit(t, set, testPendingSender, first, orderingStrategyPGA)
 	second := makePendingTx(0, 11, 110)
@@ -120,14 +120,14 @@ func TestPendingTxsReplacementReleasedBeforeReplaced(t *testing.T) {
 }
 
 func TestPendingTxsReleaseFreesNonce(t *testing.T) {
-	set := newPendingTxs(DefaultPGAConfig.MinReplacementPercentage)
+	set := newPendingTxs(DefaultPGAConfig.MinPriorityFeePercentBumpToReplace)
 	release := mustAdmit(t, set, testPendingSender, makePendingTx(0, 1, 100), orderingStrategyFIFO)
 	release()
 	mustAdmit(t, set, testPendingSender, makePendingTx(0, 1, 100), orderingStrategyFIFO)
 }
 
 func TestPendingTxsKeysBySenderAndNonce(t *testing.T) {
-	set := newPendingTxs(DefaultPGAConfig.MinReplacementPercentage)
+	set := newPendingTxs(DefaultPGAConfig.MinPriorityFeePercentBumpToReplace)
 	tx := makePendingTx(0, 1, 100)
 	mustAdmit(t, set, testPendingSender, tx, orderingStrategyFIFO)
 	mustAdmit(t, set, testPendingSender, makePendingTx(1, 1, 100), orderingStrategyFIFO)

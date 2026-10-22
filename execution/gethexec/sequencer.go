@@ -129,9 +129,9 @@ type FIFOConfig struct {
 }
 
 type PGAConfig struct {
-	DangerousForceFIFO       bool   `koanf:"dangerous-force-fifo"`
-	RoundsPerBlock           uint   `koanf:"rounds-per-block"`
-	MinReplacementPercentage uint64 `koanf:"min-replacement-percentage"`
+	DangerousForceFIFO                 bool   `koanf:"dangerous-force-fifo"`
+	RoundsPerBlock                     uint   `koanf:"rounds-per-block"`
+	MinPriorityFeePercentBumpToReplace uint64 `koanf:"min-priority-fee-percent-bump-to-replace"`
 }
 
 const MaxFIFOSizeSamplingExponent = 100
@@ -266,9 +266,9 @@ var DefaultFIFOConfig = FIFOConfig{
 }
 
 var DefaultPGAConfig = PGAConfig{
-	DangerousForceFIFO:       false,
-	RoundsPerBlock:           1,
-	MinReplacementPercentage: 10,
+	DangerousForceFIFO:                 false,
+	RoundsPerBlock:                     1,
+	MinPriorityFeePercentBumpToReplace: 10,
 }
 
 func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -313,7 +313,7 @@ func FIFOAddOptions(prefix string, f *pflag.FlagSet) {
 func PGAAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".dangerous-force-fifo", DefaultPGAConfig.DangerousForceFIFO, "force FIFO transaction ordering even when the chain collects tips, disabling the priority gas auction (PGA)")
 	f.Uint(prefix+".rounds-per-block", DefaultPGAConfig.RoundsPerBlock, "number of PGA rounds per block; the round length is max-block-speed divided by this value")
-	f.Uint64(prefix+".min-replacement-percentage", DefaultPGAConfig.MinReplacementPercentage, "minimum bump in percent of both the priority fee and the fee cap over a pending transaction with the same nonce for the sequencer to queue a replacement")
+	f.Uint64(prefix+".min-priority-fee-percent-bump-to-replace", DefaultPGAConfig.MinPriorityFeePercentBumpToReplace, "minimum bump in percent of both the priority fee and the fee cap over a pending transaction with the same nonce for the sequencer to queue a replacement")
 }
 
 func EventFilterAddOptions(prefix string, f *pflag.FlagSet) {
@@ -621,7 +621,7 @@ func NewSequencer(
 		config:                            configFetcher,
 		senderWhitelist:                   senderWhitelist,
 		nonceCache:                        newNonceCache(config.NonceCacheSize),
-		pendingTxs:                        newPendingTxs(config.PGA.MinReplacementPercentage),
+		pendingTxs:                        newPendingTxs(config.PGA.MinPriorityFeePercentBumpToReplace),
 		l1Timestamp:                       0,
 		isActive:                          false,
 		parentChain:                       parentChain,
