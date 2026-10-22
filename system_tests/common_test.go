@@ -302,7 +302,6 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	NonceFailureCacheSize:        1024,
 	NonceFailureCacheExpiry:      time.Second,
 	RejectNoopReplacements:       true,
-	ReplacePriceBump:             gethexec.DefaultSequencerConfig.ReplacePriceBump,
 	ExpectedSurplusGasPriceMode:  "CalldataPrice",
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",

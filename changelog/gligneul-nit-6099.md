@@ -3,7 +3,7 @@
 
 ### Configuration
 - Add `--execution.sequencer.reject-noop-replacements` (default true).
-- Add `--execution.sequencer.replace-price-bump` (default 10).
+- Add `--execution.sequencer.pga.min-replacement-percentage` (default 10).
 
 ### Added
 - Add metric `arb/sequencer/inflight/size`.

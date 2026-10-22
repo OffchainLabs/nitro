@@ -104,7 +104,6 @@ type SequencerConfig struct {
 	NonceFailureCacheSize        int              `koanf:"nonce-failure-cache-size" reload:"hot"`
 	NonceFailureCacheExpiry      time.Duration    `koanf:"nonce-failure-cache-expiry" reload:"hot"`
 	RejectNoopReplacements       bool             `koanf:"reject-noop-replacements" reload:"hot"`
-	ReplacePriceBump             uint64           `koanf:"replace-price-bump"`
 	ExpectedSurplusGasPriceMode  string           `koanf:"expected-surplus-gas-price-mode"`
 	ExpectedSurplusSoftThreshold string           `koanf:"expected-surplus-soft-threshold" reload:"hot"`
 	ExpectedSurplusHardThreshold string           `koanf:"expected-surplus-hard-threshold" reload:"hot"`
@@ -130,8 +129,9 @@ type FIFOConfig struct {
 }
 
 type PGAConfig struct {
-	DangerousForceFIFO bool `koanf:"dangerous-force-fifo"`
-	RoundsPerBlock     uint `koanf:"rounds-per-block"`
+	DangerousForceFIFO       bool   `koanf:"dangerous-force-fifo"`
+	RoundsPerBlock           uint   `koanf:"rounds-per-block"`
+	MinReplacementPercentage uint64 `koanf:"min-replacement-percentage"`
 }
 
 const MaxFIFOSizeSamplingExponent = 100
@@ -244,7 +244,6 @@ var DefaultSequencerConfig = SequencerConfig{
 	NonceFailureCacheSize:        1024,
 	NonceFailureCacheExpiry:      time.Second,
 	RejectNoopReplacements:       true,
-	ReplacePriceBump:             10,
 	ExpectedSurplusGasPriceMode:  "BlobPrice",
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
@@ -267,8 +266,9 @@ var DefaultFIFOConfig = FIFOConfig{
 }
 
 var DefaultPGAConfig = PGAConfig{
-	DangerousForceFIFO: false,
-	RoundsPerBlock:     1,
+	DangerousForceFIFO:       false,
+	RoundsPerBlock:           1,
+	MinReplacementPercentage: 10,
 }
 
 func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -292,7 +292,6 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".nonce-failure-cache-size", DefaultSequencerConfig.NonceFailureCacheSize, "number of transactions with too high of a nonce to keep in memory while waiting for their predecessor")
 	f.Duration(prefix+".nonce-failure-cache-expiry", DefaultSequencerConfig.NonceFailureCacheExpiry, "maximum amount of time to wait for a predecessor before rejecting a tx with nonce too high")
 	f.Bool(prefix+".reject-noop-replacements", DefaultSequencerConfig.RejectNoopReplacements, "reject a transaction whose sender and nonce are already in flight, unless PGA ordering is active and it bumps the fees of the queued one")
-	f.Uint64(prefix+".replace-price-bump", DefaultSequencerConfig.ReplacePriceBump, "minimum fee bump in percent over an in-flight transaction with the same nonce for the sequencer to queue a second one under PGA ordering")
 	f.String(prefix+".expected-surplus-gas-price-mode", DefaultSequencerConfig.ExpectedSurplusGasPriceMode, "gas price setting to be used in calculating estimated surplus. Allowed values- CalldataPrice, BlobPrice and CalldataPrice7523")
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
@@ -314,6 +313,7 @@ func FIFOAddOptions(prefix string, f *pflag.FlagSet) {
 func PGAAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".dangerous-force-fifo", DefaultPGAConfig.DangerousForceFIFO, "force FIFO transaction ordering even when the chain collects tips, disabling the priority gas auction (PGA)")
 	f.Uint(prefix+".rounds-per-block", DefaultPGAConfig.RoundsPerBlock, "number of PGA rounds per block; the round length is max-block-speed divided by this value")
+	f.Uint64(prefix+".min-replacement-percentage", DefaultPGAConfig.MinReplacementPercentage, "minimum bump in percent of both the priority fee and the fee cap over an in-flight transaction with the same nonce for the sequencer to queue a replacement")
 }
 
 func EventFilterAddOptions(prefix string, f *pflag.FlagSet) {
@@ -635,7 +635,7 @@ func NewSequencer(
 		config:                            configFetcher,
 		senderWhitelist:                   senderWhitelist,
 		nonceCache:                        newNonceCache(config.NonceCacheSize),
-		inFlightTxs:                       newInFlightTxs(config.ReplacePriceBump),
+		inFlightTxs:                       newInFlightTxs(config.PGA.MinReplacementPercentage),
 		l1Timestamp:                       0,
 		isActive:                          false,
 		parentChain:                       parentChain,

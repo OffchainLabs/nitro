@@ -34,7 +34,7 @@ func mustAdmit(t *testing.T, set *inFlightTxs, sender common.Address, tx *types.
 }
 
 func TestInFlightTxsRejectsSameHash(t *testing.T) {
-	set := newInFlightTxs(DefaultSequencerConfig.ReplacePriceBump)
+	set := newInFlightTxs(DefaultPGAConfig.MinReplacementPercentage)
 	tx := makeInFlightTx(0, 1, 100)
 	mustAdmit(t, set, testInFlightSender, tx, orderingStrategyFIFO)
 	for _, strategy := range []orderingStrategy{orderingStrategyUninitialized, orderingStrategyFIFO, orderingStrategyPGA} {
@@ -49,7 +49,7 @@ func TestInFlightTxsRejectsSameHash(t *testing.T) {
 
 func TestInFlightTxsRejectsSameNonceOutsidePGA(t *testing.T) {
 	for _, strategy := range []orderingStrategy{orderingStrategyUninitialized, orderingStrategyFIFO} {
-		set := newInFlightTxs(DefaultSequencerConfig.ReplacePriceBump)
+		set := newInFlightTxs(DefaultPGAConfig.MinReplacementPercentage)
 		mustAdmit(t, set, testInFlightSender, makeInFlightTx(0, 1, 100), strategy)
 		if _, err := set.admit(testInFlightSender, makeInFlightTx(0, 1000, 100000), strategy); !errors.Is(err, ErrNonceInFlight) {
 			t.Errorf("admit(second, %s) = %v, want ErrNonceInFlight", strategy, err)
@@ -58,7 +58,7 @@ func TestInFlightTxsRejectsSameNonceOutsidePGA(t *testing.T) {
 }
 
 func TestInFlightTxsRejectsUnderpricedReplacement(t *testing.T) {
-	set := newInFlightTxs(DefaultSequencerConfig.ReplacePriceBump)
+	set := newInFlightTxs(DefaultPGAConfig.MinReplacementPercentage)
 	mustAdmit(t, set, testInFlightSender, makeInFlightTx(0, 10, 100), orderingStrategyPGA)
 	if _, err := set.admit(testInFlightSender, makeInFlightTx(0, 10, 109), orderingStrategyPGA); !errors.Is(err, txpool.ErrReplaceUnderpriced) {
 		t.Errorf("admit(second) = %v, want ErrReplaceUnderpriced", err)
@@ -66,7 +66,7 @@ func TestInFlightTxsRejectsUnderpricedReplacement(t *testing.T) {
 }
 
 func TestInFlightTxsReplacesWithFeeBump(t *testing.T) {
-	set := newInFlightTxs(DefaultSequencerConfig.ReplacePriceBump)
+	set := newInFlightTxs(DefaultPGAConfig.MinReplacementPercentage)
 	releaseFirst := mustAdmit(t, set, testInFlightSender, makeInFlightTx(0, 10, 100), orderingStrategyPGA)
 	second := makeInFlightTx(0, 11, 110)
 	releaseSecond := mustAdmit(t, set, testInFlightSender, second, orderingStrategyPGA)
@@ -88,7 +88,7 @@ func TestInFlightTxsReplacesWithFeeBump(t *testing.T) {
 }
 
 func TestInFlightTxsReplacementReleasedBeforeReplaced(t *testing.T) {
-	set := newInFlightTxs(DefaultSequencerConfig.ReplacePriceBump)
+	set := newInFlightTxs(DefaultPGAConfig.MinReplacementPercentage)
 	first := makeInFlightTx(0, 10, 100)
 	releaseFirst := mustAdmit(t, set, testInFlightSender, first, orderingStrategyPGA)
 	second := makeInFlightTx(0, 11, 110)
@@ -120,14 +120,14 @@ func TestInFlightTxsReplacementReleasedBeforeReplaced(t *testing.T) {
 }
 
 func TestInFlightTxsReleaseFreesNonce(t *testing.T) {
-	set := newInFlightTxs(DefaultSequencerConfig.ReplacePriceBump)
+	set := newInFlightTxs(DefaultPGAConfig.MinReplacementPercentage)
 	release := mustAdmit(t, set, testInFlightSender, makeInFlightTx(0, 1, 100), orderingStrategyFIFO)
 	release()
 	mustAdmit(t, set, testInFlightSender, makeInFlightTx(0, 1, 100), orderingStrategyFIFO)
 }
 
 func TestInFlightTxsKeysBySenderAndNonce(t *testing.T) {
-	set := newInFlightTxs(DefaultSequencerConfig.ReplacePriceBump)
+	set := newInFlightTxs(DefaultPGAConfig.MinReplacementPercentage)
 	tx := makeInFlightTx(0, 1, 100)
 	mustAdmit(t, set, testInFlightSender, tx, orderingStrategyFIFO)
 	mustAdmit(t, set, testInFlightSender, makeInFlightTx(1, 1, 100), orderingStrategyFIFO)
