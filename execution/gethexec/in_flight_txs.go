@@ -15,7 +15,8 @@ import (
 )
 
 var (
-	inFlightTxsSizeGauge                 = metrics.NewRegisteredGauge("arb/sequencer/inflight/size/gauge", nil)
+	inFlightTxsCountGauge                = metrics.NewRegisteredGauge("arb/sequencer/inflight/count/gauge", nil)
+	inFlightTxsCountHistogram            = metrics.NewRegisteredHistogram("arb/sequencer/inflight/count/histogram", nil, metrics.NewBoundedHistogramSample())
 	inFlightTxsAlreadyKnownCounter       = metrics.NewRegisteredCounter("arb/sequencer/inflight/rejected/alreadyknown/counter", nil)
 	inFlightTxsNonceInFlightCounter      = metrics.NewRegisteredCounter("arb/sequencer/inflight/rejected/nonceinflight/counter", nil)
 	inFlightTxsReplaceUnderpricedCounter = metrics.NewRegisteredCounter("arb/sequencer/inflight/rejected/replaceunderpriced/counter", nil)
@@ -51,7 +52,7 @@ func (f *inFlightTxs) admit(sender common.Address, tx *types.Transaction, strate
 	entry, exists := f.entries[key]
 	if !exists {
 		f.entries[key] = &inFlightEntry{latest: tx, holders: 1}
-		inFlightTxsSizeGauge.Update(int64(len(f.entries)))
+		f.updateCountMetrics()
 		return func() { f.release(key) }, nil
 	}
 	if entry.latest.Hash() == tx.Hash() {
@@ -85,7 +86,13 @@ func (f *inFlightTxs) release(key addressAndNonce) {
 		return
 	}
 	delete(f.entries, key)
-	inFlightTxsSizeGauge.Update(int64(len(f.entries)))
+	f.updateCountMetrics()
+}
+
+func (f *inFlightTxs) updateCountMetrics() {
+	count := int64(len(f.entries))
+	inFlightTxsCountGauge.Update(count)
+	inFlightTxsCountHistogram.Update(count)
 }
 
 func (f *inFlightTxs) len() int {
