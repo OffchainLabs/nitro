@@ -291,7 +291,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".max-tx-data-size", DefaultSequencerConfig.MaxTxDataSize, "maximum transaction size the sequencer will accept")
 	f.Int(prefix+".nonce-failure-cache-size", DefaultSequencerConfig.NonceFailureCacheSize, "number of transactions with too high of a nonce to keep in memory while waiting for their predecessor")
 	f.Duration(prefix+".nonce-failure-cache-expiry", DefaultSequencerConfig.NonceFailureCacheExpiry, "maximum amount of time to wait for a predecessor before rejecting a tx with nonce too high")
-	f.Bool(prefix+".reject-noop-replacements", DefaultSequencerConfig.RejectNoopReplacements, "reject a transaction whose sender and nonce are already in flight, unless PGA ordering is active and it bumps the fees of the queued one")
+	f.Bool(prefix+".reject-noop-replacements", DefaultSequencerConfig.RejectNoopReplacements, "reject a transaction whose sender and nonce are already pending, unless PGA ordering is active and it bumps the fees of the queued one")
 	f.String(prefix+".expected-surplus-gas-price-mode", DefaultSequencerConfig.ExpectedSurplusGasPriceMode, "gas price setting to be used in calculating estimated surplus. Allowed values- CalldataPrice, BlobPrice and CalldataPrice7523")
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
@@ -313,7 +313,7 @@ func FIFOAddOptions(prefix string, f *pflag.FlagSet) {
 func PGAAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".dangerous-force-fifo", DefaultPGAConfig.DangerousForceFIFO, "force FIFO transaction ordering even when the chain collects tips, disabling the priority gas auction (PGA)")
 	f.Uint(prefix+".rounds-per-block", DefaultPGAConfig.RoundsPerBlock, "number of PGA rounds per block; the round length is max-block-speed divided by this value")
-	f.Uint64(prefix+".min-replacement-percentage", DefaultPGAConfig.MinReplacementPercentage, "minimum bump in percent of both the priority fee and the fee cap over an in-flight transaction with the same nonce for the sequencer to queue a replacement")
+	f.Uint64(prefix+".min-replacement-percentage", DefaultPGAConfig.MinReplacementPercentage, "minimum bump in percent of both the priority fee and the fee cap over a pending transaction with the same nonce for the sequencer to queue a replacement")
 }
 
 func EventFilterAddOptions(prefix string, f *pflag.FlagSet) {
@@ -545,7 +545,7 @@ type Sequencer struct {
 	senderWhitelist    map[common.Address]struct{}
 	nonceCache         *nonceCache
 	nonceFailures      *nonceFailureCache
-	inFlightTxs        *inFlightTxs
+	pendingTxs         *pendingTxs
 	expressLaneService *timeboost.ExpressLaneService
 	parentChain        *parent.ParentChain
 
@@ -621,7 +621,7 @@ func NewSequencer(
 		config:                            configFetcher,
 		senderWhitelist:                   senderWhitelist,
 		nonceCache:                        newNonceCache(config.NonceCacheSize),
-		inFlightTxs:                       newInFlightTxs(config.PGA.MinReplacementPercentage),
+		pendingTxs:                        newPendingTxs(config.PGA.MinReplacementPercentage),
 		l1Timestamp:                       0,
 		isActive:                          false,
 		parentChain:                       parentChain,
@@ -690,7 +690,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		if err != nil {
 			return err
 		}
-		release, err := s.inFlightTxs.admit(sender, tx, s.orderingStrategy.Load())
+		release, err := s.pendingTxs.admit(sender, tx, s.orderingStrategy.Load())
 		if err != nil {
 			return err
 		}

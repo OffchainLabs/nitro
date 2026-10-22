@@ -670,7 +670,7 @@ func awaitResult(t *testing.T, resultChan chan error, label string) error {
 	}
 }
 
-func TestPublishTransactionDedupsInFlightNonces(t *testing.T) {
+func TestPublishTransactionDedupsPendingNonces(t *testing.T) {
 	ctx := context.Background()
 	engine := newTestRecorderEngine(t, 0)
 	config := DefaultSequencerConfig
@@ -704,8 +704,8 @@ func TestPublishTransactionDedupsInFlightNonces(t *testing.T) {
 	}
 	bumped := sign(11, 110)
 	seq.orderingStrategy.Store(orderingStrategyFIFO)
-	if err := seq.PublishTransaction(ctx, bumped, nil); !errors.Is(err, ErrNonceInFlight) {
-		t.Errorf("same nonce under FIFO = %v, want ErrNonceInFlight", err)
+	if err := seq.PublishTransaction(ctx, bumped, nil); !errors.Is(err, ErrNoncePending) {
+		t.Errorf("same nonce under FIFO = %v, want ErrNoncePending", err)
 	}
 
 	seq.orderingStrategy.Store(orderingStrategyPGA)
@@ -718,8 +718,8 @@ func TestPublishTransactionDedupsInFlightNonces(t *testing.T) {
 	if err := seq.PublishTransaction(ctx, bumped, nil); !errors.Is(err, txpool.ErrAlreadyKnown) {
 		t.Errorf("resubmitting the replacement = %v, want ErrAlreadyKnown", err)
 	}
-	if n := seq.inFlightTxs.len(); n != 1 {
-		t.Errorf("inFlightTxs.len() = %d, want 1 while both calls are in flight", n)
+	if n := seq.pendingTxs.len(); n != 1 {
+		t.Errorf("pendingTxs.len() = %d, want 1 while both calls are pending", n)
 	}
 
 	drain := func(want *types.Transaction) {
@@ -734,8 +734,8 @@ func TestPublishTransactionDedupsInFlightNonces(t *testing.T) {
 	if res := awaitResult(t, firstResult, "first submission"); res != nil {
 		t.Errorf("first submission = %v, want nil", res)
 	}
-	if n := seq.inFlightTxs.len(); n != 1 {
-		t.Errorf("inFlightTxs.len() = %d, want 1 while the replacement is in flight", n)
+	if n := seq.pendingTxs.len(); n != 1 {
+		t.Errorf("pendingTxs.len() = %d, want 1 while the replacement is pending", n)
 	}
 	if err := seq.PublishTransaction(ctx, bumped, nil); !errors.Is(err, txpool.ErrAlreadyKnown) {
 		t.Errorf("resubmitting the replacement after the replaced tx returned = %v, want ErrAlreadyKnown", err)
@@ -744,8 +744,8 @@ func TestPublishTransactionDedupsInFlightNonces(t *testing.T) {
 	if res := awaitResult(t, bumpedResult, "replacement submission"); res != nil {
 		t.Errorf("replacement submission = %v, want nil", res)
 	}
-	if n := seq.inFlightTxs.len(); n != 0 {
-		t.Errorf("inFlightTxs.len() = %d, want 0 after both calls returned", n)
+	if n := seq.pendingTxs.len(); n != 0 {
+		t.Errorf("pendingTxs.len() = %d, want 0 after both calls returned", n)
 	}
 }
 
@@ -777,8 +777,8 @@ func TestPublishTransactionReleasesNonceAfterCancel(t *testing.T) {
 	if res := awaitResult(t, firstResult, "canceled submission"); !errors.Is(res, context.Canceled) {
 		t.Errorf("canceled submission = %v, want context.Canceled", res)
 	}
-	if n := seq.inFlightTxs.len(); n != 0 {
-		t.Errorf("inFlightTxs.len() = %d, want 0 after the submission returned", n)
+	if n := seq.pendingTxs.len(); n != 0 {
+		t.Errorf("pendingTxs.len() = %d, want 0 after the submission returned", n)
 	}
 	stale := <-seq.txQueue
 	if stale.ctx.Err() == nil {
@@ -822,8 +822,8 @@ func TestPublishTransactionWithoutRejectNoopReplacements(t *testing.T) {
 		go func() { results <- seq.PublishTransaction(ctx, tx, nil) }()
 	}
 	waitForQueuedTxCount(t, seq, 2)
-	if n := seq.inFlightTxs.len(); n != 0 {
-		t.Errorf("inFlightTxs.len() = %d, want 0 with noop replacement rejection disabled", n)
+	if n := seq.pendingTxs.len(); n != 0 {
+		t.Errorf("pendingTxs.len() = %d, want 0 with noop replacement rejection disabled", n)
 	}
 	for range 2 {
 		item := <-seq.txQueue

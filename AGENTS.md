@@ -18,5 +18,5 @@ Guidance for coding agents working in this repository.
 
 ## Metrics
 
-- A metric name ends with its kind as the last path segment: `counter`, `gauge`, `histogram`, or `timer`. Example: `arb/sequencer/inflight/replaced/counter`.
+- A metric name ends with its kind as the last path segment: `counter`, `gauge`, `histogram`, or `timer`. Example: `arb/sequencer/pending/replaced/counter`.
 - Ignore the metrics already there. They predate this guidance.

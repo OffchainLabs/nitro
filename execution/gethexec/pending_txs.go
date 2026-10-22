@@ -15,66 +15,66 @@ import (
 )
 
 var (
-	inFlightTxsCountGauge                = metrics.NewRegisteredGauge("arb/sequencer/inflight/count/gauge", nil)
-	inFlightTxsCountHistogram            = metrics.NewRegisteredHistogram("arb/sequencer/inflight/count/histogram", nil, metrics.NewBoundedHistogramSample())
-	inFlightTxsAlreadyKnownCounter       = metrics.NewRegisteredCounter("arb/sequencer/inflight/rejected/alreadyknown/counter", nil)
-	inFlightTxsNonceInFlightCounter      = metrics.NewRegisteredCounter("arb/sequencer/inflight/rejected/nonceinflight/counter", nil)
-	inFlightTxsReplaceUnderpricedCounter = metrics.NewRegisteredCounter("arb/sequencer/inflight/rejected/replaceunderpriced/counter", nil)
-	inFlightTxsReplacedCounter           = metrics.NewRegisteredCounter("arb/sequencer/inflight/replaced/counter", nil)
+	pendingTxsCountGauge                = metrics.NewRegisteredGauge("arb/sequencer/pending/count/gauge", nil)
+	pendingTxsCountHistogram            = metrics.NewRegisteredHistogram("arb/sequencer/pending/count/histogram", nil, metrics.NewBoundedHistogramSample())
+	pendingTxsAlreadyKnownCounter       = metrics.NewRegisteredCounter("arb/sequencer/pending/rejected/alreadyknown/counter", nil)
+	pendingTxsNoncePendingCounter       = metrics.NewRegisteredCounter("arb/sequencer/pending/rejected/noncepending/counter", nil)
+	pendingTxsReplaceUnderpricedCounter = metrics.NewRegisteredCounter("arb/sequencer/pending/rejected/replaceunderpriced/counter", nil)
+	pendingTxsReplacedCounter           = metrics.NewRegisteredCounter("arb/sequencer/pending/replaced/counter", nil)
 )
 
-var ErrNonceInFlight = errors.New("another transaction with the same nonce is already in flight")
+var ErrNoncePending = errors.New("another transaction with the same nonce is already pending")
 
 // Only the RPC path takes the mutex; the block-building thread must never wait on it.
-type inFlightTxs struct {
+type pendingTxs struct {
 	priceBump uint64
 	mutex     sync.Mutex
-	entries   map[addressAndNonce]*inFlightEntry
+	entries   map[addressAndNonce]*pendingEntry
 }
 
-type inFlightEntry struct {
+type pendingEntry struct {
 	latest  *types.Transaction
 	holders int
 }
 
-func newInFlightTxs(priceBump uint64) *inFlightTxs {
-	return &inFlightTxs{
+func newPendingTxs(priceBump uint64) *pendingTxs {
+	return &pendingTxs{
 		priceBump: priceBump,
-		entries:   make(map[addressAndNonce]*inFlightEntry),
+		entries:   make(map[addressAndNonce]*pendingEntry),
 	}
 }
 
 // admit returns the release func the caller must run once its submission has returned.
-func (f *inFlightTxs) admit(sender common.Address, tx *types.Transaction, strategy orderingStrategy) (func(), error) {
+func (f *pendingTxs) admit(sender common.Address, tx *types.Transaction, strategy orderingStrategy) (func(), error) {
 	key := addressAndNonce{sender, tx.Nonce()}
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 	entry, exists := f.entries[key]
 	if !exists {
-		f.entries[key] = &inFlightEntry{latest: tx, holders: 1}
+		f.entries[key] = &pendingEntry{latest: tx, holders: 1}
 		f.updateCountMetrics()
 		return func() { f.release(key) }, nil
 	}
 	if entry.latest.Hash() == tx.Hash() {
-		inFlightTxsAlreadyKnownCounter.Inc(1)
+		pendingTxsAlreadyKnownCounter.Inc(1)
 		return nil, txpool.ErrAlreadyKnown
 	}
 	if strategy != orderingStrategyPGA {
-		inFlightTxsNonceInFlightCounter.Inc(1)
-		return nil, ErrNonceInFlight
+		pendingTxsNoncePendingCounter.Inc(1)
+		return nil, ErrNoncePending
 	}
 	if !isFeeBumped(entry.latest, tx, f.priceBump) {
-		inFlightTxsReplaceUnderpricedCounter.Inc(1)
+		pendingTxsReplaceUnderpricedCounter.Inc(1)
 		return nil, txpool.ErrReplaceUnderpriced
 	}
 	// The replaced tx stays queued, so its holder must keep the entry alive until it returns.
-	inFlightTxsReplacedCounter.Inc(1)
+	pendingTxsReplacedCounter.Inc(1)
 	entry.latest = tx
 	entry.holders++
 	return func() { f.release(key) }, nil
 }
 
-func (f *inFlightTxs) release(key addressAndNonce) {
+func (f *pendingTxs) release(key addressAndNonce) {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 	entry, exists := f.entries[key]
@@ -89,13 +89,13 @@ func (f *inFlightTxs) release(key addressAndNonce) {
 	f.updateCountMetrics()
 }
 
-func (f *inFlightTxs) updateCountMetrics() {
+func (f *pendingTxs) updateCountMetrics() {
 	count := int64(len(f.entries))
-	inFlightTxsCountGauge.Update(count)
-	inFlightTxsCountHistogram.Update(count)
+	pendingTxsCountGauge.Update(count)
+	pendingTxsCountHistogram.Update(count)
 }
 
-func (f *inFlightTxs) len() int {
+func (f *pendingTxs) len() int {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 	return len(f.entries)
