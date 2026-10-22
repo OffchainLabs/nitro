@@ -1,5 +1,5 @@
 ### Changed
-- The sequencer rejects a second tx for an in-flight nonce unless it bumps the fees under PGA.
+- The sequencer rejects same-sender, same-nonce txs unless PGA is on and the tip is higher.
 
 ### Configuration
 - Add `--execution.sequencer.reject-noop-replacements` (default true).
