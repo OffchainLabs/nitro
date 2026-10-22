@@ -341,20 +341,6 @@ func (o orderingStrategy) String() string {
 	}
 }
 
-type atomicOrderingStrategy struct{ value atomic.Int32 }
-
-func (a *atomicOrderingStrategy) Load() orderingStrategy {
-	return orderingStrategy(a.value.Load())
-}
-
-func (a *atomicOrderingStrategy) Store(strategy orderingStrategy) {
-	a.value.Store(int32(strategy))
-}
-
-func (a *atomicOrderingStrategy) Swap(strategy orderingStrategy) orderingStrategy {
-	return orderingStrategy(a.value.Swap(int32(strategy)))
-}
-
 type txQueueItem struct {
 	tx                  *types.Transaction
 	txSize              int // size in bytes of the marshalled transaction
@@ -605,7 +591,7 @@ type Sequencer struct {
 
 	// Strategy the latest block attempt chose from its parent state, so it flips one block
 	// after a collect-tips change. Tx admission reads it.
-	orderingStrategy atomicOrderingStrategy
+	orderingStrategy containers.AtomicEnum[orderingStrategy]
 }
 
 func NewSequencer(
