@@ -933,6 +933,203 @@ func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, chainId uin
 	}()
 }
 
+// awaitSeqNum waits until a message with the given sequence number has been
+// received.
+func awaitSeqNum(t *testing.T, ts *accumulatingTransactionStreamer, seqNum arbutil.MessageIndex, timeout time.Duration) {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		for _, msg := range ts.getMessages() {
+			if msg.SequenceNumber == seqNum {
+				return
+			}
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for message with sequence number %d", seqNum)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+// awaitBacklogCount waits until the broadcaster's backlog holds count messages.
+func awaitBacklogCount(t *testing.T, b *broadcaster.Broadcaster, count int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		if b.GetCachedMessageCount() == count {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for %d messages in the backlog, got %d", count, b.GetCachedMessageCount())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+// awaitClientCount waits until count clients have registered with the
+// broadcaster. A client only registers once it has been sent the backlog, so
+// this also marks the point after which a broadcast reaches the client as a
+// live message rather than through the backlog.
+func awaitClientCount(t *testing.T, b *broadcaster.Broadcaster, count int32, timeout time.Duration) {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		if b.ClientCount() == count {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for %d clients, got %d", count, b.ClientCount())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+// TestBroadcasterRequestedSequenceNumber checks which of the cached messages a
+// client is sent for the sequence number it requests. A client that requests a
+// sequence number after the end of the backlog is already up to date, so it
+// must be sent none of the backlog, and must still be sent the messages that
+// follow it.
+func TestBroadcasterRequestedSequenceNumber(t *testing.T) {
+	t.Parallel()
+
+	// The backlog is populated from firstSeqNum rather than 0 so that a
+	// sequence number before the start of the backlog can be requested.
+	const firstSeqNum = 10
+	const backlogCount = 5
+	const lastSeqNum = firstSeqNum + backlogCount - 1
+	const sentinelSeqNum = lastSeqNum + 1
+
+	for _, tc := range []struct {
+		name string
+		// requestedSeqNum is sent to the broadcaster in the
+		// Arbitrum-Requested-Sequence-Number header. A client that has not
+		// received any messages requests 0, which is what a client that omits
+		// the header entirely is treated as requesting.
+		requestedSeqNum uint64
+		// expectedFromBacklog are the sequence numbers the client is expected
+		// to be sent from the backlog, in order.
+		expectedFromBacklog []uint64
+	}{
+		{
+			name:                "noneRequestedSendsEntireBacklog",
+			requestedSeqNum:     0,
+			expectedFromBacklog: []uint64{10, 11, 12, 13, 14},
+		},
+		{
+			name:                "beforeBacklogStartSendsEntireBacklog",
+			requestedSeqNum:     firstSeqNum - 5,
+			expectedFromBacklog: []uint64{10, 11, 12, 13, 14},
+		},
+		{
+			name:                "withinBacklogSendsFromRequested",
+			requestedSeqNum:     firstSeqNum + 2,
+			expectedFromBacklog: []uint64{12, 13, 14},
+		},
+		{
+			name:                "atBacklogEndSendsLastMessage",
+			requestedSeqNum:     lastSeqNum,
+			expectedFromBacklog: []uint64{14},
+		},
+		{
+			name:                "afterBacklogEndSendsNothing",
+			requestedSeqNum:     lastSeqNum + 1,
+			expectedFromBacklog: nil,
+		},
+		{
+			name:                "maxUint64SendsNothing",
+			requestedSeqNum:     ^uint64(0),
+			expectedFromBacklog: nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			chainId := uint64(9743)
+
+			privateKey, err := crypto.GenerateKey()
+			Require(t, err)
+			sequencerAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
+			dataSigner := signature.DataSignerFromPrivateKey(privateKey)
+
+			settings := wsbroadcastserver.DefaultTestBroadcasterConfig
+			feedErrChan := make(chan error, 10)
+			b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &settings }, chainId, feedErrChan, dataSigner)
+			Require(t, b.Initialize())
+			Require(t, b.Start(ctx))
+			defer b.StopAndWait()
+
+			// Fill the backlog before the client connects, so that the
+			// requested sequence number is resolved against a backlog of
+			// firstSeqNum to lastSeqNum.
+			for seqNum := firstSeqNum; seqNum <= lastSeqNum; seqNum++ {
+				// #nosec G115
+				Require(t, b.BroadcastFeedMessages(feedMessage(t, b, arbutil.MessageIndex(seqNum))))
+			}
+			awaitBacklogCount(t, b, backlogCount, 10*time.Second)
+
+			ts := &accumulatingTransactionStreamer{}
+			clientFeedErrChan := make(chan error, 10)
+			broadcastClient, err := newTestBroadcastClient(
+				DefaultTestConfig,
+				b.ListenerAddr(),
+				chainId,
+				arbutil.MessageIndex(tc.requestedSeqNum),
+				ts,
+				nil,
+				clientFeedErrChan,
+				&sequencerAddr,
+				t,
+			)
+			Require(t, err)
+			broadcastClient.Start(ctx)
+			defer broadcastClient.StopAndWait()
+
+			awaitClientCount(t, b, 1, 10*time.Second)
+
+			// Sentinel: a live message broadcast after the client has been sent
+			// the backlog. WebSocket messages are ordered, so once the sentinel
+			// has arrived every message the client was going to be sent from
+			// the backlog has already arrived, which makes the exact count
+			// below deterministic. The sentinel also has to arrive at all: a
+			// client that is sent none of the backlog must not be left unable
+			// to receive the messages that follow it.
+			Require(t, b.BroadcastFeedMessages(feedMessage(t, b, sentinelSeqNum)))
+
+			// Waiting for the sentinel rather than for a message count means the
+			// client has been sent everything it is going to be sent, whether
+			// or not that is what is expected.
+			awaitSeqNum(t, ts, sentinelSeqNum, 10*time.Second)
+
+			expected := append(append([]uint64{}, tc.expectedFromBacklog...), sentinelSeqNum)
+			var got []uint64
+			for _, msg := range ts.getMessages() {
+				got = append(got, uint64(msg.SequenceNumber))
+			}
+			if len(got) != len(expected) {
+				t.Fatalf("requested sequence number %d: expected messages %v, got %v", tc.requestedSeqNum, expected, got)
+			}
+			for i, seqNum := range expected {
+				if got[i] != seqNum {
+					t.Fatalf("requested sequence number %d: expected messages %v, got %v", tc.requestedSeqNum, expected, got)
+				}
+			}
+
+			select {
+			case err := <-clientFeedErrChan:
+				t.Fatalf("unexpected client feed error: %v", err)
+			case err := <-feedErrChan:
+				t.Fatalf("unexpected broadcaster error: %v", err)
+			default:
+			}
+		})
+	}
+}
+
 func Require(t *testing.T, err error, printables ...interface{}) {
 	t.Helper()
 	testhelpers.RequireImpl(t, err, printables...)
