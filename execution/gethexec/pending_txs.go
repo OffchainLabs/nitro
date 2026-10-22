@@ -4,11 +4,11 @@
 package gethexec
 
 import (
-	"errors"
 	"math/big"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -22,8 +22,6 @@ var (
 	pendingTxsReplaceUnderpricedCounter = metrics.NewRegisteredCounter("arb/sequencer/pending/rejected/replaceunderpriced/counter", nil)
 	pendingTxsReplacedCounter           = metrics.NewRegisteredCounter("arb/sequencer/pending/replaced/counter", nil)
 )
-
-var ErrNoncePending = errors.New("another transaction with the same nonce is already pending")
 
 // Only the RPC path takes the mutex; the block-building thread must never wait on it.
 type pendingTxs struct {
@@ -61,7 +59,8 @@ func (f *pendingTxs) admit(sender common.Address, tx *types.Transaction, strateg
 	}
 	if strategy != orderingStrategyPGA {
 		pendingTxsNoncePendingCounter.Inc(1)
-		return nil, ErrNoncePending
+		// Assume the first transaction will be accepted and the second one fail with nonce-too-low.
+		return nil, core.ErrNonceTooLow
 	}
 	if !isFeeBumped(entry.latest, tx, f.priceBump) {
 		pendingTxsReplaceUnderpricedCounter.Inc(1)
