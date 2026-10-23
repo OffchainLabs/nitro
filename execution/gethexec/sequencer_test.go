@@ -12,8 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -643,5 +646,193 @@ func TestSequencerDoesntBlockWithoutTransactions(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("StartSequencing blocked without transactions")
+	}
+}
+
+func waitForQueuedTxCount(t *testing.T, seq *Sequencer, want int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for seq.QueuedTxCount() != want {
+		if time.Now().After(deadline) {
+			t.Fatalf("QueuedTxCount() = %d, want %d", seq.QueuedTxCount(), want)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func awaitResult(t *testing.T, resultChan chan error, label string) error {
+	t.Helper()
+	select {
+	case res := <-resultChan:
+		return res
+	case <-time.After(5 * time.Second):
+		t.Fatalf("%s did not return", label)
+		return nil
+	}
+}
+
+func TestPublishTransactionDedupsPendingNonces(t *testing.T) {
+	ctx := context.Background()
+	engine := newTestRecorderEngine(t, 0)
+	config := DefaultSequencerConfig
+	configFetcher := func() *SequencerConfig { return &config }
+	seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer := types.LatestSigner(engine.bc.Config())
+	sign := func(tipCap, feeCap int64) *types.Transaction {
+		return types.MustSignNewTx(key, signer, &types.DynamicFeeTx{
+			ChainID:   engine.bc.Config().ChainID,
+			Nonce:     0,
+			GasTipCap: big.NewInt(tipCap),
+			GasFeeCap: big.NewInt(feeCap),
+			Gas:       21000,
+		})
+	}
+
+	first := sign(10, 100)
+	firstResult := make(chan error, 1)
+	go func() { firstResult <- seq.PublishTransaction(ctx, first, nil) }()
+	waitForQueuedTxCount(t, seq, 1)
+
+	if err := seq.PublishTransaction(ctx, first, nil); !errors.Is(err, txpool.ErrAlreadyKnown) {
+		t.Errorf("resubmitting the same tx = %v, want ErrAlreadyKnown", err)
+	}
+	bumped := sign(11, 110)
+	seq.orderingStrategy.Store(orderingStrategyFIFO)
+	if err := seq.PublishTransaction(ctx, bumped, nil); !errors.Is(err, core.ErrNonceTooLow) {
+		t.Errorf("same nonce under FIFO = %v, want ErrNonceTooLow", err)
+	}
+
+	seq.orderingStrategy.Store(orderingStrategyPGA)
+	if err := seq.PublishTransaction(ctx, sign(10, 109), nil); !errors.Is(err, txpool.ErrReplaceUnderpriced) {
+		t.Errorf("same nonce without fee bump under PGA = %v, want ErrReplaceUnderpriced", err)
+	}
+	bumpedResult := make(chan error, 1)
+	go func() { bumpedResult <- seq.PublishTransaction(ctx, bumped, nil) }()
+	waitForQueuedTxCount(t, seq, 2)
+	if err := seq.PublishTransaction(ctx, bumped, nil); !errors.Is(err, txpool.ErrAlreadyKnown) {
+		t.Errorf("resubmitting the replacement = %v, want ErrAlreadyKnown", err)
+	}
+	if n := seq.pendingTxs.len(); n != 1 {
+		t.Errorf("pendingTxs.len() = %d, want 1 while both calls are pending", n)
+	}
+
+	drain := func(want *types.Transaction) {
+		t.Helper()
+		item := <-seq.txQueue
+		if item.tx.Hash() != want.Hash() {
+			t.Fatalf("drained item is %s, want %s", item.tx.Hash(), want.Hash())
+		}
+		item.returnResult(nil)
+	}
+	drain(first)
+	if res := awaitResult(t, firstResult, "first submission"); res != nil {
+		t.Errorf("first submission = %v, want nil", res)
+	}
+	if n := seq.pendingTxs.len(); n != 1 {
+		t.Errorf("pendingTxs.len() = %d, want 1 while the replacement is pending", n)
+	}
+	if err := seq.PublishTransaction(ctx, bumped, nil); !errors.Is(err, txpool.ErrAlreadyKnown) {
+		t.Errorf("resubmitting the replacement after the replaced tx returned = %v, want ErrAlreadyKnown", err)
+	}
+	drain(bumped)
+	if res := awaitResult(t, bumpedResult, "replacement submission"); res != nil {
+		t.Errorf("replacement submission = %v, want nil", res)
+	}
+	if n := seq.pendingTxs.len(); n != 0 {
+		t.Errorf("pendingTxs.len() = %d, want 0 after both calls returned", n)
+	}
+}
+
+func TestPublishTransactionReleasesNonceAfterCancel(t *testing.T) {
+	engine := newTestRecorderEngine(t, 0)
+	config := DefaultSequencerConfig
+	configFetcher := func() *SequencerConfig { return &config }
+	seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx := types.MustSignNewTx(key, types.LatestSigner(engine.bc.Config()), &types.DynamicFeeTx{
+		ChainID:   engine.bc.Config().ChainID,
+		Nonce:     0,
+		GasTipCap: big.NewInt(10),
+		GasFeeCap: big.NewInt(100),
+		Gas:       21000,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	firstResult := make(chan error, 1)
+	go func() { firstResult <- seq.PublishTransaction(ctx, tx, nil) }()
+	waitForQueuedTxCount(t, seq, 1)
+	cancel()
+	if res := awaitResult(t, firstResult, "canceled submission"); !errors.Is(res, context.Canceled) {
+		t.Errorf("canceled submission = %v, want context.Canceled", res)
+	}
+	if n := seq.pendingTxs.len(); n != 0 {
+		t.Errorf("pendingTxs.len() = %d, want 0 after the submission returned", n)
+	}
+	stale := <-seq.txQueue
+	if stale.ctx.Err() == nil {
+		t.Error("the stale queue item ctx is not canceled")
+	}
+
+	secondResult := make(chan error, 1)
+	go func() { secondResult <- seq.PublishTransaction(context.Background(), tx, nil) }()
+	waitForQueuedTxCount(t, seq, 1)
+	item := <-seq.txQueue
+	item.returnResult(nil)
+	if res := awaitResult(t, secondResult, "resubmission"); res != nil {
+		t.Errorf("resubmission = %v, want nil", res)
+	}
+}
+
+func TestPublishTransactionWithoutRejectNoopReplacements(t *testing.T) {
+	ctx := context.Background()
+	engine := newTestRecorderEngine(t, 0)
+	config := DefaultSequencerConfig
+	config.RejectNoopReplacements = false
+	configFetcher := func() *SequencerConfig { return &config }
+	seq, err := NewSequencer(engine, nil, configFetcher, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx := types.MustSignNewTx(key, types.LatestSigner(engine.bc.Config()), &types.DynamicFeeTx{
+		ChainID:   engine.bc.Config().ChainID,
+		Nonce:     0,
+		GasTipCap: big.NewInt(10),
+		GasFeeCap: big.NewInt(100),
+		Gas:       21000,
+	})
+
+	results := make(chan error, 2)
+	for range 2 {
+		go func() { results <- seq.PublishTransaction(ctx, tx, nil) }()
+	}
+	waitForQueuedTxCount(t, seq, 2)
+	if n := seq.pendingTxs.len(); n != 0 {
+		t.Errorf("pendingTxs.len() = %d, want 0 with noop replacement rejection disabled", n)
+	}
+	for range 2 {
+		item := <-seq.txQueue
+		item.returnResult(nil)
+	}
+	for range 2 {
+		if res := awaitResult(t, results, "submission"); res != nil {
+			t.Errorf("submission = %v, want nil", res)
+		}
 	}
 }

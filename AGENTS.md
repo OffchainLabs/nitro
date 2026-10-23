@@ -15,3 +15,8 @@ Guidance for coding agents working in this repository.
   ```
 
   The available sections are listed in `changelog/.unclog.yaml`.
+
+## Metrics
+
+- A metric name ends with its kind as the last path segment: `counter`, `gauge`, `histogram`, or `timer`. Example: `arb/sequencer/pending/replaced/counter`.
+- Ignore the metrics already there. They predate this guidance.

@@ -51,6 +51,7 @@ var defaultSequencerConfig = gethexec.SequencerConfig{
 	MaxTxDataSize:                95000,
 	NonceFailureCacheSize:        1024,
 	NonceFailureCacheExpiry:      time.Second,
+	RejectNoopReplacements:       true,
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	ExpectedSurplusGasPriceMode:  "CalldataPrice",

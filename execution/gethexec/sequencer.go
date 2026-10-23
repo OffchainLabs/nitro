@@ -103,6 +103,7 @@ type SequencerConfig struct {
 	MaxTxDataSize                int              `koanf:"max-tx-data-size" reload:"hot"`
 	NonceFailureCacheSize        int              `koanf:"nonce-failure-cache-size" reload:"hot"`
 	NonceFailureCacheExpiry      time.Duration    `koanf:"nonce-failure-cache-expiry" reload:"hot"`
+	RejectNoopReplacements       bool             `koanf:"reject-noop-replacements" reload:"hot"`
 	ExpectedSurplusGasPriceMode  string           `koanf:"expected-surplus-gas-price-mode"`
 	ExpectedSurplusSoftThreshold string           `koanf:"expected-surplus-soft-threshold" reload:"hot"`
 	ExpectedSurplusHardThreshold string           `koanf:"expected-surplus-hard-threshold" reload:"hot"`
@@ -128,8 +129,9 @@ type FIFOConfig struct {
 }
 
 type PGAConfig struct {
-	DangerousForceFIFO bool `koanf:"dangerous-force-fifo"`
-	RoundsPerBlock     uint `koanf:"rounds-per-block"`
+	DangerousForceFIFO                 bool   `koanf:"dangerous-force-fifo"`
+	RoundsPerBlock                     uint   `koanf:"rounds-per-block"`
+	MinPriorityFeePercentBumpToReplace uint64 `koanf:"min-priority-fee-percent-bump-to-replace"`
 }
 
 const MaxFIFOSizeSamplingExponent = 100
@@ -241,6 +243,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	MaxTxDataSize:                95000,
 	NonceFailureCacheSize:        1024,
 	NonceFailureCacheExpiry:      time.Second,
+	RejectNoopReplacements:       true,
 	ExpectedSurplusGasPriceMode:  "BlobPrice",
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
@@ -263,8 +266,9 @@ var DefaultFIFOConfig = FIFOConfig{
 }
 
 var DefaultPGAConfig = PGAConfig{
-	DangerousForceFIFO: false,
-	RoundsPerBlock:     1,
+	DangerousForceFIFO:                 false,
+	RoundsPerBlock:                     1,
+	MinPriorityFeePercentBumpToReplace: 10,
 }
 
 func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -287,6 +291,7 @@ func SequencerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".max-tx-data-size", DefaultSequencerConfig.MaxTxDataSize, "maximum transaction size the sequencer will accept")
 	f.Int(prefix+".nonce-failure-cache-size", DefaultSequencerConfig.NonceFailureCacheSize, "number of transactions with too high of a nonce to keep in memory while waiting for their predecessor")
 	f.Duration(prefix+".nonce-failure-cache-expiry", DefaultSequencerConfig.NonceFailureCacheExpiry, "maximum amount of time to wait for a predecessor before rejecting a tx with nonce too high")
+	f.Bool(prefix+".reject-noop-replacements", DefaultSequencerConfig.RejectNoopReplacements, "reject a transaction whose sender and nonce are already pending, unless PGA ordering is active and it bumps the fees of the queued one")
 	f.String(prefix+".expected-surplus-gas-price-mode", DefaultSequencerConfig.ExpectedSurplusGasPriceMode, "gas price setting to be used in calculating estimated surplus. Allowed values- CalldataPrice, BlobPrice and CalldataPrice7523")
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
@@ -308,10 +313,32 @@ func FIFOAddOptions(prefix string, f *pflag.FlagSet) {
 func PGAAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".dangerous-force-fifo", DefaultPGAConfig.DangerousForceFIFO, "force FIFO transaction ordering even when the chain collects tips, disabling the priority gas auction (PGA)")
 	f.Uint(prefix+".rounds-per-block", DefaultPGAConfig.RoundsPerBlock, "number of PGA rounds per block; the round length is max-block-speed divided by this value")
+	f.Uint64(prefix+".min-priority-fee-percent-bump-to-replace", DefaultPGAConfig.MinPriorityFeePercentBumpToReplace, "minimum bump in percent of both the priority fee and the fee cap over a pending transaction with the same nonce for the sequencer to queue a replacement")
 }
 
 func EventFilterAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".path", "", "path to JSON file containing event filter rules")
+}
+
+type orderingStrategy int32
+
+const (
+	orderingStrategyUninitialized orderingStrategy = iota
+	orderingStrategyFIFO
+	orderingStrategyPGA
+)
+
+func (o orderingStrategy) String() string {
+	switch o {
+	case orderingStrategyUninitialized:
+		return "uninitialized"
+	case orderingStrategyFIFO:
+		return "FIFO"
+	case orderingStrategyPGA:
+		return "PGA"
+	default:
+		return "unknown"
+	}
 }
 
 type txQueueItem struct {
@@ -518,6 +545,7 @@ type Sequencer struct {
 	senderWhitelist    map[common.Address]struct{}
 	nonceCache         *nonceCache
 	nonceFailures      *nonceFailureCache
+	pendingTxs         *pendingTxs
 	expressLaneService *timeboost.ExpressLaneService
 	parentChain        *parent.ParentChain
 
@@ -561,7 +589,9 @@ type Sequencer struct {
 	// set for the duration of createBlockWithTxOrderer; guarded by createBlockMutex.
 	blockTxOrderer containers.Option[txOrderer]
 
-	loggedOrderingStrategy string
+	// Strategy the latest block attempt chose from its parent state, so it flips one block
+	// after a collect-tips change. Tx admission reads it.
+	orderingStrategy containers.AtomicEnum[orderingStrategy]
 }
 
 func NewSequencer(
@@ -591,6 +621,7 @@ func NewSequencer(
 		config:                            configFetcher,
 		senderWhitelist:                   senderWhitelist,
 		nonceCache:                        newNonceCache(config.NonceCacheSize),
+		pendingTxs:                        newPendingTxs(config.PGA.MinPriorityFeePercentBumpToReplace),
 		l1Timestamp:                       0,
 		isActive:                          false,
 		parentChain:                       parentChain,
@@ -654,6 +685,21 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	}
 
 	config := s.config()
+	if config.RejectNoopReplacements {
+		sender, err := types.Sender(s.currentSigner(), tx)
+		if err != nil {
+			return err
+		}
+		release, err := s.pendingTxs.admit(sender, tx, s.orderingStrategy.Load())
+		if err != nil {
+			return err
+		}
+		// Keep this defer above the cancelFunc defer. The item ctx must be canceled before the
+		// nonce is released, or a new submission can be admitted while the drain still sees
+		// the old copy as live.
+		defer release()
+	}
+
 	queueTimeout := config.QueueTimeout
 	queueCtx, cancelFunc := ctxhelper.WithTimeoutOrCancel(parentCtx, queueTimeout+config.Timeboost.ExpressLaneAdvantage) // Include timeboost delay in ctx timeout
 	defer cancelFunc()
@@ -760,6 +806,13 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 func (s *Sequencer) PublishTimeboostedTransaction(queueCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
 	resultChan := make(chan error, 1)
 	return s.publishTransactionToQueue(queueCtx, tx, options, resultChan, true)
+}
+
+// Must build the same signer as TxPreChecker.PublishTransaction.
+func (s *Sequencer) currentSigner() types.Signer {
+	header := s.execEngine.bc.CurrentBlock()
+	arbosVersion := types.DeserializeHeaderExtraInformation(header).ArbOSFormatVersion
+	return types.MakeSigner(s.execEngine.bc.Config(), header.Number, header.Time, arbosVersion)
 }
 
 func (s *Sequencer) publishTransactionToQueue(queueCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, resultChan chan error, isExpressLaneController bool) error {
@@ -1272,18 +1325,21 @@ func (s *Sequencer) createBlockWithRegularTxs(ctx context.Context) (*execution.S
 		maxBlockSpeed:        config.MaxBlockSpeed,
 		maxTxDataSize:        config.MaxTxDataSize,
 	}
-	strategy := "FIFO"
-	var orderer txOrderer = newFIFOTxOrderer(s, ordererConfig, config.FIFO, config.PollInterval, s.dataLimitedBlockStreak)
+	var (
+		strategy orderingStrategy
+		orderer  txOrderer
+	)
 	if collectTips && !config.PGA.DangerousForceFIFO {
-		strategy = "PGA"
+		strategy = orderingStrategyPGA
 		orderer = NewPGATxOrderer(ctx, s, ordererConfig, config.PGA.RoundsPerBlock)
 		pgaOrderingCounter.Inc(1)
 	} else {
+		strategy = orderingStrategyFIFO
+		orderer = newFIFOTxOrderer(s, ordererConfig, config.FIFO, config.PollInterval, s.dataLimitedBlockStreak)
 		fifoOrderingCounter.Inc(1)
 	}
-	if s.loggedOrderingStrategy != strategy {
+	if s.orderingStrategy.Swap(strategy) != strategy {
 		log.Info("Sequencer transaction ordering strategy", "strategy", strategy, "blockNumber", latestHeader.Number.Uint64()+1)
-		s.loggedOrderingStrategy = strategy
 	}
 
 	s.blockTxOrderer = containers.Some(orderer)
@@ -1842,6 +1898,10 @@ func (s *Sequencer) startFilterSetReporting() {
 		}
 		return interval
 	})
+}
+
+func (s *Sequencer) OrderingStrategyForTesting() string {
+	return s.orderingStrategy.Load().String()
 }
 
 func (s *Sequencer) hasPendingRegularTxs() bool {
