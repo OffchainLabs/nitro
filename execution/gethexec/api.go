@@ -83,6 +83,9 @@ func NewArbTimeboostAPI(publisher TransactionPublisher) *ArbTimeboostAPI {
 	return &ArbTimeboostAPI{publisher}
 }
 
+// SendExpressLaneTransaction submits a signed transaction to the sequencer through the
+// express lane for the given auction round. It returns an error if the submission is
+// missing, malformed or rejected by the sequencer.
 func (a *ArbTimeboostAPI) SendExpressLaneTransaction(ctx context.Context, msg *timeboost.JsonExpressLaneSubmission) error {
 	if msg == nil {
 		return errors.New("missing required parameter")

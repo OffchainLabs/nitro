@@ -166,6 +166,10 @@ var (
 	legacyAnyTrustStoreAPIOnly = false
 )
 
+// StartChunkedStore opens a chunked store of a message of totalSize bytes, sent as nChunks
+// chunks of chunkSize bytes, and returns the message ID to pass to SendChunk and
+// CommitChunkedStore. The timestamp is the Unix time at which the request was signed;
+// requests that are too old or replayed are rejected.
 func (s *RPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*data_streaming.StartStreamingResult, error) {
 	rpcStoreRequestCounter.Inc(1)
 	failed := true
@@ -184,6 +188,8 @@ func (s *RPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, c
 	return result, nil
 }
 
+// SendChunk adds the chunk with the given chunk ID to the chunked store opened by
+// StartChunkedStore for the given message ID.
 func (s *RPCServer) SendChunk(ctx context.Context, messageId, chunkId hexutil.Uint64, chunk hexutil.Bytes, sig hexutil.Bytes) error {
 	success := false
 	defer func() {
@@ -202,6 +208,8 @@ func (s *RPCServer) SendChunk(ctx context.Context, messageId, chunkId hexutil.Ui
 	return nil
 }
 
+// CommitChunkedStore assembles the chunks received for the given message ID, stores the
+// message and returns the signed data availability certificate.
 func (s *RPCServer) CommitChunkedStore(ctx context.Context, messageId hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
 	message, timeout, startTime, err := s.dataStreamReceiver.FinalizeReceiving(ctx, data_streaming.MessageId(messageId), sig)
 	if err != nil {
@@ -233,6 +241,8 @@ func (s *RPCServer) CommitChunkedStore(ctx context.Context, messageId hexutil.Ui
 	}, nil
 }
 
+// HealthCheck returns an error if the storage backend of the data availability server is
+// not healthy.
 func (s *RPCServer) HealthCheck(ctx context.Context) error {
 	return s.daHealthChecker.HealthCheck(ctx)
 }
