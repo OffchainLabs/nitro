@@ -253,14 +253,22 @@ func (s *ValidatorServer) GenerateCertificateValidityProof(ctx context.Context, 
 
 // Storing API: Data Stream methods
 
+// StartChunkedStore opens a chunked store of a message of totalSize bytes, sent as nChunks
+// chunks of chunkSize bytes, and returns the message ID to pass to SendChunk and
+// CommitChunkedStore. The timestamp is the Unix time at which the request was signed;
+// requests that are too old or replayed are rejected.
 func (s *WriterServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*data_streaming.StartStreamingResult, error) {
 	return s.dataReceiver.StartReceiving(ctx, uint64(timestamp), uint64(nChunks), uint64(chunkSize), uint64(totalSize), uint64(timeout), sig)
 }
 
+// SendChunk adds the chunk with the given chunk ID to the chunked store opened by
+// StartChunkedStore for the given message ID.
 func (s *WriterServer) SendChunk(ctx context.Context, messageId, chunkId hexutil.Uint64, chunk hexutil.Bytes, sig hexutil.Bytes) error {
 	return s.dataReceiver.ReceiveChunk(ctx, data_streaming.MessageId(messageId), uint64(chunkId), chunk, sig)
 }
 
+// CommitChunkedStore assembles the chunks received for the given message ID, stores the
+// message with Store and returns the serialized data availability certificate.
 func (s *WriterServer) CommitChunkedStore(ctx context.Context, messageId hexutil.Uint64, sig hexutil.Bytes) (*server_api.StoreResult, error) {
 	message, timeout, _, err := s.dataReceiver.FinalizeReceiving(ctx, data_streaming.MessageId(messageId), sig)
 	if err != nil {
@@ -272,6 +280,8 @@ func (s *WriterServer) CommitChunkedStore(ctx context.Context, messageId hexutil
 
 // Storing API: Single-call Store method
 
+// Store stores the given message with the given timeout through the configured data
+// availability writer and returns the serialized data availability certificate.
 func (s *WriterServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64) (*server_api.StoreResult, error) {
 	serializedDACert, err := s.writer.Store(message, uint64(timeout)).Await(ctx)
 	return &server_api.StoreResult{SerializedDACert: serializedDACert}, err

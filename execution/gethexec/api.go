@@ -52,10 +52,16 @@ func (a *ArbAPI) MaintenanceStatus(ctx context.Context) execution.MaintenanceSta
 	return *a.execEngine.MaintenanceStatus()
 }
 
+// CheckPublisherHealth returns an error if the transaction publisher of the node, such as
+// its sequencer or its transaction forwarder, is not healthy.
 func (a *ArbAPI) CheckPublisherHealth(ctx context.Context) error {
 	return a.txPublisher.CheckHealth(ctx)
 }
 
+// GetRawBlockMetadata returns the block number and the raw block metadata of each block
+// in the range from fromBlock to toBlock that has metadata. It returns an error if the
+// node does not serve block metadata, if fromBlock is greater than toBlock, or if the
+// range exceeds the configured block limit.
 func (a *ArbAPI) GetRawBlockMetadata(ctx context.Context, fromBlock, toBlock rpc.BlockNumber) ([]NumberAndBlockMetadata, error) {
 	if a.bulkBlockMetadataFetcher == nil {
 		return nil, errors.New("arb_getRawBlockMetadata is not available")
@@ -83,6 +89,9 @@ func NewArbTimeboostAPI(publisher TransactionPublisher) *ArbTimeboostAPI {
 	return &ArbTimeboostAPI{publisher}
 }
 
+// SendExpressLaneTransaction submits a signed transaction to the sequencer through the
+// express lane for the given auction round. It returns an error if the submission is
+// missing, malformed or rejected by the sequencer.
 func (a *ArbTimeboostAPI) SendExpressLaneTransaction(ctx context.Context, msg *timeboost.JsonExpressLaneSubmission) error {
 	if msg == nil {
 		return errors.New("missing required parameter")
@@ -160,6 +169,10 @@ func (api *ArbDebugAPI) evenlySpaceBlocks(start, end rpc.BlockNumber) (uint64, u
 	return first, uint64(step), uint64(end), uint64(blocks), nil
 }
 
+// PricingModel returns the parent chain and child chain pricing state at evenly spaced
+// blocks between start and end, with at most the configured block range bound of samples.
+// Per-block values are arrays, one entry per sample; the pricing parameters are read at the
+// last sample.
 func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNumber) (PricingModelHistory, error) {
 
 	first, step, last, blocks, err := api.evenlySpaceBlocks(start, end)
@@ -254,6 +267,8 @@ type TimeoutQueueHistory struct {
 	Count []uint64 `json:"count"`
 }
 
+// TimeoutQueueHistory returns the size of the retryable timeout queue at evenly spaced
+// blocks between start and end, with at most the configured block range bound of samples.
 func (api *ArbDebugAPI) TimeoutQueueHistory(ctx context.Context, start, end rpc.BlockNumber) (TimeoutQueueHistory, error) {
 	first, step, last, blocks, err := api.evenlySpaceBlocks(start, end)
 	if err != nil {
@@ -287,6 +302,9 @@ type TimeoutQueue struct {
 	Timeouts    []uint64      `json:"timeouts"`
 }
 
+// TimeoutQueue returns the retryable tickets in the timeout queue at the given block, with
+// the timeout of each queue entry in Unix seconds, or 0 if the retryable no longer exists.
+// It returns at most one entry more than the configured timeout queue bound.
 func (api *ArbDebugAPI) TimeoutQueue(ctx context.Context, blockNum rpc.BlockNumber) (TimeoutQueue, error) {
 
 	blockNum, _ = api.blockchain.ClipToPostNitroGenesis(blockNum)
