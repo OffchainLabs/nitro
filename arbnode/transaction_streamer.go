@@ -359,6 +359,9 @@ func deleteFromRange(ctx context.Context, db ethdb.Database, prefix []byte, star
 			batch.Reset()
 		}
 	}
+	if err := startIter.Error(); err != nil {
+		return nil, err
+	}
 	if batch.ValueSize() > 0 {
 		if err := batch.Write(); err != nil {
 			return nil, err
