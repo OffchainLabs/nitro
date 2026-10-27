@@ -179,7 +179,7 @@ func TestSequencerSameTxResubmissionRejected(t *testing.T) {
 func TestSequencerFIFOSameNonceRejected(t *testing.T) {
 	testSameNonceRejection(t, true, func(t *testing.T, builder *NodeBuilder, first *types.Transaction) *types.Transaction {
 		return signSameNonceTx(t, builder, first.Nonce(), 50, nil)
-	}, core.ErrNonceTooLow)
+	}, txpool.ErrReplaceUnderpriced)
 }
 
 func TestSequencerPGASameNonceUnderpricedReplacementRejected(t *testing.T) {

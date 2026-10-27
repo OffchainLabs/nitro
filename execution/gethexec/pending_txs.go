@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -59,8 +58,8 @@ func (f *pendingTxs) admit(sender common.Address, tx *types.Transaction, strateg
 	}
 	if strategy != orderingStrategyPGA {
 		pendingTxsNoncePendingCounter.Inc(1)
-		// Assume the first transaction will be accepted and the second one fail with nonce-too-low.
-		return nil, core.ErrNonceTooLow
+		// Outside PGA no fee bump can replace a pending tx, so the "underpriced" error text is not literal.
+		return nil, txpool.ErrReplaceUnderpriced
 	}
 	if !isFeeBumped(entry.latest, tx, f.priceBump) {
 		pendingTxsReplaceUnderpricedCounter.Inc(1)
