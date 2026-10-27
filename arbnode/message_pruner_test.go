@@ -7,6 +7,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 
@@ -77,6 +79,54 @@ func TestMessagePrunerWithNoPruningEligibleMessagePresent(t *testing.T) {
 	checkDbKeys(t, uint64(messagesCount), transactionStreamerDb, schema.BlockHashInputFeedPrefix)
 	checkDbKeys(t, uint64(messagesCount), transactionStreamerDb, schema.MessageResultPrefix)
 	checkDbKeys(t, messagesCount, inboxTrackerDb, schema.RlpDelayedMessagePrefix)
+}
+
+// liveIteratorsDB counts the iterators that were created and not yet released.
+type liveIteratorsDB struct {
+	ethdb.Database
+	live int
+}
+
+func (db *liveIteratorsDB) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
+	db.live++
+	return &liveIterator{Iterator: db.Database.NewIterator(prefix, start), db: db}
+}
+
+type liveIterator struct {
+	ethdb.Iterator
+	db       *liveIteratorsDB
+	released bool
+}
+
+func (it *liveIterator) Release() {
+	if !it.released {
+		it.released = true
+		it.db.live--
+	}
+	it.Iterator.Release()
+}
+
+// A leaked iterator keeps pebble from closing the consensus database.
+func TestDeleteFromLastPrunedUptoEndKeyReleasesIterators(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		delayedCount   uint64
+		wantLastPruned uint64
+	}{
+		{name: "only delayed message zero", delayedCount: 1, wantLastPruned: 0},
+		{name: "delayed messages to prune", delayedCount: 10, wantLastPruned: 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := &liveIteratorsDB{Database: rawdb.NewMemoryDatabase()}
+			for i := uint64(0); i < tc.delayedCount; i++ {
+				require.NoError(t, db.Put(dbKey(schema.RlpDelayedMessagePrefix, i), []byte{}))
+			}
+			_, lastPruned, err := deleteFromLastPrunedUptoEndKey(context.Background(), db, schema.RlpDelayedMessagePrefix, 0, 5)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantLastPruned, lastPruned)
+			require.Zero(t, db.live, "unreleased iterators")
+		})
+	}
 }
 
 func setupDatabase(t *testing.T, messageCount, delayedMessageCount uint64) (ethdb.Database, ethdb.Database, *MessagePruner) {

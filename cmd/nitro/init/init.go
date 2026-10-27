@@ -726,7 +726,7 @@ func validateOrUpgradeWasmStoreSchemaVersion(db ethdb.Database) error {
 	return nil
 }
 
-func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain *core.BlockChain, executionDB, wasmDB ethdb.Database, rebuildMode string) (ethdb.Database, *core.BlockChain, error) {
+func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain *core.BlockChain, executionDB, wasmDB ethdb.Database, rebuildMode string) error {
 	var err error
 	latestBlock := l2BlockChain.CurrentBlock()
 	if latestBlock == nil || latestBlock.Number.Uint64() <= l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum ||
@@ -735,21 +735,21 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 		// If Stylus upgrade hasn't yet happened, skipping rebuilding of wasm store
 		log.Info("Setting rebuilding of wasm store to done")
 		if err = gethexec.WriteToKeyValueStore(wasmDB, gethexec.RebuildingPositionKey, gethexec.RebuildingDone); err != nil {
-			return nil, nil, fmt.Errorf("unable to set rebuilding status of wasm store to done: %w", err)
+			return fmt.Errorf("unable to set rebuilding status of wasm store to done: %w", err)
 		}
 	} else if rebuildMode != "false" {
 		var position common.Hash
 		if rebuildMode == "force" {
 			log.Info("Commencing force rebuilding of wasm store by setting codehash position in rebuilding to beginning")
 			if err := gethexec.WriteToKeyValueStore(wasmDB, gethexec.RebuildingPositionKey, common.Hash{}); err != nil {
-				return nil, nil, fmt.Errorf("unable to initialize codehash position in rebuilding of wasm store to beginning: %w", err)
+				return fmt.Errorf("unable to initialize codehash position in rebuilding of wasm store to beginning: %w", err)
 			}
 		} else {
 			position, err = gethexec.ReadFromKeyValueStore[common.Hash](wasmDB, gethexec.RebuildingPositionKey)
 			if err != nil {
 				log.Info("Unable to get codehash position in rebuilding of wasm store, its possible it isn't initialized yet, so initializing it and starting rebuilding", "err", err)
 				if err := gethexec.WriteToKeyValueStore(wasmDB, gethexec.RebuildingPositionKey, common.Hash{}); err != nil {
-					return nil, nil, fmt.Errorf("unable to initialize codehash position in rebuilding of wasm store to beginning: %w", err)
+					return fmt.Errorf("unable to initialize codehash position in rebuilding of wasm store to beginning: %w", err)
 				}
 			}
 		}
@@ -758,17 +758,17 @@ func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain
 			if err != nil {
 				log.Info("Unable to get start block hash in rebuilding of wasm store, its possible it isn't initialized yet, so initializing it to latest block hash", "err", err)
 				if err := gethexec.WriteToKeyValueStore(wasmDB, gethexec.RebuildingStartBlockHashKey, latestBlock.Hash()); err != nil {
-					return nil, nil, fmt.Errorf("unable to initialize start block hash in rebuilding of wasm store to latest block hash: %w", err)
+					return fmt.Errorf("unable to initialize start block hash in rebuilding of wasm store to latest block hash: %w", err)
 				}
 				startBlockHash = latestBlock.Hash()
 			}
 			log.Info("Starting or continuing rebuilding of wasm store", "codeHash", position, "startBlockHash", startBlockHash)
 			if err := gethexec.RebuildWasmStore(ctx, wasmDB, executionDB, config.RPC.MaxRecreateStateDepth, &config.StylusTarget, l2BlockChain, position, startBlockHash); err != nil {
-				return nil, nil, fmt.Errorf("error rebuilding of wasm store: %w", err)
+				return fmt.Errorf("error rebuilding of wasm store: %w", err)
 			}
 		}
 	}
-	return executionDB, l2BlockChain, nil
+	return nil
 }
 
 // Opens the execution DB, falling back to download+genesis initialization when no existing
@@ -820,7 +820,7 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 
 	err = pruneExecutionDB(ctx, executionDB, stack, config, cacheConfig, persistentConfig, l1Client, rollupAddrs)
 	if err != nil {
-		return executionDB, nil, nil, false, fmt.Errorf("error pruning: %w", err)
+		return executionDB, nil, l2BlockChain, false, fmt.Errorf("error pruning: %w", err)
 	}
 
 	err = ValidateBlockChain(l2BlockChain, chainConfig)
@@ -833,7 +833,7 @@ func OpenInitializeExecutionDB(ctx context.Context, stack *node.Node, config *co
 		return executionDB, nil, l2BlockChain, false, fmt.Errorf("failed to recreate missing states: %w", err)
 	}
 
-	executionDB, l2BlockChain, err = rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, executionDB, wasmDB, config.Init.RebuildLocalWasm)
+	err = rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, executionDB, wasmDB, config.Init.RebuildLocalWasm)
 
 	return executionDB, initDataReader, l2BlockChain, dbFreshlyCreated, err
 }
@@ -1071,7 +1071,8 @@ func getNewBlockchain(parsedInitMessage *arbostypes.ParsedInitMessage, config *c
 	txIndexWg := sync.WaitGroup{}
 
 	if initDataReader == nil {
-		l2BlockChain, err := gethexec.GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer, config.Execution.ExposeMultiGas)
+		var err error
+		l2BlockChain, err = gethexec.GetBlockChain(executionDB, cacheConfig, chainConfig, tracer, &config.Execution.TxIndexer, config.Execution.ExposeMultiGas)
 		if err != nil {
 			return nil, err
 		}
