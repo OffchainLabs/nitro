@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [v3.12.3](https://github.com/OffchainLabs/nitro/compare/v3.12.2...v3.12.3) - 2026-10-26
+
+### Configuration
+
+- Add `--execution.sequencer.fifo.size-sampling-max-exponent`. [[commit]](https://github.com/OffchainLabs/nitro/commit/e019b4e6dd4121411191a44cf864652280cd9e0b)
+- Add `--execution.sequencer.fifo.size-sampling-grace-blocks`. [[commit]](https://github.com/OffchainLabs/nitro/commit/e019b4e6dd4121411191a44cf864652280cd9e0b)
+- Add `--execution.sequencer.fifo.size-sampling-min-tx-size`. [[commit]](https://github.com/OffchainLabs/nitro/commit/e019b4e6dd4121411191a44cf864652280cd9e0b)
+- Add `--execution.sequencer.reject-noop-replacements`. [[commit]](https://github.com/OffchainLabs/nitro/commit/8c467151a18461b9cadaec5d57eddee588b4a26e)
+- Add `--execution.sequencer.pga.min-priority-fee-percent-bump-to-replace`. [[commit]](https://github.com/OffchainLabs/nitro/commit/8c467151a18461b9cadaec5d57eddee588b4a26e)
+
+### Added
+
+- Add metric `arb/sequencer/fifo/sizesampling/skipped`. [[commit]](https://github.com/OffchainLabs/nitro/commit/e019b4e6dd4121411191a44cf864652280cd9e0b)
+- Add metric `arb/sequencer/fifo/sizesampling/exponent`. [[commit]](https://github.com/OffchainLabs/nitro/commit/e019b4e6dd4121411191a44cf864652280cd9e0b)
+- Add metric `arb/sequencer/pending/count/gauge`. [[commit]](https://github.com/OffchainLabs/nitro/commit/8c467151a18461b9cadaec5d57eddee588b4a26e)
+- Add metric `arb/sequencer/pending/count/histogram`. [[commit]](https://github.com/OffchainLabs/nitro/commit/8c467151a18461b9cadaec5d57eddee588b4a26e)
+- Add metric `arb/sequencer/pending/rejected/alreadyknown/counter`. [[commit]](https://github.com/OffchainLabs/nitro/commit/8c467151a18461b9cadaec5d57eddee588b4a26e)
+- Add metric `arb/sequencer/pending/rejected/noncepending/counter`. [[commit]](https://github.com/OffchainLabs/nitro/commit/8c467151a18461b9cadaec5d57eddee588b4a26e)
+- Add metric `arb/sequencer/pending/rejected/replaceunderpriced/counter`. [[commit]](https://github.com/OffchainLabs/nitro/commit/8c467151a18461b9cadaec5d57eddee588b4a26e)
+- Add metric `arb/sequencer/pending/replaced/counter`. [[commit]](https://github.com/OffchainLabs/nitro/commit/8c467151a18461b9cadaec5d57eddee588b4a26e)
+
+### Changed
+
+- Small transactions can overtake large ones after consecutive data-limited FIFO blocks. [[commit]](https://github.com/OffchainLabs/nitro/commit/e019b4e6dd4121411191a44cf864652280cd9e0b)
+- The sequencer rejects same-sender, same-nonce txs unless PGA is on and the tip is higher. [[commit]](https://github.com/OffchainLabs/nitro/commit/8c467151a18461b9cadaec5d57eddee588b4a26e)
+
 ## [v3.12.2](https://github.com/OffchainLabs/nitro/compare/v3.12.1...v3.12.2) - 2026-10-14
 
 ### Added
