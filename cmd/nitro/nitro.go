@@ -424,9 +424,10 @@ func mainImpl() int {
 		go iostat.RegisterAndPopulateMetrics(ctx, 1, 5)
 	}
 
+	// Run last to first, like defer, so anything is stopped before what it uses.
 	var deferFuncs []func()
 	defer func() {
-		for i := range deferFuncs {
+		for i := len(deferFuncs) - 1; i >= 0; i-- {
 			deferFuncs[i]()
 		}
 	}()
@@ -456,10 +457,10 @@ func mainImpl() int {
 	}
 
 	executionDB, initDataReader, l2BlockChain, dbFreshlyCreated, err := nitroinit.OpenInitializeExecutionDB(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching), tracer, &nodeConfig.Persistent, l1Client, rollupAddrs)
+	deferFuncs = append(deferFuncs, func() { closeDb(executionDB, "executionDB") })
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
-	deferFuncs = append(deferFuncs, func() { closeDb(executionDB, "executionDB") })
 	if err != nil {
 		pflag.Usage()
 		log.Error("error initializing database", "err", err)

@@ -1318,6 +1318,102 @@ func TestOpenInitializeExecutionDbEmptyInit(t *testing.T) {
 	Require(t, err)
 }
 
+// tarDirs writes the given directories under root into a tar archive.
+func tarDirs(t *testing.T, root string, archivePath string, dirs ...string) {
+	t.Helper()
+	archiveFile, err := os.Create(archivePath)
+	require.NoError(t, err)
+	defer archiveFile.Close()
+	tarWriter := tar.NewWriter(archiveFile)
+	defer tarWriter.Close()
+	for _, dir := range dirs {
+		err := filepath.Walk(filepath.Join(root, dir), func(filePath string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			relativePath, err := filepath.Rel(root, filePath)
+			if err != nil {
+				return err
+			}
+			header, err := tar.FileInfoHeader(info, "")
+			if err != nil {
+				return err
+			}
+			header.Name = filepath.ToSlash(relativePath)
+			if err := tarWriter.WriteHeader(header); err != nil || info.IsDir() {
+				return err
+			}
+			file, err := os.Open(filePath)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+			_, err = io.Copy(tarWriter, file)
+			return err
+		})
+		require.NoError(t, err)
+	}
+}
+
+// A node booting from a downloaded snapshot has no init data reader, so its
+// blockchain is opened from the snapshot's database.
+func TestOpenInitializeExecutionDBFromSnapshot(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	newNodeConfig := func() config.NodeConfig {
+		nodeConfig := config.NodeConfigDefault
+		nodeConfig.Execution.Caching.StateScheme = env.GetTestStateScheme()
+		nodeConfig.Chain.ID = 42161
+		nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
+		nodeConfig.Init.ValidateGenesisAssertion = false
+		return nodeConfig
+	}
+	open := func(stack *node.Node, nodeConfig *config.NodeConfig) (ethdb.Database, *core.BlockChain) {
+		executionDB, _, blockchain, _, err := OpenInitializeExecutionDB(
+			ctx,
+			stack,
+			nodeConfig,
+			new(big.Int).SetUint64(nodeConfig.Chain.ID),
+			gethexec.DefaultCacheConfigFor(&nodeConfig.Execution.Caching),
+			nil,
+			&nodeConfig.Persistent,
+			nil,
+			chaininfo.RollupAddresses{},
+		)
+		require.NoError(t, err)
+		require.NotNil(t, blockchain)
+		return executionDB, blockchain
+	}
+	newStack := func() *node.Node {
+		stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+		stackConfig.DBEngine = rawdb.DBPebble
+		stack, err := node.New(stackConfig)
+		require.NoError(t, err)
+		return stack
+	}
+
+	source := newStack()
+	sourceConfig := newNodeConfig()
+	sourceConfig.Init.Empty = true
+	executionDB, blockchain := open(source, &sourceConfig)
+	blockchain.Stop()
+	require.NoError(t, executionDB.Close())
+	archivePath := path.Join(t.TempDir(), "snapshot.tar")
+	tarDirs(t, source.InstanceDir(), archivePath, "l2chaindata", "wasm")
+	require.NoError(t, source.Close())
+
+	stack := newStack()
+	defer stack.Close()
+	nodeConfig := newNodeConfig()
+	nodeConfig.Init.Url = "file:" + archivePath
+	executionDB, blockchain = open(stack, &nodeConfig)
+	blockchain.Stop()
+	require.NoError(t, executionDB.Close())
+}
+
 func TestExtractSnapshot(t *testing.T) {
 	testCases := []struct {
 		name         string

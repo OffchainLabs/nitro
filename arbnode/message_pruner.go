@@ -173,7 +173,9 @@ func deleteFromLastPrunedUptoEndKey(ctx context.Context, db ethdb.Database, pref
 	if startMinKey == 0 {
 		startIter := db.NewIterator(prefix, uint64ToKey(1))
 		if !startIter.Next() {
-			return nil, 0, nil
+			err := startIter.Error()
+			startIter.Release()
+			return nil, 0, err
 		}
 		startMinKey = binary.BigEndian.Uint64(bytes.TrimPrefix(startIter.Key(), prefix))
 		startIter.Release()

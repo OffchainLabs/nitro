@@ -40,23 +40,28 @@ func InitAndStartExecutionAndConsensusNodes(ctx context.Context, stack *node.Nod
 		}
 		stopAll()
 	}()
+	// Each error is wrapped into err so the deferred log names the failed stage.
 	if execNode != nil {
 		if err = execNode.Initialize(ctx); err != nil {
-			return nil, fmt.Errorf("error initializing exec node: %w", err)
+			err = fmt.Errorf("error initializing exec node: %w", err)
+			return nil, err
 		}
 	}
 	if err = stack.Start(); err != nil {
 		stackStartFailed = true
-		return nil, fmt.Errorf("error starting geth stack: %w", err)
+		err = fmt.Errorf("error starting geth stack: %w", err)
+		return nil, err
 	}
 	if execNode != nil {
 		execNode.SetConsensusClient(consensusNode)
 		if err = execNode.Start(ctx); err != nil {
-			return nil, fmt.Errorf("error starting exec node: %w", err)
+			err = fmt.Errorf("error starting exec node: %w", err)
+			return nil, err
 		}
 	}
 	if err = consensusNode.Start(ctx); err != nil {
-		return nil, fmt.Errorf("error starting consensus node: %w", err)
+		err = fmt.Errorf("error starting consensus node: %w", err)
+		return nil, err
 	}
 	return stopAll, nil
 }

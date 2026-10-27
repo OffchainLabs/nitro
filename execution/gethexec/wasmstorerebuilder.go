@@ -119,6 +119,9 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, execut
 			lastStatusUpdate = time.Now()
 		}
 	}
+	if err := iter.Error(); err != nil {
+		return fmt.Errorf("error iterating code in rebuilding of wasm store: %w", err)
+	}
 	// Set rebuilding position to done indicating completion
 	if err := WriteToKeyValueStore(wasmStore, RebuildingPositionKey, RebuildingDone); err != nil {
 		return fmt.Errorf("error updating codehash position in rebuilding of wasm store to done: %w", err)
