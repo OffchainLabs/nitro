@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -139,6 +140,17 @@ func closeDb(db io.Closer, name string) {
 
 func main() {
 	os.Exit(mainImpl())
+}
+
+type blockchainStopper struct {
+	blockchain *core.BlockChain
+}
+
+func (blockchainStopper) Start() error { return nil }
+
+func (s blockchainStopper) Stop() error {
+	s.blockchain.Stop()
+	return nil
 }
 
 // Returns the exit code
@@ -563,6 +575,12 @@ func mainImpl() int {
 			log.Error("failed to create execution node", "err", err)
 			return 1
 		}
+	} else {
+		// The stack owns the chain database and closes it in stack.Close, after
+		// stopping its lifecycles. With execution in another process, no
+		// execution node stops this blockchain's background workers, so a
+		// lifecycle does it before the database goes away.
+		stack.RegisterLifecycle(blockchainStopper{l2BlockChain})
 	}
 	consensusNode, err = arbnode.CreateConsensusNode(
 		ctx,
@@ -711,7 +729,15 @@ func mainImpl() int {
 	if err == nil {
 		cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, stack, execNode, consensusNode)
 		if err != nil {
-			log.Error("Error initializing and starting execution and consensus", "err", err)
+			// The failure unwind inside InitAndStartExecutionAndConsensusNodes
+			// stopped the blockchain (through the execution node, or through
+			// the blockchainStopper lifecycle with remote execution) and closed
+			// the stack, which closes the databases. If stack.Start itself
+			// failed, geth already closed the databases, so stopping the
+			// blockchain here would log.Crit on the snapshot journal write.
+			// Either way the deferred blockchain stop and database closes must
+			// not run.
+			deferFuncs = []func(){}
 			return 1
 		}
 		// remove previous deferFuncs, StopAndWait closes database and blockchain.

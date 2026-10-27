@@ -291,8 +291,7 @@ func startNode(t *testing.T, ctx context.Context, rb *rollbackGuard, e *Env, nam
 	}
 	cleanup, err := execution_consensus.InitAndStartExecutionAndConsensusNodes(ctx, h.Stack, h.ExecNode, h.Consensus)
 	if err != nil {
-		h.Consensus.StopAndWait()
-		h.ExecNode.StopAndWait()
+		rb.stage(closeL1)
 		for len(fatalCh) > 0 {
 			t.Logf("%s fatal during InitAndStart: %v", h.name, <-fatalCh)
 		}
