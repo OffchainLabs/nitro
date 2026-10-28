@@ -29,6 +29,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 - Small transactions can overtake large ones after consecutive data-limited FIFO blocks. [[commit]](https://github.com/OffchainLabs/nitro/commit/e019b4e6dd4121411191a44cf864652280cd9e0b)
 - The sequencer rejects same-sender, same-nonce txs unless PGA is on and the tip is higher. [[commit]](https://github.com/OffchainLabs/nitro/commit/8c467151a18461b9cadaec5d57eddee588b4a26e)
+- Feed REST backfill treats a 410 from the archive as an evicted chunk instead of retrying it. [[commit]](https://github.com/OffchainLabs/nitro/commit/f55dbeac7b06e9f09704a7a375ce17866b8f2e04)
 
 ## [v3.12.2](https://github.com/OffchainLabs/nitro/compare/v3.12.1...v3.12.2) - 2026-10-14
 
