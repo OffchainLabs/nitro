@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -705,8 +704,8 @@ func TestPublishTransactionDedupsPendingNonces(t *testing.T) {
 	}
 	bumped := sign(11, 110)
 	seq.orderingStrategy.Store(orderingStrategyFIFO)
-	if err := seq.PublishTransaction(ctx, bumped, nil); !errors.Is(err, core.ErrNonceTooLow) {
-		t.Errorf("same nonce under FIFO = %v, want ErrNonceTooLow", err)
+	if err := seq.PublishTransaction(ctx, bumped, nil); !errors.Is(err, txpool.ErrReplaceUnderpriced) {
+		t.Errorf("same nonce under FIFO = %v, want ErrReplaceUnderpriced", err)
 	}
 
 	seq.orderingStrategy.Store(orderingStrategyPGA)

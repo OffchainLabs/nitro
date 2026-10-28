@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 )
@@ -52,8 +51,8 @@ func TestPendingTxsRejectsSameNonceOutsidePGA(t *testing.T) {
 	for _, strategy := range []orderingStrategy{orderingStrategyUninitialized, orderingStrategyFIFO} {
 		set := newPendingTxs(DefaultPGAConfig.MinPriorityFeePercentBumpToReplace)
 		mustAdmit(t, set, testPendingSender, makePendingTx(0, 1, 100), strategy)
-		if _, err := set.admit(testPendingSender, makePendingTx(0, 1000, 100000), strategy); !errors.Is(err, core.ErrNonceTooLow) {
-			t.Errorf("admit(second, %s) = %v, want ErrNonceTooLow", strategy, err)
+		if _, err := set.admit(testPendingSender, makePendingTx(0, 1000, 100000), strategy); !errors.Is(err, txpool.ErrReplaceUnderpriced) {
+			t.Errorf("admit(second, %s) = %v, want ErrReplaceUnderpriced", strategy, err)
 		}
 	}
 }
@@ -102,8 +101,8 @@ func TestPendingTxsReplacementReleasedBeforeReplaced(t *testing.T) {
 	if _, err := set.admit(testPendingSender, first, orderingStrategyPGA); !errors.Is(err, txpool.ErrReplaceUnderpriced) {
 		t.Errorf("admit(first again) = %v, want ErrReplaceUnderpriced", err)
 	}
-	if _, err := set.admit(testPendingSender, makePendingTx(0, 10, 100), orderingStrategyFIFO); !errors.Is(err, core.ErrNonceTooLow) {
-		t.Errorf("admit(third, FIFO) = %v, want ErrNonceTooLow", err)
+	if _, err := set.admit(testPendingSender, makePendingTx(0, 10, 100), orderingStrategyFIFO); !errors.Is(err, txpool.ErrReplaceUnderpriced) {
+		t.Errorf("admit(third, FIFO) = %v, want ErrReplaceUnderpriced", err)
 	}
 	if _, err := set.admit(testPendingSender, second, orderingStrategyPGA); !errors.Is(err, txpool.ErrAlreadyKnown) {
 		t.Errorf("admit(second again) = %v, want ErrAlreadyKnown", err)
