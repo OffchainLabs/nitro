@@ -53,9 +53,12 @@ const (
 	backfillMaxBackoff      = 64 * time.Second
 )
 
-// errChunkMissing is a 404: the archive does not have the chunk, because it has not settled yet or
-// because it was evicted. The contract does not distinguish the two, and both end a run.
-var errChunkMissing = errors.New("feed chunk not available from this archive")
+// A chunk the archive does not have ends a run: a 404 has not settled yet, a 410 was evicted (or
+// never built) and this archive will not serve it.
+var (
+	errChunkNotSettled = errors.New("feed chunk not settled yet")
+	errChunkEvicted    = errors.New("feed chunk evicted from this archive")
+)
 
 // errArchiveMismatch wraps failures that repeat on every run until the archive or the
 // configuration changes: another chain or feed version, an unusable chunk size, a history that
@@ -304,10 +307,15 @@ func (b *Backfiller) runBackfill(ctx context.Context) (filled bool, progressed b
 		start := uint64(head) - uint64(head)%info.ChunkSize
 		messages, err := b.fetchChunk(ctx, info.ChunkSize, start)
 		if err != nil {
-			if errors.Is(err, errChunkMissing) {
+			if errors.Is(err, errChunkNotSettled) {
 				backfillChunksMissingCounter.Inc(1)
-				// head against feedHead tells an operator whether this is the frontier or eviction.
-				log.Info("feed backfill stopping, the archive does not have the next chunk",
+				log.Info("feed backfill stopping, the archive has not settled the next chunk yet",
+					"start", start, "head", head, "feedHead", target, "chunksApplied", applied)
+				return false, applied > 0
+			}
+			if errors.Is(err, errChunkEvicted) {
+				backfillChunksMissingCounter.Inc(1)
+				log.Info("feed backfill stopping, the archive no longer has the next chunk",
 					"start", start, "head", head, "feedHead", target, "chunksApplied", applied)
 				return false, applied > 0
 			}
@@ -382,8 +390,11 @@ func (b *Backfiller) fetchInfo(ctx context.Context) (*feedInfo, error) {
 func (b *Backfiller) fetchChunk(ctx context.Context, chunkSize, start uint64) ([]*message.BroadcastFeedMessage, error) {
 	body, err := b.get(ctx, b.baseURL.JoinPath(feedChunkPathPrefix+strconv.FormatUint(start, 10)).String())
 	if err != nil {
-		if statusCode(err) == http.StatusNotFound {
-			return nil, errChunkMissing
+		switch statusCode(err) {
+		case http.StatusNotFound:
+			return nil, errChunkNotSettled
+		case http.StatusGone:
+			return nil, errChunkEvicted
 		}
 		return nil, err
 	}
@@ -450,8 +461,12 @@ func (b *Backfiller) get(ctx context.Context, endpoint string) ([]byte, error) {
 }
 
 // retryableStatus is wider than HTTPError.IsRetryable: only the statuses the archive itself
-// defines are final (a chunk it does not have, a misaligned start, a refused gzip contract), and
-// anything else may come from a proxy in front of it, as in arb-relay's own client.
+// defines are final (a chunk not settled or evicted, a misaligned start, a refused gzip contract),
+// and anything else may come from a proxy in front of it, as in arb-relay's own client.
 func retryableStatus(code int) bool {
-	return code != http.StatusNotFound && code != http.StatusBadRequest && code != http.StatusNotAcceptable
+	switch code {
+	case http.StatusNotFound, http.StatusGone, http.StatusBadRequest, http.StatusNotAcceptable:
+		return false
+	}
+	return true
 }

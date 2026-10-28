@@ -48,8 +48,8 @@ func TestRestConfigValidate(t *testing.T) {
 }
 
 // mockArchive serves the feed's REST backlog API the way arb-relay does, so the client is tested
-// against the real thing: gzipped bodies, gzip required, and cacheable 404s for both unsettled and
-// evicted chunks.
+// against the real thing: gzipped bodies, gzip required, a cacheable 404 for an unsettled chunk and a
+// cacheable 410 for an evicted one.
 type mockArchive struct {
 	server *httptest.Server
 	// chunks[start] holds the messages of a published chunk.
@@ -171,14 +171,13 @@ func (a *mockArchive) serve(w http.ResponseWriter, r *http.Request) {
 	firstPublished := a.firstPublished
 	a.mu.Unlock()
 	if !published {
-		// The two classes differ only in cache max-age, as on arb-relay; the client never reads it
-		// and the contract does not promise it.
 		if start < firstPublished {
 			w.Header().Set("Cache-Control", "public, max-age=2")
+			w.WriteHeader(http.StatusGone)
 		} else {
 			w.Header().Set("Cache-Control", "public, max-age=1")
+			w.WriteHeader(http.StatusNotFound)
 		}
-		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
@@ -527,8 +526,8 @@ func TestBackfillerBaseURL(t *testing.T) {
 				Require(t, err)
 				return
 			}
-			if errors.Is(err, errChunkMissing) {
-				t.Fatalf("info 404 was reported as a missing chunk: %v", err)
+			if errors.Is(err, errChunkNotSettled) {
+				t.Fatalf("info 404 was reported as an unsettled chunk: %v", err)
 			}
 			var status *httperror.HTTPError
 			if !errors.As(err, &status) || status.StatusCode != tc.wantStatus {
@@ -549,6 +548,7 @@ func TestHTTPStatusPolicy(t *testing.T) {
 		permanent bool
 	}{
 		{code: http.StatusNotFound, retryable: false, permanent: false},
+		{code: http.StatusGone, retryable: false, permanent: false},
 		{code: http.StatusBadRequest, retryable: false, permanent: false},
 		{code: http.StatusNotAcceptable, retryable: false, permanent: true},
 		{code: http.StatusForbidden, retryable: true, permanent: false},
@@ -564,7 +564,7 @@ func TestHTTPStatusPolicy(t *testing.T) {
 			t.Errorf("status %v: isPermanentError = %v, expected %v", tc.code, got, tc.permanent)
 		}
 	}
-	if isPermanentError(errChunkMissing) {
+	if isPermanentError(errChunkNotSettled) || isPermanentError(errChunkEvicted) {
 		t.Error("a missing chunk must not count as permanent")
 	}
 }
