@@ -46,17 +46,26 @@ const TxPreCheckerStrictnessLikelyCompatible uint = 20
 const TxPreCheckerStrictnessFullValidation uint = 30
 
 type TxPreCheckerConfig struct {
-	Strictness             uint  `koanf:"strictness" reload:"hot"`
-	RequiredStateAge       int64 `koanf:"required-state-age" reload:"hot"`
-	RequiredStateMaxBlocks uint  `koanf:"required-state-max-blocks" reload:"hot"`
+	Strictness               uint  `koanf:"strictness" reload:"hot"`
+	RequiredStateAge         int64 `koanf:"required-state-age" reload:"hot"`
+	RequiredStateMaxBlocks   uint  `koanf:"required-state-max-blocks" reload:"hot"`
+	MaxPendingConditionalTxs int   `koanf:"max-pending-conditional-txs" reload:"hot"`
+}
+
+func (c *TxPreCheckerConfig) Validate() error {
+	if c.MaxPendingConditionalTxs < 0 {
+		return fmt.Errorf("tx-pre-checker max-pending-conditional-txs must not be negative, got %d", c.MaxPendingConditionalTxs)
+	}
+	return nil
 }
 
 type TxPreCheckerConfigFetcher func() *TxPreCheckerConfig
 
 var DefaultTxPreCheckerConfig = TxPreCheckerConfig{
-	Strictness:             TxPreCheckerStrictnessLikelyCompatible,
-	RequiredStateAge:       2,
-	RequiredStateMaxBlocks: 4,
+	Strictness:               TxPreCheckerStrictnessLikelyCompatible,
+	RequiredStateAge:         2,
+	RequiredStateMaxBlocks:   4,
+	MaxPendingConditionalTxs: 0,
 }
 
 func TxPreCheckerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -65,14 +74,29 @@ func TxPreCheckerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 		"30 = full validation which may reject txs that would succeed")
 	f.Int64(prefix+".required-state-age", DefaultTxPreCheckerConfig.RequiredStateAge, "how long ago should the storage conditions from eth_SendRawTransactionConditional be true, 0 = don't check old state")
 	f.Uint(prefix+".required-state-max-blocks", DefaultTxPreCheckerConfig.RequiredStateMaxBlocks, "maximum number of blocks to look back while looking for the <required-state-age> seconds old state, 0 = don't limit the search")
+	f.Int(prefix+".max-pending-conditional-txs", DefaultTxPreCheckerConfig.MaxPendingConditionalTxs, "maximum number of conditional transactions (eth_sendRawTransactionConditional) in flight on this node at once; new ones are rejected while it is reached, 0 disables the limit")
 }
+
+const tooManyPendingConditionalTxsErrorCode = -32012
+
+type tooManyPendingConditionalTxsError struct{}
+
+func (tooManyPendingConditionalTxsError) Error() string {
+	return "too many pending conditional transactions"
+}
+func (tooManyPendingConditionalTxsError) ErrorCode() int {
+	return tooManyPendingConditionalTxsErrorCode
+}
+
+var ErrTooManyPendingConditionalTxs error = tooManyPendingConditionalTxsError{}
 
 type TxPreChecker struct {
 	TransactionPublisher
-	bc                 *core.BlockChain
-	config             TxPreCheckerConfigFetcher
-	expressLaneTracker *timeboost.ExpressLaneTracker
-	backend            core.NodeInterfaceBackendAPI
+	bc                    *core.BlockChain
+	config                TxPreCheckerConfigFetcher
+	expressLaneTracker    *timeboost.ExpressLaneTracker
+	backend               core.NodeInterfaceBackendAPI
+	pendingConditionalTxs pendingConditionalTxs
 	// nil disables prechecker address-filter dry-run (e.g. on sequencer nodes).
 	txFilterer core.TxFilterer
 }
@@ -237,6 +261,13 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 }
 
 func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
+	if options != nil {
+		release, ok := c.pendingConditionalTxs.admit(c.config().MaxPendingConditionalTxs)
+		if !ok {
+			return ErrTooManyPendingConditionalTxs
+		}
+		defer release()
+	}
 	block := c.bc.CurrentBlock()
 	statedb, err := c.bc.StateAt(block)
 	if err != nil {

@@ -176,6 +176,9 @@ func (c *Config) Validate() error {
 	if err := c.Sequencer.Validate(); err != nil {
 		return err
 	}
+	if err := c.TxPreChecker.Validate(); err != nil {
+		return err
+	}
 	if !c.Sequencer.Enable && c.ForwardingTarget == "" {
 		return errors.New("ForwardingTarget not set and not sequencer (can use \"null\")")
 	}
