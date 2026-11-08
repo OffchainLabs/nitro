@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"strconv"
@@ -141,7 +142,6 @@ type BroadcastClient struct {
 
 	retrying                        bool
 	shuttingDown                    bool
-	firstReconnectAttempt           bool
 	confirmedSequenceNumberListener chan arbutil.MessageIndex
 	txStreamer                      TransactionStreamerInterface
 	fatalErrChan                    chan error
@@ -178,7 +178,6 @@ func NewBroadcastClient(
 		fatalErrChan:                    fatalErrChan,
 		sigVerifier:                     sigVerifier,
 		adjustCount:                     adjustCount,
-		firstReconnectAttempt:           true,
 	}, err
 }
 
@@ -362,7 +361,6 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	bc.connMutex.Lock()
 	bc.conn = conn
 	bc.compression = compressionNegotiated
-	bc.firstReconnectAttempt = true
 	bc.connMutex.Unlock()
 	log.Info("Feed connected", "feedServerVersion", feedServerVersion, "chainId", chainId, "requestedSeqNum", nextSeqNum)
 
@@ -415,24 +413,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 				}
 				_ = bc.conn.Close()
 
-				// Skip backoff for first reconnection attempt
-				if bc.firstReconnectAttempt {
-					bc.firstReconnectAttempt = false
-					log.Info("First reconnection attempt, skipping backoff", "url", bc.websocketUrl)
-					earlyFrameData = bc.retryConnect(ctx)
-					continue
-				}
-				timer := time.NewTimer(backoffDuration)
-				if backoffDuration < bc.config().ReconnectMaximumBackoff {
-					backoffDuration *= 2
-				}
-				select {
-				case <-ctx.Done():
-					timer.Stop()
-					return
-				case <-timer.C:
-				}
-				earlyFrameData = bc.retryConnect(ctx)
+				earlyFrameData, backoffDuration = bc.retryConnect(ctx, backoffDuration)
 				continue
 			}
 			backoffDuration = bc.config().ReconnectInitialBackoff
@@ -450,7 +431,6 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					sourcesDisconnectedGauge.Dec(1)
 					sourcesConnectedGauge.Inc(1)
 					bc.adjustCount(1)
-					bc.firstReconnectAttempt = true
 				}
 				if len(res.Messages) > 0 {
 					log.Debug("received batch item", "count", len(res.Messages), "first seq", res.Messages[0].SequenceNumber)
@@ -512,32 +492,59 @@ func (bc *BroadcastClient) isShuttingDown() bool {
 	return bc.shuttingDown
 }
 
-func (bc *BroadcastClient) retryConnect(ctx context.Context) io.Reader {
-	maxWaitDuration := 15 * time.Second
-	var waitDuration time.Duration = 0 // Don't wait for first reconnect
+func (bc *BroadcastClient) retryConnect(ctx context.Context, backoffDuration time.Duration) (io.Reader, time.Duration) {
 	bc.retrying = true
 
 	for !bc.isShuttingDown() {
+		config := bc.config()
+		backoffDuration = clampReconnectBackoff(backoffDuration, config.ReconnectMaximumBackoff)
+		waitDuration := reconnectFullJitter(backoffDuration, rand.Int64N)
 		timer := time.NewTimer(waitDuration)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return nil
+			return nil, backoffDuration
 		case <-timer.C:
 		}
 
 		bc.retryCount.Add(1)
 		earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)
+		nextBackoff := nextReconnectBackoff(backoffDuration, config.ReconnectMaximumBackoff)
 		if err == nil {
 			bc.retrying = false
-			return earlyFrameData
+			return earlyFrameData, nextBackoff
 		}
-
-		if waitDuration < maxWaitDuration {
-			waitDuration += 500 * time.Millisecond
-		}
+		log.Debug("failed reconnect to sequencer broadcast", "url", bc.websocketUrl, "err", err, "retryBackoff", backoffDuration)
+		backoffDuration = nextBackoff
 	}
-	return nil
+	return nil, backoffDuration
+}
+
+func clampReconnectBackoff(backoffDuration, maximumBackoff time.Duration) time.Duration {
+	if maximumBackoff > 0 && backoffDuration > maximumBackoff {
+		return maximumBackoff
+	}
+	return backoffDuration
+}
+
+func nextReconnectBackoff(backoffDuration, maximumBackoff time.Duration) time.Duration {
+	if backoffDuration <= 0 || maximumBackoff <= 0 {
+		return backoffDuration
+	}
+	if backoffDuration >= maximumBackoff {
+		return maximumBackoff
+	}
+	if backoffDuration > maximumBackoff/2 {
+		return maximumBackoff
+	}
+	return backoffDuration * 2
+}
+
+func reconnectFullJitter(backoffDuration time.Duration, randomInt64N func(int64) int64) time.Duration {
+	if backoffDuration <= 0 {
+		return 0
+	}
+	return time.Duration(randomInt64N(int64(backoffDuration)))
 }
 
 func (bc *BroadcastClient) StopAndWait() {

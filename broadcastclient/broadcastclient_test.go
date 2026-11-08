@@ -29,6 +29,49 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
+func TestReconnectBackoffSequence(t *testing.T) {
+	initial := time.Second
+	maximum := 8 * time.Second
+	backoff := initial
+
+	for _, expected := range []time.Duration{2 * time.Second, 4 * time.Second, 8 * time.Second, 8 * time.Second} {
+		backoff = nextReconnectBackoff(backoff, maximum)
+		if backoff != expected {
+			t.Fatalf("expected backoff %v, got %v", expected, backoff)
+		}
+	}
+
+	if got := clampReconnectBackoff(16*time.Second, maximum); got != maximum {
+		t.Fatalf("expected hot-reloaded maximum %v, got %v", maximum, got)
+	}
+	if got := nextReconnectBackoff(0, maximum); got != 0 {
+		t.Fatalf("zero backoff should remain disabled, got %v", got)
+	}
+	if got := nextReconnectBackoff(time.Second, 0); got != time.Second {
+		t.Fatalf("zero maximum should preserve the configured backoff, got %v", got)
+	}
+}
+
+func TestReconnectFullJitter(t *testing.T) {
+	backoff := 10 * time.Second
+	got := reconnectFullJitter(backoff, func(n int64) int64 {
+		if n != int64(backoff) {
+			t.Fatalf("expected jitter bound %v, got %v", backoff, time.Duration(n))
+		}
+		return n / 2
+	})
+	if got != backoff/2 {
+		t.Fatalf("expected deterministic jitter %v, got %v", backoff/2, got)
+	}
+
+	if got := reconnectFullJitter(0, func(int64) int64 {
+		t.Fatal("random source must not be called for zero backoff")
+		return 0
+	}); got != 0 {
+		t.Fatalf("expected zero jitter for disabled backoff, got %v", got)
+	}
+}
+
 func feedMessage(t *testing.T, b *broadcaster.Broadcaster, seqNum arbutil.MessageIndex) []*message.BroadcastFeedMessage {
 	msg := arbostypes.MessageWithMetadataAndBlockInfo{
 		MessageWithMeta: arbostypes.EmptyTestMessageWithMetadata,
